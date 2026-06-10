@@ -262,6 +262,8 @@ export default function App() {
   const [importText, setImportText] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renamingId, setRenamingId] = useState(null);
+  const [dragIndex, setDragIndex] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
   const saveTimer = useRef(null);
 
   /* フォント */
@@ -418,6 +420,35 @@ export default function App() {
   const insertBelow = (idx, row) => setRows((rows) => {
     const next = [...rows]; next.splice(idx + 1, 0, row); return next;
   });
+
+  /* ドラッグ＆ドロップで行を並べ替え */
+  const reorderRow = (from, to) => setRows((rows) => {
+    if (from == null || to == null || from === to || from < 0 || to < 0) return rows;
+    const next = [...rows];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    return next;
+  });
+  const endDrag = () => { setDragIndex(null); setDragOverIndex(null); };
+  const dropOn = (idx) => { reorderRow(dragIndex, idx); endDrag(); };
+  const dragHandleProps = (idx) => ({
+    draggable: true,
+    onDragStart: (e) => { setDragIndex(idx); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(idx)); } catch (_) {} },
+    onDragEnd: endDrag,
+    style: { cursor: "grab" },
+    title: "ドラッグで移動",
+  });
+  const dropZoneProps = (idx) => ({
+    onDragOver: (e) => { if (dragIndex != null) { e.preventDefault(); setDragOverIndex(idx); } },
+    onDrop: (e) => { e.preventDefault(); dropOn(idx); },
+  });
+  const GripIcon = () => (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" />
+      <circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" />
+      <circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" />
+    </svg>
+  );
 
   /* ロケーション単位の移動（配下のシーンごと） */
   const moveLocationBlock = (locId, dir) => setRows((rows) => {
@@ -680,6 +711,22 @@ export default function App() {
             );
           })}
         </div>
+        <div className="px-3 py-2 border-t border-white/10 flex flex-col gap-0.5">
+          <a href="cases.html"
+            className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10">
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 3l-4 4-4-4" />
+            </svg>
+            案件ボード（チャンネル別）
+          </a>
+          <a href="settings.html"
+            className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10">
+            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
+            </svg>
+            共有・連携設定
+          </a>
+        </div>
         <div className="px-3 py-2 border-t border-white/10 text-[10px] text-white/40">
           {index.length}件の案件・自動保存
         </div>
@@ -854,7 +901,9 @@ export default function App() {
                   {project.rows.map((r, idx) => {
                     if (r.kind === "location") {
                       return (
-                        <tr key={r.id} onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}>
+                        <tr key={r.id} {...dropZoneProps(idx)}
+                          onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
+                          style={dragOverIndex === idx && dragIndex !== idx ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : undefined}>
                           <td colSpan={6} className="p-0 pt-2">
                             <div className="flex items-stretch overflow-hidden" style={{ background: theme.main }}>
                               <div className="w-5 shrink-0" style={{ background: stripe }} />
@@ -870,6 +919,7 @@ export default function App() {
                           </td>
                           <td className="pt-2 align-middle">
                             <div className={"flex items-center justify-end gap-0.5 pr-2 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
+                              <button className={opBtn} {...dragHandleProps(idx)}><GripIcon /></button>
                               <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}>↑</button>
                               <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}>↓</button>
                               <button className={opBtn} title="下にシーンを追加" onClick={() => insertBelow(idx, newScene("解説系"))}>＋</button>
@@ -887,8 +937,10 @@ export default function App() {
                     const over = chars > 0 && dur > target * 1.5;
                     return (
                       <tr key={r.id}
+                        {...dropZoneProps(idx)}
                         onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
-                        className="border-b border-stone-100 hover:bg-stone-50/70 transition-colors">
+                        className="border-b border-stone-100 hover:bg-stone-50/70 transition-colors"
+                        style={dragOverIndex === idx && dragIndex !== idx ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : undefined}>
                         <td className="align-top pt-2.5 text-center" style={{ borderLeft: "3px solid " + t.color }}>
                           <span className="text-[11px] text-stone-400 tabular-nums whitespace-nowrap block" style={{ fontFamily: mono }}>{fmt(tcs[r.id])}</span>
                           <span className="text-[9px] text-stone-300 tabular-nums" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
@@ -934,6 +986,7 @@ export default function App() {
                         </td>
                         <td className="align-top py-1.5 pr-2">
                           <div className={"flex items-center justify-end gap-0.5 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
+                            <button className={opBtn} {...dragHandleProps(idx)}><GripIcon /></button>
                             <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}>↑</button>
                             <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}>↓</button>
                             <button className={opBtn} title="下に行を追加" onClick={() => insertBelow(idx, newScene(r.type))}>＋</button>
