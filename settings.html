@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ものがたりっち！ — 共有・連携設定</title>
+<meta name="theme-color" content="#4f46e5">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs@gh-pages/qrcode.min.js"></script>
+<style>
+  html,body{margin:0;padding:0;background:#f8fafc}
+  .ico{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .ico-lg{width:26px;height:26px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px}
+</style>
+</head>
+<body class="text-slate-800">
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+  <!-- ヘッダー -->
+  <header class="flex items-center justify-between gap-3 mb-6">
+    <div class="flex items-center gap-3">
+      <img src="icon-192.png" alt="" class="w-11 h-11 rounded-xl shadow-sm">
+      <div>
+        <h1 class="text-xl font-bold leading-tight">共有・連携設定</h1>
+        <p class="text-sm text-slate-500">ものがたりっち！</p>
+      </div>
+    </div>
+    <a href="index.html" class="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-indigo-600">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>ツールへ戻る
+    </a>
+  </header>
+
+  <!-- デスクトップアプリ -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start gap-3">
+      <span class="text-indigo-600"><svg class="ico ico-lg" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></span>
+      <div class="flex-1">
+        <h2 class="font-bold">デスクトップアプリとして使う</h2>
+        <p class="text-sm text-slate-500 mt-1">下のボタンを1回押すだけ。アプリとしてDockに常駐し、ブラウザを開かず起動できます。</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button id="installBtn" class="inline-flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-40">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>このアプリをインストール
+          </button>
+          <span id="installHint" class="text-xs text-slate-400"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 共有 -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start gap-3">
+      <span class="text-indigo-600"><svg class="ico ico-lg" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg></span>
+      <div class="flex-1 min-w-0">
+        <h2 class="font-bold">先方への共有URL</h2>
+        <p class="text-sm text-slate-500 mt-1">このURLをそのまま先方に送ってください。</p>
+        <div class="mt-3 flex items-center gap-2">
+          <input id="shareUrl" readonly class="flex-1 min-w-0 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono">
+          <button id="copyBtn" class="inline-flex items-center gap-1.5 border border-slate-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-slate-50 whitespace-nowrap">
+            <svg class="ico" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h8"/></svg><span id="copyLabel">コピー</span>
+          </button>
+        </div>
+        <div class="mt-4 flex items-center gap-4">
+          <div id="qr" class="p-2 bg-white border border-slate-200 rounded-lg"></div>
+          <p class="text-xs text-slate-400">QRコードでも共有できます（スマホで読み取り）。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Gemini（ヒーロー） -->
+  <section class="card p-5 mb-5 ring-2 ring-indigo-500/30">
+    <div class="flex items-start gap-3">
+      <span class="text-indigo-600"><svg class="ico ico-lg" viewBox="0 0 24 24"><path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5 10.1 7.6z"/><path d="M19 14l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8z"/></svg></span>
+      <div class="flex-1">
+        <div class="flex items-center gap-2">
+          <h2 class="font-bold">Gemini 連携</h2>
+          <span class="text-[11px] font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full">メイン</span>
+        </div>
+        <p class="text-sm text-slate-500 mt-1">最上位モデルでフル連携。APIキーを入れて「接続テスト」で確認できます。</p>
+
+        <label class="block text-xs font-semibold text-slate-500 mt-4 mb-1">APIキー</label>
+        <div class="flex items-center gap-2">
+          <input id="geminiKey" type="password" placeholder="AIza..." class="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono">
+          <button data-toggle="geminiKey" class="text-xs text-slate-400 hover:text-slate-600 px-2 py-2">表示</button>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">キーは <a class="underline" href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio</a> で発行（無料枠あり）。</p>
+
+        <div class="grid grid-cols-2 gap-3 mt-3">
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 mb-1">モデル</label>
+            <select id="geminiModel" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+              <option value="gemini-2.5-pro">gemini-2.5-pro（最上位）</option>
+              <option value="gemini-2.5-flash">gemini-2.5-flash（高速）</option>
+              <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+              <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-500 mb-1">temperature</label>
+            <input id="geminiTemp" type="number" step="0.1" min="0" max="2" value="0.9" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+          </div>
+        </div>
+
+        <label class="block text-xs font-semibold text-slate-500 mt-3 mb-1">システム指示（任意）</label>
+        <textarea id="geminiSystem" rows="2" placeholder="例：あなたは一日密着ドキュメンタリーの構成作家です。" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"></textarea>
+
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button data-test="gemini" class="inline-flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M22 11.1V12a10 10 0 11-5.9-9.1"/><path d="M22 4l-10 10-3-3"/></svg>接続テスト
+          </button>
+          <span data-status="gemini" class="text-sm"></span>
+        </div>
+
+        <!-- ミニ・プレイグラウンド -->
+        <details class="mt-4 group">
+          <summary class="cursor-pointer text-sm font-medium text-indigo-600 select-none">▸ その場で生成テスト（プレイグラウンド）</summary>
+          <div class="mt-3">
+            <textarea id="playPrompt" rows="2" placeholder="例：着物スタイリストの一日密着、冒頭30秒のフックを3案。" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"></textarea>
+            <button data-play class="mt-2 inline-flex items-center gap-1.5 border border-indigo-300 text-indigo-700 text-sm font-medium px-3 py-2 rounded-lg hover:bg-indigo-50">
+              <svg class="ico" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg>Geminiで生成
+            </button>
+            <pre id="playOut" class="mt-3 whitespace-pre-wrap text-sm bg-slate-900 text-slate-100 rounded-lg p-3 hidden"></pre>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- その他AI -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start gap-3">
+      <span class="text-slate-500"><svg class="ico ico-lg" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 11-7 7 5 5 0 017-7zm0 0L15 8m0 0l3 3 3-3-3-3"/></svg></span>
+      <div class="flex-1">
+        <h2 class="font-bold">その他のAI連携</h2>
+        <p class="text-sm text-slate-500 mt-1">Claude / GPT も予備として登録できます。</p>
+
+        <!-- Claude -->
+        <div class="mt-4 border border-slate-200 rounded-xl p-4">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-sm">Claude（Anthropic）</span>
+            <span data-status="claude" class="text-sm"></span>
+          </div>
+          <div class="grid sm:grid-cols-3 gap-2 mt-2">
+            <input id="claudeKey" type="password" placeholder="sk-ant-..." class="sm:col-span-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono">
+            <select id="claudeModel" class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+              <option value="claude-opus-4-8">opus-4.8</option>
+              <option value="claude-sonnet-4-6" selected>sonnet-4.6</option>
+              <option value="claude-haiku-4-5-20251001">haiku-4.5</option>
+            </select>
+          </div>
+          <div class="mt-2 flex items-center gap-2">
+            <button data-toggle="claudeKey" class="text-xs text-slate-400 hover:text-slate-600">表示</button>
+            <button data-test="claude" class="text-xs font-medium border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50">接続テスト</button>
+          </div>
+        </div>
+
+        <!-- OpenAI -->
+        <div class="mt-3 border border-slate-200 rounded-xl p-4">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-sm">GPT（OpenAI）</span>
+            <span data-status="openai" class="text-sm"></span>
+          </div>
+          <div class="grid sm:grid-cols-3 gap-2 mt-2">
+            <input id="openaiKey" type="password" placeholder="sk-..." class="sm:col-span-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono">
+            <select id="openaiModel" class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+              <option value="gpt-4o" selected>gpt-4o</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+            </select>
+          </div>
+          <div class="mt-2 flex items-center gap-2">
+            <button data-toggle="openaiKey" class="text-xs text-slate-400 hover:text-slate-600">表示</button>
+            <button data-test="openai" class="text-xs font-medium border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-slate-50">接続テスト</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Google系 -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start gap-3">
+      <span class="text-slate-500"><svg class="ico ico-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></span>
+      <div class="flex-1">
+        <h2 class="font-bold">Google 連携（Sheets / GAS）</h2>
+        <p class="text-sm text-slate-500 mt-1">スプレッドシート書き出し用の GAS WebApp URL を登録できます（任意）。</p>
+        <input id="googleEndpoint" placeholder="https://script.google.com/macros/s/XXXX/exec" class="w-full mt-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono">
+      </div>
+    </div>
+  </section>
+
+  <!-- 関連リンク -->
+  <section class="card p-5 mb-5">
+    <div class="flex items-start gap-3">
+      <span class="text-slate-500"><svg class="ico ico-lg" viewBox="0 0 24 24"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg></span>
+      <div class="flex-1">
+        <h2 class="font-bold">関連リンク</h2>
+        <p class="text-sm text-slate-500 mt-1">台本フォルダや参考資料のURLをメモできます（1行1つ：ラベル , URL）。</p>
+        <textarea id="links" rows="3" placeholder="台本フォルダ , https://...&#10;参考資料 , https://..." class="w-full mt-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <!-- 保存バー -->
+  <div class="sticky bottom-4 flex items-center gap-3 bg-white/90 backdrop-blur border border-slate-200 rounded-xl px-4 py-3 shadow-lg">
+    <button id="saveBtn" class="inline-flex items-center gap-1.5 bg-slate-900 text-white text-sm font-semibold px-5 py-2.5 rounded-lg hover:bg-slate-700">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>すべて保存
+    </button>
+    <span id="saveStatus" class="text-sm text-slate-500"></span>
+  </div>
+
+  <footer class="text-center text-xs text-slate-400 mt-8">
+    キーはこの端末のブラウザ内（localStorage）にのみ保存され、外部には送信されません。
+  </footer>
+</div>
+
+<script>
+const SHARE_URL = "https://akidori.github.io/MONOGATARI/";
+const PREFIX = "mg:"; // アプリ本体と同じ名前空間
+const g = (k, d="") => { const v = localStorage.getItem(PREFIX+k); return v===null ? d : v; };
+const s = (k, v) => localStorage.setItem(PREFIX+k, v);
+
+// --- 共有URL / QR ---
+const shareInput = document.getElementById("shareUrl");
+shareInput.value = SHARE_URL;
+new QRCode(document.getElementById("qr"), { text: SHARE_URL, width: 96, height: 96, correctLevel: QRCode.CorrectLevel.M });
+document.getElementById("copyBtn").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(SHARE_URL); }
+  catch { shareInput.select(); document.execCommand("copy"); }
+  const l = document.getElementById("copyLabel"); l.textContent = "コピー済み"; setTimeout(()=>l.textContent="コピー", 1500);
+});
+
+// --- フィールド定義 ---
+const FIELDS = {
+  geminiKey:"geminiApiKey", geminiModel:"geminiModel", geminiTemp:"geminiTemp", geminiSystem:"geminiSystem",
+  claudeKey:"anthropicApiKey", claudeModel:"anthropicModel",
+  openaiKey:"openaiApiKey", openaiModel:"openaiModel",
+  googleEndpoint:"googleEndpoint", links:"links"
+};
+// 読み込み
+for (const [id, key] of Object.entries(FIELDS)) {
+  const el = document.getElementById(id); if (!el) continue;
+  const v = g(key); if (v) el.value = v;
+}
+// 保存
+document.getElementById("saveBtn").addEventListener("click", () => {
+  for (const [id, key] of Object.entries(FIELDS)) {
+    const el = document.getElementById(id); if (el) s(key, el.value.trim());
+  }
+  const st = document.getElementById("saveStatus");
+  st.textContent = "✓ 保存しました"; st.className = "text-sm text-green-600";
+  setTimeout(()=>{ st.textContent=""; }, 2000);
+});
+
+// パスワード表示トグル
+document.querySelectorAll("[data-toggle]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const el = document.getElementById(btn.dataset.toggle);
+    el.type = el.type === "password" ? "text" : "password";
+    btn.textContent = el.type === "password" ? "表示" : "隠す";
+  });
+});
+
+// --- ステータス表示ヘルパー ---
+function setStatus(name, ok, msg) {
+  const el = document.querySelector(`[data-status="${name}"]`);
+  if (!el) return;
+  el.textContent = (ok ? "● " : "● ") + msg;
+  el.className = "text-sm " + (ok ? "text-green-600" : "text-rose-600");
+}
+
+// --- 接続テスト ---
+async function testGemini() {
+  const key = document.getElementById("geminiKey").value.trim();
+  const model = document.getElementById("geminiModel").value;
+  if (!key) return setStatus("gemini", false, "キー未入力");
+  setStatus("gemini", true, "確認中…");
+  try {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ contents:[{parts:[{text:"ping"}]}], generationConfig:{maxOutputTokens:8} })
+    });
+    if (r.ok) setStatus("gemini", true, "接続OK（"+model+"）");
+    else { const e = await r.json().catch(()=>({})); setStatus("gemini", false, "失敗: "+(e.error?.message||r.status)); }
+  } catch (e) { setStatus("gemini", false, "通信エラー"); }
+}
+async function testClaude() {
+  const key = document.getElementById("claudeKey").value.trim();
+  const model = document.getElementById("claudeModel").value;
+  if (!key) return setStatus("claude", false, "キー未入力");
+  setStatus("claude", true, "確認中…");
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body: JSON.stringify({ model, max_tokens:8, messages:[{role:"user",content:"ping"}] })
+    });
+    if (r.ok) setStatus("claude", true, "接続OK");
+    else { const e = await r.json().catch(()=>({})); setStatus("claude", false, "失敗: "+(e.error?.message||r.status)); }
+  } catch (e) { setStatus("claude", false, "通信エラー（CORS等）"); }
+}
+async function testOpenAI() {
+  const key = document.getElementById("openaiKey").value.trim();
+  const model = document.getElementById("openaiModel").value;
+  if (!key) return setStatus("openai", false, "キー未入力");
+  setStatus("openai", true, "確認中…");
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method:"POST", headers:{"Content-Type":"application/json","Authorization":"Bearer "+key},
+      body: JSON.stringify({ model, max_tokens:8, messages:[{role:"user",content:"ping"}] })
+    });
+    if (r.ok) setStatus("openai", true, "接続OK");
+    else { const e = await r.json().catch(()=>({})); setStatus("openai", false, "失敗: "+(e.error?.message||r.status)); }
+  } catch (e) { setStatus("openai", false, "通信エラー"); }
+}
+document.querySelectorAll("[data-test]").forEach(b => b.addEventListener("click", () => {
+  ({gemini:testGemini, claude:testClaude, openai:testOpenAI})[b.dataset.test]();
+}));
+
+// --- Geminiプレイグラウンド ---
+document.querySelector("[data-play]").addEventListener("click", async () => {
+  const key = document.getElementById("geminiKey").value.trim();
+  const model = document.getElementById("geminiModel").value;
+  const temp = parseFloat(document.getElementById("geminiTemp").value || "0.9");
+  const sys = document.getElementById("geminiSystem").value.trim();
+  const prompt = document.getElementById("playPrompt").value.trim();
+  const out = document.getElementById("playOut");
+  out.classList.remove("hidden");
+  if (!key) { out.textContent = "APIキーを入力してください。"; return; }
+  if (!prompt) { out.textContent = "プロンプトを入力してください。"; return; }
+  out.textContent = "生成中…";
+  try {
+    const body = { contents:[{parts:[{text:prompt}]}], generationConfig:{ temperature:temp } };
+    if (sys) body.systemInstruction = { parts:[{text:sys}] };
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`, {
+      method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) { out.textContent = "エラー: " + (j.error?.message || r.status); return; }
+    out.textContent = j.candidates?.[0]?.content?.parts?.map(p=>p.text).join("") || "(空の応答)";
+  } catch (e) { out.textContent = "通信エラー: " + e.message; }
+});
+
+// --- PWA インストール ---
+let deferredPrompt = null;
+const installBtn = document.getElementById("installBtn");
+const installHint = document.getElementById("installHint");
+window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); deferredPrompt = e; installBtn.disabled = false; installHint.textContent = ""; });
+installBtn.addEventListener("click", async () => {
+  if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; installBtn.disabled = true; installHint.textContent = "インストール処理を開始しました。"; }
+  else { installHint.textContent = "Chrome/Edgeのアドレスバー右の「インストール」アイコンからも追加できます。"; }
+});
+if (window.matchMedia("(display-mode: standalone)").matches) { installBtn.disabled = true; installHint.textContent = "✓ アプリとして起動中"; }
+
+// SW登録
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>

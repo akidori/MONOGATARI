@@ -1,0 +1,20 @@
+{
+  "name": "ものがたりっち！ — 一日密着 構成脚本ツール",
+  "short_name": "ものがたりっち",
+  "description": "一日密着ドキュメンタリーの構成脚本を作るツール",
+  "lang": "ja",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "共有・連携設定", "url": "./settings.html", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}
