@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ものがたりっち！ — 案件管理</title>
+<meta name="theme-color" content="#4f46e5">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html,body{margin:0;padding:0;background:#f8fafc}
+  .ico{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .ico-lg{width:26px;height:26px}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:16px}
+</style>
+</head>
+<body class="text-slate-800">
+<div class="max-w-3xl mx-auto px-4 py-8">
+
+  <!-- ヘッダー -->
+  <header class="flex items-center justify-between gap-3 mb-5">
+    <div class="flex items-center gap-3">
+      <img src="icon-192.png" alt="" class="w-11 h-11 rounded-xl shadow-sm">
+      <div>
+        <h1 class="text-xl font-bold leading-tight">案件管理</h1>
+        <p class="text-sm text-slate-500">チャンネル別 ／ ものがたりっち！</p>
+      </div>
+    </div>
+    <nav class="flex items-center gap-3 text-sm font-medium text-slate-600">
+      <a href="index.html" class="hover:text-indigo-600">ツール</a>
+      <a href="settings.html" class="hover:text-indigo-600">設定</a>
+    </nav>
+  </header>
+
+  <!-- Google同期バー -->
+  <div id="syncBar" class="card p-4 mb-5 flex items-center justify-between gap-3">
+    <div class="flex items-center gap-2 min-w-0">
+      <span class="text-emerald-600"><svg class="ico" viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9"/><path d="M3 3v6h6"/></svg></span>
+      <span id="syncState" class="text-sm text-slate-600 truncate">Google同期：確認中…</span>
+    </div>
+    <button id="syncAllBtn" class="inline-flex items-center gap-1.5 border border-slate-300 text-sm font-medium px-3 py-2 rounded-lg hover:bg-slate-50 whitespace-nowrap">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>全件をGoogleへ
+    </button>
+  </div>
+
+  <!-- 新規案件ボタン -->
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="font-bold text-slate-700">案件一覧</h2>
+    <button id="newBtn" class="inline-flex items-center gap-1.5 bg-indigo-600 text-white text-sm font-semibold px-4 py-2 rounded-lg hover:bg-indigo-700">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新規案件
+    </button>
+  </div>
+
+  <!-- 入力フォーム（非表示・新規/編集兼用） -->
+  <section id="form" class="card p-5 mb-5 hidden">
+    <input type="hidden" id="f_id">
+    <div class="grid sm:grid-cols-2 gap-3">
+      <div class="sm:col-span-2">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">案件名 <span class="text-rose-500">*</span></label>
+        <input id="f_title" placeholder="例：着物スタイリストゆかり先生 一日密着" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">チャンネル <span class="text-rose-500">*</span></label>
+        <input id="f_channel" list="channelList" placeholder="例：Bird Flip 本channel" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+        <datalist id="channelList"></datalist>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">撮影日</label>
+        <input id="f_shootDate" type="date" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">ステータス</label>
+        <select id="f_status" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"></select>
+      </div>
+      <div>
+        <label class="block text-xs font-semibold text-slate-500 mb-1">納品予定日</label>
+        <input id="f_dueDate" type="date" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+      </div>
+      <div class="sm:col-span-2">
+        <label class="block text-xs font-semibold text-slate-500 mb-1">メモ</label>
+        <textarea id="f_note" rows="2" placeholder="撮影場所・出演者・参考リンクなど" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"></textarea>
+      </div>
+    </div>
+    <div class="mt-4 flex items-center gap-2">
+      <button id="saveCaseBtn" class="inline-flex items-center gap-1.5 bg-slate-900 text-white text-sm font-semibold px-5 py-2 rounded-lg hover:bg-slate-700">保存</button>
+      <button id="cancelBtn" class="text-sm font-medium text-slate-500 px-3 py-2 hover:text-slate-700">キャンセル</button>
+      <span id="formStatus" class="text-sm"></span>
+    </div>
+  </section>
+
+  <!-- 一覧（チャンネル別） -->
+  <div id="list"></div>
+  <p id="empty" class="text-center text-sm text-slate-400 py-12 hidden">まだ案件がありません。「新規案件」から追加してください。</p>
+
+  <footer class="text-center text-xs text-slate-400 mt-10">
+    データはこの端末（localStorage）に保存。Google設定をすれば各チャンネル名のタブに自動蓄積されます。
+  </footer>
+</div>
+
+<script>
+const PREFIX = "mg:";
+const gRaw = (k) => localStorage.getItem(PREFIX+k);
+const setRaw = (k,v) => localStorage.setItem(PREFIX+k, v);
+
+const STATUSES = [
+  ["企画","bg-slate-100 text-slate-600"],
+  ["撮影予定","bg-blue-100 text-blue-700"],
+  ["撮影済","bg-indigo-100 text-indigo-700"],
+  ["粗編集","bg-amber-100 text-amber-700"],
+  ["初稿","bg-violet-100 text-violet-700"],
+  ["修正","bg-orange-100 text-orange-700"],
+  ["納品済","bg-emerald-100 text-emerald-700"]
+];
+const statusClass = (s) => (STATUSES.find(x=>x[0]===s)||["","bg-slate-100 text-slate-600"])[1];
+
+let cases = [];
+try { cases = JSON.parse(gRaw("cases") || "[]"); } catch { cases = []; }
+const saveCases = () => setRaw("cases", JSON.stringify(cases));
+const uid = () => (self.crypto && crypto.randomUUID) ? crypto.randomUUID() : "c_"+Date.now()+"_"+Math.floor(Math.random()*1e6);
+
+// ステータスselect初期化
+const fStatus = document.getElementById("f_status");
+STATUSES.forEach(([s]) => { const o=document.createElement("option"); o.value=s; o.textContent=s; fStatus.appendChild(o); });
+
+function channels(){ return [...new Set(cases.map(c=>c.channel||"未分類"))].sort(); }
+function refreshChannelList(){
+  const dl = document.getElementById("channelList"); dl.innerHTML="";
+  channels().forEach(ch=>{ const o=document.createElement("option"); o.value=ch; dl.appendChild(o); });
+}
+
+function esc(s){ return (s||"").replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m])); }
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+  document.getElementById("empty").classList.toggle("hidden", cases.length>0);
+  const byCh = {};
+  cases.forEach(c=>{ (byCh[c.channel||"未分類"] ||= []).push(c); });
+  Object.keys(byCh).sort().forEach(ch=>{
+    const items = byCh[ch].sort((a,b)=>(b.shootDate||"").localeCompare(a.shootDate||""));
+    const sec = document.createElement("section");
+    sec.className = "card mb-4 overflow-hidden";
+    sec.innerHTML = `
+      <div class="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+        <div class="flex items-center gap-2 font-semibold text-sm">
+          <svg class="ico" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 3l-4 4-4-4"/></svg>
+          ${esc(ch)}
+        </div>
+        <span class="text-xs text-slate-400">${items.length}件</span>
+      </div>
+      <div>${items.map(rowHtml).join("")}</div>`;
+    list.appendChild(sec);
+  });
+  list.querySelectorAll("[data-edit]").forEach(b=>b.addEventListener("click",()=>openForm(b.dataset.edit)));
+  list.querySelectorAll("[data-del]").forEach(b=>b.addEventListener("click",()=>delCase(b.dataset.del)));
+  refreshChannelList();
+}
+
+function rowHtml(c){
+  return `<div class="flex items-center gap-3 px-4 py-3 border-b border-slate-100 last:border-0">
+    <div class="flex-1 min-w-0">
+      <div class="font-medium text-sm truncate">${esc(c.title)}</div>
+      <div class="text-xs text-slate-400 mt-0.5 flex flex-wrap gap-x-3">
+        ${c.shootDate?`<span>撮影 ${esc(c.shootDate)}</span>`:""}
+        ${c.dueDate?`<span>納品 ${esc(c.dueDate)}</span>`:""}
+        ${c.note?`<span class="truncate max-w-[180px]">${esc(c.note)}</span>`:""}
+      </div>
+    </div>
+    <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${statusClass(c.status)}">${esc(c.status||"企画")}</span>
+    <button data-edit="${c.id}" class="text-slate-400 hover:text-indigo-600" title="編集"><svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></button>
+    <button data-del="${c.id}" class="text-slate-400 hover:text-rose-600" title="削除"><svg class="ico" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m2 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg></button>
+  </div>`;
+}
+
+function openForm(id){
+  const f = document.getElementById("form");
+  f.classList.remove("hidden");
+  document.getElementById("formStatus").textContent = "";
+  const c = cases.find(x=>x.id===id);
+  document.getElementById("f_id").value = c ? c.id : "";
+  document.getElementById("f_title").value = c ? c.title : "";
+  document.getElementById("f_channel").value = c ? c.channel : "";
+  document.getElementById("f_shootDate").value = c ? (c.shootDate||"") : "";
+  document.getElementById("f_dueDate").value = c ? (c.dueDate||"") : "";
+  document.getElementById("f_status").value = c ? (c.status||"企画") : "企画";
+  document.getElementById("f_note").value = c ? (c.note||"") : "";
+  refreshChannelList();
+  f.scrollIntoView({behavior:"smooth", block:"center"});
+  document.getElementById("f_title").focus();
+}
+function closeForm(){ document.getElementById("form").classList.add("hidden"); }
+
+document.getElementById("newBtn").addEventListener("click", ()=>openForm(null));
+document.getElementById("cancelBtn").addEventListener("click", closeForm);
+
+document.getElementById("saveCaseBtn").addEventListener("click", async ()=>{
+  const title = document.getElementById("f_title").value.trim();
+  const channel = document.getElementById("f_channel").value.trim();
+  if(!title){ flashForm("案件名を入力してください", true); return; }
+  if(!channel){ flashForm("チャンネルを入力してください", true); return; }
+  const id = document.getElementById("f_id").value || uid();
+  const rec = {
+    id, title, channel,
+    shootDate: document.getElementById("f_shootDate").value,
+    dueDate: document.getElementById("f_dueDate").value,
+    status: document.getElementById("f_status").value,
+    note: document.getElementById("f_note").value.trim(),
+    updatedAt: new Date().toISOString()
+  };
+  const i = cases.findIndex(x=>x.id===id);
+  if(i>=0) cases[i]=rec; else cases.push(rec);
+  saveCases(); render(); closeForm();
+  syncOne(rec);
+});
+
+function flashForm(msg, err){
+  const el = document.getElementById("formStatus");
+  el.textContent = msg; el.className = "text-sm " + (err?"text-rose-600":"text-green-600");
+}
+
+function delCase(id){
+  const c = cases.find(x=>x.id===id);
+  if(!confirm(`「${c?c.title:""}」を削除しますか？（Google側の行は残ります）`)) return;
+  cases = cases.filter(x=>x.id!==id); saveCases(); render();
+}
+
+// --- Google(GAS)同期 ---
+function endpoint(){ return (gRaw("googleEndpoint")||"").trim(); }
+function updateSyncBar(){
+  const ep = endpoint();
+  const el = document.getElementById("syncState");
+  if(ep){ el.textContent = "Google同期：設定済み（保存時に自動送信）"; el.className="text-sm text-emerald-700 truncate"; }
+  else { el.innerHTML = 'Google同期：未設定 — <a class="underline" href="settings.html">設定ページ</a>でGASのURLを登録'; el.className="text-sm text-slate-500 truncate"; }
+}
+async function postGas(payload){
+  const ep = endpoint(); if(!ep) return {skipped:true};
+  try{
+    const r = await fetch(ep, { method:"POST", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(payload) });
+    try{ return await r.json(); }catch{ return {ok:true, unverified:true}; }
+  }catch(e){
+    try{ await fetch(ep, {method:"POST", mode:"no-cors", headers:{"Content-Type":"text/plain;charset=utf-8"}, body: JSON.stringify(payload)}); return {ok:true, unverified:true}; }
+    catch(e2){ return {ok:false, error:String(e2)}; }
+  }
+}
+async function syncOne(rec){
+  if(!endpoint()) return;
+  flashForm("Googleへ送信中…", false);
+  const res = await postGas({cases:[rec]});
+  flashForm(res.ok?(res.unverified?"送信しました":"Google保存OK"):"送信失敗", !res.ok);
+  setTimeout(()=>{ const el=document.getElementById("formStatus"); el.textContent=""; }, 2500);
+}
+document.getElementById("syncAllBtn").addEventListener("click", async ()=>{
+  if(!endpoint()){ alert("先に設定ページでGASのURLを登録してください。"); return; }
+  if(!cases.length){ alert("案件がありません。"); return; }
+  const btn = document.getElementById("syncAllBtn"); btn.disabled=true; const t=btn.innerHTML; btn.textContent="送信中…";
+  const res = await postGas({cases});
+  btn.disabled=false; btn.innerHTML=t;
+  alert(res.ok ? `Googleへ送信しました（${cases.length}件）` : "送信に失敗しました：" + (res.error||""));
+});
+
+updateSyncBar();
+render();
+
+// PWA
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>

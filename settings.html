@@ -186,9 +186,28 @@
     <div class="flex items-start gap-3">
       <span class="text-slate-500"><svg class="ico ico-lg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg></span>
       <div class="flex-1">
-        <h2 class="font-bold">Google 連携（Sheets / GAS）</h2>
-        <p class="text-sm text-slate-500 mt-1">スプレッドシート書き出し用の GAS WebApp URL を登録できます（任意）。</p>
-        <input id="googleEndpoint" placeholder="https://script.google.com/macros/s/XXXX/exec" class="w-full mt-3 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono">
+        <h2 class="font-bold">Google 連携（スプレッドシート）</h2>
+        <p class="text-sm text-slate-500 mt-1">案件を <b>各チャンネル名のタブ</b> に自動蓄積します。下の手順でGASを1回デプロイし、出てきたURLを貼ってください。</p>
+
+        <label class="block text-xs font-semibold text-slate-500 mt-3 mb-1">GAS WebApp URL（/exec）</label>
+        <input id="googleEndpoint" placeholder="https://script.google.com/macros/s/XXXX/exec" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm font-mono">
+
+        <details class="mt-3 group">
+          <summary class="cursor-pointer text-sm font-medium text-indigo-600 select-none">▸ セットアップ手順とコードを表示</summary>
+          <ol class="list-decimal ml-5 mt-3 space-y-1 text-sm text-slate-600">
+            <li>Googleスプレッドシートを新規作成（名前は「ものがたりっち案件DB」など）</li>
+            <li>メニュー <b>拡張機能 → Apps Script</b> を開く</li>
+            <li>下のコードを全部貼り付けて保存（💾）</li>
+            <li><b>デプロイ → 新しいデプロイ → 種類「ウェブアプリ」</b></li>
+            <li>「実行ユーザー：自分」「アクセス：全員」に設定 → デプロイ → 承認</li>
+            <li>表示された <b>/exec で終わるURL</b> を上の欄に貼り、「すべて保存」</li>
+          </ol>
+          <div class="mt-3 flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500">貼り付け用コード（Code.gs）</span>
+            <button id="copyGas" class="text-xs font-medium border border-slate-300 px-3 py-1 rounded-lg hover:bg-slate-50">コードをコピー</button>
+          </div>
+          <textarea id="gasCode" readonly rows="10" class="w-full mt-2 bg-slate-900 text-slate-100 rounded-lg p-3 text-xs font-mono leading-relaxed"></textarea>
+        </details>
       </div>
     </div>
   </section>
@@ -355,6 +374,44 @@ installBtn.addEventListener("click", async () => {
   else { installHint.textContent = "Chrome/Edgeのアドレスバー右の「インストール」アイコンからも追加できます。"; }
 });
 if (window.matchMedia("(display-mode: standalone)").matches) { installBtn.disabled = true; installHint.textContent = "✓ アプリとして起動中"; }
+
+// --- GASコード（案件→各チャンネルのタブへ） ---
+const GAS_CODE = [
+  "function doPost(e){",
+  "  var lock = LockService.getScriptLock();",
+  "  lock.waitLock(20000);",
+  "  try {",
+  "    var body = JSON.parse(e.postData.contents);",
+  "    var list = body.cases || [body];",
+  "    var ss = SpreadsheetApp.getActiveSpreadsheet();",
+  "    list.forEach(function(c){",
+  "      var ch = String(c.channel || '未分類').substring(0, 90);",
+  "      var sh = ss.getSheetByName(ch) || ss.insertSheet(ch);",
+  "      if (sh.getLastRow() === 0) sh.appendRow(['ID','案件名','撮影日','納品予定','ステータス','メモ','更新日時']);",
+  "      var row = [c.id, c.title, c.shootDate, c.dueDate, c.status, c.note, new Date()];",
+  "      var ids = sh.getRange(1,1,Math.max(sh.getLastRow(),1),1).getValues().map(function(r){return r[0];});",
+  "      var idx = ids.indexOf(c.id);",
+  "      if (idx > 0) sh.getRange(idx+1,1,1,row.length).setValues([row]);",
+  "      else sh.appendRow(row);",
+  "    });",
+  "    return ContentService.createTextOutput(JSON.stringify({ok:true, count:list.length})).setMimeType(ContentService.MimeType.JSON);",
+  "  } catch (err) {",
+  "    return ContentService.createTextOutput(JSON.stringify({ok:false, error:String(err)})).setMimeType(ContentService.MimeType.JSON);",
+  "  } finally {",
+  "    lock.releaseLock();",
+  "  }",
+  "}",
+  "function doGet(){",
+  "  return ContentService.createTextOutput('monogatari case DB: OK');",
+  "}"
+].join("\n");
+const gasArea = document.getElementById("gasCode");
+if (gasArea) gasArea.value = GAS_CODE;
+const copyGas = document.getElementById("copyGas");
+if (copyGas) copyGas.addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(GAS_CODE); } catch { gasArea.select(); document.execCommand("copy"); }
+  copyGas.textContent = "コピー済み"; setTimeout(()=>copyGas.textContent="コードをコピー", 1500);
+});
 
 // SW登録
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
