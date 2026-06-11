@@ -1,0 +1,16 @@
+{
+  "name": "monogataritch",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "build": "esbuild src/entry.jsx --bundle --minify --format=iife --outfile=app.js --loader:.jsx=jsx --jsx=transform",
+    "dev": "esbuild src/entry.jsx --bundle --format=iife --outfile=app.js --loader:.jsx=jsx --jsx=transform --watch"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "0.23.1"
+  }
+}

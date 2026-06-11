@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>構成台本 — ものがたりっち！</title>
+<meta name="theme-color" content="#1F2430">
+<link rel="icon" href="icon-192.png">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
+<style>
+  html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+  .script{white-space:pre-wrap;overflow-wrap:break-word;word-break:break-word;line-height:1.8;font-size:13.5px}
+  .qline{font-weight:700}
+  .stripe{background:repeating-linear-gradient(135deg,var(--main) 0 10px,#fff 10px 14px)}
+</style>
+</head>
+<body>
+<div id="app" class="max-w-[820px] mx-auto px-3 sm:px-5 py-6">
+  <div id="loading" class="text-center text-stone-400 text-sm py-24">読み込み中…</div>
+</div>
+
+<!-- コメント投稿 浮動ボタンのテンプレは JS 内で生成 -->
+
+<script>
+const API = (() => { try { const o = localStorage.getItem("mg:shareApi"); if (o) return o.replace(/\/$/, ""); } catch(e){} return "https://mg-share.aki-surf89315.workers.dev"; })();
+const SECTION_TYPES = {
+  "インサート": { full: "インサート", color: "#71717A", bg: "#F0F0F2" },
+  "ブリッジ":   { full: "ブリッジ",   color: "#0D9488", bg: "#E0F2EF" },
+  "VLOG":      { full: "VLOG",       color: "#D97706", bg: "#FCF0DC" },
+  "解説系":     { full: "解説系",     color: "#2563EB", bg: "#E3EBFC" },
+  "訴求":      { full: "訴求",        color: "#DC2645", bg: "#FBE5EA" },
+};
+const params = new URLSearchParams(location.search);
+const ID = params.get("id");
+const esc = (s) => (s||"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
+
+/* インライン書式: **太字** / !!赤!! （esc 済み文字列に対して適用） */
+function inline(text){
+  let t = esc(text);
+  t = t.replace(/!!([\s\S]+?)!!/g, '<span style="color:#DC2645">$1</span>');
+  t = t.replace(/\*\*([\s\S]+?)\*\*/g, '<strong style="font-weight:800">$1</strong>');
+  return t;
+}
+function renderScript(accent, val){
+  if(!val) return '<span class="text-stone-300">（原稿未入力）</span>';
+  return val.split("\n").map(line => {
+    const isQ = /^\s*◼/.test(line);
+    return `<span class="${isQ?'qline':''}" ${isQ?`style="color:${accent}"`:''}>${inline(line)}</span>`;
+  }).join("\n");
+}
+
+let SNAP=null, COMMENTS=[], AUTHOR = (localStorage.getItem("mg:shareAuthor")||"");
+
+async function load(){
+  if(!ID){ document.getElementById("loading").textContent = "リンクが正しくありません（idがありません）。"; return; }
+  try{
+    const [sR, cR] = await Promise.all([
+      fetch(API+"/api/snap/"+ID),
+      fetch(API+"/api/snap/"+ID+"/comments"),
+    ]);
+    if(!sR.ok){ document.getElementById("loading").innerHTML = "この共有リンクは見つかりませんでした。<br>発行者にURLを確認してください。"; return; }
+    SNAP = await sR.json();
+    COMMENTS = (await cR.json()).comments || [];
+    render();
+  }catch(e){
+    document.getElementById("loading").textContent = "読み込みに失敗しました：" + e.message;
+  }
+}
+
+function commentsFor(sid){ return COMMENTS.filter(c=>c.sceneId===sid); }
+
+function render(){
+  const p = SNAP.project;
+  const theme = p.theme || {main:"#1F2430",accent:"#E63946"};
+  const accent = theme.accent, main = theme.main;
+  const m = p.meta||{};
+  const titles = (m.titles||[]).filter(Boolean);
+  document.documentElement.style.setProperty("--main", main);
+
+  let sceneNo = 0;
+  let rowsHtml = "";
+  (p.rows||[]).forEach(r => {
+    if(r.kind === "location"){
+      rowsHtml += `<div class="mt-4 mb-2 rounded-t-xl overflow-hidden flex items-stretch" style="background:${main};color:#fff">
+        <div class="w-4 shrink-0 stripe"></div>
+        <div class="px-3 py-2 font-bold tracking-wide text-[14px]">${esc(r.label||"")}</div>
+        ${r.time?`<div class="ml-auto self-center pr-3 text-[11px] opacity-70 mono">${esc(r.time)}</div>`:""}
+      </div>`;
+      if(r.address || r.note){
+        rowsHtml += `<div class="px-3 pb-2 text-[11px] text-stone-500 flex flex-wrap gap-x-4">
+          ${r.address?`<span>📍 ${esc(r.address)}</span>`:""}${r.note?`<span>📝 ${esc(r.note)}</span>`:""}</div>`;
+      }
+      return;
+    }
+    sceneNo++;
+    const t = SECTION_TYPES[r.type] || {full:r.type,color:"#555",bg:"#eee"};
+    const cs = commentsFor(r.id);
+    const open = cs.filter(c=>!c.resolved).length;
+    rowsHtml += `<div class="bg-white border border-stone-200 border-t-0 px-3 py-3 flex gap-3" style="border-left:3px solid ${t.color}">
+      <div class="w-8 shrink-0 text-center">
+        <div class="text-[10px] text-stone-300 mono">#${sceneNo}</div>
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 mb-1 flex-wrap">
+          <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:${t.bg};color:${t.color}">${esc(t.full)}</span>
+          <span class="text-[13px] font-bold">${esc(r.label||"")}</span>
+        </div>
+        <div class="script text-stone-800">${renderScript(accent, r.script)}</div>
+        <div class="mt-2">
+          <button data-c="${r.id}" data-l="${esc(r.label||t.full)}" class="cbtn text-[11px] font-semibold px-2.5 py-1 rounded-full border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1" style="color:${main}">
+            💬 コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}
+          </button>
+        </div>
+        <div id="cwrap-${r.id}" class="hidden mt-2 space-y-2"></div>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById("app").innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">STORYBOARD / 構成台本</div>
+      <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
+    </div>
+    <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
+      <div class="px-5 py-4" style="background:${main};color:#fff">
+        <div class="text-[18px] font-black leading-snug">${esc(titles[0]||p.name||"構成台本")}</div>
+        <div class="mt-1 text-[12px] opacity-80 flex flex-wrap gap-x-4">
+          ${m.shootDate?`<span>撮影日 ${esc(m.shootDate)}</span>`:""}
+          ${m.place?`<span>場所 ${esc(m.place)}</span>`:""}
+        </div>
+      </div>
+      ${m.highlight?`<div class="bg-white px-5 py-3 border-t border-stone-100">
+        <div class="text-[10px] font-bold text-stone-400 mb-1">冒頭フック</div>
+        <div class="script">${renderScript(accent, m.highlight)}</div></div>`:""}
+    </div>
+    <div>${rowsHtml}</div>
+    <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">
+      各シーンの「💬 コメント」から、気になる点・修正してほしい所を書き込めます。<br>制作：ものがたりっち！
+    </p>
+  `;
+
+  document.querySelectorAll(".cbtn").forEach(b => b.addEventListener("click", () => toggleComments(b.dataset.c, b.dataset.l)));
+}
+
+function fmtTime(iso){ return (iso||"").slice(5,16).replace("T"," "); }
+
+function toggleComments(sid, label){
+  const wrap = document.getElementById("cwrap-"+sid);
+  if(!wrap) return;
+  if(!wrap.classList.contains("hidden")){ wrap.classList.add("hidden"); return; }
+  wrap.classList.remove("hidden");
+  renderCommentBox(sid, label);
+}
+
+function renderCommentBox(sid, label){
+  const wrap = document.getElementById("cwrap-"+sid);
+  const cs = commentsFor(sid);
+  const listHtml = cs.length ? cs.map(c=>`
+    <div class="rounded-lg border ${c.resolved?'bg-emerald-50 border-emerald-200':'bg-stone-50 border-stone-200'} px-3 py-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[11px] font-bold text-stone-600">${esc(c.author||"ゲスト")}${c.resolved?' <span class="text-emerald-600">✓対応済</span>':''}</span>
+        <span class="text-[10px] text-stone-400">${fmtTime(c.createdAt)}</span>
+      </div>
+      <div class="text-[12.5px] text-stone-800 whitespace-pre-wrap break-words mt-0.5">${esc(c.text)}</div>
+    </div>`).join("") : '<div class="text-[11px] text-stone-400">まだコメントはありません。</div>';
+
+  wrap.innerHTML = `
+    <div class="space-y-1.5">${listHtml}</div>
+    <div class="rounded-lg border border-stone-200 bg-white p-2">
+      <input id="au-${sid}" value="${esc(AUTHOR)}" placeholder="お名前（任意）" class="w-full text-[12px] px-2 py-1.5 mb-1.5 bg-stone-50 rounded focus:outline-none">
+      <textarea id="tx-${sid}" rows="2" placeholder="このシーンへのコメント・修正依頼…" class="w-full text-[13px] px-2 py-1.5 border border-stone-200 rounded focus:outline-none resize-y"></textarea>
+      <div class="flex justify-end mt-1.5">
+        <button id="sb-${sid}" class="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg shadow" style="background:var(--main)">送信</button>
+      </div>
+    </div>`;
+  wrap.querySelector("#sb-"+sid).addEventListener("click", () => postComment(sid, label));
+}
+
+async function postComment(sid, label){
+  const tx = document.getElementById("tx-"+sid);
+  const au = document.getElementById("au-"+sid);
+  const text = (tx.value||"").trim();
+  if(!text){ tx.focus(); return; }
+  AUTHOR = (au.value||"").trim();
+  try{ localStorage.setItem("mg:shareAuthor", AUTHOR); }catch(e){}
+  const btn = document.getElementById("sb-"+sid); btn.disabled=true; btn.textContent="送信中…";
+  try{
+    const r = await fetch(API+"/api/snap/"+ID+"/comments", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ sceneId: sid, sceneLabel: label, author: AUTHOR||"ゲスト", text })
+    });
+    const d = await r.json();
+    if(d.comment){ COMMENTS.push(d.comment); render(); toggleComments(sid, label); }
+    else throw new Error(d.error||"送信失敗");
+  }catch(e){
+    btn.disabled=false; btn.textContent="送信";
+    alert("送信に失敗しました：" + e.message);
+  }
+}
+
+load();
+</script>
+</body>
+</html>
