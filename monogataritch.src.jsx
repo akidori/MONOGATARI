@@ -398,6 +398,34 @@ function buildStyledRuns(text) {
   return runs;
 }
 
+/* ===== ピクトグラム（ライン系SVG・currentColorで配色追従）===== */
+function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
+  const c = { className, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", style, "aria-hidden": true };
+  switch (name) {
+    case "pin": return (<svg {...c}><path d="M12 21s6-5.3 6-10A6 6 0 1 0 6 11c0 4.7 6 10 6 10z" /><circle cx="12" cy="11" r="2.2" /></svg>);
+    case "note": return (<svg {...c}><path d="M12 20H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9l5 5v3" /><path d="M14 4v5h5" /><path d="M8 13h5M8 16h3" /></svg>);
+    case "map": return (<svg {...c}><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z" /><path d="M9 4v14M15 6v14" /></svg>);
+    case "download": return (<svg {...c}><path d="M12 4v10m0 0 4-4m-4 4-4-4" /><path d="M5 18h14" /></svg>);
+    case "file": return (<svg {...c}><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8l-5-5z" /><path d="M14 3v5h5" /></svg>);
+    case "user": return (<svg {...c}><circle cx="12" cy="8" r="3.4" /><path d="M5.5 19a6.5 6.5 0 0 1 13 0" /></svg>);
+    case "robot": return (<svg {...c}><rect x="4" y="8" width="16" height="11" rx="2.5" /><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16h5" /><path d="M2 12v3M22 12v3" /></svg>);
+    case "cloud": return (<svg {...c}><path d="M7 18a4 4 0 0 1-.5-7.97 5.5 5.5 0 0 1 10.6 1.02A3.5 3.5 0 0 1 17 18H7z" /></svg>);
+    case "warn": return (<svg {...c}><path d="M12 4 2.5 20h19L12 4z" /><path d="M12 10v4M12 17h.01" /></svg>);
+    case "checkCircle": return (<svg {...c}><circle cx="12" cy="12" r="8.5" /><path d="M8.5 12.2l2.4 2.4 4.6-5" /></svg>);
+    case "check": return (<svg {...c}><path d="M5 12.5l4.5 4.5L19 7" /></svg>);
+    case "refresh": return (<svg {...c}><path d="M20 11a8 8 0 0 0-14-4.5L4 8" /><path d="M4 4v4h4" /><path d="M4 13a8 8 0 0 0 14 4.5L20 16" /><path d="M20 20v-4h-4" /></svg>);
+    case "undo": return (<svg {...c}><path d="M9 7 4 12l5 5" /><path d="M4 12h10a5 5 0 0 1 0 10h-1" /></svg>);
+    case "sparkle": return (<svg {...c}><path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7L12 3z" /></svg>);
+    case "chat": return (<svg {...c}><path d="M20 12a7 7 0 0 1-7 7H8l-4 3v-4.5A7 7 0 0 1 4 12a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7z" /></svg>);
+    case "plus": return (<svg {...c}><path d="M12 5v14M5 12h14" /></svg>);
+    case "close": return (<svg {...c}><path d="M6 6l12 12M18 6L6 18" /></svg>);
+    case "trash": return (<svg {...c}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" /></svg>);
+    case "up": return (<svg {...c}><path d="M6 14l6-6 6 6" /></svg>);
+    case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
+    default: return null;
+  }
+}
+
 /* ===== 住所オートコンプリート（Google Places）=====
    キー未設定なら従来の手入力＋🗺️リンクにフォールバック */
 let gmapsPromise = null;
@@ -460,7 +488,7 @@ function AddressField({ loc, onChange }) {
       {q && (
         <a href={mapHref} target="_blank" rel="noreferrer" title={linked ? "連携済みの場所をGoogleマップで開く" : "Googleマップで開く"}
            className={"shrink-0 mr-2 text-[11px] font-bold px-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1 border active:scale-95 transition " + (linked ? "border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
-          {linked ? "📍" : "🗺️"} <span className="hidden sm:inline">{linked ? "連携済" : "地図"}</span>
+          <Icon name={linked ? "pin" : "map"} className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">{linked ? "連携済" : "地図"}</span>
         </a>
       )}
     </>
@@ -1419,21 +1447,21 @@ export default function App() {
         </div>
         <div className="px-3 py-2 flex gap-1.5">
           <button onClick={() => createProject(true)}
-            className="flex-1 text-[11px] font-bold py-2 rounded-lg"
+            className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-lg"
             style={{ background: theme.accent, color: accentText }}>
-            ＋ 新規案件
+            <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
           </button>
           <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createProject(true, ch.trim()); }}
             title="チャンネルを追加して案件を作成"
-            className="text-[11px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20">
-            ＋ch
+            className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20">
+            <Icon name="plus" className="w-3.5 h-3.5" />ch
           </button>
         </div>
         <div className="px-3 pb-2">
           <button onClick={() => { setImportTarget("new"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
             title="JSON / 構成台本コピー / TXT・CSV・Excel から取り込み（新規 or 現案件更新）"
-            className="w-full text-[11px] font-bold py-2 rounded-lg bg-white/10 hover:bg-white/20">
-            ⤓ 構成台本を取り込み
+            className="w-full inline-flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-lg bg-white/10 hover:bg-white/20">
+            <Icon name="download" className="w-4 h-4" /> 構成台本を取り込み
           </button>
         </div>
 
@@ -1463,7 +1491,7 @@ export default function App() {
                   </span>
                   <span className="text-[10px] text-white/30 tabular-nums">{items.length}</span>
                   <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
-                    <button title="このチャンネルに案件を追加" onClick={(e) => { e.stopPropagation(); createProject(true, channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[12px] leading-none">＋</button>
+                    <button title="このチャンネルに案件を追加" onClick={(e) => { e.stopPropagation(); createProject(true, channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">{<Icon name="plus" className="w-3.5 h-3.5" />}</button>
                     {channel !== DEFAULT_CHANNEL && (
                       <button title="チャンネル名を変更" onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
                     )}
@@ -1510,7 +1538,7 @@ export default function App() {
                           <button title="名前変更" onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
                           <button title="チャンネル移動" onClick={(e) => { e.stopPropagation(); setChannelEditId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">📁</button>
                           <button title="複製" onClick={(e) => { e.stopPropagation(); duplicateProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">⎘</button>
-                          <button title="削除" onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-red-500/40 text-[10px]">✕</button>
+                          <button title="削除" onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-red-500/40"><Icon name="trash" className="w-3 h-3" /></button>
                         </div>
                       </div>
                     </div>
@@ -1525,7 +1553,7 @@ export default function App() {
             className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10 text-left w-full">
             {user && user.picture
               ? <img src={user.picture} alt="" className="w-4 h-4 rounded-full shrink-0" referrerPolicy="no-referrer" />
-              : <span className="w-4 h-4 grid place-items-center shrink-0 text-[12px]">👤</span>}
+              : <Icon name="user" className="w-4 h-4 shrink-0" />}
             <span className="truncate">{user ? user.name + "（クラウド同期中）" : "Googleでログイン"}</span>
           </button>
           <a href="settings.html"
@@ -1619,14 +1647,14 @@ export default function App() {
             {sharing ? "発行中…" : project.shareId ? "共有を更新" : "共有"}
           </button>
           <button onClick={() => { setShowAssistant(true); setAssistantSummary(""); }} title="AIアシスタント（LINEのメッセージやメモを貼ると構成に反映）"
-            className="h-8 px-2.5 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
-            🤖 <span className="hidden sm:inline ml-1">AI反映</span>
+            className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
+            <Icon name="robot" className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline">AI反映</span>
           </button>
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
-            className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden">
+            className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden" style={{ color: mainText }}>
             {user && user.picture
               ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              : <span className="text-[15px]" style={{ color: mainText }}>{user ? "🙂" : "👤"}</span>}
+              : <Icon name="user" className="w-[18px] h-[18px]" />}
           </button>
           <button onClick={() => setShowTheme((s) => !s)} title="テーマカラー変更"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10">
@@ -1771,7 +1799,9 @@ export default function App() {
                                 onClick={() => updateRow(r.id, { done: !r.done })}
                                 title={r.done ? "撮影完了を取り消す（香盤表と連動）" : "このロケを撮影完了にする（香盤表と連動）"}
                                 className={"shrink-0 self-center text-[10px] font-bold px-2.5 py-1 my-1 mr-2 rounded-md whitespace-nowrap transition-colors " + (r.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
-                                {r.done ? "✅ 完了" : "✓ 撮影完了"}
+                                {r.done
+                                  ? <span className="inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />完了</span>
+                                  : <span className="inline-flex items-center gap-1"><Icon name="check" className="w-3.5 h-3.5" />撮影完了</span>}
                               </button>
                               <span className="self-center pr-3 text-[9px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
                             </div>
@@ -1779,10 +1809,10 @@ export default function App() {
                           {!isNarrow && (
                           <td className="pt-2 align-middle">
                             <div className={"flex items-center justify-end gap-0.5 pr-2 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
-                              <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}>↑</button>
-                              <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}>↓</button>
-                              <button className={opBtn} title="下にシーンを追加" onClick={() => insertBelow(idx, newScene("解説系"))}>＋</button>
-                              <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}>✕</button>
+                              <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
+                              <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
+                              <button className={opBtn} title="下にシーンを追加" onClick={() => insertBelow(idx, newScene("解説系"))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
+                              <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
                             </div>
                           </td>
                           )}
@@ -1874,10 +1904,10 @@ export default function App() {
                         {!isNarrow && (
                         <td className="align-top py-1.5 pr-2">
                           <div className={"flex items-center justify-end gap-0.5 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
-                            <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}>↑</button>
-                            <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}>↓</button>
-                            <button className={opBtn} title="下に行を追加" onClick={() => insertBelow(idx, newScene(r.type))}>＋</button>
-                            <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}>✕</button>
+                            <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
+                            <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
+                            <button className={opBtn} title="下に行を追加" onClick={() => insertBelow(idx, newScene(r.type))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
+                            <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
                           </div>
                         </td>
                         )}
@@ -1902,15 +1932,15 @@ export default function App() {
 
             <div className="mt-4 flex flex-wrap gap-2 items-center">
               <button onClick={() => setRows((rows) => [...rows, newLocation("")])}
-                className="text-xs font-bold px-4 py-2 rounded-full shadow-sm hover:opacity-90"
+                className="text-xs font-bold px-4 py-2 rounded-full shadow-sm hover:opacity-90 inline-flex items-center gap-1"
                 style={{ background: theme.main, color: mainText }}>
-                ＋ ロケーション
+                <Icon name="plus" className="w-3.5 h-3.5" /> ロケーション
               </button>
               {TYPE_KEYS.map((k) => (
                 <button key={k} onClick={() => setRows((rows) => [...rows, newScene(k)])}
-                  className="text-xs font-bold px-4 py-2 rounded-full shadow-sm hover:opacity-80"
+                  className="text-xs font-bold px-4 py-2 rounded-full shadow-sm hover:opacity-80 inline-flex items-center gap-1"
                   style={{ background: SECTION_TYPES[k].bg, color: SECTION_TYPES[k].color }}>
-                  ＋ {k}
+                  <Icon name="plus" className="w-3.5 h-3.5" /> {k}
                 </button>
               ))}
               <div className="flex-1" />
@@ -1952,7 +1982,7 @@ export default function App() {
                     <div className="flex flex-col items-center w-10 shrink-0">
                       <div className="w-9 h-9 rounded-full grid place-items-center font-bold text-[14px] shadow z-10 transition-colors"
                         style={{ background: loc.done ? "#A8A29E" : theme.accent, color: accentText, fontFamily: mono }}>
-                        {loc.done ? "✓" : i + 1}
+                        {loc.done ? <Icon name="check" className="w-4 h-4" /> : i + 1}
                       </div>
                       {i < locations.length - 1 && (
                         <div className="flex-1 flex flex-col items-center py-1">
@@ -1987,18 +2017,20 @@ export default function App() {
                           onClick={() => updateRow(loc.id, { done: !loc.done })}
                           title={loc.done ? "撮影完了を取り消す" : "このロケの撮影を完了にして畳む"}
                           className={"shrink-0 self-center text-[11px] font-bold px-2.5 py-1.5 my-1 rounded-md whitespace-nowrap transition-colors " + (loc.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
-                          {loc.done ? "↩︎ 戻す" : <><span className="sm:hidden">✓ 完了</span><span className="hidden sm:inline">✓ 撮影完了</span></>}
+                          {loc.done
+                            ? <span className="inline-flex items-center gap-1"><Icon name="undo" className="w-3.5 h-3.5" />戻す</span>
+                            : <span className="inline-flex items-center gap-1"><Icon name="check" className="w-3.5 h-3.5" /><span className="sm:hidden">完了</span><span className="hidden sm:inline">撮影完了</span></span>}
                         </button>
                         <div className="hidden sm:flex items-center gap-0.5 pr-2 opacity-0 group-hover/loc:opacity-100 transition-opacity">
-                          <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと上へ" onClick={() => moveLocationBlock(loc.id, -1)}>↑</button>
-                          <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと下へ" onClick={() => moveLocationBlock(loc.id, 1)}>↓</button>
+                          <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと上へ" onClick={() => moveLocationBlock(loc.id, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
+                          <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと下へ" onClick={() => moveLocationBlock(loc.id, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
                         </div>
                       </div>
 
                       {loc.done ? (
                         /* 完了時：グレーアウト＆縮小（1行サマリ） */
                         <div className="px-3 py-1.5 flex items-center gap-2 text-[10px] text-stone-400 whitespace-nowrap" style={{ fontFamily: mono }}>
-                          <span className="font-bold text-emerald-600">✅ 撮影完了</span>
+                          <span className="font-bold text-emerald-600 inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />撮影完了</span>
                           <span>{loc.scenes.length}シーン</span>
                           <span className="ml-auto">想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}</span>
                         </div>
@@ -2006,11 +2038,11 @@ export default function App() {
                         <>
                           <div className="grid sm:grid-cols-2 border-b border-stone-200/70 bg-white">
                             <div className="flex items-center sm:border-r border-stone-100">
-                              <span className="pl-3 pr-1 text-[11px] shrink-0">📍</span>
+                              <span className="pl-3 pr-1 shrink-0 text-stone-400"><Icon name="pin" className="w-3.5 h-3.5" /></span>
                               <AddressField loc={loc} onChange={(patch) => updateRow(loc.id, patch)} />
                             </div>
                             <div className="flex items-center border-t sm:border-t-0 border-stone-100">
-                              <span className="pl-3 pr-1 text-[11px] shrink-0">📝</span>
+                              <span className="pl-3 pr-1 shrink-0 text-stone-400"><Icon name="note" className="w-3.5 h-3.5" /></span>
                               <input
                                 value={loc.note}
                                 onChange={(e) => updateRow(loc.id, { note: e.target.value })}
@@ -2057,7 +2089,7 @@ export default function App() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider">Claudeの出力を取り込む</h3>
-              <button onClick={() => setShowImport(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+              <button onClick={() => setShowImport(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
@@ -2088,31 +2120,31 @@ export default function App() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider">構成台本を取り込み{importTarget === "current" ? " → この案件を更新" : " → 新規案件"}</h3>
-              <button onClick={() => setShowFullImport(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+              <button onClick={() => setShowFullImport(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               {/* 取込先の選択：新規案件 / 開いている案件を更新 */}
               <div className="flex items-center gap-1 p-1 mb-3 rounded-xl bg-stone-100 text-[12px] font-bold">
                 <button onClick={() => setImportTarget("new")}
-                  className={"flex-1 px-3 py-2 rounded-lg transition " + (importTarget === "new" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
-                  ＋ 新規案件として取り込む
+                  className={"flex-1 px-3 py-2 rounded-lg transition inline-flex items-center justify-center gap-1 " + (importTarget === "new" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
+                  <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件として取り込む
                 </button>
                 <button onClick={() => setImportTarget("current")} disabled={!project}
-                  className={"flex-1 px-3 py-2 rounded-lg transition disabled:opacity-40 " + (importTarget === "current" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
-                  ⟳ この案件を更新{project ? "（" + project.name + "）" : ""}
+                  className={"flex-1 px-3 py-2 rounded-lg transition disabled:opacity-40 inline-flex items-center justify-center gap-1 " + (importTarget === "current" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
+                  <Icon name="refresh" className="w-3.5 h-3.5" /> この案件を更新{project ? "（" + project.name + "）" : ""}
                 </button>
               </div>
               <p className="text-[12px] text-stone-500 mb-2">
-                <span className="font-bold" style={{ color: theme.accent }}>✨AIで整形：</span>Claude/GPT/Geminiで書いた原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼って押すと、AIが構成台本に整形します（数秒）。<br />
+                <span className="font-bold inline-flex items-center gap-1" style={{ color: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />AIで整形：</span>Claude/GPT/Geminiで書いた原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼って押すと、AIが構成台本に整形します（数秒）。<br />
                 <span className="text-stone-400">きっちり形が決まっている場合：</span>このツールの「台本コピー」TSV や <span style={{ fontFamily: mono }}>{"{ rows:[...] }"}</span> JSON を貼って「取り込む」でもOK。
-                {importTarget === "current" && <><br /><span className="font-bold text-amber-600">⚠️ 更新モード：</span>取り込んだ内容で今の構成を上書きします（案件名・共有リンクは維持）。</>}
+                {importTarget === "current" && <><br /><span className="font-bold text-amber-600 inline-flex items-center gap-1"><Icon name="warn" className="w-3.5 h-3.5" />更新モード：</span>取り込んだ内容で今の構成を上書きします（案件名・共有リンクは維持）。</>}
               </p>
               {/* ファイルから読み込む（TXT / CSV / Excel）*/}
               <input ref={importFileRef} type="file" accept=".txt,.csv,.tsv,.xlsx,.md,.json,text/plain,text/csv" onChange={onPickImportFile} className="hidden" />
               <div className="flex items-center gap-2 mb-2">
                 <button onClick={() => importFileRef.current && importFileRef.current.click()}
                   className="text-[12px] font-bold px-3 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5">
-                  📄 ファイルから読み込む
+                  <Icon name="file" className="w-4 h-4" /> ファイルから読み込む
                 </button>
                 <span className="text-[11px] text-stone-400">TXT・CSV・Excel(.xlsx) 対応{importFileName ? "　／　" : ""}<span className="font-bold text-stone-500">{importFileName}</span></span>
               </div>
@@ -2131,9 +2163,9 @@ export default function App() {
                   {importTarget === "current" ? "そのまま上書き更新" : "そのまま取り込む"}
                 </button>
                 <button onClick={aiParseImport} disabled={!fullImportText.trim() || aiParsing}
-                  className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40"
+                  className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
                   style={{ background: theme.accent, color: accentText }}>
-                  {aiParsing ? "整形中…" : (importTarget === "current" ? "✨ AIで整形して更新" : "✨ AIで整形して取り込む")}
+                  {aiParsing ? "整形中…" : <><Icon name="sparkle" className="w-3.5 h-3.5" />{importTarget === "current" ? "AIで整形して更新" : "AIで整形して取り込む"}</>}
                 </button>
               </div>
             </div>
@@ -2146,8 +2178,8 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAssistant(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">🤖 AIアシスタント — メッセージを構成に反映</h3>
-              <button onClick={() => setShowAssistant(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+              <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="robot" className="w-4 h-4" />AIアシスタント — メッセージを構成に反映</h3>
+              <button onClick={() => setShowAssistant(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2 leading-relaxed">
@@ -2161,15 +2193,15 @@ export default function App() {
               />
               {assistantSummary && (
                 <div className="mt-3 text-[12px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
-                  <span className="font-bold">✅ 反映しました</span>{"\n" + assistantSummary}
+                  <span className="font-bold inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />反映しました</span>{"\n" + assistantSummary}
                 </div>
               )}
               <div className="mt-3 flex justify-end items-center gap-2">
                 <button onClick={() => setShowAssistant(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 mr-auto">閉じる</button>
                 <button onClick={runAssistant} disabled={!assistantText.trim() || assistantBusy || !project}
-                  className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40"
+                  className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
                   style={{ background: theme.accent, color: accentText }}>
-                  {assistantBusy ? "反映中…" : "✨ 構成に反映する"}
+                  {assistantBusy ? "反映中…" : <><Icon name="sparkle" className="w-3.5 h-3.5" />構成に反映する</>}
                 </button>
               </div>
               <p className="text-[10px] text-stone-400 mt-2">既存の内容は極力残して、関係する所だけ更新します。違ったら⌘Zや編集で直してね。</p>
@@ -2183,8 +2215,8 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAccount(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">アカウント</h3>
-              <button onClick={() => setShowAccount(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+              <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="user" className="w-4 h-4" />アカウント</h3>
+              <button onClick={() => setShowAccount(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               {user ? (
@@ -2192,14 +2224,14 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     {user.picture
                       ? <img src={user.picture} alt="" className="w-12 h-12 rounded-full" referrerPolicy="no-referrer" />
-                      : <div className="w-12 h-12 rounded-full bg-stone-200 grid place-items-center text-xl">👤</div>}
+                      : <div className="w-12 h-12 rounded-full bg-stone-200 grid place-items-center text-stone-500"><Icon name="user" className="w-6 h-6" /></div>}
                     <div className="min-w-0">
                       <div className="text-sm font-bold truncate">{user.name}</div>
                       <div className="text-[12px] text-stone-500 truncate">{user.email}</div>
                     </div>
                   </div>
-                  <div className="mt-3 text-[12px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2 leading-relaxed">
-                    ☁️ <span className="font-bold">クラウド同期中</span>。案件はこのアカウントに保存され、スマホ・PC どの端末でも同じ案件を開けます。
+                  <div className="mt-3 text-[12px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-1.5">
+                    <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5" /><span><span className="font-bold">クラウド同期中</span>。案件はこのアカウントに保存され、スマホ・PC どの端末でも同じ案件を開けます。</span>
                   </div>
                   <div className="mt-4 flex justify-end">
                     <button onClick={logout} disabled={authBusy} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">ログアウト</button>
@@ -2215,7 +2247,7 @@ export default function App() {
                     <div className="flex justify-center py-2 min-h-[44px]"><div ref={gbtnRef} /></div>
                   ) : (
                     <div className="text-[12px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 leading-relaxed">
-                      ⚠️ Googleログインはまだ有効化されていません。<br />
+                      <span className="inline-flex items-center gap-1 font-bold"><Icon name="warn" className="w-3.5 h-3.5" />Googleログインはまだ有効化されていません。</span><br />
                       <span className="text-amber-700">管理者へ：</span><code style={{ fontFamily: mono }}>index.html</code> の <code style={{ fontFamily: mono }}>MG_GOOGLE_CLIENT_ID</code> に Google の OAuth クライアントID を設定してください。
                     </div>
                   )}
@@ -2233,11 +2265,11 @@ export default function App() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider">{shareModal.updated ? "共有リンクを更新しました" : "共有リンクを発行しました"}</h3>
-              <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+              <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
-                このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上の💬に届きます。
+                このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上のコメントボタンに届きます。
               </p>
               <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
                 <input readOnly value={shareModal.url} className="flex-1 min-w-0 bg-transparent text-[12px] focus:outline-none" style={{ fontFamily: mono }}
@@ -2262,8 +2294,8 @@ export default function App() {
             <div className="px-4 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider">先方コメント {openComments.length > 0 && <span className="ml-1 text-[11px] opacity-80">未対応 {openComments.length}</span>}</h3>
               <div className="flex items-center gap-1">
-                <button onClick={() => fetchComments()} title="再読み込み" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">⟳</button>
-                <button onClick={() => setShowComments(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+                <button onClick={() => fetchComments()} title="再読み込み" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="refresh" className="w-4 h-4" /></button>
+                <button onClick={() => setShowComments(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-3 space-y-2" style={{ background: "#F4F3EF" }}>
