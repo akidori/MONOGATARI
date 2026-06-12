@@ -1636,9 +1636,9 @@ export default function App() {
                   <div key={loc.id} className="relative flex gap-3 sm:gap-4">
                     {/* 縦ルート線＋番号 */}
                     <div className="flex flex-col items-center w-10 shrink-0">
-                      <div className="w-9 h-9 rounded-full grid place-items-center font-bold text-[14px] shadow z-10"
-                        style={{ background: theme.accent, color: accentText, fontFamily: mono }}>
-                        {i + 1}
+                      <div className="w-9 h-9 rounded-full grid place-items-center font-bold text-[14px] shadow z-10 transition-colors"
+                        style={{ background: loc.done ? "#A8A29E" : theme.accent, color: accentText, fontFamily: mono }}>
+                        {loc.done ? "✓" : i + 1}
                       </div>
                       {i < locations.length - 1 && (
                         <div className="flex-1 flex flex-col items-center py-1">
@@ -1650,15 +1650,15 @@ export default function App() {
                     </div>
 
                     {/* ロケーションカード */}
-                    <div className="flex-1 mb-4 rounded-xl border border-stone-200 bg-stone-50/60 overflow-hidden group/loc">
-                      <div className="flex items-stretch" style={{ background: theme.main }}>
+                    <div className={"flex-1 mb-4 rounded-xl border overflow-hidden group/loc transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : "border-stone-200 bg-stone-50/60")}>
+                      <div className="flex items-stretch" style={{ background: theme.main, filter: loc.done ? "grayscale(1)" : "none" }}>
                         <div className="w-4 shrink-0" style={{ background: stripe }} />
                         <input
                           type="time"
                           value={loc.time}
                           onChange={(e) => updateRow(loc.id, { time: e.target.value })}
                           className="bg-transparent text-[13px] font-bold px-2 py-2 w-[88px] focus:outline-none tabular-nums [color-scheme:dark]"
-                          style={{ color: mainText, fontFamily: mono }}
+                          style={{ color: mainText, fontFamily: mono, textDecoration: loc.done ? "line-through" : "none" }}
                           title="到着・開始予定時刻"
                         />
                         <input
@@ -1666,51 +1666,69 @@ export default function App() {
                           onChange={(e) => updateRow(loc.id, { label: e.target.value })}
                           placeholder="ロケーション名"
                           className="flex-1 min-w-0 bg-transparent text-[14px] font-bold tracking-wide px-2 py-2 focus:outline-none"
-                          style={{ color: mainText }}
+                          style={{ color: mainText, textDecoration: loc.done ? "line-through" : "none" }}
                         />
+                        {/* 撮影完了トグル（常時表示・スマホ対応） */}
+                        <button
+                          onClick={() => updateRow(loc.id, { done: !loc.done })}
+                          title={loc.done ? "撮影完了を取り消す" : "このロケの撮影を完了にして畳む"}
+                          className={"shrink-0 self-center text-[11px] font-bold px-3 py-1.5 my-1 rounded-md whitespace-nowrap transition-colors " + (loc.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
+                          {loc.done ? "↩︎ 戻す" : "✓ 撮影完了"}
+                        </button>
                         <div className="flex items-center gap-0.5 pr-2 opacity-0 group-hover/loc:opacity-100 transition-opacity">
                           <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと上へ" onClick={() => moveLocationBlock(loc.id, -1)}>↑</button>
                           <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと下へ" onClick={() => moveLocationBlock(loc.id, 1)}>↓</button>
                         </div>
                       </div>
 
-                      <div className="grid sm:grid-cols-2 border-b border-stone-200/70 bg-white">
-                        <div className="flex items-center sm:border-r border-stone-100">
-                          <span className="pl-3 pr-1 text-[11px] shrink-0">📍</span>
-                          <input
-                            value={loc.address}
-                            onChange={(e) => updateRow(loc.id, { address: e.target.value })}
-                            placeholder="住所・集合場所"
-                            className="block w-full bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
-                          />
+                      {loc.done ? (
+                        /* 完了時：グレーアウト＆縮小（1行サマリ） */
+                        <div className="px-3 py-1.5 flex items-center gap-2 text-[10px] text-stone-400 whitespace-nowrap" style={{ fontFamily: mono }}>
+                          <span className="font-bold text-emerald-600">✅ 撮影完了</span>
+                          <span>{loc.scenes.length}シーン</span>
+                          <span className="ml-auto">想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}</span>
                         </div>
-                        <div className="flex items-center border-t sm:border-t-0 border-stone-100">
-                          <span className="pl-3 pr-1 text-[11px] shrink-0">📝</span>
-                          <input
-                            value={loc.note}
-                            onChange={(e) => updateRow(loc.id, { note: e.target.value })}
-                            placeholder="メモ（駐車場・許可・持ち物など）"
-                            className="block w-full bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
-                          />
-                        </div>
-                      </div>
+                      ) : (
+                        <>
+                          <div className="grid sm:grid-cols-2 border-b border-stone-200/70 bg-white">
+                            <div className="flex items-center sm:border-r border-stone-100">
+                              <span className="pl-3 pr-1 text-[11px] shrink-0">📍</span>
+                              <input
+                                value={loc.address}
+                                onChange={(e) => updateRow(loc.id, { address: e.target.value })}
+                                placeholder="住所・集合場所"
+                                className="block w-full bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
+                              />
+                            </div>
+                            <div className="flex items-center border-t sm:border-t-0 border-stone-100">
+                              <span className="pl-3 pr-1 text-[11px] shrink-0">📝</span>
+                              <input
+                                value={loc.note}
+                                onChange={(e) => updateRow(loc.id, { note: e.target.value })}
+                                placeholder="メモ（駐車場・許可・持ち物など）"
+                                className="block w-full bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
+                              />
+                            </div>
+                          </div>
 
-                      {/* シーンチップ */}
-                      <div className="px-3 py-2.5 flex flex-wrap items-center gap-1.5">
-                        {loc.scenes.length === 0 && <span className="text-[11px] text-stone-300">シーンなし</span>}
-                        {loc.scenes.map((s) => {
-                          const st = SECTION_TYPES[s.type];
-                          return (
-                            <span key={s.id} className="text-[10px] font-bold px-2 py-1 rounded-full"
-                              style={{ background: st.bg, color: st.color }}>
-                              {s.label || st.full}
+                          {/* シーンチップ */}
+                          <div className="px-3 py-2.5 flex flex-wrap items-center gap-1.5">
+                            {loc.scenes.length === 0 && <span className="text-[11px] text-stone-300">シーンなし</span>}
+                            {loc.scenes.map((s) => {
+                              const st = SECTION_TYPES[s.type];
+                              return (
+                                <span key={s.id} className="text-[10px] font-bold px-2 py-1 rounded-full"
+                                  style={{ background: st.bg, color: st.color }}>
+                                  {s.label || st.full}
+                                </span>
+                              );
+                            })}
+                            <span className="ml-auto text-[10px] text-stone-400 whitespace-nowrap" style={{ fontFamily: mono }}>
+                              {loc.scenes.length}シーン / 想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}
                             </span>
-                          );
-                        })}
-                        <span className="ml-auto text-[10px] text-stone-400 whitespace-nowrap" style={{ fontFamily: mono }}>
-                          {loc.scenes.length}シーン / 想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}
-                        </span>
-                      </div>
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 ))}
