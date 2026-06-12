@@ -349,24 +349,20 @@ const textOn = (hex) => {
 };
 
 /* ---------- 原稿セル：◼︎自動挿入 + 質問行をアクセント色・太字で表示 ---------- */
-/* インライン書式: **太字** / !!赤文字!!（ネスト可：!!**赤太字**!!） */
-function renderInline(text, keyBase) {
-  const re = /(\*\*([\s\S]+?)\*\*)|(!!([\s\S]+?)!!)/;
-  const out = [];
-  let rest = text, i = 0;
-  while (rest.length) {
-    const m = re.exec(rest);
-    if (!m) { out.push(rest); break; }
-    if (m.index > 0) out.push(rest.slice(0, m.index));
-    if (m[1] != null) {
-      out.push(<strong key={keyBase + "b" + i} style={{ fontWeight: 800 }}>{renderInline(m[2], keyBase + "b" + i + "_")}</strong>);
-    } else {
-      out.push(<span key={keyBase + "r" + i} style={{ color: "#DC2645" }}>{renderInline(m[4], keyBase + "r" + i + "_")}</span>);
-    }
-    rest = rest.slice(m.index + m[0].length);
-    i++;
+/* インライン書式: **太字** / !!赤文字!!（ネスト可・改行またぎ可）。
+   ** と !! をトグルとして全文を走査し、書式付きの run 配列に分解する */
+function buildStyledRuns(text) {
+  const runs = [];
+  let bold = false, red = false, buf = "", bBold = false, bRed = false;
+  const flush = () => { if (buf) { runs.push({ text: buf, bold: bBold, red: bRed }); buf = ""; } };
+  for (let i = 0; i < text.length; ) {
+    if (text[i] === "*" && text[i + 1] === "*") { flush(); bold = !bold; i += 2; continue; }
+    if (text[i] === "!" && text[i + 1] === "!") { flush(); red = !red; i += 2; continue; }
+    if (!buf) { bBold = bold; bRed = red; }
+    buf += text[i]; i++;
   }
-  return out;
+  flush();
+  return runs;
 }
 
 function ScriptCell({ value, onChange, placeholder, accent = "#E63946" }) {
@@ -421,15 +417,25 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946" }) {
     }
   };
 
-  /* 質問行（◼︎始まり）に色と太字をつけた表示レイヤー */
+  /* 質問行（◼︎始まり）に色と太字をつけた表示レイヤー。
+     太字/赤文字は全文を run 化してから行に流すので、改行をまたぐ ** でも崩れない */
+  const runs = buildStyledRuns(value || "");
+  const qFlags = runs.map((r) => r.text).join("").split("\n").map((l) => /^\s*◼/.test(l));
+  const styleFor = (r, isQ) => {
+    const st = {};
+    if (r.red) st.color = "#DC2645";
+    else if (isQ) st.color = accent;
+    if (r.bold) st.fontWeight = 800;
+    else if (isQ) st.fontWeight = 700;
+    return st;
+  };
   const nodes = [];
-  (value || "").split("\n").forEach((line, i) => {
-    if (i) nodes.push("\n");
-    if (/^\s*◼/.test(line)) {
-      nodes.push(<span key={i} style={{ color: accent, fontWeight: 700 }}>{renderInline(line, "l" + i)}</span>);
-    } else {
-      nodes.push(<span key={i}>{renderInline(line, "l" + i)}</span>);
-    }
+  let li = 0, key = 0;
+  runs.forEach((r) => {
+    r.text.split("\n").forEach((p, idx) => {
+      if (idx > 0) { nodes.push("\n"); li++; }
+      if (p) nodes.push(<span key={key++} style={styleFor(r, qFlags[li])}>{p}</span>);
+    });
   });
 
   const fmtBtn = "w-6 h-6 grid place-items-center rounded-md bg-white border border-stone-200 shadow-sm hover:bg-stone-50 text-[12px] leading-none";
@@ -488,6 +494,7 @@ export default function App() {
   const [dragIds, setDragIds] = useState(null);             // 複数行ドラッグ中のid配列
   const [selectedIds, setSelectedIds] = useState([]);       // 複数選択中の行id
   const [painting, setPainting] = useState(false);          // チェック欄ドラッグ選択中
+  const [isNarrow, setIsNarrow] = useState(false);          // スマホ幅（操作列を隠す等）
   const lastSelRef = useRef(null);                          // shift範囲選択の起点
   /* 共有・コメント */
   const [shareModal, setShareModal] = useState(null);       // {url, id} or null
@@ -929,6 +936,13 @@ export default function App() {
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
     return () => { window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
+  }, []);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 640px)");
+    const on = () => setIsNarrow(mq.matches);
+    on(); mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
   }, []);
 
   /* 時間(TC)文字列 → 秒。"mm:ss" / "h:mm:ss" / "0分00秒" / 数字(秒) を許容 */
@@ -1462,19 +1476,20 @@ export default function App() {
 
             {/* 構成テーブル */}
             <section className={cardCls}>
-              <table className="w-full border-collapse table-fixed">
+             <div className="overflow-x-auto">
+              <table className="w-full border-collapse table-fixed" style={{ minWidth: isNarrow ? 600 : undefined }}>
                 <colgroup>
-                  <col style={{ width: 86 }} />
-                  <col style={{ width: 148 }} />
-                  <col style={{ width: 148 }} />
+                  <col style={{ width: isNarrow ? 64 : 86 }} />
+                  <col style={{ width: isNarrow ? 130 : 148 }} />
+                  <col style={{ width: isNarrow ? 120 : 148 }} />
                   <col style={{ width: 58 }} />
                   <col style={{ width: 80 }} />
                   <col />
-                  <col style={{ width: 100 }} />
+                  {!isNarrow && <col style={{ width: 100 }} />}
                 </colgroup>
                 <thead>
                   <tr style={{ background: theme.main, color: mainText }}>
-                    {["時間", "内容", "シーン", "秒数", "所要時間", "原稿", ""].map((h, i) => (
+                    {["時間", "内容", "シーン", "秒数", "所要時間", "原稿", ...(isNarrow ? [] : [""])].map((h, i) => (
                       <th key={i} className="px-3 py-2 text-left text-[10px] font-bold tracking-[0.15em] whitespace-nowrap" style={{ opacity: 0.9 }}>{h}</th>
                     ))}
                   </tr>
@@ -1507,6 +1522,7 @@ export default function App() {
                               <span className="self-center pr-3 text-[9px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
                             </div>
                           </td>
+                          {!isNarrow && (
                           <td className="pt-2 align-middle">
                             <div className={"flex items-center justify-end gap-0.5 pr-2 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
                               <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}>↑</button>
@@ -1515,6 +1531,7 @@ export default function App() {
                               <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}>✕</button>
                             </div>
                           </td>
+                          )}
                         </tr>
                       );
                     }
@@ -1600,6 +1617,7 @@ export default function App() {
                         <td className="align-top p-0 border-l border-stone-100">
                           <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} />
                         </td>
+                        {!isNarrow && (
                         <td className="align-top py-1.5 pr-2">
                           <div className={"flex items-center justify-end gap-0.5 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
                             <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}>↑</button>
@@ -1608,6 +1626,7 @@ export default function App() {
                             <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}>✕</button>
                           </div>
                         </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -1620,10 +1639,11 @@ export default function App() {
                     <td className="px-1 py-2.5 text-center text-[12px] tabular-nums" style={{ fontFamily: mono, opacity: 0.7 }}>{totalTarget}</td>
                     <td className="px-2 py-2.5 text-[13px] font-bold tabular-nums whitespace-nowrap" style={{ fontFamily: mono }}>{fmt(totalEst)}</td>
                     <td className="px-3 py-2.5 text-[11px]" style={{ fontFamily: mono, opacity: 0.6 }}>{totalChars.toLocaleString()}字</td>
-                    <td></td>
+                    {!isNarrow && <td></td>}
                   </tr>
                 </tfoot>
               </table>
+             </div>
             </section>
 
             <div className="mt-4 flex flex-wrap gap-2 items-center">
@@ -1697,7 +1717,7 @@ export default function App() {
                           type="time"
                           value={loc.time}
                           onChange={(e) => updateRow(loc.id, { time: e.target.value })}
-                          className="bg-transparent text-[13px] font-bold px-2 py-2 w-[88px] focus:outline-none tabular-nums [color-scheme:dark]"
+                          className="bg-transparent text-[13px] font-bold px-1 py-2 w-[78px] shrink-0 min-w-0 focus:outline-none tabular-nums [color-scheme:dark]"
                           style={{ color: mainText, fontFamily: mono, textDecoration: loc.done ? "line-through" : "none" }}
                           title="到着・開始予定時刻"
                         />
@@ -1712,10 +1732,10 @@ export default function App() {
                         <button
                           onClick={() => updateRow(loc.id, { done: !loc.done })}
                           title={loc.done ? "撮影完了を取り消す" : "このロケの撮影を完了にして畳む"}
-                          className={"shrink-0 self-center text-[11px] font-bold px-3 py-1.5 my-1 rounded-md whitespace-nowrap transition-colors " + (loc.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
-                          {loc.done ? "↩︎ 戻す" : "✓ 撮影完了"}
+                          className={"shrink-0 self-center text-[11px] font-bold px-2.5 py-1.5 my-1 rounded-md whitespace-nowrap transition-colors " + (loc.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
+                          {loc.done ? "↩︎ 戻す" : <><span className="sm:hidden">✓ 完了</span><span className="hidden sm:inline">✓ 撮影完了</span></>}
                         </button>
-                        <div className="flex items-center gap-0.5 pr-2 opacity-0 group-hover/loc:opacity-100 transition-opacity">
+                        <div className="hidden sm:flex items-center gap-0.5 pr-2 opacity-0 group-hover/loc:opacity-100 transition-opacity">
                           <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと上へ" onClick={() => moveLocationBlock(loc.id, -1)}>↑</button>
                           <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと下へ" onClick={() => moveLocationBlock(loc.id, 1)}>↓</button>
                         </div>
@@ -1737,8 +1757,17 @@ export default function App() {
                                 value={loc.address}
                                 onChange={(e) => updateRow(loc.id, { address: e.target.value })}
                                 placeholder="住所・集合場所"
-                                className="block w-full bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
+                                className="block w-full min-w-0 bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
                               />
+                              {(loc.address || "").trim() && (
+                                <a
+                                  href={"https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(loc.address.trim())}
+                                  target="_blank" rel="noreferrer"
+                                  title="Googleマップで開く"
+                                  className="shrink-0 mr-2 text-[11px] font-bold px-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1 border border-stone-200 text-stone-600 hover:bg-stone-50 active:scale-95 transition">
+                                  🗺️ <span className="hidden sm:inline">地図</span>
+                                </a>
+                              )}
                             </div>
                             <div className="flex items-center border-t sm:border-t-0 border-stone-100">
                               <span className="pl-3 pr-1 text-[11px] shrink-0">📝</span>
