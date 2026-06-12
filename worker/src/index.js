@@ -12,7 +12,7 @@
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -138,12 +138,95 @@ export default {
         return json({ ok: true });
       }
 
+      // ===== ログイン（Google）→ 自前セッショントークン発行 =====
+      // POST /api/auth/google { credential }
+      if (request.method === "POST" && parts[1] === "auth" && parts[2] === "google") {
+        const b = await request.json();
+        const cred = (b && b.credential ? b.credential : "").toString();
+        if (!cred) return json({ error: "credential がありません" }, 400);
+        const ti = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(cred));
+        if (!ti.ok) return json({ error: "Google の検証に失敗しました" }, 401);
+        const g = await ti.json();
+        if (env.GOOGLE_CLIENT_ID && g.aud !== env.GOOGLE_CLIENT_ID) return json({ error: "client_id が一致しません" }, 401);
+        if (!g.sub) return json({ error: "ユーザー情報を取得できませんでした" }, 401);
+        const user = { sub: g.sub, email: g.email || "", name: g.name || g.email || "ユーザー", picture: g.picture || "" };
+        const now = Math.floor(Date.now() / 1000);
+        const token = await mintSession({ ...user, iat: now, exp: now + 60 * 60 * 24 * 30 }, sessionSecret(env));
+        return json({ token, user });
+      }
+
+      // ===== ユーザー別ストレージ（要ログイン）。KVは SNAPS を u:<sub>: で間借り =====
+      // POST /api/kv/{get|set|delete|list}
+      if (request.method === "POST" && parts[1] === "kv") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const pre = "u:" + u.sub + ":";
+        const b = await request.json();
+        const op = parts[2];
+        if (op === "get") {
+          const v = await env.SNAPS.get(pre + (b.key || ""));
+          return json({ value: v });
+        }
+        if (op === "set") {
+          if (!b.key) return json({ error: "key がありません" }, 400);
+          await env.SNAPS.put(pre + b.key, (b.value == null ? "" : b.value).toString());
+          return json({ ok: true });
+        }
+        if (op === "delete") {
+          await env.SNAPS.delete(pre + (b.key || ""));
+          return json({ ok: true });
+        }
+        if (op === "list") {
+          const out = await env.SNAPS.list({ prefix: pre + (b.prefix || ""), limit: 1000 });
+          return json({ keys: out.keys.map((k) => k.name.slice(pre.length)) });
+        }
+        return json({ error: "unknown kv op" }, 400);
+      }
+
       return json({ error: "no route" }, 404);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 500);
     }
   },
 };
+
+/* ===== セッショントークン（HS256 JWT）。Google検証後に発行し、以降のKVアクセスに使う ===== */
+function sessionSecret(env) { return env.SESSION_SECRET || "dev-secret-change-me-please"; }
+function b64urlBytes(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  let s = ""; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+const b64urlStr = (str) => b64urlBytes(new TextEncoder().encode(str));
+function b64urlToStr(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = s.length % 4 ? 4 - (s.length % 4) : 0;
+  return atob(s + "=".repeat(pad));
+}
+async function hmacKey(secret) {
+  return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"]);
+}
+async function mintSession(payload, secret) {
+  const data = b64urlStr(JSON.stringify({ alg: "HS256", typ: "JWT" })) + "." + b64urlStr(JSON.stringify(payload));
+  const sig = await crypto.subtle.sign("HMAC", await hmacKey(secret), new TextEncoder().encode(data));
+  return data + "." + b64urlBytes(new Uint8Array(sig));
+}
+async function verifySession(token, secret) {
+  if (!token) return null;
+  const p = token.split("."); if (p.length !== 3) return null;
+  const data = p[0] + "." + p[1];
+  const sig = Uint8Array.from(b64urlToStr(p[2]), (c) => c.charCodeAt(0));
+  const ok = await crypto.subtle.verify("HMAC", await hmacKey(secret), sig, new TextEncoder().encode(data));
+  if (!ok) return null;
+  let payload; try { payload = JSON.parse(b64urlToStr(p[1])); } catch (e) { return null; }
+  if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
+  return payload;
+}
+async function requireUser(request, env) {
+  const m = (request.headers.get("Authorization") || "").match(/^Bearer\s+(.+)$/i);
+  if (!m) return null;
+  return verifySession(m[1], sessionSecret(env));
+}
 
 /* 共有スナップショットは必要な項目だけに絞る（テーマ/原稿は残す、巨大化を防ぐ） */
 function slim(p) {

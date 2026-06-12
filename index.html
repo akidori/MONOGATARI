@@ -9,6 +9,11 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <script src="https://cdn.tailwindcss.com"></script>
+<!-- Googleログイン（任意・クラウド同期用）。下のIDは Google Cloud の OAuth クライアントID を貼る -->
+<script>window.MG_GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com";</script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- 住所オートコンプリート用：Google Maps JavaScript API キー（Places有効化＋請求設定が必要） -->
+<script>window.MG_GMAPS_KEY = "REPLACE_WITH_YOUR_GOOGLE_MAPS_API_KEY";</script>
 <script>
 if (typeof window.storage === "undefined") {
   window.storage = {

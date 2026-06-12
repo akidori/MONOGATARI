@@ -94,6 +94,39 @@ const SHARE_API = (() => {
 })();
 const shareUrl = (id) => location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id;
 
+/* ===== Googleログイン＋クラウド同期 =====
+   未ログイン: window.storage = localStorage（index.htmlのshim）
+   ログイン中: window.storage = cloudStorage（Worker /api/kv 経由・アカウント別） */
+const GOOGLE_CLIENT_ID = ((typeof window !== "undefined" && window.MG_GOOGLE_CLIENT_ID) || "").trim().replace(/^REPLACE_.*/, "");
+const AUTH_TOKEN_KEY = "mg:auth:token";
+const AUTH_USER_KEY = "mg:auth:user";
+const LOCAL_STORAGE_SHIM = (typeof window !== "undefined" && window.storage) ? window.storage : null;
+let MG_SESSION = null; // 現在のセッショントークン（cloudStorage が参照）
+
+async function authFetch(path, body) {
+  const res = await fetch(SHARE_API + path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(MG_SESSION ? { Authorization: "Bearer " + MG_SESSION } : {}) },
+    body: JSON.stringify(body || {}),
+  });
+  if (res.status === 401) { const e = new Error("unauthorized"); e.code = 401; throw e; }
+  if (!res.ok) { let m = "通信エラー"; try { m = (await res.json()).error || m; } catch (_) {} throw new Error(m); }
+  return res.json();
+}
+
+/* localStorage shim と同じ形（get は未存在で throw）でクラウドKVをラップ */
+const cloudStorage = {
+  async get(key) { const r = await authFetch("/api/kv/get", { key }); if (!r || r.value == null) throw new Error("nf"); return { key, value: r.value, shared: true }; },
+  async set(key, value) { await authFetch("/api/kv/set", { key, value }); return { key, value, shared: true }; },
+  async delete(key) { await authFetch("/api/kv/delete", { key }); return { key, deleted: true, shared: true }; },
+  async list(prefix) { const r = await authFetch("/api/kv/list", { prefix: prefix || "" }); return { keys: r.keys || [], prefix, shared: true }; },
+};
+
+function setActiveStorage(useCloud) {
+  if (typeof window === "undefined") return;
+  window.storage = (useCloud && MG_SESSION) ? cloudStorage : LOCAL_STORAGE_SHIM;
+}
+
 const DEFAULT_CHANNEL = "未分類";
 const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL) => ({
   id: uid(),
@@ -365,6 +398,75 @@ function buildStyledRuns(text) {
   return runs;
 }
 
+/* ===== 住所オートコンプリート（Google Places）=====
+   キー未設定なら従来の手入力＋🗺️リンクにフォールバック */
+let gmapsPromise = null;
+function loadGMaps() {
+  if (typeof window === "undefined") return Promise.reject(new Error("no-window"));
+  if (window.google && window.google.maps && window.google.maps.places) return Promise.resolve();
+  const key = ((window.MG_GMAPS_KEY || "").trim()).replace(/^REPLACE_.*/, "");
+  if (!key) return Promise.reject(new Error("no-key"));
+  if (gmapsPromise) return gmapsPromise;
+  gmapsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://maps.googleapis.com/maps/api/js?key=" + encodeURIComponent(key) + "&libraries=places&language=ja&region=JP&loading=async";
+    s.async = true; s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("load-failed"));
+    document.head.appendChild(s);
+  });
+  return gmapsPromise;
+}
+
+function AddressField({ loc, onChange }) {
+  const ref = useRef(null);
+  const acRef = useRef(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadGMaps().then(() => {
+      if (cancelled || !ref.current || acRef.current || !(window.google && google.maps && google.maps.places)) return;
+      const ac = new google.maps.places.Autocomplete(ref.current, {
+        fields: ["formatted_address", "name", "geometry", "place_id"],
+      });
+      ac.addListener("place_changed", () => {
+        const p = ac.getPlace();
+        if (!p) return;
+        const addr = p.formatted_address || (ref.current ? ref.current.value : "") || "";
+        const name = p.name && !addr.includes(p.name) ? p.name : "";
+        const display = (name ? name + " " : "") + addr;
+        const patch = { address: display.trim(), placeId: p.place_id || "", lat: null, lng: null };
+        if (p.geometry && p.geometry.location) { patch.lat = p.geometry.location.lat(); patch.lng = p.geometry.location.lng(); }
+        onChange(patch);
+      });
+      acRef.current = ac;
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const q = (loc.address || "").trim();
+  const linked = !!loc.placeId || loc.lat != null;
+  const mapHref = !q ? null
+    : loc.placeId ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q) + "&query_place_id=" + encodeURIComponent(loc.placeId)
+    : loc.lat != null ? "https://www.google.com/maps/search/?api=1&query=" + loc.lat + "," + loc.lng
+    : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
+  return (
+    <>
+      <input
+        ref={ref}
+        value={loc.address}
+        onChange={(e) => onChange({ address: e.target.value, placeId: "", lat: null, lng: null })}
+        placeholder="住所・施設名で検索（例：東京タワー）"
+        className="block w-full min-w-0 bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
+      />
+      {q && (
+        <a href={mapHref} target="_blank" rel="noreferrer" title={linked ? "連携済みの場所をGoogleマップで開く" : "Googleマップで開く"}
+           className={"shrink-0 mr-2 text-[11px] font-bold px-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1 border active:scale-95 transition " + (linked ? "border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
+          {linked ? "📍" : "🗺️"} <span className="hidden sm:inline">{linked ? "連携済" : "地図"}</span>
+        </a>
+      )}
+    </>
+  );
+}
+
 function ScriptCell({ value, onChange, placeholder, accent = "#E63946" }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
@@ -486,6 +588,10 @@ export default function App() {
   const [importFileName, setImportFileName] = useState("");
   const importFileRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [user, setUser] = useState(null);                   // ログイン中のGoogleユーザー（null=未ログイン）
+  const [showAccount, setShowAccount] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const gbtnRef = useRef(null);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
@@ -511,44 +617,126 @@ export default function App() {
     document.head.appendChild(link);
   }, []);
 
-  /* 初期読み込み：index取得 → なければ旧データ移行 or 新規作成 */
+  /* index取得 → なければ旧データ移行 or 新規作成。ログイン/ログアウト後にも再実行する */
+  const loadAll = async () => {
+    try {
+      if (typeof window.storage === "undefined") { setLoaded(true); return; }
+      let idx = null;
+      try { const r = await window.storage.get(STORE_INDEX); idx = r && r.value ? JSON.parse(r.value) : null; }
+      catch (e) { if (e && e.code === 401) throw e; }
+
+      if (!idx || !idx.length) {
+        // 旧単一データがあれば1案件として移行
+        let migrated = null;
+        try {
+          const old = await window.storage.get(STORAGE_KEY);
+          if (old && old.value) {
+            const p = migrate(JSON.parse(old.value));
+            migrated = { ...newProjectData("（移行）案件1"), ...p, id: uid(), name: "案件1" };
+          }
+        } catch (e) {}
+        const first = migrated || newProjectData("案件1");
+        idx = [{ id: first.id, name: first.name, channel: first.channel || DEFAULT_CHANNEL, createdAt: first.createdAt }];
+        await window.storage.set(STORE_PROJ(first.id), JSON.stringify(first));
+        await window.storage.set(STORE_INDEX, JSON.stringify(idx));
+        setIndex(idx); setActiveId(first.id); setProject(first);
+        setLoaded(true);
+        return;
+      }
+
+      // 既存indexにchannelが無ければ補完
+      idx = idx.map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL }));
+      setIndex(idx);
+      const firstId = idx[0].id;
+      const r = await window.storage.get(STORE_PROJ(firstId));
+      const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(idx[0].name);
+      setActiveId(firstId); setProject(data);
+    } catch (e) {
+      if (e && e.code === 401) { doLogoutLocal(); return loadAll(); } // セッション切れ→ローカルに戻す
+      console.error(e);
+    }
+    setLoaded(true);
+  };
+
+  /* ログイン状態をクリアしてローカルストレージに戻す（再ロードは呼び出し側） */
+  const doLogoutLocal = () => {
+    MG_SESSION = null; setUser(null);
+    try { localStorage.removeItem(AUTH_TOKEN_KEY); localStorage.removeItem(AUTH_USER_KEY); } catch (e) {}
+    setActiveStorage(false);
+  };
+
+  /* 初回ログイン時：クラウドが空ならローカル案件を引っ越す */
+  const migrateLocalToCloudIfEmpty = async () => {
+    try {
+      const r = await cloudStorage.list("");
+      if ((r.keys || []).some((k) => k === STORE_INDEX)) return; // 既にクラウドに案件あり
+      let lidx = null;
+      try { const x = await LOCAL_STORAGE_SHIM.get(STORE_INDEX); lidx = x && x.value ? JSON.parse(x.value) : null; } catch (e) {}
+      if (!lidx || !lidx.length) return;
+      for (const it of lidx) {
+        try { const p = await LOCAL_STORAGE_SHIM.get(STORE_PROJ(it.id)); if (p && p.value) await cloudStorage.set(STORE_PROJ(it.id), p.value); } catch (e) {}
+      }
+      await cloudStorage.set(STORE_INDEX, JSON.stringify(lidx));
+      showToast("この端末の案件をクラウドに移行しました");
+    } catch (e) {}
+  };
+
+  /* Googleの資格情報(JWT) → Worker でセッション発行 → クラウド同期へ切替 */
+  const handleGoogleCredential = async (credential) => {
+    if (!credential) return;
+    setAuthBusy(true);
+    try {
+      const res = await fetch(SHARE_API + "/api/auth/google", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ credential }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.token) throw new Error(d.error || "ログインに失敗しました");
+      MG_SESSION = d.token; setUser(d.user);
+      try { localStorage.setItem(AUTH_TOKEN_KEY, d.token); localStorage.setItem(AUTH_USER_KEY, JSON.stringify(d.user)); } catch (e) {}
+      setActiveStorage(true);
+      await migrateLocalToCloudIfEmpty();
+      setLoaded(false); await loadAll();
+      setShowAccount(false);
+      showToast("ログインしました：" + (d.user.name || ""));
+    } catch (e) {
+      showToast("ログイン失敗：" + (e.message || e));
+    } finally { setAuthBusy(false); }
+  };
+
+  const logout = async () => {
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
+    doLogoutLocal();
+    setLoaded(false); await loadAll();
+    setShowAccount(false);
+    showToast("ログアウトしました（この端末のローカルデータに戻りました）");
+  };
+
+  /* 初期読み込み：保存済みログインを復元してから読み込む */
   useEffect(() => {
     (async () => {
       try {
-        if (typeof window.storage === "undefined") { setLoaded(true); return; }
-        let idx = null;
-        try { const r = await window.storage.get(STORE_INDEX); idx = r && r.value ? JSON.parse(r.value) : null; } catch (e) {}
-
-        if (!idx || !idx.length) {
-          // 旧単一データがあれば1案件として移行
-          let migrated = null;
-          try {
-            const old = await window.storage.get(STORAGE_KEY);
-            if (old && old.value) {
-              const p = migrate(JSON.parse(old.value));
-              migrated = { ...newProjectData("（移行）案件1"), ...p, id: uid(), name: "案件1" };
-            }
-          } catch (e) {}
-          const first = migrated || newProjectData("案件1");
-          idx = [{ id: first.id, name: first.name, channel: first.channel || DEFAULT_CHANNEL, createdAt: first.createdAt }];
-          await window.storage.set(STORE_PROJ(first.id), JSON.stringify(first));
-          await window.storage.set(STORE_INDEX, JSON.stringify(idx));
-          setIndex(idx); setActiveId(first.id); setProject(first);
-          setLoaded(true);
-          return;
-        }
-
-        // 既存indexにchannelが無ければ補完
-        idx = idx.map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL }));
-        setIndex(idx);
-        const firstId = idx[0].id;
-        const r = await window.storage.get(STORE_PROJ(firstId));
-        const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(idx[0].name);
-        setActiveId(firstId); setProject(data);
-      } catch (e) { console.error(e); }
-      setLoaded(true);
+        const t = localStorage.getItem(AUTH_TOKEN_KEY), us = localStorage.getItem(AUTH_USER_KEY);
+        if (t && us) { MG_SESSION = t; setUser(JSON.parse(us)); setActiveStorage(true); }
+      } catch (e) {}
+      await loadAll();
     })();
   }, []);
+
+  /* アカウントモーダルを開いたら Googleボタンを描画 */
+  useEffect(() => {
+    if (!showAccount || user || !GOOGLE_CLIENT_ID) return;
+    let tries = 0;
+    const t = setInterval(() => {
+      if (window.google && google.accounts && google.accounts.id) {
+        clearInterval(t);
+        try {
+          google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: (resp) => handleGoogleCredential(resp.credential) });
+          if (gbtnRef.current) { gbtnRef.current.innerHTML = ""; google.accounts.id.renderButton(gbtnRef.current, { theme: "outline", size: "large", shape: "pill", text: "signin_with", locale: "ja" }); }
+        } catch (e) {}
+      } else if (++tries > 50) clearInterval(t);
+    }, 100);
+    return () => clearInterval(t);
+  }, [showAccount, user]);
 
   /* 案件本体の自動保存 */
   useEffect(() => {
@@ -1284,6 +1472,13 @@ export default function App() {
           })}
         </div>
         <div className="px-3 py-2 border-t border-white/10 flex flex-col gap-0.5">
+          <button onClick={() => setShowAccount(true)}
+            className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10 text-left w-full">
+            {user && user.picture
+              ? <img src={user.picture} alt="" className="w-4 h-4 rounded-full shrink-0" referrerPolicy="no-referrer" />
+              : <span className="w-4 h-4 grid place-items-center shrink-0 text-[12px]">👤</span>}
+            <span className="truncate">{user ? user.name + "（クラウド同期中）" : "Googleでログイン"}</span>
+          </button>
           <a href="settings.html"
             className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10">
             <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -1373,6 +1568,12 @@ export default function App() {
               <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
             </svg>
             {sharing ? "発行中…" : project.shareId ? "共有を更新" : "共有"}
+          </button>
+          <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
+            className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden">
+            {user && user.picture
+              ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              : <span className="text-[15px]" style={{ color: mainText }}>{user ? "🙂" : "👤"}</span>}
           </button>
           <button onClick={() => setShowTheme((s) => !s)} title="テーマカラー変更"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10">
@@ -1753,21 +1954,7 @@ export default function App() {
                           <div className="grid sm:grid-cols-2 border-b border-stone-200/70 bg-white">
                             <div className="flex items-center sm:border-r border-stone-100">
                               <span className="pl-3 pr-1 text-[11px] shrink-0">📍</span>
-                              <input
-                                value={loc.address}
-                                onChange={(e) => updateRow(loc.id, { address: e.target.value })}
-                                placeholder="住所・集合場所"
-                                className="block w-full min-w-0 bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
-                              />
-                              {(loc.address || "").trim() && (
-                                <a
-                                  href={"https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(loc.address.trim())}
-                                  target="_blank" rel="noreferrer"
-                                  title="Googleマップで開く"
-                                  className="shrink-0 mr-2 text-[11px] font-bold px-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1 border border-stone-200 text-stone-600 hover:bg-stone-50 active:scale-95 transition">
-                                  🗺️ <span className="hidden sm:inline">地図</span>
-                                </a>
-                              )}
+                              <AddressField loc={loc} onChange={(patch) => updateRow(loc.id, patch)} />
                             </div>
                             <div className="flex items-center border-t sm:border-t-0 border-stone-100">
                               <span className="pl-3 pr-1 text-[11px] shrink-0">📝</span>
@@ -1896,6 +2083,55 @@ export default function App() {
                   {aiParsing ? "整形中…" : (importTarget === "current" ? "✨ AIで整形して更新" : "✨ AIで整形して取り込む")}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== アカウント / ログイン モーダル ===== */}
+      {showAccount && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAccount(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider">アカウント</h3>
+              <button onClick={() => setShowAccount(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+            </div>
+            <div className="p-5">
+              {user ? (
+                <div>
+                  <div className="flex items-center gap-3">
+                    {user.picture
+                      ? <img src={user.picture} alt="" className="w-12 h-12 rounded-full" referrerPolicy="no-referrer" />
+                      : <div className="w-12 h-12 rounded-full bg-stone-200 grid place-items-center text-xl">👤</div>}
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold truncate">{user.name}</div>
+                      <div className="text-[12px] text-stone-500 truncate">{user.email}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-[12px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2 leading-relaxed">
+                    ☁️ <span className="font-bold">クラウド同期中</span>。案件はこのアカウントに保存され、スマホ・PC どの端末でも同じ案件を開けます。
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <button onClick={logout} disabled={authBusy} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">ログアウト</button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-[12px] text-stone-600 mb-3 leading-relaxed">
+                    <span className="font-bold">Googleでログイン</span>すると、案件が<span className="font-bold">クラウドに保存</span>され、スマホ・PC どの端末からでも同じ案件を編集できます。チームのメンバーも各自のGoogleでログインして使えます。<br />
+                    <span className="text-stone-400">ログインしなくても、この端末の中では今まで通り使えます。</span>
+                  </p>
+                  {GOOGLE_CLIENT_ID ? (
+                    <div className="flex justify-center py-2 min-h-[44px]"><div ref={gbtnRef} /></div>
+                  ) : (
+                    <div className="text-[12px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 leading-relaxed">
+                      ⚠️ Googleログインはまだ有効化されていません。<br />
+                      <span className="text-amber-700">管理者へ：</span><code style={{ fontFamily: mono }}>index.html</code> の <code style={{ fontFamily: mono }}>MG_GOOGLE_CLIENT_ID</code> に Google の OAuth クライアントID を設定してください。
+                    </div>
+                  )}
+                  {authBusy && <div className="text-center text-[12px] text-stone-400 mt-2">ログイン中…</div>}
+                </div>
+              )}
             </div>
           </div>
         </div>

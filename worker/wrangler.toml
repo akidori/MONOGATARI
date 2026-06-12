@@ -3,6 +3,11 @@ main = "src/index.js"
 compatibility_date = "2024-11-01"
 workers_dev = true
 
+# Googleログイン用：OAuthクライアントID（公開値）。Google Cloud で作成して貼る
+# セッション署名鍵は秘密： wrangler secret put SESSION_SECRET
+[vars]
+GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_GOOGLE_OAUTH_CLIENT_ID.apps.googleusercontent.com"
+
 # 共有スナップショット＋コメント保存用 KV
 # 初回: wrangler kv namespace create SNAPS で id を発行して下記に貼る
 [[kv_namespaces]]
