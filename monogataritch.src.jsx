@@ -592,6 +592,10 @@ export default function App() {
   const [showAccount, setShowAccount] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const gbtnRef = useRef(null);
+  const [showAssistant, setShowAssistant] = useState(false);
+  const [assistantText, setAssistantText] = useState("");
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantSummary, setAssistantSummary] = useState("");
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
@@ -828,6 +832,51 @@ export default function App() {
   const dispatchParsed = async (parsed) => {
     if (importTarget === "current") await updateCurrentFromParsed(parsed);
     else await createCaseFromParsed(parsed);
+  };
+
+  /* AIアシスタント：貼られた生メッセージ(LINE/メモ/指示)を現案件に反映 */
+  const runAssistant = async () => {
+    const msg = assistantText.trim();
+    if (!msg || !project) return;
+    setAssistantBusy(true); setAssistantSummary("");
+    try {
+      const res = await fetch(SHARE_API + "/api/assist", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project, message: msg }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.project) throw new Error(d.error || "反映に失敗しました");
+      const parsed = normalizeImport(d.project);
+      // 既存の地図リンク・撮影完了フラグはロケ名で引き継ぐ（AI更新で消さない）
+      const prevByLabel = {};
+      (project.rows || []).forEach((r) => { if (r.kind === "location") prevByLabel[(r.label || "").trim()] = r; });
+      const rows = parsed.rows.map((r) => {
+        if (r.kind !== "location") return r;
+        const prev = prevByLabel[(r.label || "").trim()];
+        if (!prev) return r;
+        const out = { ...r };
+        if (prev.done) out.done = true;
+        if ((prev.address || "").trim() === (r.address || "").trim() && (prev.placeId || prev.lat != null)) {
+          out.placeId = prev.placeId || ""; out.lat = prev.lat ?? null; out.lng = prev.lng ?? null;
+        }
+        return out;
+      });
+      const m = parsed.meta || {};
+      const meta = { ...project.meta };
+      if (m.shootDate) meta.shootDate = m.shootDate;
+      if (m.place) meta.place = m.place;
+      if (m.highlight) meta.highlight = m.highlight;
+      if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
+      if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
+      const data = { ...project, meta, rate: parsed.rate || project.rate, rows };
+      setProject(data);
+      try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+      setAssistantSummary(d.summary || "構成台本に反映しました。");
+      setAssistantText("");
+      showToast("AIが構成台本に反映しました");
+    } catch (e) {
+      showToast("反映に失敗：" + (e.message || e));
+    } finally { setAssistantBusy(false); }
   };
 
   /* ファイル選択（TXT / CSV / Excel）→ 取り込み欄へ流し込む */
@@ -1569,6 +1618,10 @@ export default function App() {
             </svg>
             {sharing ? "発行中…" : project.shareId ? "共有を更新" : "共有"}
           </button>
+          <button onClick={() => { setShowAssistant(true); setAssistantSummary(""); }} title="AIアシスタント（LINEのメッセージやメモを貼ると構成に反映）"
+            className="h-8 px-2.5 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
+            🤖 <span className="hidden sm:inline ml-1">AI反映</span>
+          </button>
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden">
             {user && user.picture
@@ -2083,6 +2136,43 @@ export default function App() {
                   {aiParsing ? "整形中…" : (importTarget === "current" ? "✨ AIで整形して更新" : "✨ AIで整形して取り込む")}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== AIアシスタント モーダル（生メッセージ→構成に反映）===== */}
+      {showAssistant && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAssistant(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider">🤖 AIアシスタント — メッセージを構成に反映</h3>
+              <button onClick={() => setShowAssistant(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+            </div>
+            <div className="p-5">
+              <p className="text-[12px] text-stone-500 mb-2 leading-relaxed">
+                先方・演者からの<span className="font-bold">LINEのメッセージ</span>や取材メモ、「冒頭もっと引き強く」みたいな<span className="font-bold">指示</span>を貼って送ると、AIが今開いている案件「<span className="font-bold">{project ? project.name : ""}</span>」の構成台本に反映します（住所・時間・メモ・シーン・原稿）。
+              </p>
+              <textarea
+                value={assistantText}
+                onChange={(e) => setAssistantText(e.target.value)}
+                placeholder={"例）\n明日の撮影、10時に本社ビル集合でお願いします。駐車場は地下、受付で「撮影」と伝えてください。\n社長は釣りが趣味で、休日は必ず海に行くそうです。創業のきっかけは父の影響とのこと。"}
+                className="w-full h-44 text-[13px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
+              />
+              {assistantSummary && (
+                <div className="mt-3 text-[12px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
+                  <span className="font-bold">✅ 反映しました</span>{"\n" + assistantSummary}
+                </div>
+              )}
+              <div className="mt-3 flex justify-end items-center gap-2">
+                <button onClick={() => setShowAssistant(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 mr-auto">閉じる</button>
+                <button onClick={runAssistant} disabled={!assistantText.trim() || assistantBusy || !project}
+                  className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40"
+                  style={{ background: theme.accent, color: accentText }}>
+                  {assistantBusy ? "反映中…" : "✨ 構成に反映する"}
+                </button>
+              </div>
+              <p className="text-[10px] text-stone-400 mt-2">既存の内容は極力残して、関係する所だけ更新します。違ったら⌘Zや編集で直してね。</p>
             </div>
           </div>
         </div>

@@ -49,6 +49,20 @@ export default {
         return json({ project });
       }
 
+      // POST /api/assist  { project, message }  → 現案件に生メッセージを反映して更新案件を返す
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "assist") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const message = (b && b.message ? b.message : "").toString();
+        const project = b && b.project;
+        if (!message.trim()) return json({ error: "メッセージが空です" }, 400);
+        if (message.length > 40000) return json({ error: "メッセージが長すぎます（4万字まで）" }, 413);
+        if (!project || !Array.isArray(project.rows)) return json({ error: "現在の案件が必要です" }, 400);
+        const out = await assistWithClaude(project, message, env);
+        if (!out || !Array.isArray(out.rows) || !out.rows.length) return json({ error: "反映に失敗しました" }, 422);
+        return json({ project: out, summary: (out.summary || "").toString() });
+      }
+
       // POST /api/publish  { project, prevId?, token? }
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "publish") {
         const body = await request.json();
@@ -281,6 +295,7 @@ const BUILD_TOOL = {
   input_schema: {
     type: "object",
     properties: {
+      summary: { type: "string", description: "（アシスタント更新時のみ）今回の変更点を日本語で1〜3行" },
       name: { type: "string", description: "演者名｜案件名" },
       channel: { type: "string", description: "クライアント名" },
       meta: {
@@ -336,6 +351,49 @@ async function parseWithClaude(raw, env) {
     const t = await res.text();
     throw new Error("Claude API " + res.status + ": " + t.slice(0, 300));
   }
+  const data = await res.json();
+  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
+  if (!block || !block.input) throw new Error("tool_use が返りませんでした");
+  return block.input;
+}
+
+/* ===== AIアシスタント：現案件＋現場からの生メッセージ → 反映して更新案件を返す ===== */
+const ASSIST_SYSTEM = `あなたは一日密着ドキュメンタリーの構成作家アシスタントです。「現在の構成台本(JSON)」と、現場・先方・演者から届いた「生のメッセージ（LINE文面・取材メモ・指示など、形式は不問）」が渡されます。メッセージの内容を構成台本に反映し、更新後の【完全な】構成台本を build_project ツールで返してください。
+
+# やること
+- メッセージから読み取れる情報を、該当する箇所に埋める／追記する：
+  - 集合場所・住所・施設名 → 近いロケーションの label、必要なら住所はメモ(note)や該当locationに反映
+  - 撮影日 → meta.shootDate、時間 → 該当ロケの time
+  - 駐車場・許可・持ち物・注意 → 該当ロケの note
+  - 人物像・エピソード・経歴・想い・商品の話 → 適切な type の scene を追加、または既存 scene の script/label を充実
+  - 「冒頭の引きを強く」等の“指示”なら、その箇所を実際に書き換える
+- それ以外の既存内容は極力そのまま残す（メッセージが触れていない所は変えない）
+
+# ルール
+- 事実・数字・固有名詞を勝手に創作しない。本人の生声が要る所は script に「★取材：（何を聞くか）」と書いて空ける
+- type は インサート/ブリッジ/VLOG/解説系/訴求 のいずれか。sec は目安（インサート5・ブリッジ10・VLOG30・解説系60・訴求180）
+- script の質問は行頭「◼ 」、回答は話し言葉。改行は維持
+- rows は省略せず【全行】返す（変更が無い行もそのまま含める）
+- summary に「何をどう変えたか」を日本語で1〜3行。反映できる情報が無ければ無理に変えず、summary でその旨を伝える`;
+
+async function assistWithClaude(project, message, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const ctx = "----- 現在の構成台本(JSON) -----\n" + JSON.stringify(slim(project)) +
+    "\n----- 現場から届いたメッセージ -----\n" + message +
+    "\n----- ここまで -----\n\n上のメッセージを構成台本に反映して、更新後の完全な構成台本を build_project で返してください。";
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model,
+      max_tokens: 16000,
+      system: ASSIST_SYSTEM,
+      tools: [BUILD_TOOL],
+      tool_choice: { type: "tool", name: "build_project" },
+      messages: [{ role: "user", content: ctx }],
+    }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
   const data = await res.json();
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
