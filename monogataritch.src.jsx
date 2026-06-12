@@ -487,6 +487,7 @@ export default function App() {
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [dragIds, setDragIds] = useState(null);             // 複数行ドラッグ中のid配列
   const [selectedIds, setSelectedIds] = useState([]);       // 複数選択中の行id
+  const [painting, setPainting] = useState(false);          // チェック欄ドラッグ選択中
   const lastSelRef = useRef(null);                          // shift範囲選択の起点
   /* 共有・コメント */
   const [shareModal, setShareModal] = useState(null);       // {url, id} or null
@@ -907,6 +908,29 @@ export default function App() {
     onDrop: (e) => { e.preventDefault(); dropOn(idx); },
   });
 
+  /* ---- ドラッグでなぞって複数選択（チェック欄を押したまま上下になぞる） ---- */
+  const paintRef = useRef(null); // { anchorIdx, baseline:Set }
+  const beginPaintSelect = (idx, id, e) => {
+    e.stopPropagation();
+    paintRef.current = { anchorIdx: idx, baseline: new Set(selectedIds) };
+    lastSelRef.current = id;
+    setPainting(true);
+  };
+  const paintSelectTo = (idx) => {
+    const p = paintRef.current;
+    if (!p) return;
+    const rows = (project && project.rows) || [];
+    const [lo, hi] = p.anchorIdx < idx ? [p.anchorIdx, idx] : [idx, p.anchorIdx];
+    const range = rows.slice(lo, hi + 1).filter((r) => r.kind === "scene").map((r) => r.id);
+    setSelectedIds(Array.from(new Set([...p.baseline, ...range])));
+  };
+  useEffect(() => {
+    const up = () => { if (paintRef.current) { paintRef.current = null; setPainting(false); } };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => { window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
+  }, []);
+
   /* 時間(TC)文字列 → 秒。"mm:ss" / "h:mm:ss" / "0分00秒" / 数字(秒) を許容 */
   const parseTC = (str) => {
     const s = (str || "").trim();
@@ -938,12 +962,14 @@ export default function App() {
     return next.flatMap((b) => b.items);
   });
 
-  const { tcs, totalEst, totalTarget, totalChars, locations, sceneNos } = useMemo(() => {
+  const { tcs, totalEst, totalTarget, totalChars, locations, sceneNos, sceneLocDone } = useMemo(() => {
     let acc = 0, tt = 0, tc = 0, no = 0;
     const tcs = {};
     const sceneNos = {};
     const locations = [];
     let cur = null;
+    let curDone = false;
+    const sceneLocDone = {}; // シーンid → 所属ロケが撮影完了か
     const rows = (project && project.rows) ? project.rows : [];
     const rate = (project && project.rate) ? project.rate : 5;
     for (const r of rows) {
@@ -952,10 +978,12 @@ export default function App() {
       tcs[r.id] = acc;
       if (r.kind === "location") {
         cur = { ...r, scenes: [], dur: 0, secSum: 0, tcIn: acc };
+        curDone = !!r.done;
         locations.push(cur);
       } else {
         no += 1;
         sceneNos[r.id] = no;
+        sceneLocDone[r.id] = curDone;
         const target = targetOf(r);
         const chars = countChars(r.script);
         const d = chars > 0 ? chars / rate : target;
@@ -963,7 +991,7 @@ export default function App() {
         if (cur) { cur.scenes.push(r); cur.dur += d; cur.secSum += target; }
       }
     }
-    return { tcs, totalEst: acc, totalTarget: tt, totalChars: tc, locations, sceneNos };
+    return { tcs, totalEst: acc, totalTarget: tt, totalChars: tc, locations, sceneNos, sceneLocDone };
   }, [project]);
 
   /* ---------- TSV書き出し ---------- */
@@ -1451,15 +1479,16 @@ export default function App() {
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody style={{ userSelect: painting ? "none" : "auto" }}>
                   {project.rows.map((r, idx) => {
                     if (r.kind === "location") {
                       return (
                         <tr key={r.id} {...dropZoneProps(idx)}
                           onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
+                          onPointerEnter={() => paintSelectTo(idx)}
                           style={dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : undefined}>
                           <td colSpan={6} className="p-0 pt-2">
-                            <div className="flex items-stretch overflow-hidden" style={{ background: theme.main }}>
+                            <div className="flex items-stretch overflow-hidden" style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1 }}>
                               <div className="w-6 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" style={{ background: stripe }}
                                 {...rowDragProps(idx, r.id)} title="ドラッグで移動" />
                               <input
@@ -1467,8 +1496,14 @@ export default function App() {
                                 onChange={(e) => updateRow(r.id, { label: e.target.value })}
                                 placeholder="ロケーション名（例：ご自宅）"
                                 className="flex-1 bg-transparent text-[13px] font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
-                                style={{ color: mainText }}
+                                style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                               />
+                              <button
+                                onClick={() => updateRow(r.id, { done: !r.done })}
+                                title={r.done ? "撮影完了を取り消す（香盤表と連動）" : "このロケを撮影完了にする（香盤表と連動）"}
+                                className={"shrink-0 self-center text-[10px] font-bold px-2.5 py-1 my-1 mr-2 rounded-md whitespace-nowrap transition-colors " + (r.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
+                                {r.done ? "✅ 完了" : "✓ 撮影完了"}
+                              </button>
                               <span className="self-center pr-3 text-[9px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
                             </div>
                           </td>
@@ -1489,23 +1524,28 @@ export default function App() {
                     const chars = countChars(r.script);
                     const dur = chars / project.rate;
                     const over = chars > 0 && dur > target * 1.5;
+                    const locDone = sceneLocDone[r.id];
                     return (
                       <tr key={r.id}
                         {...dropZoneProps(idx)}
                         onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
+                        onPointerEnter={() => paintSelectTo(idx)}
                         className={"border-b border-stone-100 transition-colors " + (isSelected(r.id) ? "" : "hover:bg-stone-50/70")}
                         style={{
                           ...(isSelected(r.id) ? { background: t.bg } : {}),
+                          ...(locDone && !isSelected(r.id) ? { background: "#F5F5F4", opacity: 0.55 } : {}),
                           ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
                         }}>
                         <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: "3px solid " + t.color }}
                           {...rowDragProps(idx, r.id)} title="ドラッグで移動（複数選択時はまとめて移動）">
                           <div className="flex items-start gap-1 cursor-grab active:cursor-grabbing">
                             <input type="checkbox" checked={isSelected(r.id)} draggable={false}
+                              onPointerDown={(e) => beginPaintSelect(idx, r.id, e)}
                               onClick={(e) => { e.stopPropagation(); toggleSelect(r.id, e); }}
                               onChange={() => {}}
+                              style={{ touchAction: "none" }}
                               className={"mt-0.5 shrink-0 w-3.5 h-3.5 cursor-pointer transition-opacity " + (isSelected(r.id) || hoverId === r.id ? "opacity-100" : "opacity-25")}
-                              title="選択（Shiftで範囲選択）" />
+                              title="選択（クリックでON/OFF・Shiftで範囲・チェック欄をなぞって複数選択）" />
                             <div className="min-w-0 flex-1 text-center">
                               <input
                                 key={(r.tc != null ? "m" : "a") + Math.round(tcs[r.id])}
