@@ -165,6 +165,110 @@ const parseTSV = (text) => {
   return rows;
 };
 
+/* ---------- ファイル取り込み（TXT / CSV / Excel(.xlsx)）---------- */
+const unescapeXml = (s) => (s || "")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+  .replace(/&apos;/g, "'").replace(/&#10;/g, "\n").replace(/&#13;/g, "").replace(/&amp;/g, "&");
+
+/* CSV → TSV（ダブルクオート/改行対応）。タブはスペースへ退避 */
+const csvToTSV = (text) => {
+  const s = (text || "").replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) { if (c === '"') { if (s[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+    else cur += c;
+  }
+  row.push(cur); rows.push(row);
+  return rows.map((r) => r.map((c) => (c || "").replace(/\t/g, " ")).join("\t")).join("\n");
+};
+
+/* deflate-raw 解凍（ブラウザ標準） */
+const inflateRaw = async (bytes) => {
+  const ds = new DecompressionStream("deflate-raw");
+  const buf = await new Response(new Blob([bytes]).stream().pipeThrough(ds)).arrayBuffer();
+  return new Uint8Array(buf);
+};
+
+/* 中央ディレクトリ走査による最小ZIP展開 → { ファイル名: Uint8Array } */
+const unzip = async (arrBuf) => {
+  const dv = new DataView(arrBuf), u8 = new Uint8Array(arrBuf);
+  let eo = -1;
+  for (let i = u8.length - 22; i >= 0 && i >= u8.length - 22 - 65536; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) { eo = i; break; }
+  }
+  if (eo < 0) throw new Error("ZIP形式ではありません");
+  const cdCount = dv.getUint16(eo + 10, true);
+  let p = dv.getUint32(eo + 16, true);
+  const out = {}; const dec = new TextDecoder();
+  for (let n = 0; n < cdCount; n++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    const lNameLen = dv.getUint16(lho + 26, true);
+    const lExtraLen = dv.getUint16(lho + 28, true);
+    const dataStart = lho + 30 + lNameLen + lExtraLen;
+    const comp = u8.subarray(dataStart, dataStart + compSize);
+    out[name] = method === 0 ? comp : await inflateRaw(comp);
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return out;
+};
+
+/* .xlsx の先頭シート → TSVテキスト */
+const xlsxToTSV = async (arrBuf) => {
+  const files = await unzip(arrBuf);
+  const dec = new TextDecoder();
+  const shared = [];
+  if (files["xl/sharedStrings.xml"]) {
+    dec.decode(files["xl/sharedStrings.xml"]).replace(/<si\b[^>]*>([\s\S]*?)<\/si>/g, (_, inner) => {
+      let t = ""; inner.replace(/<t[^>]*>([\s\S]*?)<\/t>/g, (__, x) => { t += x; return ""; });
+      shared.push(unescapeXml(t)); return "";
+    });
+  }
+  let sheetKey = files["xl/worksheets/sheet1.xml"] ? "xl/worksheets/sheet1.xml"
+    : Object.keys(files).find((k) => /^xl\/worksheets\/.*\.xml$/.test(k));
+  if (!sheetKey) throw new Error("シートが見つかりません");
+  const sheet = dec.decode(files[sheetKey]);
+  const colNum = (ref) => { const m = (ref || "").match(/^([A-Z]+)/); if (!m) return 0; let n = 0; for (const c of m[1]) n = n * 26 + (c.charCodeAt(0) - 64); return n - 1; };
+  const lines = [];
+  sheet.replace(/<row\b[^>]*>([\s\S]*?)<\/row>/g, (_, inner) => {
+    const cells = [];
+    inner.replace(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g, (__, attrs, body) => {
+      const ref = (attrs.match(/r="([^"]+)"/) || [])[1] || "";
+      const t = (attrs.match(/t="([^"]+)"/) || [])[1] || "";
+      let val = "";
+      if (body) {
+        if (t === "inlineStr") { const im = body.match(/<t[^>]*>([\s\S]*?)<\/t>/); val = im ? unescapeXml(im[1]) : ""; }
+        else { const vm = body.match(/<v>([\s\S]*?)<\/v>/); const raw = vm ? vm[1] : ""; val = t === "s" ? (shared[Number(raw)] || "") : unescapeXml(raw); }
+      }
+      cells[colNum(ref)] = (val || "").replace(/[\t\n\r]/g, " ");
+      return "";
+    });
+    for (let k = 0; k < cells.length; k++) if (cells[k] == null) cells[k] = "";
+    lines.push(cells.join("\t"));
+    return "";
+  });
+  return lines.join("\n");
+};
+
+/* 取り込みファイル → テキスト（TSV/プレーン）。AI整形・そのまま取り込み どちらにも渡せる形 */
+const readImportFile = async (file) => {
+  const name = (file.name || "").toLowerCase();
+  if (name.endsWith(".xlsx")) return await xlsxToTSV(await file.arrayBuffer());
+  if (name.endsWith(".xls")) throw new Error("旧Excel(.xls)は非対応。.xlsx か CSV で保存してください");
+  if (name.endsWith(".csv")) return csvToTSV(await file.text());
+  return await file.text(); // txt / tsv / md / json / 文字起こし等
+};
+
 const normalizeImport = (obj) => {
   const meta = obj.meta || {};
   const titles = (meta.titles && meta.titles.length ? meta.titles : ["", "", ""]).slice(0, 3);
@@ -372,6 +476,9 @@ export default function App() {
   const [showFullImport, setShowFullImport] = useState(false);
   const [fullImportText, setFullImportText] = useState("");
   const [aiParsing, setAiParsing] = useState(false);
+  const [importTarget, setImportTarget] = useState("new"); // "new" = 新規案件 / "current" = 開いている案件を更新
+  const [importFileName, setImportFileName] = useState("");
+  const importFileRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
@@ -495,21 +602,65 @@ export default function App() {
     } catch (e) {}
     setIndex(idx); persistIndex(idx);
     setActiveId(data.id); setProject(data); setTab("script");
-    setShowFullImport(false); setFullImportText("");
+    setShowFullImport(false); setFullImportText(""); setImportFileName("");
     showToast(parsed.rows.filter((r) => r.kind === "scene").length + "シーンを新規案件として取り込みました");
   };
 
-  /* 構成台本（JSON / TSV）を貼り付けて新規案件として取り込む */
+  /* 解析済みデータで「今開いている案件」を上書き更新（id・名前・共有リンクは保持） */
+  const updateCurrentFromParsed = async (parsed) => {
+    if (!project) { showToast("更新対象の案件がありません"); return; }
+    const before = (project.rows || []).filter((r) => r.kind === "scene").length;
+    const after = parsed.rows.filter((r) => r.kind === "scene").length;
+    if (!window.confirm("「" + project.name + "」の構成を、取り込んだ内容で上書き更新します。\n" + before + "シーン → " + after + "シーン。\n（案件名・チャンネル・共有リンクはそのまま）\n\nよろしいですか？")) return;
+    const m = parsed.meta || {};
+    const meta = { ...project.meta };
+    if (m.shootDate) meta.shootDate = m.shootDate;
+    if (m.place) meta.place = m.place;
+    if (m.highlight) meta.highlight = m.highlight;
+    if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
+    if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
+    const data = { ...project, meta, rate: parsed.rate || project.rate, timeFormat: parsed.timeFormat || project.timeFormat, rows: parsed.rows };
+    setProject(data);
+    try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+    const idx = index.map((x) => (x.id === data.id ? { ...x, name: data.name, channel: data.channel } : x));
+    setIndex(idx); persistIndex(idx);
+    setShowFullImport(false); setFullImportText(""); setImportFileName("");
+    showToast(after + "シーンで「" + data.name + "」を更新しました");
+  };
+
+  /* 取込先（新規 / 現案件）に応じて振り分け */
+  const dispatchParsed = async (parsed) => {
+    if (importTarget === "current") await updateCurrentFromParsed(parsed);
+    else await createCaseFromParsed(parsed);
+  };
+
+  /* ファイル選択（TXT / CSV / Excel）→ 取り込み欄へ流し込む */
+  const onPickImportFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (e.target) e.target.value = ""; // 同じファイルの再選択を許可
+    if (!file) return;
+    try {
+      const text = await readImportFile(file);
+      if (!text || !text.trim()) { showToast("ファイルから文字を読めませんでした"); return; }
+      setFullImportText(text);
+      setImportFileName(file.name);
+      showToast("「" + file.name + "」を読み込みました（" + text.length.toLocaleString() + "字）");
+    } catch (err) {
+      showToast("ファイル読み込み失敗：" + (err.message || err));
+    }
+  };
+
+  /* 構成台本（JSON / TSV）を貼り付けて取り込む（新規 or 現案件更新） */
   const importAsNewProject = async () => {
     const parsed = parseImportText(fullImportText);
     if (!parsed || !parsed.rows.length) {
       showToast("取り込めませんでした。JSON / 構成台本コピー以外は ✨AIで整形 を使ってください");
       return;
     }
-    await createCaseFromParsed(parsed);
+    await dispatchParsed(parsed);
   };
 
-  /* 生原稿（Claude/GPT/Gemini出力やメモ）を Worker経由でClaude整形 → 新規案件 */
+  /* 生原稿（Claude/GPT/Gemini出力やメモ）を Worker経由でClaude整形 → 新規 or 現案件更新 */
   const aiParseImport = async () => {
     const raw = fullImportText.trim();
     if (!raw) return;
@@ -522,7 +673,7 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok || !data.project) throw new Error(data.error || "整形に失敗しました");
-      await createCaseFromParsed(normalizeImport(data.project));
+      await dispatchParsed(normalizeImport(data.project));
     } catch (e) {
       showToast("AI整形に失敗：" + (e.message || e));
     } finally {
@@ -1000,8 +1151,8 @@ export default function App() {
           </button>
         </div>
         <div className="px-3 pb-2">
-          <button onClick={() => setShowFullImport(true)}
-            title="Claudeが出力したJSON / 構成台本コピーを貼り付けて新規案件化"
+          <button onClick={() => { setImportTarget("new"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
+            title="JSON / 構成台本コピー / TXT・CSV・Excel から取り込み（新規 or 現案件更新）"
             className="w-full text-[11px] font-bold py-2 rounded-lg bg-white/10 hover:bg-white/20">
             ⤓ 構成台本を取り込み
           </button>
@@ -1609,14 +1760,35 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowFullImport(false)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">構成台本を取り込み → 新規案件</h3>
+              <h3 className="text-sm font-bold tracking-wider">構成台本を取り込み{importTarget === "current" ? " → この案件を更新" : " → 新規案件"}</h3>
               <button onClick={() => setShowFullImport(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
             </div>
             <div className="p-5">
+              {/* 取込先の選択：新規案件 / 開いている案件を更新 */}
+              <div className="flex items-center gap-1 p-1 mb-3 rounded-xl bg-stone-100 text-[12px] font-bold">
+                <button onClick={() => setImportTarget("new")}
+                  className={"flex-1 px-3 py-2 rounded-lg transition " + (importTarget === "new" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
+                  ＋ 新規案件として取り込む
+                </button>
+                <button onClick={() => setImportTarget("current")} disabled={!project}
+                  className={"flex-1 px-3 py-2 rounded-lg transition disabled:opacity-40 " + (importTarget === "current" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
+                  ⟳ この案件を更新{project ? "（" + project.name + "）" : ""}
+                </button>
+              </div>
               <p className="text-[12px] text-stone-500 mb-2">
-                <span className="font-bold" style={{ color: theme.accent }}>✨AIで整形：</span>Claude/GPT/Geminiで書いた原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼って押すと、AIが構成台本に整形して新規案件にします（数秒）。<br />
+                <span className="font-bold" style={{ color: theme.accent }}>✨AIで整形：</span>Claude/GPT/Geminiで書いた原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼って押すと、AIが構成台本に整形します（数秒）。<br />
                 <span className="text-stone-400">きっちり形が決まっている場合：</span>このツールの「台本コピー」TSV や <span style={{ fontFamily: mono }}>{"{ rows:[...] }"}</span> JSON を貼って「取り込む」でもOK。
+                {importTarget === "current" && <><br /><span className="font-bold text-amber-600">⚠️ 更新モード：</span>取り込んだ内容で今の構成を上書きします（案件名・共有リンクは維持）。</>}
               </p>
+              {/* ファイルから読み込む（TXT / CSV / Excel）*/}
+              <input ref={importFileRef} type="file" accept=".txt,.csv,.tsv,.xlsx,.md,.json,text/plain,text/csv" onChange={onPickImportFile} className="hidden" />
+              <div className="flex items-center gap-2 mb-2">
+                <button onClick={() => importFileRef.current && importFileRef.current.click()}
+                  className="text-[12px] font-bold px-3 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5">
+                  📄 ファイルから読み込む
+                </button>
+                <span className="text-[11px] text-stone-400">TXT・CSV・Excel(.xlsx) 対応{importFileName ? "　／　" : ""}<span className="font-bold text-stone-500">{importFileName}</span></span>
+              </div>
               <textarea
                 value={fullImportText}
                 onChange={(e) => setFullImportText(e.target.value)}
@@ -1627,14 +1799,14 @@ export default function App() {
               <div className="mt-3 flex justify-end items-center gap-2">
                 <button onClick={() => setShowFullImport(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 mr-auto">キャンセル</button>
                 <button onClick={importAsNewProject} disabled={!fullImportText.trim() || aiParsing}
-                  title="JSON / 台本コピーTSV をそのまま取り込む"
+                  title="JSON / 台本コピーTSV / CSV・Excel をそのまま取り込む"
                   className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">
-                  そのまま取り込む
+                  {importTarget === "current" ? "そのまま上書き更新" : "そのまま取り込む"}
                 </button>
                 <button onClick={aiParseImport} disabled={!fullImportText.trim() || aiParsing}
                   className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40"
                   style={{ background: theme.accent, color: accentText }}>
-                  {aiParsing ? "整形中…" : "✨ AIで整形して取り込む"}
+                  {aiParsing ? "整形中…" : (importTarget === "current" ? "✨ AIで整形して更新" : "✨ AIで整形して取り込む")}
                 </button>
               </div>
             </div>
