@@ -951,7 +951,7 @@ export default function App() {
       if (r.tc != null && r.tc !== "" && !isNaN(Number(r.tc))) acc = Number(r.tc);
       tcs[r.id] = acc;
       if (r.kind === "location") {
-        cur = { ...r, scenes: [], dur: 0, tcIn: acc };
+        cur = { ...r, scenes: [], dur: 0, secSum: 0, tcIn: acc };
         locations.push(cur);
       } else {
         no += 1;
@@ -960,7 +960,7 @@ export default function App() {
         const chars = countChars(r.script);
         const d = chars > 0 ? chars / rate : target;
         acc += d; tt += target; tc += chars;
-        if (cur) { cur.scenes.push(r); cur.dur += d; }
+        if (cur) { cur.scenes.push(r); cur.dur += d; cur.secSum += target; }
       }
     }
     return { tcs, totalEst: acc, totalTarget: tt, totalChars: tc, locations, sceneNos };
@@ -1623,7 +1623,7 @@ export default function App() {
                   <h2 className="text-[12px] font-bold tracking-wider text-stone-600">香盤表 — 1日の流れ</h2>
                 </div>
                 <div className="text-[11px] text-stone-400" style={{ fontFamily: mono }}>
-                  {m.shootDate || "撮影日未設定"}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}
+                  {m.shootDate || "撮影日未設定"}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}・シーン尺 {fmt(totalTarget)}
                 </div>
               </div>
 
@@ -1708,7 +1708,7 @@ export default function App() {
                           );
                         })}
                         <span className="ml-auto text-[10px] text-stone-400 whitespace-nowrap" style={{ fontFamily: mono }}>
-                          {loc.scenes.length}シーン / 想定 {fmt(loc.dur)}
+                          {loc.scenes.length}シーン / 想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}
                         </span>
                       </div>
                     </div>
