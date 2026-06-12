@@ -1142,6 +1142,7 @@ export default function App() {
             <span className="text-[9px] tracking-widest opacity-60">TOTAL</span>
             <span className="text-xl font-bold tabular-nums leading-none">{fmt(totalEst)}</span>
             <span className="text-[10px] opacity-50">{totalChars.toLocaleString()}字</span>
+            <span className="text-[10px] tabular-nums opacity-50 ml-1 pl-1.5 border-l border-white/20" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
           </div>
           <label className="flex items-center gap-1.5 text-[11px] opacity-80">
             <input type="number" min="3" max="8" step="0.5" value={project.rate}
