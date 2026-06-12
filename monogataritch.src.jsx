@@ -371,6 +371,7 @@ export default function App() {
   const [importText, setImportText] = useState("");
   const [showFullImport, setShowFullImport] = useState(false);
   const [fullImportText, setFullImportText] = useState("");
+  const [aiParsing, setAiParsing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
@@ -482,13 +483,8 @@ export default function App() {
     showToast("案件を作成しました");
   };
 
-  /* 構成台本（JSON / TSV）を貼り付けて新規案件として取り込む */
-  const importAsNewProject = async () => {
-    const parsed = parseImportText(fullImportText);
-    if (!parsed || !parsed.rows.length) {
-      showToast("取り込めませんでした。Claudeが出力したJSON、または「構成台本コピー」を貼り付けてください");
-      return;
-    }
+  /* 解析済みデータから新規案件を作成（共通） */
+  const createCaseFromParsed = async (parsed) => {
     const n = index.length + 1;
     const base = newProjectData(parsed.name || ("取込案件" + n), parsed.channel || DEFAULT_CHANNEL);
     const data = { ...base, meta: parsed.meta, theme: parsed.theme, rate: parsed.rate, timeFormat: parsed.timeFormat, rows: parsed.rows };
@@ -501,6 +497,37 @@ export default function App() {
     setActiveId(data.id); setProject(data); setTab("script");
     setShowFullImport(false); setFullImportText("");
     showToast(parsed.rows.filter((r) => r.kind === "scene").length + "シーンを新規案件として取り込みました");
+  };
+
+  /* 構成台本（JSON / TSV）を貼り付けて新規案件として取り込む */
+  const importAsNewProject = async () => {
+    const parsed = parseImportText(fullImportText);
+    if (!parsed || !parsed.rows.length) {
+      showToast("取り込めませんでした。JSON / 構成台本コピー以外は ✨AIで整形 を使ってください");
+      return;
+    }
+    await createCaseFromParsed(parsed);
+  };
+
+  /* 生原稿（Claude/GPT/Gemini出力やメモ）を Worker経由でClaude整形 → 新規案件 */
+  const aiParseImport = async () => {
+    const raw = fullImportText.trim();
+    if (!raw) return;
+    setAiParsing(true);
+    try {
+      const res = await fetch(SHARE_API + "/api/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.project) throw new Error(data.error || "整形に失敗しました");
+      await createCaseFromParsed(normalizeImport(data.project));
+    } catch (e) {
+      showToast("AI整形に失敗：" + (e.message || e));
+    } finally {
+      setAiParsing(false);
+    }
   };
 
   const duplicateProject = async (id) => {
@@ -1586,9 +1613,8 @@ export default function App() {
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
-                ① Claudeが出力した <span className="font-bold" style={{ fontFamily: mono }}>{"{ rows: [...] }"}</span> 形式のJSON、または
-                ② このツールの「構成台本コピー」TSV を、そのまま貼り付けてください。
-                ロケーション・シーン・秒数・原稿・番組情報まで丸ごと復元して<span className="font-bold">新しい案件</span>を作ります。
+                <span className="font-bold" style={{ color: theme.accent }}>✨AIで整形：</span>Claude/GPT/Geminiで書いた原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼って押すと、AIが構成台本に整形して新規案件にします（数秒）。<br />
+                <span className="text-stone-400">きっちり形が決まっている場合：</span>このツールの「台本コピー」TSV や <span style={{ fontFamily: mono }}>{"{ rows:[...] }"}</span> JSON を貼って「取り込む」でもOK。
               </p>
               <textarea
                 value={fullImportText}
@@ -1597,12 +1623,17 @@ export default function App() {
                 className="w-full h-72 text-[12px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
                 style={{ fontFamily: mono }}
               />
-              <div className="mt-3 flex justify-end gap-2">
-                <button onClick={() => setShowFullImport(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50">キャンセル</button>
-                <button onClick={importAsNewProject} disabled={!fullImportText.trim()}
+              <div className="mt-3 flex justify-end items-center gap-2">
+                <button onClick={() => setShowFullImport(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 mr-auto">キャンセル</button>
+                <button onClick={importAsNewProject} disabled={!fullImportText.trim() || aiParsing}
+                  title="JSON / 台本コピーTSV をそのまま取り込む"
+                  className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">
+                  そのまま取り込む
+                </button>
+                <button onClick={aiParseImport} disabled={!fullImportText.trim() || aiParsing}
                   className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40"
                   style={{ background: theme.accent, color: accentText }}>
-                  新規案件として取り込む
+                  {aiParsing ? "整形中…" : "✨ AIで整形して取り込む"}
                 </button>
               </div>
             </div>
