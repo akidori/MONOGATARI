@@ -135,6 +135,101 @@ const migrateProject = (p) => {
   };
 };
 
+/* ---------- 構成台本の丸ごと取り込み（JSON / 構成台本コピーTSV 両対応） ----------
+   Claudeが出力した project JSON、または「構成台本コピー」TSV を貼り付けて新規案件化する。 */
+const typeFromText = (s) => {
+  const t = (s || "").trim();
+  if (!t) return null;
+  for (const k of TYPE_KEYS) {
+    if (t === k || t === SECTION_TYPES[k].full || t.startsWith(k)) return k;
+  }
+  return null;
+};
+
+/* 引用("")対応のTSVトークナイザ。セル内の改行・タブもOK。 */
+const parseTSV = (text) => {
+  const s = (text || "").replace(/\r\n?/g, "\n");
+  const rows = [];
+  let row = [], cur = "", q = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === '"') { if (s[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === "\t") { row.push(cur); cur = ""; }
+    else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+    else cur += c;
+  }
+  row.push(cur); rows.push(row);
+  return rows;
+};
+
+const normalizeImport = (obj) => {
+  const meta = obj.meta || {};
+  const titles = (meta.titles && meta.titles.length ? meta.titles : ["", "", ""]).slice(0, 3);
+  const thumbs = (meta.thumbs && meta.thumbs.length ? meta.thumbs : ["", "", ""]).slice(0, 3);
+  while (titles.length < 3) titles.push("");
+  while (thumbs.length < 3) thumbs.push("");
+  return {
+    name: obj.name || "",
+    channel: obj.channel || "",
+    meta: { shootDate: meta.shootDate || "", place: meta.place || "", titles, thumbs, highlight: meta.highlight || "" },
+    theme: obj.theme && obj.theme.main ? { ...DEFAULT_THEME, ...obj.theme } : { ...DEFAULT_THEME },
+    rate: Number(obj.rate) || 5,
+    timeFormat: obj.timeFormat === "jp" ? "jp" : "tc",
+    rows: (obj.rows || []).map((r) =>
+      r.kind === "location"
+        ? { id: uid(), kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "" }
+        : { id: uid(), kind: "scene", label: r.label || "", type: TYPE_KEYS.includes(r.type) ? r.type : (typeFromText(r.type) || "解説系"), sec: r.sec === 0 || r.sec ? Number(r.sec) : null, script: r.script || "" }
+    ),
+  };
+};
+
+const parseImportText = (text) => {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return null;
+  // 1) JSON（Claudeが出力した完全プロジェクト）
+  if (trimmed[0] === "{" || trimmed[0] === "[") {
+    try {
+      let obj = JSON.parse(trimmed);
+      if (Array.isArray(obj)) obj = { rows: obj };
+      if (!Array.isArray(obj.rows)) return null;
+      return normalizeImport(obj);
+    } catch (e) { return null; }
+  }
+  // 2) TSV（「構成台本コピー」 or スプシ貼り付け）
+  const table = parseTSV(text);
+  const meta = { shootDate: "", place: "", titles: ["", "", ""], thumbs: ["", "", ""], highlight: "" };
+  const rows = [];
+  let inTable = false;
+  for (const cells of table) {
+    const c0 = (cells[0] || "").trim();
+    const c1 = (cells[1] || "").trim();
+    if (!inTable) {
+      if (c1 === "撮影日") { meta.shootDate = (cells[2] || "").trim(); continue; }
+      if (c1 === "撮影場所") { meta.place = (cells[2] || "").trim(); continue; }
+      if (c1 === "タイトル案") { meta.titles = [cells[2] || "", cells[3] || "", cells[4] || ""]; continue; }
+      if (c1 === "サムネ案") { meta.thumbs = [cells[2] || "", cells[3] || "", cells[4] || ""]; continue; }
+      if (c1 === "ハイライト") { meta.highlight = cells[2] || ""; continue; }
+    }
+    if (c0 === "時間" || c1 === "ロケーション" || (cells.includes("原稿") && cells.includes("シーン"))) { inTable = true; continue; }
+    if (c1 === "合計") continue;
+    if (cells.every((x) => !(x || "").trim())) continue;
+    // シーン行：どこかのセルに種別がある
+    const ti = cells.findIndex((x) => typeFromText(x));
+    if (ti >= 0) {
+      const secRaw = (cells[ti + 1] || "").trim();
+      rows.push({ kind: "scene", type: typeFromText(cells[ti]), label: (cells[2] || "").trim(), sec: /^\d+$/.test(secRaw) ? Number(secRaw) : null, script: cells[cells.length - 1] || "" });
+      continue;
+    }
+    // ロケーション行：種別が無く名前がある（col0=時刻 のスプシ形式にも対応）
+    if (inTable && c1) { rows.push({ kind: "location", label: c1, time: /\d/.test(c0) ? c0 : "" }); continue; }
+  }
+  if (!rows.length) return null;
+  return normalizeImport({ meta, rows });
+};
+
 const countChars = (s) => (s || "").replace(/\s/g, "").length;
 const fmtJP = (sec) => { const s = Math.round(sec); return Math.floor(s / 60) + "分" + String(s % 60).padStart(2, "0") + "秒"; };
 const fmtTC = (sec) => { const s = Math.round(sec); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
@@ -274,6 +369,8 @@ export default function App() {
   const [tab, setTab] = useState("script"); // script | kouban
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
+  const [showFullImport, setShowFullImport] = useState(false);
+  const [fullImportText, setFullImportText] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
@@ -383,6 +480,27 @@ export default function App() {
     setIndex(idx); persistIndex(idx);
     setActiveId(data.id); setProject(data); setTab("script");
     showToast("案件を作成しました");
+  };
+
+  /* 構成台本（JSON / TSV）を貼り付けて新規案件として取り込む */
+  const importAsNewProject = async () => {
+    const parsed = parseImportText(fullImportText);
+    if (!parsed || !parsed.rows.length) {
+      showToast("取り込めませんでした。Claudeが出力したJSON、または「構成台本コピー」を貼り付けてください");
+      return;
+    }
+    const n = index.length + 1;
+    const base = newProjectData(parsed.name || ("取込案件" + n), parsed.channel || DEFAULT_CHANNEL);
+    const data = { ...base, meta: parsed.meta, theme: parsed.theme, rate: parsed.rate, timeFormat: parsed.timeFormat, rows: parsed.rows };
+    const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
+    try {
+      if (project) await window.storage.set(STORE_PROJ(project.id), JSON.stringify(project));
+      await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
+    } catch (e) {}
+    setIndex(idx); persistIndex(idx);
+    setActiveId(data.id); setProject(data); setTab("script");
+    setShowFullImport(false); setFullImportText("");
+    showToast(parsed.rows.filter((r) => r.kind === "scene").length + "シーンを新規案件として取り込みました");
   };
 
   const duplicateProject = async (id) => {
@@ -854,6 +972,13 @@ export default function App() {
             ＋ch
           </button>
         </div>
+        <div className="px-3 pb-2">
+          <button onClick={() => setShowFullImport(true)}
+            title="Claudeが出力したJSON / 構成台本コピーを貼り付けて新規案件化"
+            className="w-full text-[11px] font-bold py-2 rounded-lg bg-white/10 hover:bg-white/20">
+            ⤓ 構成台本を取り込み
+          </button>
+        </div>
 
         {/* チャンネル名サジェスト用 */}
         <datalist id="mg-channels">
@@ -1011,6 +1136,14 @@ export default function App() {
               )}
             </button>
           )}
+          {/* 構成台本をTSVコピー（スプシ／Claude取り込み用） */}
+          <button onClick={exportScriptTSV} title="構成台本をスプシ形式でコピー（取り込みにも使える）"
+            className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: mainText }}>
+              <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" />
+            </svg>
+            台本コピー
+          </button>
           {/* 共有リンク発行 */}
           <button onClick={publishShare} disabled={sharing} title="先方に見せる共有リンクを発行"
             className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 disabled:opacity-50">
@@ -1436,6 +1569,40 @@ export default function App() {
                   className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40"
                   style={{ background: theme.accent, color: accentText }}>
                   取り込む
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 構成台本まるごと取り込みモーダル（新規案件） ===== */}
+      {showFullImport && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowFullImport(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider">構成台本を取り込み → 新規案件</h3>
+              <button onClick={() => setShowFullImport(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15">✕</button>
+            </div>
+            <div className="p-5">
+              <p className="text-[12px] text-stone-500 mb-2">
+                ① Claudeが出力した <span className="font-bold" style={{ fontFamily: mono }}>{"{ rows: [...] }"}</span> 形式のJSON、または
+                ② このツールの「構成台本コピー」TSV を、そのまま貼り付けてください。
+                ロケーション・シーン・秒数・原稿・番組情報まで丸ごと復元して<span className="font-bold">新しい案件</span>を作ります。
+              </p>
+              <textarea
+                value={fullImportText}
+                onChange={(e) => setFullImportText(e.target.value)}
+                placeholder={'{\n  "name": "永田晃聖さん｜オリックス不動産",\n  "channel": "オリックス不動産",\n  "meta": { "highlight": "…" },\n  "rows": [\n    { "kind": "location", "label": "出社", "time": "8:50" },\n    { "kind": "scene", "type": "訴求", "sec": 180, "label": "自己紹介", "script": "◼ …" }\n  ]\n}'}
+                className="w-full h-72 text-[12px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
+                style={{ fontFamily: mono }}
+              />
+              <div className="mt-3 flex justify-end gap-2">
+                <button onClick={() => setShowFullImport(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50">キャンセル</button>
+                <button onClick={importAsNewProject} disabled={!fullImportText.trim()}
+                  className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40"
+                  style={{ background: theme.accent, color: accentText }}>
+                  新規案件として取り込む
                 </button>
               </div>
             </div>
