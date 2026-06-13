@@ -165,6 +165,32 @@ export default {
         return json({ id, token });
       }
 
+      // POST /api/publish-channel { name, channelInfo, projects:[...], prevId?, token? } → チャンネル丸ごと公開
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "publish-channel") {
+        const b = await request.json();
+        if (!b || !b.name) return json({ error: "channel name required" }, 400);
+        const projects = Array.isArray(b.projects) ? b.projects : [];
+        let id = (b.prevId || "").toString().slice(0, 16);
+        let token; const nowt = now(); let createdAt = nowt;
+        if (id) {
+          const et = await env.SNAPS.get("chtok:" + id);
+          if (!et || et !== (b.token || "")) { id = ""; }
+          else { token = et; const prev = await env.SNAPS.get("chan:" + id, "json"); if (prev && prev.createdAt) createdAt = prev.createdAt; }
+        }
+        if (!id) { id = rid(8); token = rid(20); }
+        const doc = { name: b.name, channelInfo: slimCI(b.channelInfo), cases: projects.map(slim), createdAt, updatedAt: nowt };
+        await env.SNAPS.put("chan:" + id, JSON.stringify(doc));
+        await env.SNAPS.put("chtok:" + id, token);
+        return json({ id, token });
+      }
+
+      // GET /api/chan/{id}
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "chan" && parts[2] && !parts[3]) {
+        const doc = await env.SNAPS.get("chan:" + parts[2], "json");
+        if (!doc) return json({ error: "not found" }, 404);
+        return json(doc);
+      }
+
       // GET /api/snap/{id}
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "snap" && parts[2] && !parts[3]) {
         const snap = await env.SNAPS.get("snap:" + parts[2], "json");
@@ -419,11 +445,16 @@ function slim(p) {
       id: pl.id, title: pl.title || "", thumbText: pl.thumbText || "", note: pl.note || "",
       refs: (pl.refs || []).map((rf) => ({ vid: rf.vid || "", title: rf.title || "", channel: rf.channel || "", views: rf.views || 0, subs: rf.subs || 0, uploadDate: rf.uploadDate || "", duration: rf.duration || "" })),
     })),
-    channelInfo: p.channelInfo ? {
-      name: p.channelInfo.name || "", url: p.channelInfo.url || "", concept: p.channelInfo.concept || "",
-      target: p.channelInfo.target || "", purpose: p.channelInfo.purpose || "",
-      competitors: (p.channelInfo.competitors || []).map((c) => ({ name: c.name || "", url: c.url || "", subs: c.subs || 0, videos: c.videos || 0, note: c.note || "", thumb: c.thumb || "" })),
-    } : null,
+    channelInfo: slimCI(p.channelInfo),
+  };
+}
+
+function slimCI(ci) {
+  if (!ci) return null;
+  return {
+    name: ci.name || "", url: ci.url || "", concept: ci.concept || "",
+    target: ci.target || "", purpose: ci.purpose || "",
+    competitors: (ci.competitors || []).map((c) => ({ name: c.name || "", url: c.url || "", subs: c.subs || 0, videos: c.videos || 0, note: c.note || "", thumb: c.thumb || "" })),
   };
 }
 

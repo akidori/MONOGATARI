@@ -34,6 +34,8 @@ const SECTION_TYPES = {
 };
 const params = new URLSearchParams(location.search);
 const ID = params.get("id");
+const CHID = params.get("ch");
+let CHANNEL = null, CASE_SEL = 0, CTAB = "script", CHMODE = false;
 const esc = (s) => (s||"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
 
 /* インライン書式: **太字** / !!赤!! （esc 済み文字列に対して適用） */
@@ -54,6 +56,16 @@ function renderScript(accent, val){
 let SNAP=null, COMMENTS=[], AUTHOR = (localStorage.getItem("mg:shareAuthor")||"");
 
 async function load(){
+  if(CHID){
+    CHMODE = true;
+    try{
+      const r = await fetch(API+"/api/chan/"+CHID);
+      if(!r.ok){ document.getElementById("loading").innerHTML = "このチャンネル共有リンクは見つかりませんでした。"; return; }
+      CHANNEL = await r.json();
+      renderChannel();
+    }catch(e){ document.getElementById("loading").textContent = "読み込みに失敗しました：" + e.message; }
+    return;
+  }
   if(!ID){ document.getElementById("loading").textContent = "リンクが正しくありません（idがありません）。"; return; }
   try{
     const [sR, cR] = await Promise.all([
@@ -114,12 +126,12 @@ function paneScript(p, accent, main){
           <span class="text-[13px] font-bold">${esc(r.label||"")}</span>
         </div>
         <div class="script text-stone-800">${renderScript(accent, r.script)}</div>
-        <div class="mt-2">
+        ${CHMODE?'':`<div class="mt-2">
           <button data-c="${r.id}" data-l="${esc(r.label||t.full)}" class="cbtn text-[11px] font-semibold px-2.5 py-1 rounded-full border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1" style="color:${main}">
             💬 コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}
           </button>
         </div>
-        <div id="cwrap-${r.id}" class="hidden mt-2 space-y-2"></div>
+        <div id="cwrap-${r.id}" class="hidden mt-2 space-y-2"></div>`}
       </div>
     </div>`;
   });
@@ -175,8 +187,8 @@ function paneTalk(p, accent, main){
     return `<div class="mb-2 border border-stone-100 rounded-lg overflow-hidden">
       <div class="px-3 py-1.5 bg-stone-50 text-[12.5px] font-bold flex items-center gap-2"><span class="text-[9px] text-stone-400 mono">本編${i+1}</span>${esc(b.heading||"")}</div>
       <div class="p-3">${txt(b.script)}
-      <div class="mt-2"><button data-c="${b.id}" data-l="${esc(b.heading||('本編'+(i+1)))}" class="cbtn text-[11px] font-semibold px-2.5 py-1 rounded-full border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1" style="color:${main}">💬 コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}</button></div>
-      <div id="cwrap-${b.id}" class="hidden mt-2 space-y-2"></div></div></div>`;
+      ${CHMODE?'':`<div class="mt-2"><button data-c="${b.id}" data-l="${esc(b.heading||('本編'+(i+1)))}" class="cbtn text-[11px] font-semibold px-2.5 py-1 rounded-full border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1" style="color:${main}">💬 コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}</button></div>
+      <div id="cwrap-${b.id}" class="hidden mt-2 space-y-2"></div>`}</div></div>`;
   }).join("") || '<div class="text-stone-300 text-[12px]">（未入力）</div>';
   html += block("⑤", "本編", bodyHtml);
   html += block("⑥", "CTA", txt(t.cta));
@@ -285,6 +297,40 @@ function render(){
 
   document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
   document.querySelectorAll(".cbtn").forEach(b => b.addEventListener("click", () => toggleComments(b.dataset.c, b.dataset.l)));
+}
+
+function renderChannel(){
+  const ch = CHANNEL; const ci = ch.channelInfo || {};
+  const cases = ch.cases || [];
+  const theme = (cases[0] && cases[0].theme) || {main:"#1F2430",accent:"#E63946"};
+  const mainC = theme.main, accentC = theme.accent;
+  document.documentElement.style.setProperty("--main", mainC);
+  const sel = cases[CASE_SEL] || null;
+  let caseHtml = "";
+  if(sel){
+    const isTalk = sel.format === "talk";
+    const hasPlans = (sel.plans||[]).length>0;
+    const sub = [];
+    if(hasPlans) sub.push(["plan","企画・サムネ"]);
+    sub.push(["script","構成台本"]);
+    if(!isTalk) sub.push(["kouban","香盤表"]);
+    if(!sub.some(s=>s[0]===CTAB)) CTAB="script";
+    const subBar = `<div class="flex gap-1 mb-3 border-b border-stone-200 overflow-x-auto">${sub.map(([k,label])=>`<button data-ctab="${k}" class="ctabbtn text-[12px] font-bold px-3 py-1.5 whitespace-nowrap ${CTAB===k?'border-b-2':''}" style="${CTAB===k?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
+    const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
+    caseHtml = subBar + `<div>${pane}</div>`;
+  }
+  document.getElementById("app").innerHTML = `
+    <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400 mb-2">CHANNEL / チャンネル資料</div>
+    <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
+      <div class="px-5 py-4" style="background:${mainC};color:#fff"><div class="text-[18px] font-black">${esc((ci.name)||ch.name||"チャンネル")}</div>${ci.url?`<a href="${esc(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] opacity-80 mono break-all">${esc(ci.url)}</a>`:""}</div>
+    </div>
+    <div class="mb-6">${paneConcept({channelInfo: ci})}</div>
+    <div class="text-[11px] font-bold tracking-[0.15em] text-stone-400 mb-2">案件（${cases.length}）</div>
+    <div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto">${cases.map((c,i)=>`<button data-case="${i}" class="casebtn text-[12px] font-bold px-3 py-2 whitespace-nowrap ${CASE_SEL===i?'border-b-2':''}" style="${CASE_SEL===i?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${esc((c.plans&&c.plans[0]&&c.plans[0].title)||c.name||('案件'+(i+1)))}</button>`).join("")||'<span class="text-stone-400 text-[12px] py-2">案件がありません</span>'}</div>
+    <div>${caseHtml}</div>
+    <p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
+  document.querySelectorAll(".casebtn").forEach(b=>b.addEventListener("click",()=>{ CASE_SEL=+b.dataset.case; CTAB="script"; renderChannel(); }));
+  document.querySelectorAll(".ctabbtn").forEach(b=>b.addEventListener("click",()=>{ CTAB=b.dataset.ctab; renderChannel(); }));
 }
 
 function fmtTime(iso){ return (iso||"").slice(5,16).replace("T"," "); }

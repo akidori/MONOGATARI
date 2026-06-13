@@ -712,6 +712,7 @@ export default function App() {
   /* 共有・コメント */
   const [shareModal, setShareModal] = useState(null);       // {url, id} or null
   const [sharing, setSharing] = useState(false);
+  const [chSharing, setChSharing] = useState(false);        // チャンネル丸ごと共有の発行中
   const [comments, setComments] = useState([]);             // 現案件の先方コメント
   const [showComments, setShowComments] = useState(false);
   const saveTimer = useRef(null);
@@ -948,6 +949,34 @@ export default function App() {
     } catch (e) { showToast("招待失敗：" + (e.message || e)); }
     finally { setInviteBusy(false); }
   };
+  /* チャンネル（フォルダ）を丸ごと共有：コンセプト＋配下の全案件を1つのURLで公開 */
+  const publishChannel = async (channel) => {
+    setChSharing(true);
+    try {
+      const entries = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === channel);
+      const projects = [];
+      for (const x of entries) {
+        if (x.id === activeId && project) { projects.push(project); continue; }
+        try {
+          if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); projects.push(r.project); }
+          else { const r = await window.storage.get(STORE_PROJ(x.id)); if (r && r.value) projects.push(JSON.parse(r.value)); }
+        } catch (e) {}
+      }
+      const ci = channelInfo[channel] || {};
+      const res = await fetch(SHARE_API + "/api/publish-channel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: channel, channelInfo: { ...ci, name: ci.name || channel }, projects, prevId: ci.shareId || null, token: ci.shareToken || null }),
+      });
+      const d = await res.json();
+      if (!d.id) throw new Error(d.error || "発行に失敗しました");
+      setChannelInfo((c) => ({ ...c, [channel]: { ...emptyChannelInfo(), name: channel, ...(c[channel] || {}), shareId: d.id, shareToken: d.token || (c[channel] && c[channel].shareToken) } }));
+      const url = location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?ch=" + d.id;
+      setShareModal({ id: d.id, url, updated: !!ci.shareId, channel: true, caseCount: projects.length });
+      try { await navigator.clipboard.writeText(url); } catch (e) {}
+    } catch (e) { showToast("チャンネル共有の発行に失敗：" + (e.message || e)); }
+    finally { setChSharing(false); }
+  };
+
   const uninviteMember = async (email) => {
     if (!window.confirm(email + " を共有から外しますか？")) return;
     try {
@@ -2092,9 +2121,17 @@ export default function App() {
         {tab === "concept" && (
           <div className="max-w-[1000px] mx-auto">
             <div className="flex items-center gap-2 mb-4 flex-wrap">
-              <p className="text-[12px] text-stone-500 leading-relaxed">
+              <p className="text-[12px] text-stone-500 leading-relaxed flex-1 min-w-[200px]">
                 チャンネル「<span className="font-bold" style={{ color: theme.main }}>{curChannel}</span>」のコンセプト。<span className="font-bold">同じチャンネル（フォルダ）の全案件で共有</span>されます。
               </p>
+              {curChannel !== DEFAULT_CHANNEL && (
+                <button onClick={() => publishChannel(curChannel)} disabled={chSharing}
+                  title="このチャンネルのコンセプト＋配下の全案件をまとめて見せる共有URLを発行"
+                  className="shrink-0 h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50" style={{ background: theme.main }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+                  {chSharing ? "発行中…" : (channelInfo[curChannel] && channelInfo[curChannel].shareId) ? "チャンネル共有を更新" : "チャンネルを共有"}
+                </button>
+              )}
             </div>
             {curChannel === DEFAULT_CHANNEL && (
               <div className="mb-4 text-[12px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 inline-flex items-start gap-1.5">
@@ -3074,12 +3111,14 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShareModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">{shareModal.updated ? "共有リンクを更新しました" : "共有リンクを発行しました"}</h3>
+              <h3 className="text-sm font-bold tracking-wider">{(shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
               <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
-                このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上のコメントボタンに届きます。
+                {shareModal.channel
+                  ? <>このURLで<span className="font-bold">チャンネルのコンセプト＋配下の{shareModal.caseCount || 0}案件</span>をまとめて見せられます（読み取り専用）。チーム共有やクライアント説明用に。</>
+                  : <>このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上のコメントボタンに届きます。</>}
               </p>
               <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
                 <input readOnly value={shareModal.url} className="flex-1 min-w-0 bg-transparent text-[12px] focus:outline-none" style={{ fontFamily: mono }}
