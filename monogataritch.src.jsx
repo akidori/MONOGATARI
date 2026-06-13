@@ -1235,6 +1235,32 @@ export default function App() {
       const moved = { ...emptyChannelInfo(), ...(ci[oldName] || {}), ...(ci[ch] || {}), name: ch };
       const n = { ...ci, [ch]: moved }; delete n[oldName]; return n;
     });
+  };
+
+  /* 同じチャンネル内で案件の順番を入れ替え（チャンネル跨ぎはしない＝事故防止） */
+  const moveCaseInChannel = (id, dir) => {
+    const item = index.find((x) => x.id === id); if (!item) return;
+    const ch = item.channel || DEFAULT_CHANNEL;
+    const same = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === ch);
+    const pos = same.findIndex((x) => x.id === id);
+    const swap = same[pos + dir]; if (!swap) return;
+    const ni = index.map((x) => (x.id === id ? swap : x.id === swap.id ? item : x));
+    setIndex(ni); persistIndex(ni);
+  };
+
+  /* チャンネル（フォルダ）の順番を入れ替え（未分類は常に末尾） */
+  const moveChannel = (name, dir) => {
+    const named = channelGroups.map((g) => g.channel).filter((c) => c !== DEFAULT_CHANNEL);
+    const pos = named.indexOf(name);
+    if (pos < 0 || pos + dir < 0 || pos + dir >= named.length) return;
+    const newNamed = [...named];
+    [newNamed[pos], newNamed[pos + dir]] = [newNamed[pos + dir], newNamed[pos]];
+    const blocks = {};
+    index.forEach((x) => { const ch = x.channel || DEFAULT_CHANNEL; (blocks[ch] = blocks[ch] || []).push(x); });
+    const orderedCh = [...newNamed, ...Object.keys(blocks).filter((c) => !newNamed.includes(c) && c !== DEFAULT_CHANNEL)];
+    if (blocks[DEFAULT_CHANNEL]) orderedCh.push(DEFAULT_CHANNEL);
+    const ni = orderedCh.flatMap((ch) => blocks[ch] || []);
+    setIndex(ni); persistIndex(ni);
     // 本体側も後追いで更新
     idx.forEach(async (x) => {
       if (x.channel !== ch) return;
@@ -1688,6 +1714,10 @@ export default function App() {
                   </span>
                   <span className="text-[10px] text-white/30 tabular-nums">{items.length}</span>
                   <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
+                    {channel !== DEFAULT_CHANNEL && (<>
+                      <button title="フォルダを上へ" onClick={(e) => { e.stopPropagation(); moveChannel(channel, -1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="up" className="w-3 h-3" /></button>
+                      <button title="フォルダを下へ" onClick={(e) => { e.stopPropagation(); moveChannel(channel, 1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="down" className="w-3 h-3" /></button>
+                    </>)}
                     <button title="このチャンネルに案件を追加" onClick={(e) => { e.stopPropagation(); createProject(true, channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">{<Icon name="plus" className="w-3.5 h-3.5" />}</button>
                     <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
                   </div>
@@ -1730,8 +1760,9 @@ export default function App() {
                           </span>
                         )}
                         <div className="flex gap-0.5 opacity-0 group-hover/p:opacity-100 transition-opacity shrink-0">
+                          <button title="この案件を上へ（同じフォルダ内）" onClick={(e) => { e.stopPropagation(); moveCaseInChannel(p.id, -1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="up" className="w-3 h-3" /></button>
+                          <button title="この案件を下へ（同じフォルダ内）" onClick={(e) => { e.stopPropagation(); moveCaseInChannel(p.id, 1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="down" className="w-3 h-3" /></button>
                           <button title="名前変更" onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
-                          <button title="チャンネル移動" onClick={(e) => { e.stopPropagation(); setChannelEditId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">📁</button>
                           <button title="複製" onClick={(e) => { e.stopPropagation(); duplicateProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">⎘</button>
                           <button title="削除" onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-red-500/40"><Icon name="trash" className="w-3 h-3" /></button>
                         </div>
@@ -1984,51 +2015,51 @@ export default function App() {
                 <span className="text-[12px] font-bold tracking-wide text-stone-600">競合チャンネル</span>
                 <span className="text-[10px] text-stone-400">URLを貼ると登録者数を自動取得</span>
               </div>
-              <div className="p-4 space-y-2">
-                {(curChannelInfo.competitors || []).length === 0 && (
-                  <p className="text-[12px] text-stone-400 text-center py-2">競合チャンネルをまだ追加していません。</p>
-                )}
-                {(curChannelInfo.competitors || []).map((c, i) => (
-                  <div key={i} className="border border-stone-200 rounded-xl p-2.5">
-                    <div className="flex items-center gap-2">
-                      {compBusy[i] ? (
-                        <div className="w-9 h-9 rounded-full bg-stone-200 animate-pulse shrink-0" />
-                      ) : c.thumb ? (
-                        <img src={c.thumb} alt="" className="w-9 h-9 rounded-full shrink-0" referrerPolicy="no-referrer" />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-stone-100 grid place-items-center text-stone-300 shrink-0"><Icon name="user" className="w-4 h-4" /></div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        {c.name
-                          ? <div className="text-[12.5px] font-bold text-stone-700 truncate">{c.name}</div>
-                          : <div className="text-[12px] text-stone-400">チャンネルURLを入力</div>}
-                        {(c.subs > 0 || c.videos > 0) && (
-                          <div className="text-[10px] text-stone-500 flex gap-2" style={{ fontFamily: mono }}>
-                            <span title="登録者数">👤 {fmtNum(c.subs)}</span>
-                            {c.videos > 0 && <span title="動画数">🎬 {fmtNum(c.videos)}</span>}
-                            {c.views > 0 && <span title="総再生数">▶ {fmtNum(c.views)}</span>}
-                          </div>
+              <div className="p-4">
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                  {(curChannelInfo.competitors || []).map((c, i) => (
+                      <div key={i} className="border border-stone-200 rounded-xl overflow-hidden flex flex-col bg-stone-50/50 relative">
+                        <button onClick={() => removeCompetitor(i)} title="削除"
+                          className="absolute top-1 right-1 z-10 w-6 h-6 rounded-lg grid place-items-center bg-white/80 text-stone-400 hover:text-red-500 hover:bg-white shadow-sm"><Icon name="trash" className="w-3 h-3" /></button>
+                        {compBusy[i] ? (
+                          <div className="aspect-video grid place-items-center bg-white border-b border-stone-100"><div className="w-12 h-12 rounded-full bg-stone-200 animate-pulse" /></div>
+                        ) : c.thumb ? (
+                          <a href={c.url || "#"} target="_blank" rel="noreferrer" className="aspect-video grid place-items-center bg-white border-b border-stone-100">
+                            <img src={c.thumb} alt="" className="w-14 h-14 rounded-full object-cover" referrerPolicy="no-referrer" />
+                          </a>
+                        ) : (
+                          <div className="aspect-video grid place-items-center bg-white border-b border-dashed border-stone-200 text-[9px] text-stone-300 text-center px-1">URLを貼ると<br />サムネ表示</div>
                         )}
+                        <div className="px-2 pt-1.5">
+                          {c.name
+                            ? <div className="text-[11px] font-bold text-stone-700 leading-snug line-clamp-2" title={c.name}>{c.name}</div>
+                            : <div className="text-[10px] text-stone-300">未取得</div>}
+                          {(c.subs > 0 || c.videos > 0) && (
+                            <div className="text-[9px] text-stone-500 flex flex-wrap gap-x-1.5" style={{ fontFamily: mono }}>
+                              <span title="登録者数">👤 {fmtNum(c.subs)}</span>
+                              {c.videos > 0 && <span title="動画数">🎬 {fmtNum(c.videos)}</span>}
+                            </div>
+                          )}
+                        </div>
+                        <div className="p-1.5 mt-auto space-y-1">
+                          <input
+                            key={c.url}
+                            defaultValue={c.url}
+                            placeholder="チャンネルURL"
+                            onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== c.url) fetchCompetitor(i, v); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                            className="w-full text-[9px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                          <input value={c.note || ""} onChange={(e) => updateCompetitor(i, { note: e.target.value })}
+                            placeholder="メモ"
+                            className="w-full text-[10px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
+                        </div>
                       </div>
-                      {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="text-[11px] text-stone-400 hover:text-stone-600 shrink-0">開く ↗</a>}
-                      <button onClick={() => removeCompetitor(i)} title="削除" className="w-7 h-7 rounded-lg grid place-items-center text-stone-300 hover:bg-red-50 hover:text-red-500 shrink-0"><Icon name="trash" className="w-3.5 h-3.5" /></button>
-                    </div>
-                    <input
-                      key={c.url}
-                      defaultValue={c.url}
-                      placeholder="https://www.youtube.com/@competitor"
-                      onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== c.url) fetchCompetitor(i, v); }}
-                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                      className="mt-2 w-full text-[11px] border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
-                    <input value={c.note || ""} onChange={(e) => updateCompetitor(i, { note: e.target.value })}
-                      placeholder="メモ（強み・参考点など）"
-                      className="mt-1.5 w-full text-[12px] border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:border-stone-400" />
-                  </div>
-                ))}
-                <button onClick={addCompetitor}
-                  className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-300 hover:bg-stone-50 inline-flex items-center gap-1.5">
-                  <Icon name="plus" className="w-4 h-4" />競合チャンネルを追加
-                </button>
+                  ))}
+                  <button onClick={addCompetitor}
+                    className="border border-dashed border-stone-300 rounded-xl aspect-[3/4] grid place-items-center text-stone-400 hover:bg-stone-50 hover:text-stone-600">
+                    <span className="inline-flex flex-col items-center gap-1 text-[11px] font-bold"><Icon name="plus" className="w-5 h-5" />競合を追加</span>
+                  </button>
+                </div>
               </div>
             </section>
 
