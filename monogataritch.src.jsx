@@ -699,6 +699,7 @@ export default function App() {
   const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
   const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
+  const [showChannels, setShowChannels] = useState(false); // チャンネル一覧モーダル
   const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -978,6 +979,13 @@ export default function App() {
       try { await navigator.clipboard.writeText(url); } catch (e) {}
     } catch (e) { showToast("チャンネル共有の発行に失敗：" + (e.message || e)); }
     finally { setChSharing(false); }
+  };
+
+  /* チャンネル一覧からそのチャンネルを開く（最初の案件＋コンセプトタブ） */
+  const openChannel = async (channel) => {
+    setShowChannels(false);
+    const grp = channelGroups.find((g) => g.channel === channel);
+    if (grp && grp.items[0]) { await switchProject(grp.items[0].id); setTab("concept"); }
   };
 
   const uninviteMember = async (email) => {
@@ -1802,8 +1810,13 @@ export default function App() {
           color: "#fff",
           transform: sidebarOpen ? "translateX(0)" : "translateX(-248px)",
         }}>
-        <div className="px-4 py-3 flex items-center gap-2 border-b border-white/10">
-          <span className="font-black tracking-[0.08em] text-[14px]">ものがたりっち！</span>
+        <div className="px-3 py-2.5 border-b border-white/10">
+          <button onClick={() => setShowChannels(true)} title="チャンネル一覧を開く"
+            className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors">
+            <img src="icon-192.png" alt="" className="w-7 h-7 rounded-lg shrink-0" />
+            <span className="font-black tracking-[0.08em] text-[14px]">ものがたりっち！</span>
+            <svg className="w-4 h-4 ml-auto text-white/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+          </button>
         </div>
         <div className="px-3 py-2 flex gap-1.5 relative">
           <button onClick={() => setNewMenu((v) => !v)}
@@ -3059,6 +3072,56 @@ export default function App() {
                   {authBusy && <div className="text-center text-[12px] text-stone-400 mt-2">ログイン中…</div>}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== チャンネル一覧モーダル ===== */}
+      {showChannels && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 pt-16 overflow-y-auto" onClick={() => setShowChannels(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-2">
+                <img src="icon-192.png" alt="" className="w-5 h-5 rounded" />チャンネル一覧
+              </h3>
+              <button onClick={() => setShowChannels(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 max-h-[70vh] overflow-y-auto">
+              <div className="space-y-2">
+                {channelGroups.map(({ channel, items }) => {
+                  const ci = channelInfo[channel] || {};
+                  const shared = ci.shareId;
+                  return (
+                    <div key={channel} className="border border-stone-200 rounded-xl p-3 hover:border-stone-300 transition-colors">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[13.5px] font-bold text-stone-800 truncate">{channel}</span>
+                            <span className="text-[10px] text-stone-400 shrink-0">{items.length}案件</span>
+                            {shared && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 shrink-0">共有中</span>}
+                          </div>
+                          {(ci.concept || ci.target) && <div className="text-[11px] text-stone-500 mt-0.5 line-clamp-1">{ci.concept || ci.target}</div>}
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {items.slice(0, 4).map((it) => (
+                              <span key={it.id} className="text-[10px] text-stone-500 bg-stone-100 rounded px-1.5 py-0.5 truncate max-w-[120px]">{it.name}</span>
+                            ))}
+                            {items.length > 4 && <span className="text-[10px] text-stone-400">+{items.length - 4}</span>}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1 shrink-0">
+                          <button onClick={() => openChannel(channel)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow" style={{ background: theme.main }}>開く</button>
+                          {channel !== DEFAULT_CHANNEL && (
+                            <button onClick={() => { setShowChannels(false); publishChannel(channel); }} disabled={chSharing} className="text-[10px] font-bold px-3 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-50">共有</button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {channelGroups.length === 0 && <p className="text-[12px] text-stone-400 text-center py-6">チャンネルがありません</p>}
+              </div>
             </div>
           </div>
         </div>
