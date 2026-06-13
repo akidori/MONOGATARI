@@ -131,18 +131,23 @@ function setActiveStorage(useCloud) {
 }
 
 const DEFAULT_CHANNEL = "未分類";
-const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL) => ({
+/* トーク系台本の中身（タイトルは企画・サムネと連携、ハイライト/冒頭/目次/本編/CTA） */
+const newTalkBody = () => ({ id: uid(), heading: "", script: "" });
+const newTalk = () => ({ highlight: "", intro: "", toc: [""], body: [newTalkBody()], cta: "" });
+const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format = "documentary") => ({
   id: uid(),
   name,
   channel: channel || DEFAULT_CHANNEL,
   createdAt: Date.now(),
   shareId: null,
   shareToken: null,
+  format,
   meta: { shootDate: "", place: "", titles: ["", "", ""], thumbs: ["", "", ""], highlight: "" },
   theme: { ...DEFAULT_THEME },
   rate: 5,
   timeFormat: "tc",
-  rows: templateRows(),
+  rows: format === "talk" ? [] : templateRows(),
+  talk: format === "talk" ? newTalk() : null,
   plans: [],
 });
 
@@ -170,6 +175,10 @@ const migrateProject = (p) => {
       r.kind === "scene" ? { sec: null, ...r } : { address: "", time: "", note: "", ...r }
     ),
     plans: (Array.isArray(p.plans) && p.plans.length) ? p.plans : seedPlansFromMeta(p.meta || {}),
+    format: p.format === "talk" ? "talk" : "documentary",
+    talk: p.format === "talk"
+      ? { ...newTalk(), ...(p.talk || {}), toc: (p.talk && p.talk.toc && p.talk.toc.length) ? p.talk.toc : [""], body: (p.talk && p.talk.body && p.talk.body.length) ? p.talk.body : [newTalkBody()] }
+      : (p.talk || null),
   };
 };
 
@@ -686,6 +695,7 @@ export default function App() {
   const [reviewResult, setReviewResult] = useState(null);   // { issues:[], summary } | null
   const [flashId, setFlashId] = useState(null);             // ジャンプ先シーンの一時ハイライト
   const [editHeaderChannel, setEditHeaderChannel] = useState(false); // ヘッダーからカテゴリ変更中
+  const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
   const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -968,18 +978,19 @@ export default function App() {
     } catch (e) { showToast("案件を開けませんでした：" + (e.message || e)); }
   };
 
-  const createProject = async (template = true, channel = DEFAULT_CHANNEL) => {
+  const createProject = async (template = true, channel = DEFAULT_CHANNEL, format = "documentary") => {
     const n = index.length + 1;
-    const data = newProjectData("案件" + n, channel);
-    if (!template) data.rows = [];
+    const data = newProjectData((format === "talk" ? "トーク案件" : "案件") + n, channel, format);
+    if (!template && format !== "talk") data.rows = [];
     const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
     try {
-      if (project) await window.storage.set(STORE_PROJ(project.id), JSON.stringify(project));
+      if (project) await saveProjectData(project);
       await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
     } catch (e) {}
     setIndex(idx); persistIndex(idx);
     setActiveId(data.id); setProject(data); setTab("script");
-    showToast("案件を作成しました");
+    setNewMenu(false);
+    showToast(format === "talk" ? "トーク台本を作成しました" : "案件を作成しました");
   };
 
   /* 解析済みデータから新規案件を作成（共通） */
@@ -1117,6 +1128,17 @@ export default function App() {
     const refs = x.refs.map((r, i) => (i === idx ? { ...r, ...patch } : r));
     return { ...x, refs };
   }));
+  /* ===== トーク系台本の編集 ===== */
+  const tk = (p) => (p && p.talk) ? p.talk : newTalk();
+  const updateTalk = (patch) => setProject((p) => (p ? { ...p, talk: { ...tk(p), ...patch } } : p));
+  const addToc = () => setProject((p) => ({ ...p, talk: { ...tk(p), toc: [...tk(p).toc, ""] } }));
+  const setToc = (i, val) => setProject((p) => ({ ...p, talk: { ...tk(p), toc: tk(p).toc.map((t, k) => (k === i ? val : t)) } }));
+  const removeToc = (i) => setProject((p) => ({ ...p, talk: { ...tk(p), toc: tk(p).toc.filter((_, k) => k !== i) } }));
+  const addBody = () => setProject((p) => ({ ...p, talk: { ...tk(p), body: [...tk(p).body, newTalkBody()] } }));
+  const setBody = (id, patch) => setProject((p) => ({ ...p, talk: { ...tk(p), body: tk(p).body.map((b) => (b.id === id ? { ...b, ...patch } : b)) } }));
+  const removeBody = (id) => setProject((p) => ({ ...p, talk: { ...tk(p), body: tk(p).body.filter((b) => b.id !== id) } }));
+  const moveBody = (id, dir) => setProject((p) => { const arr = [...tk(p).body]; const i = arr.findIndex((b) => b.id === id); const j = i + dir; if (j < 0 || j >= arr.length) return p; [arr[i], arr[j]] = [arr[j], arr[i]]; return { ...p, talk: { ...tk(p), body: arr } }; });
+
   /* 番組情報のタイトル案/サムネ案（i番目）から企画案を編集（無ければ作る） */
   const setPlanField = (i, field, val) => setPlans((ps) => {
     const arr = [...(ps || [])];
@@ -1736,8 +1758,8 @@ export default function App() {
         <div className="px-4 py-3 flex items-center gap-2 border-b border-white/10">
           <span className="font-black tracking-[0.08em] text-[14px]">ものがたりっち！</span>
         </div>
-        <div className="px-3 py-2 flex gap-1.5">
-          <button onClick={() => createProject(true)}
+        <div className="px-3 py-2 flex gap-1.5 relative">
+          <button onClick={() => setNewMenu((v) => !v)}
             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-lg"
             style={{ background: theme.accent, color: accentText }}>
             <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
@@ -1747,6 +1769,22 @@ export default function App() {
             className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20">
             <Icon name="plus" className="w-3.5 h-3.5" />ch
           </button>
+          {newMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setNewMenu(false)} />
+              <div className="absolute left-3 right-3 top-full mt-1 z-50 bg-[#1f242c] border border-white/15 rounded-xl shadow-2xl overflow-hidden">
+                <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-white/40">どのタイプの台本？</div>
+                <button onClick={() => createProject(true, DEFAULT_CHANNEL, "documentary")} className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-start gap-2">
+                  <span className="text-base leading-none mt-0.5">🎬</span>
+                  <span><span className="block text-[12px] font-bold text-white">一日密着</span><span className="block text-[10px] text-white/45">ロケ・シーン構成のドキュメンタリー</span></span>
+                </button>
+                <button onClick={() => createProject(true, DEFAULT_CHANNEL, "talk")} className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-start gap-2 border-t border-white/10">
+                  <span className="text-base leading-none mt-0.5">🎙️</span>
+                  <span><span className="block text-[12px] font-bold text-white">トーク系</span><span className="block text-[10px] text-white/45">ハイライト/冒頭/目次/本編/CTA構成</span></span>
+                </button>
+              </div>
+            </>
+          )}
         </div>
         <div className="px-3 pb-2">
           <button onClick={() => { setImportTarget("new"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
@@ -1995,7 +2033,7 @@ export default function App() {
         </div>
         {/* タブ */}
         <div className="max-w-[1500px] mx-auto px-4 flex gap-1">
-          {[["concept", "チャンネルコンセプト"], ["plan", "企画・サムネ"], ["script", "構成台本"], ["kouban", "香盤表"]].map(([k, label]) => (
+          {[["concept", "チャンネルコンセプト"], ["plan", "企画・サムネ"], ["script", "構成台本"], ...(project.format === "talk" ? [] : [["kouban", "香盤表"]])].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"px-4 py-1.5 rounded-t-lg text-[12px] font-bold tracking-wider transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -2144,8 +2182,75 @@ export default function App() {
           </div>
         )}
 
+        {/* ================= トーク系 構成台本タブ ================= */}
+        {tab === "script" && project.format === "talk" && (() => {
+          const t = project.talk || newTalk();
+          const labelCls = "text-[11px] font-bold tracking-wide";
+          const taCls = "mt-1 w-full text-[13.5px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-stone-400 resize-y";
+          const sec = (no, title, hint, children) => (
+            <section className={cardCls + " mb-3"}>
+              <div className="px-4 py-2.5 flex items-center gap-2 border-b border-stone-100">
+                <span className="w-6 h-6 rounded-lg grid place-items-center text-[11px] font-bold text-white shrink-0" style={{ background: theme.main }}>{no}</span>
+                <span className="text-[13px] font-bold text-stone-700">{title}</span>
+                {hint && <span className="text-[10px] text-stone-400 ml-auto">{hint}</span>}
+              </div>
+              <div className="p-4">{children}</div>
+            </section>
+          );
+          return (
+            <div className="max-w-[900px] mx-auto">
+              <p className="text-[12px] text-stone-500 mb-3">トーク系台本（一人語り・対談など）。タイトルは「企画・サムネ」タブと連携しています。</p>
+              {sec("①", "タイトル", "企画・サムネと連携", (
+                <input value={(project.plans && project.plans[0] && project.plans[0].title) || ""} onChange={(e) => setPlanField(0, "title", e.target.value)}
+                  placeholder="動画のタイトル" className="w-full text-[15px] font-bold border border-stone-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-stone-400" />
+              ))}
+              {sec("②", "ハイライト", "冒頭に差し込む見せ場・名場面", (
+                <textarea value={t.highlight} onChange={(e) => updateTalk({ highlight: e.target.value })} placeholder="一番盛り上がる部分・パンチのある一言など。視聴維持のためのつかみ" className={taCls + " h-24"} />
+              ))}
+              {sec("③", "冒頭", "挨拶〜本題に入るまでの導入", (
+                <textarea value={t.intro} onChange={(e) => updateTalk({ intro: e.target.value })} placeholder="自己紹介、今日のテーマ、この動画を見ると何がわかるか" className={taCls + " h-28"} />
+              ))}
+              {sec("④", "目次", "話す項目（チャプター）", (
+                <div className="space-y-1.5">
+                  {t.toc.map((item, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-stone-400 w-5 shrink-0 text-center" style={{ fontFamily: mono }}>{i + 1}</span>
+                      <input value={item} onChange={(e) => setToc(i, e.target.value)} placeholder={"項目 " + (i + 1)}
+                        className="flex-1 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                      <button onClick={() => removeToc(i)} className="w-7 h-7 rounded-lg grid place-items-center text-stone-300 hover:bg-red-50 hover:text-red-500 shrink-0"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ))}
+                  <button onClick={addToc} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-stone-300 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="plus" className="w-3.5 h-3.5" />項目を追加</button>
+                </div>
+              ))}
+              {sec("⑤", "本編", "各トピックの中身", (
+                <div className="space-y-2.5">
+                  {t.body.map((b, i) => (
+                    <div key={b.id} className="border border-stone-200 rounded-xl overflow-hidden">
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-50 border-b border-stone-100">
+                        <span className="text-[10px] font-bold text-stone-400 shrink-0" style={{ fontFamily: mono }}>本編{i + 1}</span>
+                        <input value={b.heading} onChange={(e) => setBody(b.id, { heading: e.target.value })} placeholder="この区切りの見出し"
+                          className="flex-1 min-w-0 bg-transparent text-[13px] font-bold focus:outline-none" />
+                        <button onClick={() => moveBody(b.id, -1)} title="上へ" className="w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-200 shrink-0"><Icon name="up" className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => moveBody(b.id, 1)} title="下へ" className="w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-200 shrink-0"><Icon name="down" className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => removeBody(b.id)} title="削除" className="w-6 h-6 grid place-items-center rounded text-stone-300 hover:bg-red-50 hover:text-red-500 shrink-0"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                      </div>
+                      <textarea value={b.script} onChange={(e) => setBody(b.id, { script: e.target.value })} placeholder="話す内容（原稿）。質問は行頭に ◼ を付けると見出し扱いになります"
+                        className="w-full text-[13.5px] leading-relaxed px-3 py-2.5 focus:outline-none resize-y h-32" />
+                    </div>
+                  ))}
+                  <button onClick={addBody} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-stone-300 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="plus" className="w-3.5 h-3.5" />本編を追加</button>
+                </div>
+              ))}
+              {sec("⑥", "CTA", "締め・行動喚起", (
+                <textarea value={t.cta} onChange={(e) => updateTalk({ cta: e.target.value })} placeholder="チャンネル登録・高評価・次の動画・概要欄リンクなどの誘導" className={taCls + " h-24"} />
+              ))}
+            </div>
+          );
+        })()}
+
         {/* ================= 構成台本タブ ================= */}
-        {tab === "script" && (
+        {tab === "script" && project.format !== "talk" && (
           <>
             {/* 番組情報 */}
             <section className={cardCls + " mb-4"}>
