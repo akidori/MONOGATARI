@@ -3155,15 +3155,18 @@ export default function App() {
                   <div key={channel} className="bg-white border border-stone-200 rounded-2xl p-4 shadow-sm"
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
                     <div className="flex items-start gap-2">
-                      <svg className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[14px] font-bold text-stone-800 truncate">{channel}</span>
-                          <span className="text-[10px] text-stone-400 shrink-0">{items.length}案件</span>
-                          {ci.shareId && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 shrink-0">共有中</span>}
+                      <button onClick={() => openChannel(channel)} title="このチャンネルを開く" className="flex items-start gap-2 min-w-0 flex-1 text-left group/cn">
+                        <svg className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[14px] font-bold text-stone-800 truncate group-hover/cn:underline">{channel}</span>
+                            <span className="text-[10px] text-stone-400 shrink-0">{items.length}案件</span>
+                            {ci.shareId && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 shrink-0">共有中</span>}
+                            <span className="text-[11px] shrink-0 opacity-0 group-hover/cn:opacity-100 transition-opacity" style={{ color: theme.main }}>開く →</span>
+                          </div>
+                          {(ci.concept || ci.target) && <div className="text-[11px] text-stone-500 mt-0.5 line-clamp-1">{ci.concept || ci.target}</div>}
                         </div>
-                        {(ci.concept || ci.target) && <div className="text-[11px] text-stone-500 mt-0.5 line-clamp-1">{ci.concept || ci.target}</div>}
-                      </div>
+                      </button>
                       <div className="flex gap-1 shrink-0">
                         {channel !== DEFAULT_CHANNEL && (
                           <button onClick={() => publishChannel(channel)} disabled={chSharing} className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-50">共有</button>
@@ -3171,13 +3174,14 @@ export default function App() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5 mt-2.5">
-                      {items.map((it) => (
+                      {items.slice(0, 6).map((it) => (
                         <button key={it.id} onClick={() => switchProject(it.id)}
-                          className="text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1 max-w-[200px]">
+                          className="text-[11px] font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1 max-w-[200px]">
                           {it.collab && <Icon name="user" className="w-3 h-3 shrink-0 text-stone-400" />}
                           <span className="truncate">{it.name}</span>
                         </button>
                       ))}
+                      {items.length > 6 && <button onClick={() => openChannel(channel)} className="text-[11px] font-bold text-stone-400 hover:text-stone-600 px-2 py-1.5">他{items.length - 6}件 →</button>}
                     </div>
                   </div>
                 );
