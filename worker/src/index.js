@@ -63,6 +63,16 @@ export default {
         return json({ project: out, summary: (out.summary || "").toString() });
       }
 
+      // POST /api/review  { project }  → 構成台本を校正チェックして指摘リストを返す
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "review") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const project = b && b.project;
+        if (!project || !Array.isArray(project.rows)) return json({ error: "現在の案件が必要です" }, 400);
+        const out = await reviewWithClaude(project, env);
+        return json({ issues: Array.isArray(out.issues) ? out.issues : [], summary: (out.summary || "").toString() });
+      }
+
       // POST /api/publish  { project, prevId?, token? }
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "publish") {
         const body = await request.json();
@@ -396,6 +406,79 @@ async function assistWithClaude(project, message, env) {
   if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
   const data = await res.json();
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
+  if (!block || !block.input) throw new Error("tool_use が返りませんでした");
+  return block.input;
+}
+
+/* ===== 構成台本の校正チェック（誤字脱字・質問と回答の逆転・未記入）===== */
+const REVIEW_SYSTEM = `あなたは一日密着ドキュメンタリー構成台本の校正者です。渡された「構成台本(JSON)」を読み、下記の3観点だけを厳密にチェックして report_review ツールで指摘リストを返してください。
+
+# チェック観点（この3つだけ）
+1. 誤字脱字（category="誤字脱字"）
+   - 変換ミス・タイプミス・送り仮名・てにをは・明らかな衍字/脱字。該当語句を必ず引用する
+2. 質問と回答の逆転（category="質問と回答の逆転"）
+   - script内で、質問は行頭「◼ 」、回答は話し言葉という形式。これが崩れている所を指摘する：
+     - 質問なのに「◼ 」が付いておらず回答文に紛れている／回答なのに「◼ 」が付いて質問扱いになっている
+     - インタビュアーの問いと演者の答えが入れ替わっている、噛み合っていない（問いに対し答えが別物）
+     - 回答が先に来て質問が後になっている等、順序が逆
+3. 未記入・空欄（category="未記入"）
+   - scriptが空、または「★取材：」のプレースホルダのまま埋まっていない
+   - sceneのlabel（見出し）が空
+   - locationの見出しだけで配下にsceneが1つも無い
+
+# 厳守
+- 上記3観点に当てはまる「実際の問題」だけを挙げる。推測で粗探しをしない。問題が無ければ issues は空配列で返す
+- 各 issue には、対象シーンの id（JSONのrows[].id）を rowId に、見出しを sceneLabel に入れて人が探せるようにする
+- detail には「何がどう問題か」を、該当箇所の語句を「」で引用しながら具体的に書く。suggestion に直し方（任意）
+- 創作・改変はしない。あくまで指摘のみ
+- summary に全体の所感を1〜2行。問題が無ければ「大きな問題は見つかりませんでした。」`;
+
+const REVIEW_TOOL = {
+  name: "report_review",
+  description: "構成台本の校正チェック結果（指摘リスト）を返す",
+  input_schema: {
+    type: "object",
+    properties: {
+      summary: { type: "string", description: "全体所感を1〜2行" },
+      issues: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            rowId: { type: "string", description: "対象シーンのid（rows[].id）。全体に関わる場合は空でよい" },
+            sceneLabel: { type: "string", description: "対象シーンの見出し（人が探せるように）" },
+            category: { type: "string", enum: ["誤字脱字", "質問と回答の逆転", "未記入", "その他"] },
+            severity: { type: "string", enum: ["high", "medium", "low"] },
+            detail: { type: "string", description: "何がどう問題か。該当語句を「」で引用" },
+            suggestion: { type: "string", description: "修正案（任意）" },
+          },
+          required: ["category", "detail"],
+        },
+      },
+    },
+    required: ["issues"],
+  },
+};
+
+async function reviewWithClaude(project, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const ctx = "----- 構成台本(JSON) -----\n" + JSON.stringify(slim(project)) +
+    "\n----- ここまで -----\n\n上の構成台本を3観点で校正チェックして report_review で返してください。";
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model,
+      max_tokens: 8000,
+      system: REVIEW_SYSTEM,
+      tools: [REVIEW_TOOL],
+      tool_choice: { type: "tool", name: "report_review" },
+      messages: [{ role: "user", content: ctx }],
+    }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
+  const data = await res.json();
+  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
 }

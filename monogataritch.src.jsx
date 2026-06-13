@@ -420,6 +420,7 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
     case "plus": return (<svg {...c}><path d="M12 5v14M5 12h14" /></svg>);
     case "close": return (<svg {...c}><path d="M6 6l12 12M18 6L6 18" /></svg>);
     case "trash": return (<svg {...c}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" /></svg>);
+    case "spellcheck": return (<svg {...c}><path d="M4 16l4-10 4 10M5.2 13h5.6" /><path d="M14.5 14.5l2 2 4-4.5" /></svg>);
     case "up": return (<svg {...c}><path d="M6 14l6-6 6 6" /></svg>);
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     default: return null;
@@ -624,6 +625,11 @@ export default function App() {
   const [assistantText, setAssistantText] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantSummary, setAssistantSummary] = useState("");
+  const [showReview, setShowReview] = useState(false);      // 校正チェックモーダル
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewResult, setReviewResult] = useState(null);   // { issues:[], summary } | null
+  const [flashId, setFlashId] = useState(null);             // ジャンプ先シーンの一時ハイライト
+  const [editHeaderChannel, setEditHeaderChannel] = useState(false); // ヘッダーからカテゴリ変更中
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
@@ -905,6 +911,38 @@ export default function App() {
     } catch (e) {
       showToast("反映に失敗：" + (e.message || e));
     } finally { setAssistantBusy(false); }
+  };
+
+  /* 校正チェック（誤字脱字・質問と回答の逆転・未記入）をAIに依頼 */
+  const runReview = async () => {
+    if (!project) return;
+    setReviewBusy(true); setReviewResult(null);
+    try {
+      const res = await fetch(SHARE_API + "/api/review", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "チェックに失敗しました");
+      setReviewResult({ issues: Array.isArray(d.issues) ? d.issues : [], summary: d.summary || "" });
+    } catch (e) {
+      showToast("校正チェック失敗：" + (e.message || e));
+      setReviewResult({ issues: [], summary: "", error: e.message || String(e) });
+    } finally { setReviewBusy(false); }
+  };
+
+  /* 指摘の対象シーンへスクロール＋一時ハイライト */
+  const jumpToRow = (rowId) => {
+    if (!rowId) return;
+    setTab("script");
+    setShowReview(false);
+    setTimeout(() => {
+      const el = document.getElementById("row-" + rowId);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setFlashId(rowId);
+      setTimeout(() => setFlashId((f) => (f === rowId ? null : f)), 2000);
+    }, 60);
   };
 
   /* ファイル選択（TXT / CSV / Excel）→ 取り込み欄へ流し込む */
@@ -1433,6 +1471,11 @@ export default function App() {
   return (
     <div className="min-h-screen" style={{ background: "#E9E8E3", fontFamily: sans, color: "#1C1C1E" }}>
 
+      {/* チャンネル（クライアント）名の入力候補 */}
+      <datalist id="mg-channels">
+        {channelOptions.map((c) => <option key={c} value={c} />)}
+      </datalist>
+
       {/* ===== 案件サイドバー ===== */}
       <aside
         className="fixed top-0 left-0 h-full z-40 transition-transform duration-200 flex flex-col"
@@ -1591,6 +1634,28 @@ export default function App() {
             style={{ color: mainText }}
             title="案件名（クリックで編集）"
           />
+          {/* カテゴリ（クライアント／チャンネル）— クリックで変更 */}
+          {editHeaderChannel ? (
+            <input
+              autoFocus
+              list="mg-channels"
+              defaultValue={project.channel || DEFAULT_CHANNEL}
+              placeholder="カテゴリ名"
+              onBlur={(e) => { setProjectChannel(project.id, e.target.value); setEditHeaderChannel(false); }}
+              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditHeaderChannel(false); }}
+              className="text-[11px] bg-black/30 border border-white/30 rounded-md px-2 py-1 focus:outline-none w-32"
+              style={{ color: mainText }}
+            />
+          ) : (
+            <button onClick={() => setEditHeaderChannel(true)} title="カテゴリ（クライアント）を変更"
+              className="shrink-0 inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border border-white/20 hover:bg-white/10 max-w-[160px]"
+              style={{ color: mainText, opacity: (project.channel || DEFAULT_CHANNEL) === DEFAULT_CHANNEL ? 0.6 : 1 }}>
+              <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+              <span className="truncate">{project.channel || DEFAULT_CHANNEL}</span>
+            </button>
+          )}
           <span className="relative flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: theme.accent }}></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
@@ -1645,6 +1710,10 @@ export default function App() {
               <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
             </svg>
             {sharing ? "発行中…" : project.shareId ? "共有を更新" : "共有"}
+          </button>
+          <button onClick={() => { setShowReview(true); if (!reviewBusy) runReview(); }} title="AI校正チェック（誤字脱字・質問と回答の逆転・未記入を確認）"
+            className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
+            <Icon name="spellcheck" className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline">校正</span>
           </button>
           <button onClick={() => { setShowAssistant(true); setAssistantSummary(""); }} title="AIアシスタント（LINEのメッセージやメモを貼ると構成に反映）"
             className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
@@ -1780,10 +1849,13 @@ export default function App() {
                   {project.rows.map((r, idx) => {
                     if (r.kind === "location") {
                       return (
-                        <tr key={r.id} {...dropZoneProps(idx)}
+                        <tr key={r.id} id={"row-" + r.id} {...dropZoneProps(idx)}
                           onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
                           onPointerEnter={() => paintSelectTo(idx)}
-                          style={dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : undefined}>
+                          style={{
+                            ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
+                            ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}),
+                          }}>
                           <td colSpan={6} className="p-0 pt-2">
                             <div className="flex items-stretch overflow-hidden" style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1 }}>
                               <div className="w-6 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" style={{ background: stripe }}
@@ -1827,7 +1899,7 @@ export default function App() {
                     const over = chars > 0 && dur > target * 1.5;
                     const locDone = sceneLocDone[r.id];
                     return (
-                      <tr key={r.id}
+                      <tr key={r.id} id={"row-" + r.id}
                         {...dropZoneProps(idx)}
                         onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
                         onPointerEnter={() => paintSelectTo(idx)}
@@ -1836,6 +1908,7 @@ export default function App() {
                           ...(isSelected(r.id) ? { background: t.bg } : {}),
                           ...(locDone && !isSelected(r.id) ? { background: "#F5F5F4", opacity: 0.55 } : {}),
                           ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
+                          ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}),
                         }}>
                         <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: "3px solid " + t.color }}
                           {...rowDragProps(idx, r.id)} title="ドラッグで移動（複数選択時はまとめて移動）">
@@ -2210,6 +2283,70 @@ export default function App() {
         </div>
       )}
 
+      {/* ===== AI校正チェック モーダル ===== */}
+      {showReview && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowReview(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between shrink-0" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="spellcheck" className="w-4 h-4" />AI校正チェック</h3>
+              <button onClick={() => setShowReview(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 overflow-y-auto">
+              <p className="text-[12px] text-stone-500 mb-3 leading-relaxed">
+                「<span className="font-bold">{project ? project.name : ""}</span>」の構成台本を、<span className="font-bold">誤字脱字</span>・<span className="font-bold">質問と回答の逆転</span>・<span className="font-bold">未記入の箇所</span>の3観点でチェックします。指摘をクリックすると該当シーンに移動します。
+              </p>
+              {reviewBusy ? (
+                <div className="py-10 text-center text-[13px] text-stone-400">
+                  <div className="inline-flex items-center gap-2"><Icon name="sparkle" className="w-4 h-4 animate-pulse" />チェック中…（10〜20秒ほど）</div>
+                </div>
+              ) : reviewResult ? (
+                reviewResult.error ? (
+                  <div className="text-[12px] text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">チェックに失敗しました：{reviewResult.error}</div>
+                ) : reviewResult.issues.length === 0 ? (
+                  <div className="text-[13px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3 inline-flex items-start gap-1.5">
+                    <Icon name="checkCircle" className="w-4 h-4 shrink-0 mt-0.5" /><span>{reviewResult.summary || "大きな問題は見つかりませんでした。"}</span>
+                  </div>
+                ) : (
+                  <div>
+                    {reviewResult.summary && <p className="text-[12px] text-stone-600 mb-3">{reviewResult.summary}</p>}
+                    <div className="text-[11px] text-stone-400 mb-2">{reviewResult.issues.length}件の指摘</div>
+                    <ul className="space-y-2">
+                      {reviewResult.issues.map((it, i) => {
+                        const cat = it.category || "その他";
+                        const col = cat === "誤字脱字" ? "#B45309" : cat === "質問と回答の逆転" ? "#9333EA" : cat === "未記入" ? "#0EA5E9" : "#6B7280";
+                        return (
+                          <li key={i}
+                            onClick={() => jumpToRow(it.rowId)}
+                            className={"border border-stone-200 rounded-xl px-3.5 py-2.5 " + (it.rowId ? "cursor-pointer hover:bg-stone-50" : "")}>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white" style={{ background: col }}>{cat}</span>
+                              {it.sceneLabel && <span className="text-[11.5px] font-bold text-stone-700 truncate">{it.sceneLabel}</span>}
+                              {it.rowId && <span className="text-[10px] text-stone-400 ml-auto shrink-0">クリックで移動 ↗</span>}
+                            </div>
+                            <div className="text-[12.5px] text-stone-700 leading-relaxed">{it.detail}</div>
+                            {it.suggestion && <div className="text-[12px] text-emerald-800 mt-1 leading-relaxed">→ {it.suggestion}</div>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )
+              ) : (
+                <div className="py-8 text-center text-[13px] text-stone-400">チェックを開始します…</div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center shrink-0">
+              <button onClick={() => setShowReview(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50">閉じる</button>
+              <button onClick={runReview} disabled={reviewBusy || !project}
+                className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
+                style={{ background: theme.accent, color: accentText }}>
+                <Icon name="refresh" className="w-3.5 h-3.5" />{reviewBusy ? "チェック中…" : "もう一度チェック"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== アカウント / ログイン モーダル ===== */}
       {showAccount && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAccount(false)}>
@@ -2239,16 +2376,20 @@ export default function App() {
                 </div>
               ) : (
                 <div>
-                  <p className="text-[12px] text-stone-600 mb-3 leading-relaxed">
-                    <span className="font-bold">Googleでログイン</span>すると、案件が<span className="font-bold">クラウドに保存</span>され、スマホ・PC どの端末からでも同じ案件を編集できます。チームのメンバーも各自のGoogleでログインして使えます。<br />
-                    <span className="text-stone-400">ログインしなくても、この端末の中では今まで通り使えます。</span>
-                  </p>
+                  <div className="text-[12px] text-stone-600 mb-3 leading-relaxed space-y-2">
+                    <div className="flex items-start gap-2"><Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" /><span><span className="font-bold">Googleアカウントで入る</span>と、自分の案件が<span className="font-bold">クラウドに保存</span>され、スマホでもPCでも同じ案件を開けます。</span></div>
+                    <div className="flex items-start gap-2"><Icon name="user" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" /><span>案件は<span className="font-bold">自分だけのもの</span>。他の人には見えません。一緒に作りたい案件だけ、相手を招待して共有できます。</span></div>
+                    <p className="text-stone-400 pl-6">ログインしなくても、この端末の中では今まで通り使えます。</p>
+                  </div>
                   {GOOGLE_CLIENT_ID ? (
-                    <div className="flex justify-center py-2 min-h-[44px]"><div ref={gbtnRef} /></div>
+                    <div className="flex flex-col items-center py-2 min-h-[44px] gap-1.5">
+                      <div ref={gbtnRef} />
+                      <span className="text-[10px] text-stone-400">ボタンを押すだけ・1クリックで入れます</span>
+                    </div>
                   ) : (
-                    <div className="text-[12px] text-amber-800 bg-amber-50 rounded-lg px-3 py-2 leading-relaxed">
-                      <span className="inline-flex items-center gap-1 font-bold"><Icon name="warn" className="w-3.5 h-3.5" />Googleログインはまだ有効化されていません。</span><br />
-                      <span className="text-amber-700">管理者へ：</span><code style={{ fontFamily: mono }}>index.html</code> の <code style={{ fontFamily: mono }}>MG_GOOGLE_CLIENT_ID</code> に Google の OAuth クライアントID を設定してください。
+                    <div className="text-[12px] text-stone-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 leading-relaxed">
+                      <span className="inline-flex items-center gap-1 font-bold text-amber-800"><Icon name="warn" className="w-3.5 h-3.5" />ログインは準備中です</span><br />
+                      もう少しで使えるようになります。今は端末内で保存されているので、このまま編集を続けてOKです。
                     </div>
                   )}
                   {authBusy && <div className="text-center text-[12px] text-stone-400 mt-2">ログイン中…</div>}
