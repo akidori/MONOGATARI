@@ -73,6 +73,33 @@ export default {
         return json({ issues: Array.isArray(out.issues) ? out.issues : [], summary: (out.summary || "").toString() });
       }
 
+      // GET /api/yt?v=<videoId>  → YouTube動画＋チャンネル統計を返す（APIキーはサーバ側に秘匿）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "yt") {
+        if (!env.YT_API_KEY) return json({ error: "YT_API_KEY 未設定", needKey: true }, 200);
+        const vid = (url.searchParams.get("v") || "").trim();
+        if (!/^[a-zA-Z0-9_-]{11}$/.test(vid)) return json({ error: "動画IDが不正です" }, 400);
+        const vRes = await fetch("https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&id=" + vid + "&key=" + env.YT_API_KEY);
+        const vData = await vRes.json();
+        if (!vData.items || !vData.items.length) return json({ error: "動画が見つかりませんでした" }, 404);
+        const it = vData.items[0];
+        let subs = 0;
+        try {
+          const cRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=statistics&id=" + it.snippet.channelId + "&key=" + env.YT_API_KEY);
+          const cData = await cRes.json();
+          subs = parseInt((cData.items && cData.items[0] && cData.items[0].statistics && cData.items[0].statistics.subscriberCount) || 0);
+        } catch (e) {}
+        return json({
+          vid,
+          title: it.snippet.title || "",
+          channel: it.snippet.channelTitle || "",
+          views: parseInt((it.statistics && it.statistics.viewCount) || 0),
+          likes: parseInt((it.statistics && it.statistics.likeCount) || 0),
+          subs,
+          uploadDate: (it.snippet.publishedAt || "").slice(0, 10),
+          duration: it.contentDetails && it.contentDetails.duration || "PT0S",
+        });
+      }
+
       // POST /api/publish  { project, prevId?, token? }
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "publish") {
         const body = await request.json();

@@ -140,6 +140,7 @@ const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL) => ({
   rate: 5,
   timeFormat: "tc",
   rows: templateRows(),
+  plans: [],
 });
 
 /* 案件データの欠損補完 */
@@ -165,8 +166,31 @@ const migrateProject = (p) => {
     rows: (p.rows || templateRows()).map((r) =>
       r.kind === "scene" ? { sec: null, ...r } : { address: "", time: "", note: "", ...r }
     ),
+    plans: Array.isArray(p.plans) ? p.plans : [],
   };
 };
+
+/* ===== 企画・サムネ：YouTube参考動画まわりのヘルパー ===== */
+const emptyRef = () => ({ url: "", vid: "", title: "", channel: "", views: 0, subs: 0, likes: 0, uploadDate: "", duration: "" });
+const newPlan = () => ({ id: uid(), title: "", thumbText: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()] });
+const ytIdFromUrl = (url) => { const m = (url || "").match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/); return m ? m[1] : ((url || "").trim().match(/^[a-zA-Z0-9_-]{11}$/) ? url.trim() : null); };
+const parseDur = (iso) => { const m = (iso || "").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if (!m) return ""; const h = +(m[1] || 0), mi = +(m[2] || 0), s = +(m[3] || 0); return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(s).padStart(2, "0"); };
+const fmtNum = (n) => { n = Number(n) || 0; if (n >= 1e8) return (n / 1e8).toFixed(1) + "億"; if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + "万"; return n.toLocaleString(); };
+/* 評価：再生数÷登録者数の倍率＋投稿の新しさで S/A/B/C 判定（サムネ君と同ロジック） */
+const scoreVideo = (info, now) => {
+  if (!info || !info.uploadDate) return null;
+  const days = (now - new Date(info.uploadDate).getTime()) / 86400000;
+  if (isNaN(days)) return null;
+  const ratio = info.subs > 0 ? info.views / info.subs : 0;
+  const rec = Math.max(0, 50 - (days / 365) * 50);
+  const rs = ratio >= 10 ? 50 : ratio >= 5 ? 40 : ratio >= 3 ? 28 : ratio >= 1 ? 14 : 4;
+  const total = Math.round(rec + rs);
+  let grade = days > 365 ? "C" : ratio >= 5 ? "S" : ratio >= 3 ? "A" : ratio >= 1 ? "B" : "C";
+  if (total < 20 && grade !== "C") grade = "C";
+  const ratioStr = ratio >= 1 ? ratio.toFixed(1) + "倍" : Math.round(ratio * 100) + "%";
+  return { grade, total, ratio, ratioStr, days: Math.round(days) };
+};
+const GRADE_COLOR = { S: "#E11D48", A: "#EA580C", B: "#0EA5E9", C: "#9CA3AF" };
 
 /* ---------- 構成台本の丸ごと取り込み（JSON / 構成台本コピーTSV 両対応） ----------
    Claudeが出力した project JSON、または「構成台本コピー」TSV を貼り付けて新規案件化する。 */
@@ -943,6 +967,37 @@ export default function App() {
       setFlashId(rowId);
       setTimeout(() => setFlashId((f) => (f === rowId ? null : f)), 2000);
     }, 60);
+  };
+
+  /* ===== 企画・サムネ タブ ===== */
+  const setPlans = (updater) => setProject((p) => ({ ...p, plans: typeof updater === "function" ? updater(p.plans || []) : updater }));
+  const addPlan = () => setPlans((ps) => [...(ps || []), newPlan()]);
+  const removePlan = (pid) => { if (!window.confirm("この企画案を削除しますか？")) return; setPlans((ps) => (ps || []).filter((x) => x.id !== pid)); };
+  const updatePlan = (pid, patch) => setPlans((ps) => (ps || []).map((x) => (x.id === pid ? { ...x, ...patch } : x)));
+  const updatePlanRef = (pid, idx, patch) => setPlans((ps) => (ps || []).map((x) => {
+    if (x.id !== pid) return x;
+    const refs = x.refs.map((r, i) => (i === idx ? { ...r, ...patch } : r));
+    return { ...x, refs };
+  }));
+  const [refBusy, setRefBusy] = useState({}); // {`${pid}:${idx}`: true}
+  /* 参考動画URL → Worker経由でYouTube統計を取得して該当refに反映 */
+  const fetchPlanRef = async (pid, idx, url) => {
+    const vid = ytIdFromUrl(url);
+    if (!vid) { showToast("YouTubeのURLを入力してね"); return; }
+    const key = pid + ":" + idx;
+    setRefBusy((b) => ({ ...b, [key]: true }));
+    try {
+      const res = await fetch(SHARE_API + "/api/yt?v=" + encodeURIComponent(vid));
+      const d = await res.json();
+      if (d.needKey) { showToast("YouTube APIキーが未設定（AKに設定を頼んで）"); updatePlanRef(pid, idx, { url, vid }); return; }
+      if (!res.ok || d.error) throw new Error(d.error || "取得失敗");
+      updatePlanRef(pid, idx, { url, vid, title: d.title, channel: d.channel, views: d.views, subs: d.subs, likes: d.likes, uploadDate: d.uploadDate, duration: parseDur(d.duration) });
+    } catch (e) {
+      showToast("動画取得に失敗：" + (e.message || e));
+      updatePlanRef(pid, idx, { url, vid });
+    } finally {
+      setRefBusy((b) => { const n = { ...b }; delete n[key]; return n; });
+    }
   };
 
   /* ファイル選択（TXT / CSV / Excel）→ 取り込み欄へ流し込む */
@@ -1737,7 +1792,7 @@ export default function App() {
         </div>
         {/* タブ */}
         <div className="max-w-[1500px] mx-auto px-4 flex gap-1">
-          {[["script", "構成台本"], ["kouban", "香盤表"]].map(([k, label]) => (
+          {[["script", "構成台本"], ["kouban", "香盤表"], ["plan", "企画・サムネ"]].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"px-4 py-1.5 rounded-t-lg text-[12px] font-bold tracking-wider transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -2150,6 +2205,120 @@ export default function App() {
             </section>
             <p className="text-[11px] text-stone-400 leading-relaxed">
               時刻・住所・メモはこの画面で入力（構成台本と自動で連動）　／　↑↓でロケーションごと順番を入れ替え（配下のシーンも一緒に動きます）　／　右上のボタンで香盤表だけをスプシ用にコピーできます
+            </p>
+          </>
+        )}
+
+        {/* ================= 企画・サムネ タブ ================= */}
+        {tab === "plan" && (
+          <>
+            <div className="flex items-start justify-between mb-4 flex-wrap gap-2">
+              <p className="text-[12px] text-stone-500 leading-relaxed max-w-2xl">
+                この案件の<span className="font-bold">タイトル案・サムネ文言</span>を考えて、<span className="font-bold">参考にするYouTube動画を5本</span>並べられます。URLを貼ると<span className="font-bold">再生数・登録者数・評価（バズ倍率）</span>が自動で出ます。
+              </p>
+              <button onClick={() => setTab("script")}
+                className="shrink-0 text-[11px] font-bold px-3 py-2 rounded-lg border border-stone-300 hover:bg-white inline-flex items-center gap-1">
+                <Icon name="file" className="w-3.5 h-3.5" />構成台本を見る
+              </button>
+            </div>
+
+            {(project.plans || []).length === 0 ? (
+              <div className={cardCls + " p-10 text-center"}>
+                <p className="text-[13px] text-stone-400 mb-4">まだ企画案がありません。タイトル案とサムネの参考動画をここに集めましょう。</p>
+                <button onClick={addPlan}
+                  className="text-xs font-bold px-5 py-2.5 rounded-lg shadow inline-flex items-center gap-1.5"
+                  style={{ background: theme.accent, color: accentText }}>
+                  <Icon name="plus" className="w-4 h-4" />企画案を追加
+                </button>
+              </div>
+            ) : (
+              <>
+                {(project.plans || []).map((pl, pi) => (
+                  <section key={pl.id} className={cardCls + " mb-4"}>
+                    <div className="px-4 py-2.5 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+                      <span className="text-[12px] font-bold tracking-wide inline-flex items-center gap-1.5">
+                        <Icon name="sparkle" className="w-4 h-4" />企画案 {pi + 1}
+                      </span>
+                      <button onClick={() => removePlan(pl.id)} title="この企画案を削除"
+                        className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                    </div>
+                    <div className="p-4">
+                      <div className="grid sm:grid-cols-2 gap-3 mb-4">
+                        <label className="block">
+                          <span className="text-[11px] font-bold text-stone-500">タイトル案</span>
+                          <input value={pl.title} onChange={(e) => updatePlan(pl.id, { title: e.target.value })}
+                            placeholder="例）30歳で会社を捨てた男の末路"
+                            className="mt-1 w-full text-[14px] font-bold border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                        </label>
+                        <label className="block">
+                          <span className="text-[11px] font-bold text-stone-500">サムネ文言</span>
+                          <input value={pl.thumbText} onChange={(e) => updatePlan(pl.id, { thumbText: e.target.value })}
+                            placeholder="例）人生、詰んだ。"
+                            className="mt-1 w-full text-[14px] font-bold border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                        </label>
+                      </div>
+
+                      <div className="text-[11px] font-bold text-stone-500 mb-2">参考サムネ・動画（5本まで）</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                        {pl.refs.map((rf, ri) => {
+                          const busy = refBusy[pl.id + ":" + ri];
+                          const sc = rf.uploadDate ? scoreVideo(rf, Date.now()) : null;
+                          return (
+                            <div key={ri} className="border border-stone-200 rounded-xl overflow-hidden flex flex-col bg-stone-50/50">
+                              <div className="px-2 pt-1.5 text-[9px] font-bold text-stone-400">参考 {ri + 1}</div>
+                              {busy ? (
+                                <div className="aspect-video mx-2 my-1 rounded-lg bg-stone-200 animate-pulse" />
+                              ) : rf.vid ? (
+                                <a href={"https://www.youtube.com/watch?v=" + rf.vid} target="_blank" rel="noreferrer" className="block relative mx-2 mt-1">
+                                  <img src={"https://img.youtube.com/vi/" + rf.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover rounded-lg" />
+                                  {rf.duration && <span className="absolute bottom-1 right-1 text-[9px] font-bold text-white bg-black/75 px-1 rounded" style={{ fontFamily: mono }}>{rf.duration}</span>}
+                                  {sc && <span className="absolute top-1 left-1 text-[10px] font-bold text-white px-1.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
+                                </a>
+                              ) : (
+                                <div className="aspect-video mx-2 my-1 rounded-lg border border-dashed border-stone-300 grid place-items-center text-[9px] text-stone-300">URLを貼る</div>
+                              )}
+                              {rf.vid && (
+                                <div className="px-2 pt-1">
+                                  <div className="text-[10px] font-bold text-stone-700 leading-snug line-clamp-2" title={rf.title}>{rf.title}</div>
+                                  <div className="text-[9px] text-stone-400 truncate" title={rf.channel}>{rf.channel}</div>
+                                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] text-stone-500 mt-0.5" style={{ fontFamily: mono }}>
+                                    <span title="再生数">▶ {fmtNum(rf.views)}</span>
+                                    <span title="登録者数">👤 {fmtNum(rf.subs)}</span>
+                                    {sc && <span className="font-bold" style={{ color: GRADE_COLOR[sc.grade] }} title="再生数÷登録者数（バズ倍率）">{sc.ratioStr}</span>}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="p-1.5 mt-auto">
+                                <input
+                                  defaultValue={rf.url}
+                                  key={rf.url}
+                                  placeholder="YouTube URL"
+                                  onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== rf.url) fetchPlanRef(pl.id, ri, v); else if (!v && rf.url) updatePlanRef(pl.id, ri, emptyRef()); }}
+                                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                                  className="w-full text-[9px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <label className="block mt-3">
+                        <span className="text-[11px] font-bold text-stone-500">メモ・狙い（任意）</span>
+                        <textarea value={pl.note} onChange={(e) => updatePlan(pl.id, { note: e.target.value })}
+                          placeholder="この切り口で狙う層、伸びてる理由の仮説など"
+                          className="mt-1 w-full h-16 text-[12px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" />
+                      </label>
+                    </div>
+                  </section>
+                ))}
+                <button onClick={addPlan}
+                  className="text-xs font-bold px-4 py-2.5 rounded-lg border border-stone-300 hover:bg-white inline-flex items-center gap-1.5 mb-2">
+                  <Icon name="plus" className="w-4 h-4" />企画案を追加
+                </button>
+              </>
+            )}
+            <p className="text-[11px] text-stone-400 leading-relaxed mt-2">
+              評価は<span className="font-bold">再生数 ÷ 登録者数</span>（バズ倍率）と投稿の新しさから自動算出（S＝5倍以上 / A＝3倍 / B＝等倍 / C＝それ未満）。参考動画は同じ案件に紐づいて保存され、ログインすればクラウド同期されます。
             </p>
           </>
         )}
