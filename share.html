@@ -35,7 +35,7 @@ const SECTION_TYPES = {
 const params = new URLSearchParams(location.search);
 const ID = params.get("id");
 const CHID = params.get("ch");
-let CHANNEL = null, CASE_SEL = 0, CTAB = "script", CHMODE = false;
+let CHANNEL = null, CASE_SEL = null, CTAB = "script", CHMODE = false;
 const esc = (s) => (s||"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
 
 /* インライン書式: **太字** / !!赤!! （esc 済み文字列に対して適用） */
@@ -228,7 +228,7 @@ function paneConcept(p){
   const field = (label,val) => val?`<div class="mb-3"><div class="text-[10px] font-bold text-stone-400 mb-0.5">${label}</div><div class="text-[13px] whitespace-pre-wrap leading-relaxed">${esc(val)}</div></div>`:"";
   const comps = (ci.competitors||[]).filter(c=>c.name||c.url);
   return `<div class="rounded-xl border border-stone-200 bg-white p-4 mb-3">
-    ${(ci.name||ci.url)?`<div class="mb-3">${ci.name?`<div class="text-[16px] font-black">${esc(ci.name)}</div>`:""}${ci.url?`<a href="${esc(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] mono text-sky-600 break-all">${esc(ci.url)}</a>`:""}</div>`:""}
+    ${(!CHMODE && (ci.name||ci.url))?`<div class="mb-3">${ci.name?`<div class="text-[16px] font-black">${esc(ci.name)}</div>`:""}${ci.url?`<a href="${esc(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] mono text-sky-600 break-all">${esc(ci.url)}</a>`:""}</div>`:""}
     ${field("コンセプト",ci.concept)}
     ${field("ターゲット",ci.target)}
     ${field("CV先・チャンネルの目的",ci.purpose)}
@@ -305,31 +305,56 @@ function renderChannel(){
   const theme = (cases[0] && cases[0].theme) || {main:"#1F2430",accent:"#E63946"};
   const mainC = theme.main, accentC = theme.accent;
   document.documentElement.style.setProperty("--main", mainC);
-  const sel = cases[CASE_SEL] || null;
-  let caseHtml = "";
-  if(sel){
-    const isTalk = sel.format === "talk";
-    const hasPlans = (sel.plans||[]).length>0;
-    const sub = [];
-    if(hasPlans) sub.push(["plan","企画・サムネ"]);
-    sub.push(["script","構成台本"]);
-    if(!isTalk) sub.push(["kouban","香盤表"]);
-    if(!sub.some(s=>s[0]===CTAB)) CTAB="script";
-    const subBar = `<div class="flex gap-1 mb-3 border-b border-stone-200 overflow-x-auto">${sub.map(([k,label])=>`<button data-ctab="${k}" class="ctabbtn text-[12px] font-bold px-3 py-1.5 whitespace-nowrap ${CTAB===k?'border-b-2':''}" style="${CTAB===k?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
-    const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
-    caseHtml = subBar + `<div>${pane}</div>`;
-  }
-  document.getElementById("app").innerHTML = `
+  const caseTitle = (c,i) => (c.plans&&c.plans[0]&&c.plans[0].title)||c.name||('案件'+(i+1));
+  const caseThumb = (c) => { const r=(c.plans||[]).map(p=>(p.refs||[]).find(x=>x&&x.vid)).find(Boolean); return r?`https://img.youtube.com/vi/${r.vid}/mqdefault.jpg`:null; };
+
+  const header = `
     <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400 mb-2">CHANNEL / チャンネル資料</div>
     <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
       <div class="px-5 py-4" style="background:${mainC};color:#fff"><div class="text-[18px] font-black">${esc((ci.name)||ch.name||"チャンネル")}</div>${ci.url?`<a href="${esc(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] opacity-80 mono break-all">${esc(ci.url)}</a>`:""}</div>
-    </div>
-    <div class="mb-6">${paneConcept({channelInfo: ci})}</div>
-    <div class="text-[11px] font-bold tracking-[0.15em] text-stone-400 mb-2">案件（${cases.length}）</div>
-    <div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto">${cases.map((c,i)=>`<button data-case="${i}" class="casebtn text-[12px] font-bold px-3 py-2 whitespace-nowrap ${CASE_SEL===i?'border-b-2':''}" style="${CASE_SEL===i?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${esc((c.plans&&c.plans[0]&&c.plans[0].title)||c.name||('案件'+(i+1)))}</button>`).join("")||'<span class="text-stone-400 text-[12px] py-2">案件がありません</span>'}</div>
-    <div>${caseHtml}</div>
-    <p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
-  document.querySelectorAll(".casebtn").forEach(b=>b.addEventListener("click",()=>{ CASE_SEL=+b.dataset.case; CTAB="script"; renderChannel(); }));
+    </div>`;
+
+  if(CASE_SEL === null || !cases[CASE_SEL]){
+    // 企画一覧（カード）
+    const listHtml = cases.length ? `<div class="grid sm:grid-cols-2 gap-2.5">${cases.map((c,i)=>{
+      const th = caseThumb(c);
+      const badge = c.format==="talk" ? '🎙️ トーク' : '🎬 一日密着';
+      const sc = (c.rows||[]).filter(r=>r.kind==='scene').length;
+      const meta = c.format==="talk" ? `${(c.talk&&c.talk.body||[]).length}本編` : `${sc}シーン`;
+      return `<button data-case="${i}" class="caseopen text-left bg-white border border-stone-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow flex">
+        <div class="w-24 shrink-0 bg-stone-100">${th?`<img src="${th}" class="w-full h-full object-cover">`:`<div class="w-full h-full aspect-video grid place-items-center text-stone-300 text-[10px]">no img</div>`}</div>
+        <div class="p-2.5 min-w-0 flex-1">
+          <div class="text-[10px] text-stone-400 mb-0.5">${badge} ・ ${meta}</div>
+          <div class="text-[13px] font-bold leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(caseTitle(c,i))}</div>
+          <div class="text-[11px] mt-1 font-bold" style="color:${accentC}">開く →</div>
+        </div></button>`;
+    }).join("")}</div>` : '<p class="text-stone-400 text-[12px] py-4 text-center">案件がありません</p>';
+    document.getElementById("app").innerHTML = header
+      + `<div class="mb-6">${paneConcept({channelInfo: ci})}</div>`
+      + `<div class="text-[11px] font-bold tracking-[0.15em] text-stone-400 mb-2">企画一覧（${cases.length}）</div>`
+      + listHtml
+      + `<p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
+    document.querySelectorAll(".caseopen").forEach(b=>b.addEventListener("click",()=>{ CASE_SEL=+b.dataset.case; CTAB="script"; window.scrollTo(0,0); renderChannel(); }));
+    return;
+  }
+
+  // 個別の企画を開いた状態
+  const sel = cases[CASE_SEL];
+  const isTalk = sel.format === "talk";
+  const hasPlans = (sel.plans||[]).length>0;
+  const sub = [];
+  if(hasPlans) sub.push(["plan","サムネ・タイトル"]);
+  sub.push(["script","構成台本"]);
+  if(!isTalk) sub.push(["kouban","香盤表"]);
+  if(!sub.some(s=>s[0]===CTAB)) CTAB="script";
+  const subBar = `<div class="flex gap-1 mb-3 border-b border-stone-200 overflow-x-auto">${sub.map(([k,label])=>`<button data-ctab="${k}" class="ctabbtn text-[12px] font-bold px-3 py-1.5 whitespace-nowrap ${CTAB===k?'border-b-2':''}" style="${CTAB===k?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
+  const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
+  document.getElementById("app").innerHTML = header
+    + `<button id="backBtn" class="text-[12px] font-bold mb-3 inline-flex items-center gap-1" style="color:${mainC}">← 企画一覧へ戻る</button>`
+    + `<div class="text-[16px] font-black mb-3">${esc(caseTitle(sel,CASE_SEL))}</div>`
+    + subBar + `<div>${pane}</div>`
+    + `<p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
+  document.getElementById("backBtn").addEventListener("click",()=>{ CASE_SEL=null; window.scrollTo(0,0); renderChannel(); });
   document.querySelectorAll(".ctabbtn").forEach(b=>b.addEventListener("click",()=>{ CTAB=b.dataset.ctab; renderChannel(); }));
 }
 

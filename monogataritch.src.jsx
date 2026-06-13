@@ -696,6 +696,9 @@ export default function App() {
   const [flashId, setFlashId] = useState(null);             // ジャンプ先シーンの一時ハイライト
   const [editHeaderChannel, setEditHeaderChannel] = useState(false); // ヘッダーからカテゴリ変更中
   const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
+  const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
+  const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
+  const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -1852,7 +1855,8 @@ export default function App() {
               <div key={channel} className="mb-1.5">
                 {/* チャンネル見出し */}
                 <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer select-none"
-                  onClick={() => setCollapsed((c) => ({ ...c, [channel]: !c[channel] }))}>
+                  onClick={() => setCollapsed((c) => ({ ...c, [channel]: !c[channel] }))}
+                  onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
                   <span className="w-3.5 shrink-0 text-white/40 text-[10px] transition-transform" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}>▾</span>
                   <svg className="w-3.5 h-3.5 shrink-0 text-white/45" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
@@ -2028,37 +2032,53 @@ export default function App() {
               )}
             </button>
           )}
-          {/* 構成台本をTSVコピー（スプシ／Claude取り込み用） */}
-          <button onClick={project.format === "talk" ? exportTalkText : exportScriptTSV} title={project.format === "talk" ? "トーク台本をテキストでコピー" : "構成台本をスプシ形式でコピー（取り込みにも使える）"}
-            className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: mainText }}>
-              <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" />
-            </svg>
-            台本コピー
-          </button>
-          {/* 共有リンク発行 */}
-          <button onClick={publishShare} disabled={sharing} title="先方に見せる共有リンクを発行"
-            className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 disabled:opacity-50">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: mainText }}>
-              <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
-              <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
-            </svg>
-            {sharing ? "発行中…" : project.shareId ? "共有を更新" : "共有"}
-          </button>
+          {/* 共有メニュー（共有リンク発行 / 台本コピー） */}
+          <div className="relative">
+            <button onClick={() => setShareMenu((v) => !v)} disabled={sharing} title="共有・書き出し"
+              className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 disabled:opacity-50" style={{ color: mainText }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+              {sharing ? "発行中…" : "共有"} <span className="opacity-50 text-[9px]">▾</span>
+            </button>
+            {shareMenu && (<>
+              <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-50 w-52 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700">
+                <button onClick={() => { setShareMenu(false); publishShare(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+                  {project.shareId ? "共有リンクを更新" : "共有リンクを発行"}
+                </button>
+                <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptTSV)(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" /></svg>
+                  台本コピー{project.format === "talk" ? "（テキスト）" : "（TSV）"}
+                </button>
+              </div>
+            </>)}
+          </div>
           <button onClick={() => setShowInvite(true)} title="チームメンバーを招待して共同編集（要ログイン）"
             className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 relative" style={{ color: mainText }}>
             <Icon name="user" className="w-4 h-4" />
             <span className="hidden sm:inline">{project.collab ? "共同編集中" : "招待"}</span>
             {project.collab && (project.members || []).length > 1 && <span className="text-[10px] tabular-nums opacity-70">{(project.members || []).length}</span>}
           </button>
-          <button onClick={() => { setShowReview(true); if (!reviewBusy) runReview(); }} title="AI校正チェック（誤字脱字・質問と回答の逆転・未記入を確認）"
-            className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
-            <Icon name="spellcheck" className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline">校正</span>
-          </button>
-          <button onClick={() => { setShowAssistant(true); setAssistantSummary(""); }} title="AIアシスタント（LINEのメッセージやメモを貼ると構成に反映）"
-            className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
-            <Icon name="robot" className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline">AI反映</span>
-          </button>
+          {/* AIメニュー（校正 / 反映） */}
+          <div className="relative">
+            <button onClick={() => setAiMenu((v) => !v)} title="AI機能"
+              className="h-8 px-3 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
+              <Icon name="sparkle" className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline">AI</span> <span className="opacity-50 text-[9px]">▾</span>
+            </button>
+            {aiMenu && (<>
+              <div className="fixed inset-0 z-40" onClick={() => setAiMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700">
+                <button onClick={() => { setAiMenu(false); setShowReview(true); if (!reviewBusy) runReview(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2 border-b border-stone-100">
+                  <Icon name="spellcheck" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
+                  <span><span className="block text-[12px] font-bold">AI校正チェック</span><span className="block text-[10px] text-stone-400">誤字脱字・未記入・構成の弱点を確認</span></span>
+                </button>
+                <button onClick={() => { setAiMenu(false); setShowAssistant(true); setAssistantSummary(""); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2">
+                  <Icon name="robot" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
+                  <span><span className="block text-[12px] font-bold">AIで反映</span><span className="block text-[10px] text-stone-400">LINE文面やメモを貼って構成に反映</span></span>
+                </button>
+              </div>
+            </>)}
+          </div>
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden" style={{ color: mainText }}>
             {user && user.picture
@@ -3042,6 +3062,31 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ===== サイドバー チャンネル右クリックメニュー ===== */}
+      {ctxMenu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }} />
+          <div className="fixed z-[61] w-52 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+            style={{ left: Math.min(ctxMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 220), top: ctxMenu.y }}>
+            <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{ctxMenu.channel}</div>
+            {ctxMenu.channel !== DEFAULT_CHANNEL && (
+              <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); publishChannel(ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+                チャンネルを共有
+              </button>
+            )}
+            <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); createProject(true, ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />この中に案件を追加</button>
+            <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); renameChannel(ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2">✎ フォルダ名を変更</button>
+            {ctxMenu.channel !== DEFAULT_CHANNEL && (
+              <div className="flex border-t border-stone-100 mt-1">
+                <button onClick={() => { moveChannel(ctxMenu.channel, -1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
+                <button onClick={() => { moveChannel(ctxMenu.channel, 1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* ===== 共同編集 招待モーダル ===== */}
