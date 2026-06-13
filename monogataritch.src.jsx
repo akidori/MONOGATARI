@@ -491,6 +491,18 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
   }
 }
 
+/* 入力内容に応じて高さが伸びる textarea（全文が常に見える） */
+function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80 }) {
+  const ref = useRef(null);
+  const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
+  useEffect(() => { resize(ref.current); }, [value]);
+  return (
+    <textarea ref={ref} value={value} placeholder={placeholder} className={className}
+      style={{ overflow: "hidden", resize: "none", minHeight }}
+      onChange={(e) => { onChange(e); resize(e.target); }} />
+  );
+}
+
 /* ===== 住所オートコンプリート（Google Places）=====
    キー未設定なら従来の手入力＋🗺️リンクにフォールバック */
 let gmapsPromise = null;
@@ -1391,11 +1403,38 @@ export default function App() {
     if (blocks[DEFAULT_CHANNEL]) orderedCh.push(DEFAULT_CHANNEL);
     const ni = orderedCh.flatMap((ch) => blocks[ch] || []);
     setIndex(ni); persistIndex(ni);
-    // 本体側も後追いで更新
-    idx.forEach(async (x) => {
-      if (x.channel !== ch) return;
-      try { const r = await window.storage.get(STORE_PROJ(x.id)); if (r && r.value) await window.storage.set(STORE_PROJ(x.id), JSON.stringify({ ...JSON.parse(r.value), channel: ch })); } catch (e) {}
-    });
+  };
+
+  /* フォルダ（チャンネル）ごと削除：配下の全案件を削除（未分類も可） */
+  const deleteChannel = async (channel) => {
+    const items = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === channel);
+    if (!items.length) { showToast("空のフォルダです"); return; }
+    if (!window.confirm("フォルダ「" + channel + "」と中の" + items.length + "案件を全て削除します。元に戻せません。よろしいですか？")) return;
+    for (const x of items) {
+      try {
+        if (x.collab) { await authFetch(x.role === "owner" ? "/api/collab/delete" : "/api/collab/leave", { id: x.id }); }
+        else { if (typeof window.storage !== "undefined") await window.storage.delete(STORE_PROJ(x.id)); }
+      } catch (e) {}
+    }
+    let idx = index.filter((x) => (x.channel || DEFAULT_CHANNEL) !== channel);
+    setChannelInfo((c) => { const n = { ...c }; delete n[channel]; return n; });
+    const activeInChannel = items.some((x) => x.id === activeId);
+    if (idx.length === 0) {
+      const data = newProjectData("案件1");
+      idx = [{ id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
+      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+      setActiveId(data.id); setProject(data);
+    } else if (activeInChannel) {
+      const first = idx[0];
+      try {
+        if (first.collab) { const r = await authFetch("/api/collab/get", { id: first.id }); setActiveId(first.id); setProject({ ...migrateProject(r.project), id: first.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }); }
+        else { const r = await window.storage.get(STORE_PROJ(first.id)); setActiveId(first.id); setProject(r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(first.name)); }
+      } catch (e) {}
+    }
+    setIndex(idx); persistIndex(idx);
+    if (activeInChannel || idx.length === 0) setView("home");
+    setCtxMenu(null);
+    showToast("フォルダを削除しました");
   };
 
   /* ---- 共有リンク発行 ---- */
@@ -2290,10 +2329,10 @@ export default function App() {
                   placeholder="動画のタイトル" className="w-full text-[15px] font-bold border border-stone-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-stone-400" />
               ))}
               {sec("②", "ハイライト", "冒頭に差し込む見せ場・名場面", (
-                <textarea value={t.highlight} onChange={(e) => updateTalk({ highlight: e.target.value })} placeholder="一番盛り上がる部分・パンチのある一言など。視聴維持のためのつかみ" className={taCls + " h-24"} />
+                <AutoTextarea value={t.highlight} onChange={(e) => updateTalk({ highlight: e.target.value })} placeholder="一番盛り上がる部分・パンチのある一言など。視聴維持のためのつかみ" className={taCls} minHeight={88} />
               ))}
               {sec("③", "冒頭", "挨拶〜本題に入るまでの導入", (
-                <textarea value={t.intro} onChange={(e) => updateTalk({ intro: e.target.value })} placeholder="自己紹介、今日のテーマ、この動画を見ると何がわかるか" className={taCls + " h-28"} />
+                <AutoTextarea value={t.intro} onChange={(e) => updateTalk({ intro: e.target.value })} placeholder="自己紹介、今日のテーマ、この動画を見ると何がわかるか" className={taCls} minHeight={104} />
               ))}
               {sec("④", "目次", "話す項目（チャプター）", (
                 <div className="space-y-1.5">
@@ -2320,15 +2359,15 @@ export default function App() {
                         <button onClick={() => moveBody(b.id, 1)} title="下へ" className="w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-200 shrink-0"><Icon name="down" className="w-3.5 h-3.5" /></button>
                         <button onClick={() => removeBody(b.id)} title="削除" className="w-6 h-6 grid place-items-center rounded text-stone-300 hover:bg-red-50 hover:text-red-500 shrink-0"><Icon name="trash" className="w-3.5 h-3.5" /></button>
                       </div>
-                      <textarea value={b.script} onChange={(e) => setBody(b.id, { script: e.target.value })} placeholder="話す内容（原稿）。質問は行頭に ◼ を付けると見出し扱いになります"
-                        className="w-full text-[13.5px] leading-relaxed px-3 py-2.5 focus:outline-none resize-y h-32" />
+                      <AutoTextarea value={b.script} onChange={(e) => setBody(b.id, { script: e.target.value })} placeholder="話す内容（原稿）。質問は行頭に ◼ を付けると見出し扱いになります"
+                        className="w-full text-[13.5px] leading-relaxed px-3 py-2.5 focus:outline-none" minHeight={128} />
                     </div>
                   ))}
                   <button onClick={addBody} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-stone-300 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="plus" className="w-3.5 h-3.5" />本編を追加</button>
                 </div>
               ))}
               {sec("⑥", "CTA", "締め・行動喚起", (
-                <textarea value={t.cta} onChange={(e) => updateTalk({ cta: e.target.value })} placeholder="チャンネル登録・高評価・次の動画・概要欄リンクなどの誘導" className={taCls + " h-24"} />
+                <AutoTextarea value={t.cta} onChange={(e) => updateTalk({ cta: e.target.value })} placeholder="チャンネル登録・高評価・次の動画・概要欄リンクなどの誘導" className={taCls} minHeight={88} />
               ))}
             </div>
           );
@@ -3171,6 +3210,9 @@ export default function App() {
                 <button onClick={() => { moveChannel(ctxMenu.channel, 1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
               </div>
             )}
+            <button onClick={() => deleteChannel(ctxMenu.channel)} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[12px] font-bold text-red-500 flex items-center gap-2">
+              <Icon name="trash" className="w-3.5 h-3.5" />フォルダごと削除
+            </button>
           </div>
         </>
       )}
