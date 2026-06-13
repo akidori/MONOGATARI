@@ -686,6 +686,9 @@ export default function App() {
   const [reviewResult, setReviewResult] = useState(null);   // { issues:[], summary } | null
   const [flashId, setFlashId] = useState(null);             // ジャンプ先シーンの一時ハイライト
   const [editHeaderChannel, setEditHeaderChannel] = useState(false); // ヘッダーからカテゴリ変更中
+  const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
@@ -838,13 +841,7 @@ export default function App() {
   useEffect(() => {
     if (!loaded || !project) return;
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      try {
-        if (typeof window.storage !== "undefined") {
-          await window.storage.set(STORE_PROJ(project.id), JSON.stringify(project));
-        }
-      } catch (e) { console.error("保存エラー", e); }
-    }, 700);
+    saveTimer.current = setTimeout(() => { saveProjectData(project); }, 700);
     return () => clearTimeout(saveTimer.current);
   }, [project, loaded]);
 
@@ -859,6 +856,13 @@ export default function App() {
     }, 700);
     return () => clearTimeout(chSaveTimer.current);
   }, [channelInfo, loaded]);
+
+  /* 共同編集案件をサイドバーにマージ（ログイン状態に追従） */
+  useEffect(() => {
+    if (!loaded) return;
+    if (!user) { setIndex((cur) => cur.filter((x) => !x.collab)); return; }
+    loadCollab().then((collab) => setIndex((cur) => [...cur.filter((x) => !x.collab), ...collab]));
+  }, [loaded, user]);
 
   /* 現在の案件のチャンネルのコンセプト情報を取得／更新 */
   const curChannel = project ? (project.channel || DEFAULT_CHANNEL) : DEFAULT_CHANNEL;
@@ -888,8 +892,59 @@ export default function App() {
 
   /* indexの保存 */
   const persistIndex = async (idx) => {
-    try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_INDEX, JSON.stringify(idx)); }
+    // 共同編集(collab)案件はクラウドの collab ストアが正本なので個人indexには保存しない
+    try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_INDEX, JSON.stringify((idx || []).filter((x) => !x.collab))); }
     catch (e) { console.error(e); }
+  };
+
+  /* 案件を正しい保存先へ（collabはWorker collabストア、それ以外は個人ストレージ） */
+  const saveProjectData = async (data) => {
+    if (!data) return;
+    if (data.collab) { try { await authFetch("/api/collab/upsert", { id: data.id, project: data }); } catch (e) { console.error("collab保存", e); } }
+    else { try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) { console.error(e); } }
+  };
+
+  /* 共同編集案件の一覧を取得（ログイン時のみ） */
+  const loadCollab = async () => {
+    if (!MG_SESSION) return [];
+    try {
+      const r = await authFetch("/api/collab/list", {});
+      return (r.projects || []).map((p) => ({ id: p.id, name: p.name || "案件", channel: p.channel || DEFAULT_CHANNEL, createdAt: 0, collab: true, ownerEmail: p.ownerEmail, role: p.role, members: p.members }));
+    } catch (e) { return []; }
+  };
+
+  /* 個人案件を共同編集(collab)に昇格させる（初回招待時など） */
+  const ensureCollab = async () => {
+    if (!project) return null;
+    if (project.collab) return { members: project.members || [], role: project.collabRole || "owner", ownerEmail: project.ownerEmail };
+    const r = await authFetch("/api/collab/upsert", { id: project.id, project });
+    try { if (typeof window.storage !== "undefined") await window.storage.delete(STORE_PROJ(project.id)); } catch (e) {}
+    setProject((p) => ({ ...p, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }));
+    setIndex((cur) => { const nx = cur.map((x) => (x.id === project.id ? { ...x, collab: true, role: r.role, ownerEmail: r.ownerEmail, members: r.members } : x)); persistIndex(nx); return nx; });
+    return r;
+  };
+  const inviteMember = async () => {
+    const em = inviteEmail.trim().toLowerCase();
+    if (!em.includes("@")) { showToast("メールアドレスを確認してね"); return; }
+    if (!user) { showToast("共有にはログインが必要だよ"); return; }
+    setInviteBusy(true);
+    try {
+      await ensureCollab();
+      const r = await authFetch("/api/collab/invite", { id: project.id, email: em });
+      setProject((p) => ({ ...p, members: r.members }));
+      setIndex((cur) => cur.map((x) => (x.id === project.id ? { ...x, members: r.members } : x)));
+      setInviteEmail("");
+      showToast(em + " を招待しました");
+    } catch (e) { showToast("招待失敗：" + (e.message || e)); }
+    finally { setInviteBusy(false); }
+  };
+  const uninviteMember = async (email) => {
+    if (!window.confirm(email + " を共有から外しますか？")) return;
+    try {
+      const r = await authFetch("/api/collab/uninvite", { id: project.id, email });
+      setProject((p) => ({ ...p, members: r.members }));
+      setIndex((cur) => cur.map((x) => (x.id === project.id ? { ...x, members: r.members } : x)));
+    } catch (e) { showToast("失敗：" + (e.message || e)); }
   };
 
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
@@ -898,12 +953,19 @@ export default function App() {
   const switchProject = async (id) => {
     if (id === activeId) return;
     // 現在のを即保存
-    try { if (project) await window.storage.set(STORE_PROJ(project.id), JSON.stringify(project)); } catch (e) {}
+    if (project) await saveProjectData(project);
+    const entry = index.find((x) => x.id === id);
     try {
-      const r = await window.storage.get(STORE_PROJ(id));
-      const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData("案件");
-      setActiveId(id); setProject(data); setTab("script");
-    } catch (e) { showToast("案件を開けませんでした"); }
+      if (entry && entry.collab) {
+        const r = await authFetch("/api/collab/get", { id });
+        const data = { ...migrateProject(r.project), id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members };
+        setActiveId(id); setProject(data); setTab("script");
+      } else {
+        const r = await window.storage.get(STORE_PROJ(id));
+        const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData("案件");
+        setActiveId(id); setProject(data); setTab("script");
+      }
+    } catch (e) { showToast("案件を開けませんでした：" + (e.message || e)); }
   };
 
   const createProject = async (template = true, channel = DEFAULT_CHANNEL) => {
@@ -1161,18 +1223,24 @@ export default function App() {
 
   const deleteProject = async (id) => {
     if (index.length <= 1) { showToast("最後の1案件は削除できません"); return; }
-    const name = (index.find((x) => x.id === id) || {}).name || "この案件";
-    if (!window.confirm("「" + name + "」を削除します。元に戻せません。よろしいですか？")) return;
+    const entry = index.find((x) => x.id === id) || {};
+    const name = entry.name || "この案件";
+    if (entry.collab) {
+      const isOwner = entry.role === "owner";
+      if (!window.confirm(isOwner ? "「" + name + "」を削除します。招待メンバー全員から見えなくなります。よろしいですか？" : "共有案件「" + name + "」から退出します。よろしいですか？")) return;
+      try { await authFetch(isOwner ? "/api/collab/delete" : "/api/collab/leave", { id }); } catch (e) { showToast("失敗：" + (e.message || e)); return; }
+    } else {
+      if (!window.confirm("「" + name + "」を削除します。元に戻せません。よろしいですか？")) return;
+      try { if (typeof window.storage !== "undefined") await window.storage.delete(STORE_PROJ(id)); } catch (e) {}
+    }
     const idx = index.filter((x) => x.id !== id);
-    try { if (typeof window.storage !== "undefined") await window.storage.delete(STORE_PROJ(id)); } catch (e) {}
     setIndex(idx); persistIndex(idx);
     if (id === activeId) {
       const next = idx[0];
-      const r = await window.storage.get(STORE_PROJ(next.id));
-      setActiveId(next.id);
-      setProject(r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(next.name));
+      if (next.collab) { try { const r = await authFetch("/api/collab/get", { id: next.id }); setActiveId(next.id); setProject({ ...migrateProject(r.project), id: next.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }); } catch (e) {} }
+      else { const r = await window.storage.get(STORE_PROJ(next.id)); setActiveId(next.id); setProject(r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(next.name)); }
     }
-    showToast("案件を削除しました");
+    showToast(entry.collab && entry.role !== "owner" ? "共有から退出しました" : "案件を削除しました");
   };
 
   const renameProject = (id, name) => {
@@ -1754,9 +1822,10 @@ export default function App() {
                             className="flex-1 min-w-0 bg-black/30 text-[12px] px-1.5 py-1 rounded focus:outline-none"
                           />
                         ) : (
-                          <span className="flex-1 min-w-0 truncate text-[12.5px] font-medium"
+                          <span className="flex-1 min-w-0 truncate text-[12.5px] font-medium inline-flex items-center gap-1"
                             onDoubleClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }}>
-                            {p.name}
+                            {p.collab && <span title={p.role === "owner" ? "共同編集（あなたがオーナー）" : "共有された案件（" + (p.ownerEmail || "") + "）"} className="shrink-0 text-white/50"><Icon name="user" className="w-3 h-3" /></span>}
+                            <span className="truncate">{p.name}</span>
                           </span>
                         )}
                         <div className="flex gap-0.5 opacity-0 group-hover/p:opacity-100 transition-opacity shrink-0">
@@ -1893,6 +1962,12 @@ export default function App() {
               <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
             </svg>
             {sharing ? "発行中…" : project.shareId ? "共有を更新" : "共有"}
+          </button>
+          <button onClick={() => setShowInvite(true)} title="チームメンバーを招待して共同編集（要ログイン）"
+            className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 relative" style={{ color: mainText }}>
+            <Icon name="user" className="w-4 h-4" />
+            <span className="hidden sm:inline">{project.collab ? "共同編集中" : "招待"}</span>
+            {project.collab && (project.members || []).length > 1 && <span className="text-[10px] tabular-nums opacity-70">{(project.members || []).length}</span>}
           </button>
           <button onClick={() => { setShowReview(true); if (!reviewBusy) runReview(); }} title="AI校正チェック（誤字脱字・質問と回答の逆転・未記入を確認）"
             className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
@@ -2807,6 +2882,68 @@ export default function App() {
                   {authBusy && <div className="text-center text-[12px] text-stone-400 mt-2">ログイン中…</div>}
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 共同編集 招待モーダル ===== */}
+      {showInvite && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowInvite(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="user" className="w-4 h-4" />共同編集に招待</h3>
+              <button onClick={() => setShowInvite(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5">
+              {!user ? (
+                <div className="text-center py-4">
+                  <p className="text-[13px] text-stone-600 mb-3">共同編集にはログインが必要です。</p>
+                  <button onClick={() => { setShowInvite(false); setShowAccount(true); }} className="text-xs font-bold px-5 py-2.5 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>ログインする</button>
+                </div>
+              ) : (() => {
+                const isOwner = !project.collab || project.collabRole === "owner";
+                const ownerEmail = (project.ownerEmail || user.email || "").toLowerCase();
+                const members = (project.members || []).filter((m) => m !== ownerEmail);
+                return (
+                  <div>
+                    <p className="text-[12px] text-stone-600 leading-relaxed mb-3">
+                      「<span className="font-bold">{project.name}</span>」を、招待した人の<span className="font-bold">Googleアカウント</span>で<span className="font-bold">一緒に編集</span>できるようにします。招待された人はログインすると自分の案件一覧にこの案件が出ます。
+                    </p>
+                    {isOwner ? (
+                      <div className="flex gap-2 mb-3">
+                        <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} type="email"
+                          onKeyDown={(e) => { if (e.key === "Enter") inviteMember(); }}
+                          placeholder="招待する人のGmailアドレス"
+                          className="flex-1 min-w-0 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                        <button onClick={inviteMember} disabled={inviteBusy || !inviteEmail.trim()}
+                          className="text-xs font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 shrink-0" style={{ background: theme.accent, color: accentText }}>
+                          {inviteBusy ? "…" : "招待"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-[12px] text-stone-500 bg-stone-50 rounded-lg px-3 py-2 mb-3">この案件のオーナーは <span className="font-bold">{ownerEmail}</span> です。あなたは編集メンバーとして参加しています。</div>
+                    )}
+                    <div className="text-[11px] font-bold text-stone-400 mb-1.5">メンバー</div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-[12.5px] px-2 py-1.5 rounded-lg bg-stone-50">
+                        <span className="w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold text-white shrink-0" style={{ background: theme.main }}>{(ownerEmail[0] || "?").toUpperCase()}</span>
+                        <span className="truncate">{ownerEmail}</span>
+                        <span className="ml-auto text-[10px] font-bold text-stone-400 shrink-0">オーナー</span>
+                      </div>
+                      {members.map((m) => (
+                        <div key={m} className="flex items-center gap-2 text-[12.5px] px-2 py-1.5 rounded-lg border border-stone-100">
+                          <span className="w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold text-white shrink-0 bg-stone-400">{(m[0] || "?").toUpperCase()}</span>
+                          <span className="truncate">{m}</span>
+                          {isOwner && <button onClick={() => uninviteMember(m)} className="ml-auto text-[10px] font-bold text-stone-300 hover:text-red-500 shrink-0">外す</button>}
+                        </div>
+                      ))}
+                      {members.length === 0 && <p className="text-[11px] text-stone-400 px-2">まだ他のメンバーはいません。</p>}
+                    </div>
+                    <p className="text-[10px] text-stone-400 mt-3 leading-relaxed">同時編集は最後の保存が優先されます。大きな変更は声を掛け合ってね。</p>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

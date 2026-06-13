@@ -19,6 +19,8 @@ const CORS = {
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...CORS } });
 
+const lc = (s) => (s || "").toString().trim().toLowerCase();
+const now = () => new Date().toISOString();
 const rid = (n = 8) => {
   const a = "abcdefghijkmnpqrstuvwxyz23456789"; // 紛らわしい文字を除外
   const buf = crypto.getRandomValues(new Uint8Array(n));
@@ -267,6 +269,85 @@ export default {
           return json({ keys: out.keys.map((k) => k.name.slice(pre.length)) });
         }
         return json({ error: "unknown kv op" }, 400);
+      }
+
+      // ===== 案件ごとの共同編集（招待・権限） =====
+      // POST /api/collab/{upsert|invite|uninvite|leave|list|get|delete}
+      if (request.method === "POST" && parts[1] === "collab") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const myEmail = lc(u.email);
+        const op = parts[2];
+        const b = await request.json();
+        const docKey = (id) => "col:" + id;
+        const loadDoc = async (id) => (id ? await env.SNAPS.get(docKey(id), "json") : null);
+        const canEdit = (doc) => doc && (doc.ownerSub === u.sub || (doc.members || []).includes(myEmail));
+        const addIdx = async (email, id) => { const k = "colmember:" + lc(email); const a = (await env.SNAPS.get(k, "json")) || []; if (!a.includes(id)) { a.push(id); await env.SNAPS.put(k, JSON.stringify(a)); } };
+        const delIdx = async (email, id) => { const k = "colmember:" + lc(email); const a = (await env.SNAPS.get(k, "json")) || []; const n = a.filter((x) => x !== id); await env.SNAPS.put(k, JSON.stringify(n)); };
+
+        if (op === "upsert") {
+          const project = b.project; const id = (b.id || (project && project.id) || "").toString();
+          if (!id || !project) return json({ error: "id/project が必要です" }, 400);
+          let doc = await loadDoc(id);
+          if (!doc) {
+            doc = { id, ownerSub: u.sub, ownerEmail: u.email, members: [myEmail], project, name: project.name || "", channel: project.channel || "", updatedAt: now() };
+            await addIdx(myEmail, id);
+          } else {
+            if (!canEdit(doc)) return json({ error: "forbidden" }, 403);
+            doc.project = project; doc.name = project.name || doc.name; doc.channel = project.channel || doc.channel; doc.updatedAt = now();
+          }
+          await env.SNAPS.put(docKey(id), JSON.stringify(doc));
+          return json({ id, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
+        }
+        if (op === "invite") {
+          const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
+          if (doc.ownerSub !== u.sub) return json({ error: "オーナーのみ招待できます" }, 403);
+          const em = lc(b.email); if (!em || !em.includes("@")) return json({ error: "メールアドレスが不正です" }, 400);
+          if (!doc.members.includes(em)) doc.members.push(em);
+          await env.SNAPS.put(docKey(doc.id), JSON.stringify(doc));
+          await addIdx(em, doc.id);
+          return json({ members: doc.members });
+        }
+        if (op === "uninvite") {
+          const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
+          if (doc.ownerSub !== u.sub) return json({ error: "オーナーのみ操作できます" }, 403);
+          const em = lc(b.email);
+          doc.members = doc.members.filter((x) => x !== em || x === lc(doc.ownerEmail));
+          await env.SNAPS.put(docKey(doc.id), JSON.stringify(doc));
+          await delIdx(em, doc.id);
+          return json({ members: doc.members });
+        }
+        if (op === "leave") {
+          const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
+          if (doc.ownerSub === u.sub) return json({ error: "オーナーは退出できません（削除してください）" }, 400);
+          doc.members = doc.members.filter((x) => x !== myEmail);
+          await env.SNAPS.put(docKey(doc.id), JSON.stringify(doc));
+          await delIdx(myEmail, doc.id);
+          return json({ ok: true });
+        }
+        if (op === "delete") {
+          const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
+          if (doc.ownerSub !== u.sub) return json({ error: "オーナーのみ削除できます" }, 403);
+          for (const em of doc.members) await delIdx(em, doc.id);
+          await env.SNAPS.delete(docKey(doc.id));
+          return json({ ok: true });
+        }
+        if (op === "list") {
+          const ids = (await env.SNAPS.get("colmember:" + myEmail, "json")) || [];
+          const out = [];
+          for (const id of ids) {
+            const doc = await loadDoc(id);
+            if (!doc || !canEdit(doc)) continue;
+            out.push({ id, name: doc.name || "", channel: doc.channel || "", ownerEmail: doc.ownerEmail, role: doc.ownerSub === u.sub ? "owner" : "member", members: doc.members, updatedAt: doc.updatedAt });
+          }
+          return json({ projects: out });
+        }
+        if (op === "get") {
+          const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
+          if (!canEdit(doc)) return json({ error: "forbidden" }, 403);
+          return json({ project: doc.project, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
+        }
+        return json({ error: "unknown collab op" }, 400);
       }
 
       return json({ error: "no route" }, 404);
