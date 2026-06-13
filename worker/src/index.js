@@ -400,6 +400,12 @@ function slim(p) {
   return {
     name: p.name || "構成台本",
     channel: p.channel || "",
+    format: p.format === "talk" ? "talk" : "documentary",
+    talk: p.talk ? {
+      highlight: p.talk.highlight || "", intro: p.talk.intro || "", cta: p.talk.cta || "",
+      toc: Array.isArray(p.talk.toc) ? p.talk.toc : [],
+      body: (p.talk.body || []).map((b) => ({ id: b.id, heading: b.heading || "", script: b.script || "" })),
+    } : null,
     meta: p.meta || {},
     theme: p.theme || { main: "#1F2430", accent: "#E63946" },
     rate: p.rate || 5,
@@ -612,17 +618,31 @@ const REVIEW_TOOL = {
   },
 };
 
+const TALK_REVIEW_SYSTEM = `あなたはトーク系YouTube台本（一人語り・対談）の校正者です。渡された台本(JSON: title/highlight=ハイライト/intro=冒頭/toc=目次/body[]=本編(heading+script)/cta=CTA)を読み、下記の観点で report_review ツールに指摘を返してください。
+
+# チェック観点
+1. 誤字脱字（category="誤字脱字"）：変換ミス・タイプミス・てにをは。該当語句を「」で引用
+2. 未記入（category="未記入"）：タイトル/ハイライト/冒頭/本編script/CTA等が空、または本編の見出しだけで中身が無い
+3. その他（category="その他"）：構成上の明らかな弱点だけ簡潔に（冒頭に動画の結論/メリットが無い、CTAが無い/弱い、目次と本編が食い違う、同じ話の重複など）。粗探しはしない
+
+# 厳守
+- 実際の問題だけ。無ければ issues は空配列。創作・改変はしない
+- 本編の指摘は rowId に該当 body の id、sceneLabel にその見出しを入れる。全体の指摘は rowId 空でよい
+- detail は該当箇所を引用しつつ具体的に。suggestion に直し方（任意）
+- summary に全体所感を1〜2行`;
+
 async function reviewWithClaude(project, env) {
   const model = env.PARSE_MODEL || "claude-sonnet-4-6";
-  const ctx = "----- 構成台本(JSON) -----\n" + JSON.stringify(slim(project)) +
-    "\n----- ここまで -----\n\n上の構成台本を3観点で校正チェックして report_review で返してください。";
+  const isTalk = project && project.format === "talk";
+  const ctx = "----- 台本(JSON) -----\n" + JSON.stringify(slim(project)) +
+    "\n----- ここまで -----\n\n上の台本を校正チェックして report_review で返してください。";
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model,
       max_tokens: 8000,
-      system: REVIEW_SYSTEM,
+      system: isTalk ? TALK_REVIEW_SYSTEM : REVIEW_SYSTEM,
       tools: [REVIEW_TOOL],
       tool_choice: { type: "tool", name: "report_review" },
       messages: [{ role: "user", content: ctx }],

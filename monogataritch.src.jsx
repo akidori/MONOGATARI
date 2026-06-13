@@ -1582,6 +1582,21 @@ export default function App() {
   }, [project]);
 
   /* ---------- TSV書き出し ---------- */
+  /* トーク系台本をプレーンテキストでコピー */
+  const exportTalkText = async () => {
+    const t = project.talk || newTalk();
+    const title = (project.plans && project.plans[0] && project.plans[0].title) || project.name || "";
+    const L = ["【タイトル】" + title];
+    if (t.highlight) L.push("\n【ハイライト】\n" + t.highlight);
+    if (t.intro) L.push("\n【冒頭】\n" + t.intro);
+    const toc = (t.toc || []).filter((x) => x && x.trim());
+    if (toc.length) L.push("\n【目次】\n" + toc.map((x, i) => (i + 1) + ". " + x).join("\n"));
+    L.push("\n【本編】");
+    (t.body || []).forEach((b, i) => { L.push("\n■ " + (b.heading || ("本編" + (i + 1)))); if (b.script) L.push(b.script); });
+    if (t.cta) L.push("\n【CTA】\n" + t.cta);
+    try { await navigator.clipboard.writeText(L.join("\n")); showToast("トーク台本をコピーしました"); } catch (e) { showToast("コピーに失敗しました"); }
+  };
+
   const exportScriptTSV = async () => {
     const esc = (s) => {
       const v = (s || "").toString();
@@ -1985,7 +2000,7 @@ export default function App() {
             </button>
           )}
           {/* 構成台本をTSVコピー（スプシ／Claude取り込み用） */}
-          <button onClick={exportScriptTSV} title="構成台本をスプシ形式でコピー（取り込みにも使える）"
+          <button onClick={project.format === "talk" ? exportTalkText : exportScriptTSV} title={project.format === "talk" ? "トーク台本をテキストでコピー" : "構成台本をスプシ形式でコピー（取り込みにも使える）"}
             className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: mainText }}>
               <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" />
@@ -2226,7 +2241,7 @@ export default function App() {
               {sec("⑤", "本編", "各トピックの中身", (
                 <div className="space-y-2.5">
                   {t.body.map((b, i) => (
-                    <div key={b.id} className="border border-stone-200 rounded-xl overflow-hidden">
+                    <div key={b.id} id={"row-" + b.id} className="border rounded-xl overflow-hidden transition-shadow" style={flashId === b.id ? { boxShadow: "0 0 0 3px " + theme.accent } : { borderColor: "#e7e5e4" }}>
                       <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-50 border-b border-stone-100">
                         <span className="text-[10px] font-bold text-stone-400 shrink-0" style={{ fontFamily: mono }}>本編{i + 1}</span>
                         <input value={b.heading} onChange={(e) => setBody(b.id, { heading: e.target.value })} placeholder="この区切りの見出し"
