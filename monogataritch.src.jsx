@@ -86,6 +86,9 @@ const migrate = (p) => {
 const STORAGE_KEY = "kousei-project-v1";        // 旧：単一プロジェクト（移行元）
 const STORE_INDEX = "monogataritch-index-v1";   // 案件の並び順とメタ
 const STORE_PROJ = (id) => "monogataritch-proj-" + id; // 各案件の本体
+const STORE_CHANNELS = "monogataritch-channels-v1"; // チャンネル(クライアント)単位のコンセプト情報 {name:{...}}
+const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [] });
+const emptyCompetitor = () => ({ url: "", vid: "", name: "", subs: 0, note: "" });
 
 /* 共有＋コメント Worker。localStorage("mg:shareApi") で上書き可（ローカル検証用） */
 const SHARE_API = (() => {
@@ -655,6 +658,7 @@ export default function App() {
   const [index, setIndex] = useState([]);       // [{id,name,createdAt}]
   const [activeId, setActiveId] = useState(null);
   const [project, setProject] = useState(null);  // 現在編集中の案件データ
+  const [channelInfo, setChannelInfo] = useState({}); // {channelName: {name,url,concept,target,purpose,competitors[]}}
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState("");
   const [hoverId, setHoverId] = useState(null);
@@ -711,6 +715,8 @@ export default function App() {
   const loadAll = async () => {
     try {
       if (typeof window.storage === "undefined") { setLoaded(true); return; }
+      try { const cr = await window.storage.get(STORE_CHANNELS); setChannelInfo(cr && cr.value ? JSON.parse(cr.value) : {}); }
+      catch (e) { if (e && e.code === 401) throw e; }
       let idx = null;
       try { const r = await window.storage.get(STORE_INDEX); idx = r && r.value ? JSON.parse(r.value) : null; }
       catch (e) { if (e && e.code === 401) throw e; }
@@ -841,6 +847,44 @@ export default function App() {
     }, 700);
     return () => clearTimeout(saveTimer.current);
   }, [project, loaded]);
+
+  /* チャンネルコンセプトの自動保存 */
+  const chSaveTimer = useRef(null);
+  useEffect(() => {
+    if (!loaded) return;
+    clearTimeout(chSaveTimer.current);
+    chSaveTimer.current = setTimeout(async () => {
+      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_CHANNELS, JSON.stringify(channelInfo)); }
+      catch (e) { console.error("チャンネル保存エラー", e); }
+    }, 700);
+    return () => clearTimeout(chSaveTimer.current);
+  }, [channelInfo, loaded]);
+
+  /* 現在の案件のチャンネルのコンセプト情報を取得／更新 */
+  const curChannel = project ? (project.channel || DEFAULT_CHANNEL) : DEFAULT_CHANNEL;
+  const curChannelInfo = { ...emptyChannelInfo(), name: curChannel, ...(channelInfo[curChannel] || {}) };
+  const updateChannelInfo = (patch) => setChannelInfo((ci) => ({ ...ci, [curChannel]: { ...emptyChannelInfo(), name: curChannel, ...(ci[curChannel] || {}), ...patch } }));
+  const setCompetitors = (updater) => updateChannelInfo({ competitors: typeof updater === "function" ? updater(curChannelInfo.competitors || []) : updater });
+  const addCompetitor = () => setCompetitors((cs) => [...(cs || []), emptyCompetitor()]);
+  const removeCompetitor = (i) => setCompetitors((cs) => (cs || []).filter((_, k) => k !== i));
+  const updateCompetitor = (i, patch) => setCompetitors((cs) => (cs || []).map((c, k) => (k === i ? { ...c, ...patch } : c)));
+  const [compBusy, setCompBusy] = useState({});
+  const fetchCompetitor = async (i, urlOrName) => {
+    const v = (urlOrName || "").trim(); if (!v) return;
+    setCompBusy((b) => ({ ...b, [i]: true }));
+    try {
+      const res = await fetch(SHARE_API + "/api/ytchannel?u=" + encodeURIComponent(v));
+      const d = await res.json();
+      if (d.needKey) { showToast("YouTube APIキーが未設定"); updateCompetitor(i, { url: v }); return; }
+      if (!res.ok || d.error) throw new Error(d.error || "取得失敗");
+      updateCompetitor(i, { url: v, channelId: d.channelId, name: d.name, subs: d.subs, videos: d.videos, views: d.views, thumb: d.thumb });
+    } catch (e) {
+      showToast("チャンネル取得に失敗：" + (e.message || e));
+      updateCompetitor(i, { url: v });
+    } finally {
+      setCompBusy((b) => { const n = { ...b }; delete n[i]; return n; });
+    }
+  };
 
   /* indexの保存 */
   const persistIndex = async (idx) => {
@@ -1185,6 +1229,12 @@ export default function App() {
     const idx = index.map((x) => ((x.channel || DEFAULT_CHANNEL) === oldName ? { ...x, channel: ch } : x));
     setIndex(idx); persistIndex(idx);
     if (project && (project.channel || DEFAULT_CHANNEL) === oldName) setProject((p) => ({ ...p, channel: ch }));
+    // チャンネルコンセプト情報も新名へ移動（既存があれば優先）
+    setChannelInfo((ci) => {
+      if (!ci[oldName] && oldName !== DEFAULT_CHANNEL) return ci;
+      const moved = { ...emptyChannelInfo(), ...(ci[oldName] || {}), ...(ci[ch] || {}), name: ch };
+      const n = { ...ci, [ch]: moved }; delete n[oldName]; return n;
+    });
     // 本体側も後追いで更新
     idx.forEach(async (x) => {
       if (x.channel !== ch) return;
@@ -1839,7 +1889,7 @@ export default function App() {
         </div>
         {/* タブ */}
         <div className="max-w-[1500px] mx-auto px-4 flex gap-1">
-          {[["script", "構成台本"], ["kouban", "香盤表"], ["plan", "企画・サムネ"]].map(([k, label]) => (
+          {[["concept", "チャンネルコンセプト"], ["plan", "企画・サムネ"], ["script", "構成台本"], ["kouban", "香盤表"]].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"px-4 py-1.5 rounded-t-lg text-[12px] font-bold tracking-wider transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -1878,6 +1928,115 @@ export default function App() {
       </header>
 
       <main className="max-w-[1500px] mx-auto px-3 sm:px-5 pt-5">
+
+        {/* ================= チャンネルコンセプトタブ ================= */}
+        {tab === "concept" && (
+          <div className="max-w-[1000px] mx-auto">
+            <div className="flex items-center gap-2 mb-4 flex-wrap">
+              <p className="text-[12px] text-stone-500 leading-relaxed">
+                チャンネル「<span className="font-bold" style={{ color: theme.main }}>{curChannel}</span>」のコンセプト。<span className="font-bold">同じチャンネル（フォルダ）の全案件で共有</span>されます。
+              </p>
+            </div>
+            {curChannel === DEFAULT_CHANNEL && (
+              <div className="mb-4 text-[12px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 inline-flex items-start gap-1.5">
+                <Icon name="warn" className="w-4 h-4 shrink-0 mt-0.5" /><span>この案件は「未分類」です。サイドバーでフォルダにクライアント名を付ける（✎）と、チャンネル単位でコンセプトを管理できます。</span>
+              </div>
+            )}
+
+            <section className={cardCls + " mb-4"}>
+              {cardHead("チャンネル基本情報")}
+              <div className="p-4 grid sm:grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-[11px] font-bold text-stone-500">チャンネル名</span>
+                  <input value={curChannelInfo.name} onChange={(e) => updateChannelInfo({ name: e.target.value })}
+                    placeholder="例）Bird Flip チャンネル"
+                    className="mt-1 w-full text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-bold text-stone-500">チャンネルURL</span>
+                  <input value={curChannelInfo.url} onChange={(e) => updateChannelInfo({ url: e.target.value })}
+                    placeholder="https://www.youtube.com/@..."
+                    className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                </label>
+              </div>
+            </section>
+
+            <section className={cardCls + " mb-4"}>
+              {cardHead("コンセプト設計")}
+              <div className="p-4 space-y-3">
+                {[
+                  ["concept", "コンセプト", "このチャンネルで何を発信するか。一言で言うと？"],
+                  ["target", "ターゲット", "誰に届けるか（年齢・性別・悩み・状況など）"],
+                  ["purpose", "CV先・チャンネルの目的", "最終的に何につなげるか（自社サービス送客／集客／採用／ブランディング 等）"],
+                ].map(([key, label, ph]) => (
+                  <label key={key} className="block">
+                    <span className="text-[11px] font-bold text-stone-500">{label}</span>
+                    <textarea value={curChannelInfo[key]} onChange={(e) => updateChannelInfo({ [key]: e.target.value })}
+                      placeholder={ph}
+                      className="mt-1 w-full h-20 text-[13px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" />
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className={cardCls + " mb-4"}>
+              <div className="px-4 py-2.5 flex items-center justify-between border-b border-stone-100">
+                <span className="text-[12px] font-bold tracking-wide text-stone-600">競合チャンネル</span>
+                <span className="text-[10px] text-stone-400">URLを貼ると登録者数を自動取得</span>
+              </div>
+              <div className="p-4 space-y-2">
+                {(curChannelInfo.competitors || []).length === 0 && (
+                  <p className="text-[12px] text-stone-400 text-center py-2">競合チャンネルをまだ追加していません。</p>
+                )}
+                {(curChannelInfo.competitors || []).map((c, i) => (
+                  <div key={i} className="border border-stone-200 rounded-xl p-2.5">
+                    <div className="flex items-center gap-2">
+                      {compBusy[i] ? (
+                        <div className="w-9 h-9 rounded-full bg-stone-200 animate-pulse shrink-0" />
+                      ) : c.thumb ? (
+                        <img src={c.thumb} alt="" className="w-9 h-9 rounded-full shrink-0" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-stone-100 grid place-items-center text-stone-300 shrink-0"><Icon name="user" className="w-4 h-4" /></div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        {c.name
+                          ? <div className="text-[12.5px] font-bold text-stone-700 truncate">{c.name}</div>
+                          : <div className="text-[12px] text-stone-400">チャンネルURLを入力</div>}
+                        {(c.subs > 0 || c.videos > 0) && (
+                          <div className="text-[10px] text-stone-500 flex gap-2" style={{ fontFamily: mono }}>
+                            <span title="登録者数">👤 {fmtNum(c.subs)}</span>
+                            {c.videos > 0 && <span title="動画数">🎬 {fmtNum(c.videos)}</span>}
+                            {c.views > 0 && <span title="総再生数">▶ {fmtNum(c.views)}</span>}
+                          </div>
+                        )}
+                      </div>
+                      {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="text-[11px] text-stone-400 hover:text-stone-600 shrink-0">開く ↗</a>}
+                      <button onClick={() => removeCompetitor(i)} title="削除" className="w-7 h-7 rounded-lg grid place-items-center text-stone-300 hover:bg-red-50 hover:text-red-500 shrink-0"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                    </div>
+                    <input
+                      key={c.url}
+                      defaultValue={c.url}
+                      placeholder="https://www.youtube.com/@competitor"
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== c.url) fetchCompetitor(i, v); }}
+                      onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                      className="mt-2 w-full text-[11px] border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                    <input value={c.note || ""} onChange={(e) => updateCompetitor(i, { note: e.target.value })}
+                      placeholder="メモ（強み・参考点など）"
+                      className="mt-1.5 w-full text-[12px] border border-stone-200 rounded px-2 py-1.5 focus:outline-none focus:border-stone-400" />
+                  </div>
+                ))}
+                <button onClick={addCompetitor}
+                  className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-300 hover:bg-stone-50 inline-flex items-center gap-1.5">
+                  <Icon name="plus" className="w-4 h-4" />競合チャンネルを追加
+                </button>
+              </div>
+            </section>
+
+            <p className="text-[11px] text-stone-400 leading-relaxed">
+              ここで決めたコンセプト・ターゲット・競合は、このチャンネルの全案件で共有されます。企画やタイトルを考えるときの土台にしてください。
+            </p>
+          </div>
+        )}
 
         {/* ================= 構成台本タブ ================= */}
         {tab === "script" && (
@@ -2286,8 +2445,14 @@ export default function App() {
                       <span className="text-[12px] font-bold tracking-wide inline-flex items-center gap-1.5">
                         <Icon name="sparkle" className="w-4 h-4" />企画案 {pi + 1}
                       </span>
-                      <button onClick={() => removePlan(pl.id)} title="この企画案を削除"
-                        className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setTab("script")} title="この企画と連携している構成台本を開く"
+                          className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 inline-flex items-center gap-1">
+                          <Icon name="file" className="w-3.5 h-3.5" />構成台本へ →
+                        </button>
+                        <button onClick={() => removePlan(pl.id)} title="この企画案を削除"
+                          className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                      </div>
                     </div>
                     <div className="p-4">
                       <div className="grid sm:grid-cols-2 gap-3 mb-4">

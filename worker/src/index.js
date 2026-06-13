@@ -100,6 +100,41 @@ export default {
         });
       }
 
+      // GET /api/ytchannel?u=<channelUrlOrHandle>  → YouTubeチャンネル統計（競合リサーチ用）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "ytchannel") {
+        if (!env.YT_API_KEY) return json({ error: "YT_API_KEY 未設定", needKey: true }, 200);
+        const raw = (url.searchParams.get("u") || "").trim();
+        if (!raw) return json({ error: "チャンネルURLを入力してください" }, 400);
+        const base = "https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics&key=" + env.YT_API_KEY;
+        let api = null;
+        let m;
+        if ((m = raw.match(/\/channel\/(UC[a-zA-Z0-9_-]{20,})/))) api = base + "&id=" + m[1];
+        else if ((m = raw.match(/@([a-zA-Z0-9_.\-]+)/))) api = base + "&forHandle=@" + m[1];
+        else if ((m = raw.match(/\/user\/([a-zA-Z0-9_.\-]+)/))) api = base + "&forUsername=" + m[1];
+        if (!api) {
+          // /c/カスタム名 や 生のチャンネル名 → 検索で解決
+          const q = (raw.match(/\/c\/([^/?#]+)/) || [])[1] || raw;
+          const sRes = await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&type=channel&maxResults=1&q=" + encodeURIComponent(decodeURIComponent(q)) + "&key=" + env.YT_API_KEY);
+          const sData = await sRes.json();
+          const cid = sData.items && sData.items[0] && sData.items[0].snippet && sData.items[0].snippet.channelId;
+          if (!cid) return json({ error: "チャンネルが見つかりませんでした" }, 404);
+          api = base + "&id=" + cid;
+        }
+        const cRes = await fetch(api);
+        const cData = await cRes.json();
+        const it = cData.items && cData.items[0];
+        if (!it) return json({ error: "チャンネルが見つかりませんでした" }, 404);
+        const st = it.statistics || {};
+        return json({
+          channelId: it.id,
+          name: it.snippet && it.snippet.title || "",
+          thumb: it.snippet && it.snippet.thumbnails && it.snippet.thumbnails.default && it.snippet.thumbnails.default.url || "",
+          subs: parseInt(st.subscriberCount || 0),
+          videos: parseInt(st.videoCount || 0),
+          views: parseInt(st.viewCount || 0),
+        });
+      }
+
       // POST /api/publish  { project, prevId?, token? }
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "publish") {
         const body = await request.json();
