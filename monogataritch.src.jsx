@@ -711,6 +711,7 @@ export default function App() {
   const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
   const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
+  const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
   const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集)
   const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
   const [inviteEmail, setInviteEmail] = useState("");
@@ -1356,10 +1357,12 @@ export default function App() {
       if (!map[ch]) { map[ch] = []; order.push(ch); }
       map[ch].push(x);
     });
+    // 案件ゼロでも登録済みの空チャンネルを表示
+    Object.keys(channelInfo || {}).forEach((ch) => { if (ch && ch !== DEFAULT_CHANNEL && !map[ch]) { map[ch] = []; order.push(ch); } });
     // 未分類は末尾へ
     order.sort((a, b) => (a === DEFAULT_CHANNEL ? 1 : b === DEFAULT_CHANNEL ? -1 : 0));
     return order.map((channel) => ({ channel, items: map[channel] }));
-  }, [index]);
+  }, [index, channelInfo]);
 
   /* チャンネル名の変更（配下の案件すべてに反映） */
   const renameChannel = (oldName) => {
@@ -1405,10 +1408,24 @@ export default function App() {
     setIndex(ni); persistIndex(ni);
   };
 
+  /* 空のチャンネル（フォルダ）を新規作成 */
+  const createChannel = (rawName) => {
+    const name = (rawName || "").trim();
+    if (!name || name === DEFAULT_CHANNEL) return;
+    if ((channelInfo && channelInfo[name]) || channelGroups.some((g) => g.channel === name)) { showToast("「" + name + "」は既にあります"); return; }
+    setChannelInfo((c) => ({ ...c, [name]: { ...emptyChannelInfo(), name } }));
+    showToast("チャンネル「" + name + "」を作成しました");
+  };
+
   /* フォルダ（チャンネル）ごと削除：配下の全案件を削除（未分類も可） */
   const deleteChannel = async (channel) => {
     const items = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === channel);
-    if (!items.length) { showToast("空のフォルダです"); return; }
+    if (!items.length) {
+      // 空チャンネル：登録だけ消す
+      if (!window.confirm("空のフォルダ「" + channel + "」を削除しますか？")) return;
+      setChannelInfo((c) => { const n = { ...c }; delete n[channel]; return n; });
+      setCtxMenu(null); showToast("フォルダを削除しました"); return;
+    }
     if (!window.confirm("フォルダ「" + channel + "」と中の" + items.length + "案件を全て削除します。元に戻せません。よろしいですか？")) return;
     for (const x of items) {
       try {
@@ -1863,8 +1880,8 @@ export default function App() {
             style={{ background: theme.accent, color: accentText }}>
             <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
           </button>
-          <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createProject(true, ch.trim()); }}
-            title="チャンネルを追加して案件を作成"
+          <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
+            title="新しいチャンネル（フォルダ）を作成"
             className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20">
             <Icon name="plus" className="w-3.5 h-3.5" />ch
           </button>
@@ -1924,7 +1941,7 @@ export default function App() {
                       <button title="フォルダを上へ" onClick={(e) => { e.stopPropagation(); moveChannel(channel, -1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="up" className="w-3 h-3" /></button>
                       <button title="フォルダを下へ" onClick={(e) => { e.stopPropagation(); moveChannel(channel, 1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="down" className="w-3 h-3" /></button>
                     </>)}
-                    <button title="このチャンネルに案件を追加" onClick={(e) => { e.stopPropagation(); createProject(true, channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">{<Icon name="plus" className="w-3.5 h-3.5" />}</button>
+                    <button title="このチャンネルに案件を追加（タイプ選択）" onClick={(e) => { e.stopPropagation(); setAddMenu({ channel, x: e.clientX, y: e.clientY }); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">{<Icon name="plus" className="w-3.5 h-3.5" />}</button>
                     <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
                   </div>
                 </div>
@@ -3139,11 +3156,9 @@ export default function App() {
               </div>
             )}
             <div className="flex items-center gap-2 mb-5 flex-wrap">
-              <button onClick={() => createProject(true, DEFAULT_CHANNEL, "documentary")} className="h-10 px-4 rounded-xl inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow" style={{ background: theme.accent }}>
-                <span>🎬</span> 一日密着を新規作成
-              </button>
-              <button onClick={() => createProject(true, DEFAULT_CHANNEL, "talk")} className="h-10 px-4 rounded-xl inline-flex items-center gap-1.5 text-[12px] font-bold border border-stone-300 bg-white hover:bg-stone-50">
-                <span>🎙️</span> トーク系を新規作成
+              <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
+                className="h-10 px-4 rounded-xl inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow" style={{ background: theme.accent }}>
+                <Icon name="plus" className="w-4 h-4" /> 新規チャンネルを作成
               </button>
             </div>
 
@@ -3168,12 +3183,14 @@ export default function App() {
                         </div>
                       </button>
                       <div className="flex gap-1 shrink-0">
+                        <button onClick={(e) => setAddMenu({ channel, x: e.clientX, y: e.clientY })} title="この中に案件を追加" className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="plus" className="w-3 h-3" />案件</button>
                         {channel !== DEFAULT_CHANNEL && (
                           <button onClick={() => publishChannel(channel)} disabled={chSharing} className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-50">共有</button>
                         )}
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-1.5 mt-2.5">
+                      {items.length === 0 && <span className="text-[11px] text-stone-300">案件がありません。「＋案件」から追加</span>}
                       {items.slice(0, 6).map((it) => (
                         <button key={it.id} onClick={() => switchProject(it.id)}
                           className="text-[11px] font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1 max-w-[200px]">
@@ -3191,6 +3208,19 @@ export default function App() {
             <p className="text-[10px] text-stone-400 mt-6 text-center">案件をクリックすると編集画面が開きます。左上ロゴでいつでもここに戻れます。</p>
           </main>
         </div>
+      )}
+
+      {/* ===== 案件追加 タイプ選択メニュー ===== */}
+      {addMenu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setAddMenu(null)} />
+          <div className="fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+            style={{ left: Math.min(addMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: addMenu.y }}>
+            <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{addMenu.channel} に追加</div>
+            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "documentary"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><span>🎬</span>一日密着</button>
+            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "talk"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><span>🎙️</span>トーク系</button>
+          </div>
+        </>
       )}
 
       {/* ===== サイドバー チャンネル右クリックメニュー ===== */}
