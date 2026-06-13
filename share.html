@@ -71,16 +71,24 @@ async function load(){
 
 function commentsFor(sid){ return COMMENTS.filter(c=>c.sceneId===sid); }
 
-function render(){
-  const p = SNAP.project;
-  const theme = p.theme || {main:"#1F2430",accent:"#E63946"};
-  const accent = theme.accent, main = theme.main;
-  const m = p.meta||{};
-  const titles = (m.titles||[]).filter(Boolean);
-  document.documentElement.style.setProperty("--main", main);
+const fmtNum = (n) => { n = Number(n)||0; if(n>=1e8) return (n/1e8).toFixed(1)+"億"; if(n>=1e4) return (n/1e4).toFixed(n>=1e5?0:1)+"万"; return n.toLocaleString(); };
+const GC = { S:"#E11D48", A:"#EA580C", B:"#0EA5E9", C:"#9CA3AF" };
+function scoreVideo(info){
+  if(!info||!info.uploadDate) return null;
+  const days=(Date.now()-new Date(info.uploadDate))/86400000;
+  if(isNaN(days)) return null;
+  const ratio=info.subs>0?info.views/info.subs:0;
+  const grade=days>365?'C':ratio>=5?'S':ratio>=3?'A':ratio>=1?'B':'C';
+  const ratioStr=ratio>=1?ratio.toFixed(1)+'倍':Math.round(ratio*100)+'%';
+  return {grade,ratioStr};
+}
 
-  let sceneNo = 0;
-  let rowsHtml = "";
+let TAB = "script";
+function setTab(t){ TAB = t; render(); }
+
+/* ── 構成台本ペイン（コメント機能つき） ── */
+function paneScript(p, accent, main){
+  let sceneNo = 0, rowsHtml = "";
   (p.rows||[]).forEach(r => {
     if(r.kind === "location"){
       rowsHtml += `<div class="mt-4 mb-2 rounded-t-xl overflow-hidden flex items-stretch" style="background:${main};color:#fff">
@@ -99,9 +107,7 @@ function render(){
     const cs = commentsFor(r.id);
     const open = cs.filter(c=>!c.resolved).length;
     rowsHtml += `<div class="bg-white border border-stone-200 border-t-0 px-3 py-3 flex gap-3" style="border-left:3px solid ${t.color}">
-      <div class="w-8 shrink-0 text-center">
-        <div class="text-[10px] text-stone-300 mono">#${sceneNo}</div>
-      </div>
+      <div class="w-8 shrink-0 text-center"><div class="text-[10px] text-stone-300 mono">#${sceneNo}</div></div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1 flex-wrap">
           <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:${t.bg};color:${t.color}">${esc(t.full)}</span>
@@ -117,10 +123,118 @@ function render(){
       </div>
     </div>`;
   });
+  return `<div>${rowsHtml}</div>
+    <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">各シーンの「💬 コメント」から、気になる点・修正してほしい所を書き込めます。</p>`;
+}
+
+/* ── 香盤表ペイン ── */
+function paneKouban(p){
+  const rows = p.rows||[];
+  let html = "", cur = null, blocks = [];
+  rows.forEach(r => {
+    if(r.kind === "location"){ cur = { loc:r, scenes:[] }; blocks.push(cur); }
+    else { if(!cur){ cur = { loc:null, scenes:[] }; blocks.push(cur); } cur.scenes.push(r); }
+  });
+  blocks.forEach(b => {
+    const loc = b.loc;
+    html += `<div class="rounded-xl overflow-hidden border border-stone-200 mb-3 bg-white">
+      <div class="flex items-stretch" style="background:var(--main);color:#fff">
+        <div class="w-3 shrink-0 stripe"></div>
+        <div class="px-3 py-2 font-bold text-[13px]">${esc(loc&&loc.label||"（場所未設定）")}</div>
+        ${loc&&loc.time?`<div class="ml-auto self-center pr-3 text-[11px] opacity-70 mono">${esc(loc.time)}</div>`:""}
+      </div>
+      ${loc&&(loc.address||loc.note)?`<div class="px-3 py-1.5 text-[11px] text-stone-500 border-b border-stone-100 flex flex-wrap gap-x-4">${loc.address?`<span>📍 ${esc(loc.address)}</span>`:""}${loc.note?`<span>📝 ${esc(loc.note)}</span>`:""}</div>`:""}
+      <div class="divide-y divide-stone-100">
+        ${b.scenes.map(s=>{const t=SECTION_TYPES[s.type]||{full:s.type,color:"#555",bg:"#eee"};return `<div class="px-3 py-1.5 flex items-center gap-2 text-[12px]">
+          <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" style="background:${t.bg};color:${t.color}">${esc(t.full)}</span>
+          <span class="flex-1 min-w-0 truncate">${esc(s.label||"")}</span>
+          ${s.sec?`<span class="text-[10px] text-stone-400 mono shrink-0">${s.sec}秒</span>`:""}
+        </div>`}).join("")||'<div class="px-3 py-2 text-[11px] text-stone-300">シーンなし</div>'}
+      </div>
+    </div>`;
+  });
+  return html || '<div class="text-stone-400 text-sm py-8 text-center">香盤表はまだありません。</div>';
+}
+
+/* ── 企画・サムネペイン ── */
+function panePlans(p){
+  const plans = p.plans||[];
+  if(!plans.length) return '<div class="text-stone-400 text-sm py-8 text-center">企画案はまだありません。</div>';
+  return plans.map((pl,i)=>{
+    const refs = (pl.refs||[]).filter(r=>r.vid);
+    return `<div class="rounded-xl border border-stone-200 bg-white mb-3 overflow-hidden">
+      <div class="px-4 py-2 text-[12px] font-bold" style="background:var(--main);color:#fff">企画案 ${i+1}</div>
+      <div class="p-4">
+        ${pl.title?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">タイトル案</div><div class="text-[15px] font-bold">${esc(pl.title)}</div></div>`:""}
+        ${pl.thumbText?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">サムネ文言</div><div class="text-[14px] font-bold">${esc(pl.thumbText)}</div></div>`:""}
+        ${pl.note?`<div class="mb-3 text-[12px] text-stone-600 whitespace-pre-wrap">${esc(pl.note)}</div>`:""}
+        ${refs.length?`<div class="text-[10px] font-bold text-stone-400 mb-1.5">参考動画</div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${refs.map(rf=>{const sc=scoreVideo(rf);return `<a href="https://www.youtube.com/watch?v=${esc(rf.vid)}" target="_blank" rel="noreferrer" class="block border border-stone-200 rounded-lg overflow-hidden">
+          <div class="relative"><img src="https://img.youtube.com/vi/${esc(rf.vid)}/mqdefault.jpg" class="w-full aspect-video object-cover">
+          ${sc?`<span class="absolute top-1 left-1 text-[10px] font-bold text-white px-1.5 rounded" style="background:${GC[sc.grade]}">${sc.grade}</span>`:""}</div>
+          <div class="p-1.5"><div class="text-[10px] font-bold leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(rf.title)}</div>
+          <div class="text-[9px] text-stone-400 truncate">${esc(rf.channel)}</div>
+          <div class="text-[9px] text-stone-500 mono flex gap-2 mt-0.5"><span>▶ ${fmtNum(rf.views)}</span><span>👤 ${fmtNum(rf.subs)}</span>${sc?`<span style="color:${GC[sc.grade]};font-weight:700">${sc.ratioStr}</span>`:""}</div></div>
+        </a>`}).join("")}</div>`:""}
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ── チャンネルコンセプトペイン ── */
+function paneConcept(p){
+  const ci = p.channelInfo;
+  if(!ci || !(ci.name||ci.url||ci.concept||ci.target||ci.purpose||(ci.competitors||[]).length))
+    return '<div class="text-stone-400 text-sm py-8 text-center">チャンネルコンセプトは設定されていません。</div>';
+  const field = (label,val) => val?`<div class="mb-3"><div class="text-[10px] font-bold text-stone-400 mb-0.5">${label}</div><div class="text-[13px] whitespace-pre-wrap leading-relaxed">${esc(val)}</div></div>`:"";
+  const comps = (ci.competitors||[]).filter(c=>c.name||c.url);
+  return `<div class="rounded-xl border border-stone-200 bg-white p-4 mb-3">
+    ${(ci.name||ci.url)?`<div class="mb-3">${ci.name?`<div class="text-[16px] font-black">${esc(ci.name)}</div>`:""}${ci.url?`<a href="${esc(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] mono text-sky-600 break-all">${esc(ci.url)}</a>`:""}</div>`:""}
+    ${field("コンセプト",ci.concept)}
+    ${field("ターゲット",ci.target)}
+    ${field("CV先・チャンネルの目的",ci.purpose)}
+  </div>
+  ${comps.length?`<div class="rounded-xl border border-stone-200 bg-white p-4">
+    <div class="text-[11px] font-bold text-stone-500 mb-2">競合チャンネル</div>
+    <div class="space-y-2">${comps.map(c=>`<div class="flex items-center gap-2 border border-stone-100 rounded-lg p-2">
+      ${c.thumb?`<img src="${esc(c.thumb)}" class="w-8 h-8 rounded-full shrink-0">`:`<div class="w-8 h-8 rounded-full bg-stone-100 shrink-0"></div>`}
+      <div class="min-w-0 flex-1"><div class="text-[12px] font-bold truncate">${esc(c.name||c.url)}</div>
+      ${c.subs?`<div class="text-[10px] text-stone-500 mono">👤 ${fmtNum(c.subs)}${c.videos?` ・🎬 ${fmtNum(c.videos)}`:""}</div>`:""}
+      ${c.note?`<div class="text-[10px] text-stone-400 truncate">${esc(c.note)}</div>`:""}</div>
+      ${c.url?`<a href="${esc(c.url)}" target="_blank" rel="noreferrer" class="text-[10px] text-stone-400 shrink-0">↗</a>`:""}
+    </div>`).join("")}</div>
+  </div>`:""}`;
+}
+
+function render(){
+  const p = SNAP.project;
+  const theme = p.theme || {main:"#1F2430",accent:"#E63946"};
+  const accent = theme.accent, main = theme.main;
+  const m = p.meta||{};
+  const titles = (m.titles||[]).filter(Boolean);
+  document.documentElement.style.setProperty("--main", main);
+
+  const ci = p.channelInfo;
+  const hasConcept = !!(ci && (ci.name||ci.url||ci.concept||ci.target||ci.purpose||(ci.competitors||[]).length));
+  const hasPlans = (p.plans||[]).length > 0;
+  const tabs = [];
+  if(hasConcept) tabs.push(["concept","チャンネルコンセプト"]);
+  if(hasPlans) tabs.push(["plan","企画・サムネ"]);
+  tabs.push(["script","構成台本"]);
+  tabs.push(["kouban","香盤表"]);
+  if(!tabs.some(t=>t[0]===TAB)) TAB = "script";
+
+  const tabBar = `<div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto">${tabs.map(([k,label])=>
+    `<button data-tab="${k}" class="tabbtn text-[12px] font-bold px-3 py-2 whitespace-nowrap ${TAB===k?'border-b-2':''}" style="${TAB===k?`color:${main};border-color:${accent}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
+
+  const pane = TAB==="concept" ? paneConcept(p)
+    : TAB==="plan" ? panePlans(p)
+    : TAB==="kouban" ? paneKouban(p)
+    : paneScript(p, accent, main);
 
   document.getElementById("app").innerHTML = `
-    <div class="flex items-center justify-between mb-4">
-      <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">STORYBOARD / 構成台本</div>
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">ものがたりっち！</div>
       <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
     </div>
     <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
@@ -131,16 +245,16 @@ function render(){
           ${m.place?`<span>場所 ${esc(m.place)}</span>`:""}
         </div>
       </div>
-      ${m.highlight?`<div class="bg-white px-5 py-3 border-t border-stone-100">
+      ${m.highlight&&TAB==="script"?`<div class="bg-white px-5 py-3 border-t border-stone-100">
         <div class="text-[10px] font-bold text-stone-400 mb-1">冒頭フック</div>
         <div class="script">${renderScript(accent, m.highlight)}</div></div>`:""}
     </div>
-    <div>${rowsHtml}</div>
-    <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">
-      各シーンの「💬 コメント」から、気になる点・修正してほしい所を書き込めます。<br>制作：ものがたりっち！
-    </p>
+    ${tabBar}
+    <div>${pane}</div>
+    <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">制作：ものがたりっち！</p>
   `;
 
+  document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
   document.querySelectorAll(".cbtn").forEach(b => b.addEventListener("click", () => toggleComments(b.dataset.c, b.dataset.l)));
 }
 

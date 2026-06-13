@@ -1249,7 +1249,7 @@ export default function App() {
     try {
       const res = await fetch(SHARE_API + "/api/publish", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project, prevId: project.shareId || null, token: project.shareToken || null }),
+        body: JSON.stringify({ project: { ...project, channelInfo: curChannelInfo }, prevId: project.shareId || null, token: project.shareToken || null }),
       });
       const data = await res.json();
       if (!data.id) throw new Error(data.error || "発行失敗");

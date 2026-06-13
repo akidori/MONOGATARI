@@ -328,6 +328,15 @@ function slim(p) {
         ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "" }
         : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, script: r.script || "" }
     ),
+    plans: (p.plans || []).map((pl) => ({
+      id: pl.id, title: pl.title || "", thumbText: pl.thumbText || "", note: pl.note || "",
+      refs: (pl.refs || []).map((rf) => ({ vid: rf.vid || "", title: rf.title || "", channel: rf.channel || "", views: rf.views || 0, subs: rf.subs || 0, uploadDate: rf.uploadDate || "", duration: rf.duration || "" })),
+    })),
+    channelInfo: p.channelInfo ? {
+      name: p.channelInfo.name || "", url: p.channelInfo.url || "", concept: p.channelInfo.concept || "",
+      target: p.channelInfo.target || "", purpose: p.channelInfo.purpose || "",
+      competitors: (p.channelInfo.competitors || []).map((c) => ({ name: c.name || "", url: c.url || "", subs: c.subs || 0, videos: c.videos || 0, note: c.note || "", thumb: c.thumb || "" })),
+    } : null,
   };
 }
 
