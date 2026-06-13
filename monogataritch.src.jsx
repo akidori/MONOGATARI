@@ -166,7 +166,7 @@ const migrateProject = (p) => {
     rows: (p.rows || templateRows()).map((r) =>
       r.kind === "scene" ? { sec: null, ...r } : { address: "", time: "", note: "", ...r }
     ),
-    plans: Array.isArray(p.plans) ? p.plans : [],
+    plans: (Array.isArray(p.plans) && p.plans.length) ? p.plans : seedPlansFromMeta(p.meta || {}),
   };
 };
 
@@ -191,6 +191,34 @@ const scoreVideo = (info, now) => {
   return { grade, total, ratio, ratioStr, days: Math.round(days) };
 };
 const GRADE_COLOR = { S: "#E11D48", A: "#EA580C", B: "#0EA5E9", C: "#9CA3AF" };
+
+/* meta.titles/thumbs（番組情報）⇔ plans（企画・サムネ）の相互変換。plansを正本にして両者を連携 */
+const seedPlansFromMeta = (meta) => {
+  const titles = (meta && meta.titles) || [], thumbs = (meta && meta.thumbs) || [];
+  let last = -1;
+  const n = Math.max(titles.length, thumbs.length);
+  for (let i = 0; i < n; i++) if ((titles[i] || "").trim() || (thumbs[i] || "").trim()) last = i;
+  const out = [];
+  for (let i = 0; i <= last; i++) out.push({ ...newPlan(), title: titles[i] || "", thumbText: thumbs[i] || "" });
+  return out;
+};
+const applyTitlesToPlans = (plans, titles, thumbs) => {
+  const arr = (plans || []).map((p) => ({ ...p }));
+  const n = Math.max((titles || []).length, (thumbs || []).length);
+  for (let i = 0; i < n; i++) {
+    const t = (titles || [])[i], th = (thumbs || [])[i];
+    if (!t && !th) continue;
+    while (arr.length <= i) arr.push(newPlan());
+    if (t) arr[i].title = t;
+    if (th) arr[i].thumbText = th;
+  }
+  return arr;
+};
+const metaTitlesFromPlans = (plans) => {
+  const ps = plans || [];
+  const slot = (i, f) => (ps[i] && ps[i][f]) || "";
+  return { titles: [slot(0, "title"), slot(1, "title"), slot(2, "title")], thumbs: [slot(0, "thumbText"), slot(1, "thumbText"), slot(2, "thumbText")] };
+};
 
 /* ---------- 構成台本の丸ごと取り込み（JSON / 構成台本コピーTSV 両対応） ----------
    Claudeが出力した project JSON、または「構成台本コピー」TSV を貼り付けて新規案件化する。 */
@@ -852,7 +880,7 @@ export default function App() {
   const createCaseFromParsed = async (parsed) => {
     const n = index.length + 1;
     const base = newProjectData(parsed.name || ("取込案件" + n), parsed.channel || DEFAULT_CHANNEL);
-    const data = { ...base, meta: parsed.meta, theme: parsed.theme, rate: parsed.rate, timeFormat: parsed.timeFormat, rows: parsed.rows };
+    const data = { ...base, meta: parsed.meta, theme: parsed.theme, rate: parsed.rate, timeFormat: parsed.timeFormat, rows: parsed.rows, plans: seedPlansFromMeta(parsed.meta) };
     const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
     try {
       if (project) await window.storage.set(STORE_PROJ(project.id), JSON.stringify(project));
@@ -877,7 +905,9 @@ export default function App() {
     if (m.highlight) meta.highlight = m.highlight;
     if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
     if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
-    const data = { ...project, meta, rate: parsed.rate || project.rate, timeFormat: parsed.timeFormat || project.timeFormat, rows: parsed.rows };
+    const plans = ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean)))
+      ? applyTitlesToPlans(project.plans, m.titles, m.thumbs) : project.plans;
+    const data = { ...project, meta, rate: parsed.rate || project.rate, timeFormat: parsed.timeFormat || project.timeFormat, rows: parsed.rows, plans };
     setProject(data);
     try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
     const idx = index.map((x) => (x.id === data.id ? { ...x, name: data.name, channel: data.channel } : x));
@@ -926,7 +956,9 @@ export default function App() {
       if (m.highlight) meta.highlight = m.highlight;
       if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
       if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
-      const data = { ...project, meta, rate: parsed.rate || project.rate, rows };
+      const plans = ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean)))
+        ? applyTitlesToPlans(project.plans, m.titles, m.thumbs) : project.plans;
+      const data = { ...project, meta, rate: parsed.rate || project.rate, rows, plans };
       setProject(data);
       try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
       setAssistantSummary(d.summary || "構成台本に反映しました。");
@@ -979,6 +1011,22 @@ export default function App() {
     const refs = x.refs.map((r, i) => (i === idx ? { ...r, ...patch } : r));
     return { ...x, refs };
   }));
+  /* 番組情報のタイトル案/サムネ案（i番目）から企画案を編集（無ければ作る） */
+  const setPlanField = (i, field, val) => setPlans((ps) => {
+    const arr = [...(ps || [])];
+    while (arr.length <= i) arr.push(newPlan());
+    arr[i] = { ...arr[i], [field]: val };
+    return arr;
+  });
+  /* 企画案(正本) → 番組情報のタイトル案/サムネ案 を自動ミラー（書き出し/AI用にmetaも常に最新化） */
+  useEffect(() => {
+    if (!project) return;
+    const { titles, thumbs } = metaTitlesFromPlans(project.plans);
+    const cm = project.meta || {};
+    if (JSON.stringify((cm.titles || []).slice(0, 3)) === JSON.stringify(titles)
+      && JSON.stringify((cm.thumbs || []).slice(0, 3)) === JSON.stringify(thumbs)) return;
+    setProject((p) => (p ? { ...p, meta: { ...p.meta, titles, thumbs } } : p));
+  }, [project && project.plans]);
   const [refBusy, setRefBusy] = useState({}); // {`${pid}:${idx}`: true}
   /* 参考動画URL → Worker経由でYouTube統計を取得して該当refに反映 */
   const fetchPlanRef = async (pid, idx, url) => {
@@ -1129,7 +1177,8 @@ export default function App() {
 
   /* チャンネル名の変更（配下の案件すべてに反映） */
   const renameChannel = (oldName) => {
-    const next = window.prompt("チャンネル名を変更", oldName);
+    const isDefault = oldName === DEFAULT_CHANNEL;
+    const next = window.prompt(isDefault ? "このフォルダに名前を付ける（クライアント名など）。配下の案件がまとめて移動します。" : "フォルダ名を変更", isDefault ? "" : oldName);
     if (next == null) return;
     const ch = next.trim() || DEFAULT_CHANNEL;
     if (ch === oldName) return;
@@ -1590,9 +1639,7 @@ export default function App() {
                   <span className="text-[10px] text-white/30 tabular-nums">{items.length}</span>
                   <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
                     <button title="このチャンネルに案件を追加" onClick={(e) => { e.stopPropagation(); createProject(true, channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">{<Icon name="plus" className="w-3.5 h-3.5" />}</button>
-                    {channel !== DEFAULT_CHANNEL && (
-                      <button title="チャンネル名を変更" onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
-                    )}
+                    <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
                   </div>
                 </div>
 
@@ -1855,7 +1902,7 @@ export default function App() {
                   {[0, 1, 2].map((i) => (
                     <div key={i} className={"flex items-center " + (i > 0 ? "md:border-l border-t md:border-t-0 border-stone-100" : "")}>
                       <span className="pl-3 text-[10px] font-bold shrink-0" style={{ color: theme.accent, fontFamily: mono }}>{i + 1}</span>
-                      <input className={metaInput} value={(m.titles || [])[i] || ""} placeholder={"案" + (i + 1)} onChange={(e) => setMetaArr("titles", i, e.target.value)} />
+                      <input className={metaInput} value={((project.plans || [])[i] && project.plans[i].title) || ""} placeholder={"案" + (i + 1)} onChange={(e) => setPlanField(i, "title", e.target.value)} title="企画・サムネタブのタイトル案と連携しています" />
                     </div>
                   ))}
                 </div>
@@ -1867,7 +1914,7 @@ export default function App() {
                   {[0, 1, 2].map((i) => (
                     <div key={i} className={"flex items-center " + (i > 0 ? "md:border-l border-t md:border-t-0 border-stone-100" : "")}>
                       <span className="pl-3 text-[10px] font-bold shrink-0" style={{ color: theme.accent, fontFamily: mono }}>{i + 1}</span>
-                      <input className={metaInput} value={(m.thumbs || [])[i] || ""} placeholder={"パターン" + (i + 1)} onChange={(e) => setMetaArr("thumbs", i, e.target.value)} />
+                      <input className={metaInput} value={((project.plans || [])[i] && project.plans[i].thumbText) || ""} placeholder={"パターン" + (i + 1)} onChange={(e) => setPlanField(i, "thumbText", e.target.value)} title="企画・サムネタブのサムネ文言と連携しています" />
                     </div>
                   ))}
                 </div>
