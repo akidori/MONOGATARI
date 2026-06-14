@@ -2810,41 +2810,49 @@ export default function App() {
                 )}
 
                 {locations.map((loc, i) => (
-                  <div key={loc.id} className="relative flex gap-3 sm:gap-4">
-                    {/* 縦ルート線＋番号 */}
-                    <div className="flex flex-col items-center w-10 shrink-0">
-                      <div className="w-9 h-9 rounded-full grid place-items-center font-bold text-[14px] shadow z-10 transition-colors"
+                  <div key={loc.id} className="relative flex gap-2.5 sm:gap-4 group/loc">
+                    {/* 左：時刻レール */}
+                    <div className="flex flex-col items-center w-[66px] sm:w-[78px] shrink-0 pt-0.5">
+                      <input
+                        type="time"
+                        value={loc.time}
+                        onChange={(e) => updateRow(loc.id, { time: e.target.value })}
+                        className="bg-transparent text-[14px] sm:text-[15px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100"
+                        style={{ fontFamily: mono, color: loc.done ? "#A8A29E" : theme.main, textDecoration: loc.done ? "line-through" : "none" }}
+                        title="到着・開始予定時刻"
+                      />
+                      <div className="w-7 h-7 mt-1 rounded-full grid place-items-center font-bold text-[12px] shadow-sm z-10 transition-colors"
                         style={{ background: loc.done ? "#A8A29E" : theme.accent, color: accentText, fontFamily: mono }}>
-                        {loc.done ? <Icon name="check" className="w-4 h-4" /> : i + 1}
+                        {loc.done ? <Icon name="check" className="w-3.5 h-3.5" /> : i + 1}
                       </div>
                       {i < locations.length - 1 && (
-                        <div className="flex-1 flex flex-col items-center py-1">
-                          <div className="flex-1 w-0.5 rounded" style={{ background: theme.main, opacity: 0.25 }} />
-                          <span className="text-[10px] my-0.5" style={{ color: theme.main, opacity: 0.4 }}>▼</span>
-                          <div className="flex-1 w-0.5 rounded" style={{ background: theme.main, opacity: 0.25 }} />
-                        </div>
+                        <div className="flex-1 w-0.5 my-1 rounded min-h-[20px]" style={{ background: theme.main, opacity: 0.2 }} />
                       )}
                     </div>
 
-                    {/* ロケーションカード */}
-                    <div className={"flex-1 mb-4 rounded-xl border overflow-hidden group/loc transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : "border-stone-200 bg-stone-50/60")}>
-                      <div className="flex items-stretch" style={{ background: theme.main, filter: loc.done ? "grayscale(1)" : "none" }}>
-                        <div className="w-4 shrink-0" style={{ background: stripe }} />
-                        <input
-                          type="time"
-                          value={loc.time}
-                          onChange={(e) => updateRow(loc.id, { time: e.target.value })}
-                          className="bg-transparent text-[13px] font-bold px-1 py-2 w-[78px] shrink-0 min-w-0 focus:outline-none tabular-nums [color-scheme:dark]"
-                          style={{ color: mainText, fontFamily: mono, textDecoration: loc.done ? "line-through" : "none" }}
-                          title="到着・開始予定時刻"
-                        />
+                    {/* 右：ロケーションカード */}
+                    <div className={"relative flex-1 mb-3 rounded-xl border overflow-visible transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : (loc.peak ? "border-2 bg-white shadow-md" : "border-stone-200 bg-white shadow-sm"))}
+                      style={loc.peak && !loc.done ? { borderColor: theme.accent } : undefined}>
+                      {loc.peak && !loc.done && (
+                        <span className="absolute -top-2.5 left-3 z-20 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm inline-flex items-center gap-0.5"
+                          style={{ background: theme.accent, color: accentText }}>★ 山場</span>
+                      )}
+                      <div className={"flex items-stretch overflow-hidden " + (loc.peak ? "rounded-t-[10px]" : "rounded-t-xl")} style={{ background: theme.main, filter: loc.done ? "grayscale(1)" : "none" }}>
+                        <div className="w-1.5 shrink-0" style={{ background: stripe }} />
                         <input
                           value={loc.label}
                           onChange={(e) => updateRow(loc.id, { label: e.target.value })}
                           placeholder="ロケーション名"
-                          className="flex-1 min-w-0 bg-transparent text-[14px] font-bold tracking-wide px-2 py-2 focus:outline-none"
+                          className="flex-1 min-w-0 bg-transparent text-[14px] font-bold tracking-wide px-3 py-2 focus:outline-none"
                           style={{ color: mainText, textDecoration: loc.done ? "line-through" : "none" }}
                         />
+                        <button
+                          onClick={() => updateRow(loc.id, { peak: !loc.peak })}
+                          title={loc.peak ? "山場マークを外す" : "ここを山場（見せ場）にする"}
+                          className="shrink-0 self-center w-7 h-7 my-1 grid place-items-center rounded-md transition-colors hover:bg-white/15"
+                          style={{ color: mainText }}>
+                          <span className={"text-[15px] leading-none transition-opacity " + (loc.peak ? "opacity-100" : "opacity-35")}>★</span>
+                        </button>
                         {/* 撮影完了トグル（常時表示・スマホ対応） */}
                         <button
                           onClick={() => updateRow(loc.id, { done: !loc.done })}
