@@ -280,7 +280,9 @@ const csvToTSV = (text) => {
     else cur += c;
   }
   row.push(cur); rows.push(row);
-  return rows.map((r) => r.map((c) => (c || "").replace(/\t/g, " ")).join("\t")).join("\n");
+  // セル内に改行/タブ/引用符があれば引用符でくくる（parseTSVが複数行セルを復元できるように）
+  const esc = (c) => { c = c || ""; return /[\t\n"]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; };
+  return rows.map((r) => r.map(esc).join("\t")).join("\n");
 };
 
 /* deflate-raw 解凍（ブラウザ標準） */
