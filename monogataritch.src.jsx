@@ -2817,7 +2817,7 @@ export default function App() {
                         type="time"
                         value={loc.time}
                         onChange={(e) => updateRow(loc.id, { time: e.target.value })}
-                        className="bg-transparent text-[14px] sm:text-[15px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100"
+                        className="bg-transparent text-[14px] sm:text-[15px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                         style={{ fontFamily: mono, color: loc.done ? "#A8A29E" : theme.main, textDecoration: loc.done ? "line-through" : "none" }}
                         title="到着・開始予定時刻"
                       />
