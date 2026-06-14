@@ -172,7 +172,7 @@ const migrateProject = (p) => {
     rate: p.rate || 5,
     timeFormat: p.timeFormat || "tc",
     rows: (p.rows || templateRows()).map((r) =>
-      r.kind === "scene" ? { sec: null, ...r } : { address: "", time: "", note: "", ...r }
+      r.kind === "scene" ? { sec: null, ...r, type: SECTION_TYPES[r.type] ? r.type : (typeFromText(r.type) || "解説系") } : { address: "", time: "", note: "", ...r }
     ),
     plans: (Array.isArray(p.plans) && p.plans.length) ? p.plans : seedPlansFromMeta(p.meta || {}),
     format: p.format === "talk" ? "talk" : "documentary",
@@ -453,7 +453,8 @@ const parseImportText = (text) => {
 const countChars = (s) => (s || "").replace(/\s/g, "").length;
 const fmtJP = (sec) => { const s = Math.round(sec); return Math.floor(s / 60) + "分" + String(s % 60).padStart(2, "0") + "秒"; };
 const fmtTC = (sec) => { const s = Math.round(sec); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
-const targetOf = (r) => (r.sec != null && r.sec !== "" ? Number(r.sec) : SECTION_TYPES[r.type].target);
+const sectionOf = (type) => SECTION_TYPES[type] || SECTION_TYPES["解説系"];
+const targetOf = (r) => (r.sec != null && r.sec !== "" ? Number(r.sec) : sectionOf(r.type).target);
 
 const textOn = (hex) => {
   try {
@@ -801,6 +802,8 @@ export default function App() {
       if (e && e.code === 401) { doLogoutLocal(); return loadAll(); } // セッション切れ→ローカルに戻す
       console.error(e);
     }
+    // どの経路でも project が無いまま終わらない（「読み込み中…」固着を防ぐ）
+    setProject((p) => p || newProjectData("案件1"));
     setLoaded(true);
   };
 
@@ -947,8 +950,13 @@ export default function App() {
   /* 案件を正しい保存先へ（collabはWorker collabストア、それ以外は個人ストレージ） */
   const saveProjectData = async (data) => {
     if (!data) return;
-    if (data.collab) { try { await authFetch("/api/collab/upsert", { id: data.id, project: data }); } catch (e) { console.error("collab保存", e); } }
-    else { try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) { console.error(e); } }
+    // collab かつログイン中のみクラウドへ。未ログイン(ログアウト後)は個人ストレージへフォールバック保存（silent fail防止）
+    if (data.collab && MG_SESSION) {
+      try { await authFetch("/api/collab/upsert", { id: data.id, project: data }); }
+      catch (e) { console.error("collab保存", e); try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} }
+    } else {
+      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) { console.error(e); }
+    }
   };
 
   /* 共同編集案件の一覧を取得（ログイン時のみ） */
@@ -1017,6 +1025,7 @@ export default function App() {
   const openChannel = async (channel) => {
     const grp = channelGroups.find((g) => g.channel === channel);
     if (grp && grp.items[0]) { await switchProject(grp.items[0].id); setTab("concept"); }
+    else { showToast("この中に案件がありません。「＋案件」から追加してね"); }
   };
 
   const uninviteMember = async (email) => {
@@ -1034,7 +1043,8 @@ export default function App() {
   const switchProject = async (id) => {
     setView("editor");
     if (id === activeId) return;
-    // 現在のを即保存
+    // 現在のを即保存（保留中のautosaveタイマーは止めて二重・古い書き込みを防ぐ）
+    clearTimeout(saveTimer.current);
     if (project) await saveProjectData(project);
     const entry = index.find((x) => x.id === id);
     try {
@@ -1739,7 +1749,7 @@ export default function App() {
       if (r.kind === "location") {
         lines.push(["", esc(r.label), "", "", "", "", "", ""].join("\t"));
       } else {
-        const t = SECTION_TYPES[r.type];
+        const t = sectionOf(r.type);
         const target = targetOf(r);
         const chars = countChars(r.script);
         const dur = chars / project.rate;
@@ -1805,7 +1815,7 @@ export default function App() {
     for (const r of project.rows) {
       if (r.kind === "location") { curLoc = r.label; continue; }
       no += 1;
-      const t = SECTION_TYPES[r.type];
+      const t = sectionOf(r.type);
       const target = targetOf(r);
       const approx = Math.round(target * project.rate);
       L.push(
@@ -2532,7 +2542,7 @@ export default function App() {
                       );
                     }
 
-                    const t = SECTION_TYPES[r.type];
+                    const t = sectionOf(r.type);
                     const target = targetOf(r);
                     const chars = countChars(r.script);
                     const dur = chars / project.rate;

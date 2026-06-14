@@ -37,6 +37,8 @@ const ID = params.get("id");
 const CHID = params.get("ch");
 let CHANNEL = null, CASE_SEL = null, CTAB = "script", CHMODE = false;
 const esc = (s) => (s||"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
+/* href用：http(s)のみ許可（javascript:等のスキーム注入を弾く） */
+const safeUrl = (u) => { u=(u||"").trim(); return /^https?:\/\//i.test(u) ? esc(u) : ""; };
 
 /* インライン書式: **太字** / !!赤!! （esc 済み文字列に対して適用） */
 function inline(text){
@@ -228,7 +230,7 @@ function paneConcept(p){
   const field = (label,val) => val?`<div class="mb-3"><div class="text-[10px] font-bold text-stone-400 mb-0.5">${label}</div><div class="text-[13px] whitespace-pre-wrap leading-relaxed">${esc(val)}</div></div>`:"";
   const comps = (ci.competitors||[]).filter(c=>c.name||c.url);
   return `<div class="rounded-xl border border-stone-200 bg-white p-4 mb-3">
-    ${(!CHMODE && (ci.name||ci.url))?`<div class="mb-3">${ci.name?`<div class="text-[16px] font-black">${esc(ci.name)}</div>`:""}${ci.url?`<a href="${esc(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] mono text-sky-600 break-all">${esc(ci.url)}</a>`:""}</div>`:""}
+    ${(!CHMODE && (ci.name||ci.url))?`<div class="mb-3">${ci.name?`<div class="text-[16px] font-black">${esc(ci.name)}</div>`:""}${ci.url?`<a href="${safeUrl(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] mono text-sky-600 break-all">${esc(ci.url)}</a>`:""}</div>`:""}
     ${field("コンセプト",ci.concept)}
     ${field("ターゲット",ci.target)}
     ${field("CV先・チャンネルの目的",ci.purpose)}
@@ -240,7 +242,7 @@ function paneConcept(p){
       <div class="min-w-0 flex-1"><div class="text-[12px] font-bold truncate">${esc(c.name||c.url)}</div>
       ${c.subs?`<div class="text-[10px] text-stone-500 mono">👤 ${fmtNum(c.subs)}${c.videos?` ・🎬 ${fmtNum(c.videos)}`:""}</div>`:""}
       ${c.note?`<div class="text-[10px] text-stone-400 truncate">${esc(c.note)}</div>`:""}</div>
-      ${c.url?`<a href="${esc(c.url)}" target="_blank" rel="noreferrer" class="text-[10px] text-stone-400 shrink-0">↗</a>`:""}
+      ${c.url?`<a href="${safeUrl(c.url)}" target="_blank" rel="noreferrer" class="text-[10px] text-stone-400 shrink-0">↗</a>`:""}
     </div>`).join("")}</div>
   </div>`:""}`;
 }
@@ -311,7 +313,7 @@ function renderChannel(){
   const header = `
     <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400 mb-2">CHANNEL / チャンネル資料</div>
     <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
-      <div class="px-5 py-4" style="background:${mainC};color:#fff"><div class="text-[18px] font-black">${esc((ci.name)||ch.name||"チャンネル")}</div>${ci.url?`<a href="${esc(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] opacity-80 mono break-all">${esc(ci.url)}</a>`:""}</div>
+      <div class="px-5 py-4" style="background:${mainC};color:#fff"><div class="text-[18px] font-black">${esc((ci.name)||ch.name||"チャンネル")}</div>${ci.url?`<a href="${safeUrl(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] opacity-80 mono break-all">${esc(ci.url)}</a>`:""}</div>
     </div>`;
 
   if(CASE_SEL === null || !cases[CASE_SEL]){

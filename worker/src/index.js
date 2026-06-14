@@ -213,6 +213,8 @@ export default {
         const text = (b.text || "").toString().trim().slice(0, 4000);
         if (!text) return json({ error: "empty" }, 400);
         const list = (await env.SNAPS.get("cmt:" + id, "json")) || [];
+        // 無認証エンドポイントのためスパム/KV肥大化を防ぐ件数上限
+        if (list.length >= 1000) return json({ error: "コメント数が上限に達しています" }, 429);
         const c = {
           id: rid(10),
           sceneId: (b.sceneId || "").toString().slice(0, 40),
@@ -261,8 +263,11 @@ export default {
         const ti = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(cred));
         if (!ti.ok) return json({ error: "Google の検証に失敗しました" }, 401);
         const g = await ti.json();
-        if (env.GOOGLE_CLIENT_ID && g.aud !== env.GOOGLE_CLIENT_ID) return json({ error: "client_id が一致しません" }, 401);
+        // aud（このアプリ向けトークンか）を必須検証：未設定だと他アプリのトークンでログイン可能になるため
+        if (!env.GOOGLE_CLIENT_ID) return json({ error: "サーバ設定エラー（GOOGLE_CLIENT_ID 未設定）" }, 500);
+        if (g.aud !== env.GOOGLE_CLIENT_ID) return json({ error: "client_id が一致しません" }, 401);
         if (!g.sub) return json({ error: "ユーザー情報を取得できませんでした" }, 401);
+        if (g.email && g.email_verified === "false") return json({ error: "メール未確認のアカウントです" }, 401);
         const user = { sub: g.sub, email: g.email || "", name: g.name || g.email || "ユーザー", picture: g.picture || "" };
         const now = Math.floor(Date.now() / 1000);
         const token = await mintSession({ ...user, iat: now, exp: now + 60 * 60 * 24 * 30 }, sessionSecret(env));
@@ -316,7 +321,7 @@ export default {
           if (!id || !project) return json({ error: "id/project が必要です" }, 400);
           let doc = await loadDoc(id);
           if (!doc) {
-            doc = { id, ownerSub: u.sub, ownerEmail: u.email, members: [myEmail], project, name: project.name || "", channel: project.channel || "", updatedAt: now() };
+            doc = { id, ownerSub: u.sub, ownerEmail: myEmail, members: [myEmail], project, name: project.name || "", channel: project.channel || "", updatedAt: now() };
             await addIdx(myEmail, id);
           } else {
             if (!canEdit(doc)) return json({ error: "forbidden" }, 403);
@@ -384,7 +389,7 @@ export default {
 };
 
 /* ===== セッショントークン（HS256 JWT）。Google検証後に発行し、以降のKVアクセスに使う ===== */
-function sessionSecret(env) { return env.SESSION_SECRET || "dev-secret-change-me-please"; }
+function sessionSecret(env) { if (!env.SESSION_SECRET) throw new Error("SESSION_SECRET 未設定（wrangler secret put が必要）"); return env.SESSION_SECRET; }
 function b64urlBytes(bytes) {
   const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
   let s = ""; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
@@ -407,6 +412,9 @@ async function mintSession(payload, secret) {
 async function verifySession(token, secret) {
   if (!token) return null;
   const p = token.split("."); if (p.length !== 3) return null;
+  // ヘッダの alg を明示検証（HS256固定。将来の検証ロジック変更時の穴を防ぐ）
+  let header; try { header = JSON.parse(b64urlToStr(p[0])); } catch (e) { return null; }
+  if (!header || header.alg !== "HS256") return null;
   const data = p[0] + "." + p[1];
   const sig = Uint8Array.from(b64urlToStr(p[2]), (c) => c.charCodeAt(0));
   const ok = await crypto.subtle.verify("HMAC", await hmacKey(secret), sig, new TextEncoder().encode(data));
