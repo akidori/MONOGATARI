@@ -530,30 +530,35 @@ const BUILD_TOOL = {
 
 async function parseWithClaude(raw, env) {
   const model = env.PARSE_MODEL || "claude-sonnet-4-6";
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 16000,
-      system: PARSE_SYSTEM,
-      tools: [BUILD_TOOL],
-      tool_choice: { type: "tool", name: "build_project" },
-      messages: [{ role: "user", content: "以下の素材を構成台本に整形して build_project で返してください。\n\n----- 素材ここから -----\n" + raw + "\n----- 素材ここまで -----" }],
-    }),
+  const body = JSON.stringify({
+    model,
+    max_tokens: 16000,
+    system: PARSE_SYSTEM,
+    tools: [BUILD_TOOL],
+    tool_choice: { type: "tool", name: "build_project" },
+    messages: [{ role: "user", content: "以下の素材を構成台本に整形して build_project で返してください。\n\n----- 素材ここから -----\n" + raw + "\n----- 素材ここまで -----" }],
   });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new Error("Claude API " + res.status + ": " + t.slice(0, 300));
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+        body,
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        // 429/5xx は一過性なのでリトライ、それ以外は即時失敗
+        if ((res.status === 429 || res.status >= 500) && attempt === 0) { lastErr = new Error("Claude API " + res.status); continue; }
+        throw new Error("Claude API " + res.status + ": " + t.slice(0, 300));
+      }
+      const data = await res.json();
+      const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
+      if (!block || !block.input) { lastErr = new Error("tool_use が返りませんでした"); continue; }
+      return block.input;
+    } catch (e) { lastErr = e; }
   }
-  const data = await res.json();
-  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
-  if (!block || !block.input) throw new Error("tool_use が返りませんでした");
-  return block.input;
+  throw lastErr || new Error("整形に失敗しました");
 }
 
 /* ===== AIアシスタント：現案件＋現場からの生メッセージ → 反映して更新案件を返す ===== */

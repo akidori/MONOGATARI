@@ -1052,10 +1052,8 @@ export default function App() {
     const base = newProjectData(parsed.name || ("取込案件" + n), parsed.channel || DEFAULT_CHANNEL);
     const data = { ...base, meta: parsed.meta, theme: parsed.theme, rate: parsed.rate, timeFormat: parsed.timeFormat, rows: parsed.rows, plans: seedPlansFromMeta(parsed.meta) };
     const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
-    try {
-      if (project) await window.storage.set(STORE_PROJ(project.id), JSON.stringify(project));
-      await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
-    } catch (e) {}
+    if (project) await saveProjectData(project);
+    try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
     setIndex(idx); persistIndex(idx);
     setActiveId(data.id); setProject(data); setTab("script"); setView("editor");
     setShowFullImport(false); setFullImportText(""); setImportFileName("");
@@ -1063,11 +1061,11 @@ export default function App() {
   };
 
   /* 解析済みデータで「今開いている案件」を上書き更新（id・名前・共有リンクは保持） */
-  const updateCurrentFromParsed = async (parsed) => {
+  const updateCurrentFromParsed = async (parsed, opts = {}) => {
     if (!project) { showToast("更新対象の案件がありません"); return; }
     const before = (project.rows || []).filter((r) => r.kind === "scene").length;
     const after = parsed.rows.filter((r) => r.kind === "scene").length;
-    if (!window.confirm("「" + project.name + "」の構成を、取り込んだ内容で上書き更新します。\n" + before + "シーン → " + after + "シーン。\n（案件名・チャンネル・共有リンクはそのまま）\n\nよろしいですか？")) return;
+    if (!opts.skipConfirm && !window.confirm("「" + project.name + "」の構成を、取り込んだ内容で上書き更新します。\n" + before + "シーン → " + after + "シーン。\n（案件名・チャンネル・共有リンクはそのまま）\n\nよろしいですか？")) return;
     const m = parsed.meta || {};
     const meta = { ...project.meta };
     if (m.shootDate) meta.shootDate = m.shootDate;
@@ -1079,7 +1077,7 @@ export default function App() {
       ? applyTitlesToPlans(project.plans, m.titles, m.thumbs) : project.plans;
     const data = { ...project, meta, rate: parsed.rate || project.rate, timeFormat: parsed.timeFormat || project.timeFormat, rows: parsed.rows, plans };
     setProject(data);
-    try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+    await saveProjectData(data); // collab/個人を正しく振り分けて確実に保存
     const idx = index.map((x) => (x.id === data.id ? { ...x, name: data.name, channel: data.channel } : x));
     setIndex(idx); persistIndex(idx);
     setShowFullImport(false); setFullImportText(""); setImportFileName("");
@@ -1087,9 +1085,14 @@ export default function App() {
   };
 
   /* 取込先（新規 / 現案件）に応じて振り分け */
-  const dispatchParsed = async (parsed) => {
-    if (importTarget === "current") await updateCurrentFromParsed(parsed);
+  const dispatchParsed = async (parsed, opts = {}) => {
+    if (importTarget === "current") await updateCurrentFromParsed(parsed, opts);
     else await createCaseFromParsed(parsed);
+  };
+  /* 更新モードの上書き確認（重い処理の前に1回だけ聞く） */
+  const confirmUpdateIfNeeded = () => {
+    if (importTarget !== "current" || !project) return true;
+    return window.confirm("「" + project.name + "」の構成を、取り込んだ内容で上書き更新します。\n（案件名・チャンネル・共有リンクはそのまま）\n\nよろしいですか？");
   };
 
   /* AIアシスタント：貼られた生メッセージ(LINE/メモ/指示)を現案件に反映 */
@@ -1252,13 +1255,15 @@ export default function App() {
       showToast("取り込めませんでした。JSON / 構成台本コピー以外は ✨AIで整形 を使ってください");
       return;
     }
-    await dispatchParsed(parsed);
+    if (!confirmUpdateIfNeeded()) return;
+    await dispatchParsed(parsed, { skipConfirm: true });
   };
 
   /* 生原稿（Claude/GPT/Gemini出力やメモ）を Worker経由でClaude整形 → 新規 or 現案件更新 */
   const aiParseImport = async () => {
     const raw = fullImportText.trim();
     if (!raw) return;
+    if (!confirmUpdateIfNeeded()) return; // 重いAI処理の前に確認（待った後にダイアログが出ない）
     setAiParsing(true);
     try {
       const res = await fetch(SHARE_API + "/api/parse", {
@@ -1268,7 +1273,10 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok || !data.project) throw new Error(data.error || "整形に失敗しました");
-      await dispatchParsed(normalizeImport(data.project));
+      const parsed = normalizeImport(data.project);
+      if (!parsed.rows || !parsed.rows.length) throw new Error("構成を読み取れませんでした（原稿が短い/形式が不明な可能性）");
+      await dispatchParsed(parsed, { skipConfirm: true });
+      showToast("✅ 取り込み完了（" + parsed.rows.filter((r) => r.kind === "scene").length + "シーン）");
     } catch (e) {
       showToast("AI整形に失敗：" + (e.message || e));
     } finally {
