@@ -532,7 +532,7 @@ async function parseWithClaude(raw, env) {
   const model = env.PARSE_MODEL || "claude-sonnet-4-6";
   const body = JSON.stringify({
     model,
-    max_tokens: 16000,
+    max_tokens: 32000,
     system: PARSE_SYSTEM,
     tools: [BUILD_TOOL],
     tool_choice: { type: "tool", name: "build_project" },
@@ -590,7 +590,7 @@ async function assistWithClaude(project, message, env) {
     headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
       model,
-      max_tokens: 16000,
+      max_tokens: 32000,
       system: ASSIST_SYSTEM,
       tools: [BUILD_TOOL],
       tool_choice: { type: "tool", name: "build_project" },

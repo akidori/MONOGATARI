@@ -404,6 +404,8 @@ const parseImportText = (text) => {
   const meta = { shootDate: "", place: "", titles: ["", "", ""], thumbs: ["", "", ""], highlight: "" };
   const rows = [];
   let inTable = false;
+  let cols = null; // ヘッダーから割り出した列位置 {time,loc,label,type,sec,script}
+  const trimAt = (cells, i) => (i >= 0 && cells[i] != null ? String(cells[i]) : "");
   for (const cells of table) {
     const c0 = (cells[0] || "").trim();
     const c1 = (cells[1] || "").trim();
@@ -414,18 +416,30 @@ const parseImportText = (text) => {
       if (c1 === "サムネ案") { meta.thumbs = [cells[2] || "", cells[3] || "", cells[4] || ""]; continue; }
       if (c1 === "ハイライト") { meta.highlight = cells[2] || ""; continue; }
     }
-    if (c0 === "時間" || c1 === "ロケーション" || (cells.includes("原稿") && cells.includes("シーン"))) { inTable = true; continue; }
+    // ヘッダー行：列位置を記録（原稿/内容/秒数 が後ろや別位置にあっても正しく拾える）
+    const norm = cells.map((x) => (x || "").trim());
+    if (c0 === "時間" || c1 === "ロケーション" || (norm.includes("原稿") && norm.includes("シーン"))) {
+      inTable = true;
+      const idx = (name) => norm.indexOf(name);
+      cols = { time: idx("時間"), loc: idx("ロケーション"), label: idx("内容"), type: idx("シーン"), sec: idx("秒数"), script: idx("原稿") };
+      continue;
+    }
     if (c1 === "合計") continue;
     if (cells.every((x) => !(x || "").trim())) continue;
-    // シーン行：どこかのセルに種別がある
-    const ti = cells.findIndex((x) => typeFromText(x));
+    // シーン行：種別セルがある（ヘッダーの「シーン」列を優先、無ければ探索）
+    let ti = (cols && cols.type >= 0 && typeFromText(cells[cols.type])) ? cols.type : -1;
+    if (ti < 0) ti = cells.findIndex((x) => typeFromText(x));
     if (ti >= 0) {
-      const secRaw = (cells[ti + 1] || "").trim();
-      rows.push({ kind: "scene", type: typeFromText(cells[ti]), label: (cells[2] || "").trim(), sec: /^\d+$/.test(secRaw) ? Number(secRaw) : null, script: cells[cells.length - 1] || "" });
+      const secRaw = ((cols && cols.sec >= 0 ? trimAt(cells, cols.sec) : trimAt(cells, ti + 1)) || "").trim();
+      const label = ((cols && cols.label >= 0 ? trimAt(cells, cols.label) : (cells[2] || "")) || "").trim();
+      const script = (cols && cols.script >= 0 ? trimAt(cells, cols.script) : (cells[cells.length - 1] || ""));
+      rows.push({ kind: "scene", type: typeFromText(cells[ti]), label, sec: /^\d+$/.test(secRaw) ? Number(secRaw) : null, script });
       continue;
     }
     // ロケーション行：種別が無く名前がある（col0=時刻 のスプシ形式にも対応）
-    if (inTable && c1) { rows.push({ kind: "location", label: c1, time: /\d/.test(c0) ? c0 : "" }); continue; }
+    const locName = ((cols && cols.loc >= 0 ? trimAt(cells, cols.loc) : c1) || "").trim();
+    const locTime = ((cols && cols.time >= 0 ? trimAt(cells, cols.time) : c0) || "").trim();
+    if (inTable && locName) { rows.push({ kind: "location", label: locName, time: /\d/.test(locTime) ? locTime : "" }); continue; }
   }
   if (!rows.length) return null;
   return normalizeImport({ meta, rows });
