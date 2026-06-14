@@ -410,11 +410,14 @@ const parseImportText = (text) => {
     const c0 = (cells[0] || "").trim();
     const c1 = (cells[1] || "").trim();
     if (!inTable) {
-      if (c1 === "撮影日") { meta.shootDate = (cells[2] || "").trim(); continue; }
-      if (c1 === "撮影場所") { meta.place = (cells[2] || "").trim(); continue; }
-      if (c1 === "タイトル案") { meta.titles = [cells[2] || "", cells[3] || "", cells[4] || ""]; continue; }
-      if (c1 === "サムネ案") { meta.thumbs = [cells[2] || "", cells[3] || "", cells[4] || ""]; continue; }
-      if (c1 === "ハイライト") { meta.highlight = cells[2] || ""; continue; }
+      // 値は col2 以降のどこか（ラベル「候補①/選考意図/パターン」等はスキップ）
+      const isLabel = (v) => /^(候補|選考意図|パターン|案)\s*[①-⑩0-9]*$/.test((v || "").trim());
+      const vals = cells.slice(2).map((v) => (v || "").trim()).filter((v) => v && !isLabel(v));
+      if (c1 === "撮影日") { meta.shootDate = vals[0] || ""; continue; }
+      if (c1 === "撮影場所") { meta.place = vals[0] || ""; continue; }
+      if (c1 === "タイトル案") { meta.titles = [vals[0] || "", vals[1] || "", vals[2] || ""]; continue; }
+      if (c1 === "サムネ案") { meta.thumbs = [vals[0] || "", vals[1] || "", vals[2] || ""]; continue; }
+      if (c1 === "ハイライト") { meta.highlight = vals[0] || ""; continue; }
     }
     // ヘッダー行：列位置を記録（原稿/内容/秒数 が後ろや別位置にあっても正しく拾える）
     const norm = cells.map((x) => (x || "").trim());
@@ -426,10 +429,10 @@ const parseImportText = (text) => {
     }
     if (c1 === "合計") continue;
     if (cells.every((x) => !(x || "").trim())) continue;
-    // シーン行：種別セルがある（ヘッダーの「シーン」列を優先、無ければ探索）
+    // シーン行：種別セルがある（ヘッダーの「シーン」列を優先、無ければ探索）。表の前（ルール説明等）は拾わない
     let ti = (cols && cols.type >= 0 && typeFromText(cells[cols.type])) ? cols.type : -1;
     if (ti < 0) ti = cells.findIndex((x) => typeFromText(x));
-    if (ti >= 0) {
+    if (inTable && ti >= 0) {
       const secRaw = ((cols && cols.sec >= 0 ? trimAt(cells, cols.sec) : trimAt(cells, ti + 1)) || "").trim();
       const label = ((cols && cols.label >= 0 ? trimAt(cells, cols.label) : (cells[2] || "")) || "").trim();
       const script = (cols && cols.script >= 0 ? trimAt(cells, cols.script) : (cells[cells.length - 1] || ""));
