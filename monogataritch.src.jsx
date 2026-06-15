@@ -1781,6 +1781,19 @@ export default function App() {
     return isNaN(n) ? null : n;
   };
 
+  /* 実時計 "H:MM"/"HH:MM:SS" → 一日の経過秒。香盤表のloc.time（type="time"）用 */
+  const parseClock = (str) => {
+    const m = (str || "").trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!m) return null;
+    return (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0));
+  };
+  /* 一日の経過秒 → "H:MM"（実時計表示） */
+  const fmtClock = (sec) => {
+    if (sec == null) return "";
+    const s = ((Math.round(sec) % 86400) + 86400) % 86400;
+    return Math.floor(s / 3600) + ":" + String(Math.floor((s % 3600) / 60)).padStart(2, "0");
+  };
+
   /* ロケーション単位の移動（配下のシーンごと） */
   const moveLocationBlock = (locId, dir) => setRows((rows) => {
     const blocks = [];
@@ -1798,13 +1811,16 @@ export default function App() {
     return next.flatMap((b) => b.items);
   });
 
-  const { tcs, totalEst, totalTarget, totalChars, locations, sceneNos, sceneLocDone } = useMemo(() => {
+  const { tcs, clocks, totalEst, totalTarget, totalChars, locations, sceneNos, sceneLocDone } = useMemo(() => {
     let acc = 0, tt = 0, tc = 0, no = 0;
     const tcs = {};
+    const clocks = {}; // 行id → 実時計の経過秒（香盤表のロケ到着時刻＋尺の積み上げ）
     const sceneNos = {};
     const locations = [];
     let cur = null;
     let curDone = false;
+    let anchorClock = null; // 直近で時刻が入ったロケの実時計（秒）
+    let anchorTcIn = 0;     // そのロケ時点の尺（秒）
     const sceneLocDone = {}; // シーンid → 所属ロケが撮影完了か
     const rows = (project && project.rows) ? project.rows : [];
     const rate = (project && project.rate) ? project.rate : 5;
@@ -1816,6 +1832,9 @@ export default function App() {
         cur = { ...r, scenes: [], dur: 0, secSum: 0, tcIn: acc };
         curDone = !!r.done;
         locations.push(cur);
+        // このロケに到着時刻が入っていれば、以降の実時刻アンカーを更新
+        const lc = parseClock(r.time);
+        if (lc != null) { anchorClock = lc; anchorTcIn = acc; }
       } else {
         no += 1;
         sceneNos[r.id] = no;
@@ -1826,8 +1845,10 @@ export default function App() {
         acc += d; tt += target; tc += chars;
         if (cur) { cur.scenes.push(r); cur.dur += d; cur.secSum += target; }
       }
+      // 実時刻＝アンカーのロケ到着時刻＋（その行までの尺 − アンカー時点の尺）
+      if (anchorClock != null) clocks[r.id] = anchorClock + (tcs[r.id] - anchorTcIn);
     }
-    return { tcs, totalEst: acc, totalTarget: tt, totalChars: tc, locations, sceneNos, sceneLocDone };
+    return { tcs, clocks, totalEst: acc, totalTarget: tt, totalChars: tc, locations, sceneNos, sceneLocDone };
   }, [project]);
 
   /* ---------- TSV書き出し ---------- */
@@ -2326,10 +2347,10 @@ export default function App() {
           </button>
         </div>
         {/* タブ */}
-        <div className="max-w-[1500px] mx-auto px-4 flex gap-1">
+        <div className="max-w-[1500px] mx-auto px-4 flex gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {[["concept", "チャンネルコンセプト"], ["plan", "企画・サムネ"], ["script", "構成台本"], ...(project.format === "talk" ? [] : [["kouban", "香盤表"]])].map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={"px-4 py-1.5 rounded-t-lg text-[12px] font-bold tracking-wider transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
+              className={"shrink-0 whitespace-nowrap px-3 sm:px-4 py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wider transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
               {label}
             </button>
@@ -2585,7 +2606,8 @@ export default function App() {
               <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（空行でEnter → ◼︎ 自動挿入）" />
             </section>
 
-            {/* 構成テーブル */}
+            {/* 構成テーブル（PC：横並びテーブル） */}
+            {!isNarrow && (
             <section className={cardCls}>
              <div className="overflow-x-auto">
               <table className="w-full border-collapse table-fixed" style={{ minWidth: isNarrow ? 600 : undefined }}>
@@ -2627,6 +2649,19 @@ export default function App() {
                                 className="flex-1 bg-transparent text-[13px] font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
                                 style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                               />
+                              <input
+                                type="time"
+                                value={r.time || ""}
+                                onChange={(e) => updateRow(r.id, { time: e.target.value })}
+                                onClick={(e) => e.stopPropagation()}
+                                title="到着・開始予定時刻（香盤表と連動／以降のシーンの実時刻の起点）"
+                                className="shrink-0 w-[64px] self-center mr-1 bg-transparent text-[12px] font-bold tabular-nums text-center rounded px-0 py-0.5 focus:outline-none focus:bg-white/15 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                                style={{ fontFamily: mono, color: mainText, opacity: r.time ? 1 : 0.5 }} />
+                              {!r.time && clocks[r.id] != null && (
+                                <span className="shrink-0 self-center mr-1 text-[11px] tabular-nums opacity-50" style={{ fontFamily: mono, color: mainText }} title="前のロケ時刻からの自動算出（実時刻）">
+                                  ≈{fmtClock(clocks[r.id])}
+                                </span>
+                              )}
                               <button
                                 onClick={() => updateRow(r.id, { done: !r.done })}
                                 title={r.done ? "撮影完了を取り消す（香盤表と連動）" : "このロケを撮影完了にする（香盤表と連動）"}
@@ -2681,16 +2716,25 @@ export default function App() {
                               className={"mt-0.5 shrink-0 w-3.5 h-3.5 cursor-pointer transition-opacity " + (isSelected(r.id) || hoverId === r.id ? "opacity-100" : "opacity-25")}
                               title="選択（クリックでON/OFF・Shiftで範囲・チェック欄をなぞって複数選択）" />
                             <div className="min-w-0 flex-1 text-center">
-                              <input
-                                key={(r.tc != null ? "m" : "a") + Math.round(tcs[r.id])}
-                                defaultValue={fmt(tcs[r.id])}
-                                draggable={false}
-                                onClick={(e) => e.stopPropagation()}
-                                onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
-                                onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                                className="w-full text-[11px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-stone-100 hover:bg-stone-100/60"
-                                style={{ fontFamily: mono, color: r.tc != null ? theme.accent : "#9CA3AF", fontWeight: r.tc != null ? 700 : 400 }}
-                                title="開始時刻を手入力で固定（空欄で自動に戻る）" />
+                              {clocks[r.id] != null ? (
+                                <div
+                                  className="w-full text-[11px] tabular-nums text-center px-0.5 py-0.5"
+                                  style={{ fontFamily: mono, color: "#9CA3AF" }}
+                                  title="香盤表のロケ到着時刻＋尺の積み上げ（実時刻）。時刻はロケ見出しまたは香盤表タブで編集">
+                                  {fmtClock(clocks[r.id])}
+                                </div>
+                              ) : (
+                                <input
+                                  key={(r.tc != null ? "m" : "a") + Math.round(tcs[r.id])}
+                                  defaultValue={fmt(tcs[r.id])}
+                                  draggable={false}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
+                                  onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                                  className="w-full text-[11px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-stone-100 hover:bg-stone-100/60"
+                                  style={{ fontFamily: mono, color: r.tc != null ? theme.accent : "#9CA3AF", fontWeight: r.tc != null ? 700 : 400 }}
+                                  title="開始時刻を手入力で固定（空欄で自動に戻る）" />
+                              )}
                               <span className="text-[9px] text-stone-300 tabular-nums" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
                             </div>
                           </div>
@@ -2762,6 +2806,120 @@ export default function App() {
               </table>
              </div>
             </section>
+            )}
+
+            {/* 構成台本（スマホ：上下積みカード。原稿を全幅で読めるように） */}
+            {isNarrow && (
+            <section className="flex flex-col">
+              {project.rows.map((r, idx) => {
+                if (r.kind === "location") {
+                  return (
+                    <div key={r.id} id={"row-" + r.id}
+                      className="flex items-stretch overflow-hidden rounded-lg mt-3 mb-1.5 shadow-sm"
+                      style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1, ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
+                      <div className="w-1.5 shrink-0" style={{ background: stripe }} />
+                      <input
+                        value={r.label}
+                        onChange={(e) => updateRow(r.id, { label: e.target.value })}
+                        placeholder="ロケーション名（例：ご自宅）"
+                        className="flex-1 min-w-0 bg-transparent text-[13px] font-bold tracking-[0.06em] px-2.5 py-2 focus:outline-none"
+                        style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
+                      />
+                      <input
+                        type="time"
+                        value={r.time || ""}
+                        onChange={(e) => updateRow(r.id, { time: e.target.value })}
+                        title="到着・開始予定時刻（香盤表と連動）"
+                        className="shrink-0 w-[58px] self-center bg-transparent text-[12px] font-bold tabular-nums text-center rounded px-0 py-0.5 focus:outline-none focus:bg-white/15 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                        style={{ fontFamily: mono, color: mainText, opacity: r.time ? 1 : 0.5 }} />
+                      <button
+                        onClick={() => updateRow(r.id, { done: !r.done })}
+                        title={r.done ? "撮影完了を取り消す" : "このロケを撮影完了にする"}
+                        className={"shrink-0 self-center text-[10px] font-bold px-2 py-1 my-1 mr-2 ml-1 rounded-md whitespace-nowrap " + (r.done ? "bg-white/15 text-white/80" : "bg-white text-stone-700 shadow-sm")}>
+                        {r.done
+                          ? <span className="inline-flex items-center gap-0.5"><Icon name="checkCircle" className="w-3 h-3" />済</span>
+                          : <span className="inline-flex items-center gap-0.5"><Icon name="check" className="w-3 h-3" />完了</span>}
+                      </button>
+                    </div>
+                  );
+                }
+
+                const t = sectionOf(r.type);
+                const target = targetOf(r);
+                const chars = countChars(r.script);
+                const dur = chars / project.rate;
+                const over = chars > 0 && dur > target * 1.5;
+                const locDone = sceneLocDone[r.id];
+                return (
+                  <div key={r.id} id={"row-" + r.id}
+                    className="rounded-xl border border-stone-200 bg-white overflow-hidden mb-2"
+                    style={{ borderLeft: "3px solid " + t.color, ...(locDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
+                    {/* メタ：番号・時刻・所要 */}
+                    <div className="flex items-center gap-2 px-3 pt-2">
+                      <span className="text-[10px] text-stone-300 tabular-nums shrink-0" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
+                      {clocks[r.id] != null ? (
+                        <span className="text-[11px] tabular-nums shrink-0" style={{ fontFamily: mono, color: "#9CA3AF" }} title="ロケ到着時刻＋尺の積み上げ（実時刻）">{fmtClock(clocks[r.id])}</span>
+                      ) : (
+                        <input
+                          key={(r.tc != null ? "m" : "a") + Math.round(tcs[r.id])}
+                          defaultValue={fmt(tcs[r.id])}
+                          onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                          className="w-[52px] text-[11px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-stone-100"
+                          style={{ fontFamily: mono, color: r.tc != null ? theme.accent : "#9CA3AF", fontWeight: r.tc != null ? 700 : 400 }}
+                          title="開始時刻を手入力で固定（空欄で自動）" />
+                      )}
+                      <span className={"ml-auto text-[11px] tabular-nums shrink-0 " + (over ? "text-red-500 font-bold" : chars ? "text-stone-600 font-semibold" : "text-stone-300")} style={{ fontFamily: mono }}>
+                        {chars ? fmt(dur) : "—"}<span className="text-stone-400 font-normal"> / {chars}字</span>
+                      </span>
+                    </div>
+                    {/* シーン種別・秒数 */}
+                    <div className="flex items-center gap-2 px-3 pt-2">
+                      <select
+                        value={r.type}
+                        onChange={(e) => updateRow(r.id, { type: e.target.value, sec: null })}
+                        className="flex-1 min-w-0 text-[11px] font-bold rounded-full px-2.5 py-1 cursor-pointer focus:outline-none appearance-none text-center"
+                        style={{ background: t.bg, color: t.color }}>
+                        {TYPE_KEYS.map((k) => <option key={k} value={k}>{SECTION_TYPES[k].full}</option>)}
+                      </select>
+                      <input
+                        type="number" min="1"
+                        value={target}
+                        onChange={(e) => updateRow(r.id, { sec: e.target.value === "" ? null : Number(e.target.value) })}
+                        className="w-14 shrink-0 text-[12px] text-center bg-stone-50 rounded-md px-1 py-1 tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-300"
+                        style={{ fontFamily: mono }}
+                        title="このシーンの目安秒数" />
+                    </div>
+                    {/* 内容 */}
+                    <textarea
+                      value={r.label}
+                      onChange={(e) => updateRow(r.id, { label: e.target.value })}
+                      rows={1}
+                      placeholder="内容（シーンの見出し）"
+                      className="block w-full resize-none bg-transparent text-[13px] font-bold leading-snug px-3 pt-2 pb-1 focus:outline-none placeholder:text-stone-300 placeholder:font-normal" />
+                    {/* 原稿（全幅） */}
+                    <div className="border-t border-stone-100 mt-1">
+                      <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} />
+                    </div>
+                    {/* 操作 */}
+                    <div className="flex items-center gap-1 px-2 py-1 border-t border-stone-100 bg-stone-50/60">
+                      <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
+                      <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
+                      <div className="flex-1" />
+                      <button className={opBtn} title="下に行を追加" onClick={() => insertBelow(idx, newScene(r.type))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
+                      <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* 合計 */}
+              <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 mt-1 text-[11px] tabular-nums" style={{ background: theme.main, color: mainText, fontFamily: mono }}>
+                <span className="font-bold tracking-wider">合計</span>
+                <span className="ml-auto">想定 {fmt(totalEst)}</span>
+                <span className="opacity-70">{totalChars.toLocaleString()}字</span>
+              </div>
+            </section>
+            )}
 
             <div className="mt-4 flex flex-wrap gap-2 items-center">
               <button onClick={() => setRows((rows) => [...rows, newLocation("")])}
@@ -2785,7 +2943,7 @@ export default function App() {
             </div>
 
             <p className="mt-3 text-[11px] text-stone-400 leading-relaxed">
-              原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　時間セルは開始時刻を手入力で固定（空欄で自動に戻る）　／　左の番号をドラッグで移動・チェックで複数選択してまとめて移動／削除　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
+              原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の番号をドラッグで移動・チェックで複数選択してまとめて移動／削除　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
             </p>
           </>
         )}
@@ -2812,18 +2970,18 @@ export default function App() {
                 {locations.map((loc, i) => (
                   <div key={loc.id} className="relative flex gap-2.5 sm:gap-4 group/loc">
                     {/* 左：時刻レール */}
-                    <div className="flex flex-col items-center w-[66px] sm:w-[78px] shrink-0 pt-0.5">
+                    <div className="flex flex-col items-center w-[46px] sm:w-[72px] shrink-0 pt-0.5">
                       <input
                         type="time"
                         value={loc.time}
                         onChange={(e) => updateRow(loc.id, { time: e.target.value })}
-                        className="bg-transparent text-[14px] sm:text-[15px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                        className="bg-transparent text-[11px] sm:text-[14px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                         style={{ fontFamily: mono, color: loc.done ? "#A8A29E" : theme.main, textDecoration: loc.done ? "line-through" : "none" }}
                         title="到着・開始予定時刻"
                       />
-                      <div className="w-7 h-7 mt-1 rounded-full grid place-items-center font-bold text-[12px] shadow-sm z-10 transition-colors"
+                      <div className="w-5 h-5 sm:w-7 sm:h-7 mt-1 rounded-full grid place-items-center font-bold text-[10px] sm:text-[12px] shadow-sm z-10 transition-colors"
                         style={{ background: loc.done ? "#A8A29E" : theme.accent, color: accentText, fontFamily: mono }}>
-                        {loc.done ? <Icon name="check" className="w-3.5 h-3.5" /> : i + 1}
+                        {loc.done ? <Icon name="check" className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : i + 1}
                       </div>
                       {i < locations.length - 1 && (
                         <div className="flex-1 w-0.5 my-1 rounded min-h-[20px]" style={{ background: theme.main, opacity: 0.2 }} />
@@ -2870,10 +3028,10 @@ export default function App() {
 
                       {loc.done ? (
                         /* 完了時：グレーアウト＆縮小（1行サマリ） */
-                        <div className="px-3 py-1.5 flex items-center gap-2 text-[10px] text-stone-400 whitespace-nowrap" style={{ fontFamily: mono }}>
+                        <div className="px-3 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-stone-400 min-w-0" style={{ fontFamily: mono }}>
                           <span className="font-bold text-emerald-600 inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />撮影完了</span>
                           <span>{loc.scenes.length}シーン</span>
-                          <span className="ml-auto">想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}</span>
+                          <span className="ml-auto whitespace-nowrap">想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}</span>
                         </div>
                       ) : (
                         <>
