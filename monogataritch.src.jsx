@@ -508,6 +508,7 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
     case "trash": return (<svg {...c}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" /></svg>);
     case "spellcheck": return (<svg {...c}><path d="M4 16l4-10 4 10M5.2 13h5.6" /><path d="M14.5 14.5l2 2 4-4.5" /></svg>);
     case "image": return (<svg {...c}><rect x="4" y="5" width="16" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M5 17l4-4 3 3 3-3 4 4" /></svg>);
+    case "menu": return (<svg {...c}><path d="M4 7h16M4 12h16M4 17h16" /></svg>);
     case "up": return (<svg {...c}><path d="M6 14l6-6 6 6" /></svg>);
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     default: return null;
@@ -2050,12 +2051,14 @@ export default function App() {
 
       {/* ===== 案件サイドバー ===== */}
       <aside
-        className="fixed top-0 left-0 h-full z-40 transition-transform duration-200 flex flex-col"
+        className="fixed top-0 left-0 h-full z-40 flex flex-col"
         style={{
           width: 248,
           background: "#15181D",
           color: "#fff",
           transform: sidebarOpen ? "translateX(0)" : "translateX(-248px)",
+          transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
+          willChange: "transform",
         }}>
         <div className="px-3 py-2.5 border-b border-white/10">
           <button onClick={() => setView("home")} title="ホーム（チャンネル一覧）へ"
@@ -2225,20 +2228,20 @@ export default function App() {
         </div>
       </aside>
 
-      {/* サイドバー開閉オーバーレイ（モバイル） */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-30 bg-black/30 sm:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+      {/* サイドバー開閉オーバーレイ（モバイル・フェード） */}
+      <div
+        className={"fixed inset-0 z-30 bg-black/40 sm:hidden transition-opacity duration-300 ease-out " + (sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none")}
+        onClick={() => setSidebarOpen(false)} />
 
       {/* ===== コンテンツ（サイドバー分シフト） ===== */}
-      <div className="pb-28 transition-all duration-200" style={{ marginLeft: sidebarOpen && !isNarrow ? 248 : 0 }}>
+      <div className="pb-28" style={{ marginLeft: sidebarOpen && !isNarrow ? 248 : 0, transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
 
       {/* ===== ツールバー ===== */}
       <header className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
-        <div className="max-w-[1500px] mx-auto px-4 pt-2.5 pb-1.5 flex items-center gap-3 flex-wrap">
+        <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap">
           <button onClick={() => setSidebarOpen((s) => !s)} title="案件リスト"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 shrink-0">
-            <span className="text-base leading-none">☰</span>
+            <Icon name="menu" className="w-[18px] h-[18px]" />
           </button>
           <input
             value={project.name}
@@ -2269,30 +2272,30 @@ export default function App() {
               <span className="truncate">{project.channel || DEFAULT_CHANNEL}</span>
             </button>
           )}
-          <span className="relative flex h-2.5 w-2.5">
+          {/* Googleアカウント（チャンネル名の右横） */}
+          <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
+            className="w-8 h-8 rounded-full grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden shrink-0" style={{ color: mainText }}>
+            {user && user.picture
+              ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+              : <Icon name="user" className="w-[18px] h-[18px]" />}
+          </button>
+          <span className="relative hidden sm:flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: theme.accent }}></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
           </span>
           <div className="flex-1" />
-          <button
-            onClick={() => setProject((p) => ({ ...p, timeFormat: p.timeFormat === "tc" ? "jp" : "tc" }))}
-            title="時間表記を切り替え"
-            className="text-[11px] px-2.5 py-1.5 rounded-md border border-white/20 hover:bg-white/10 tabular-nums"
-            style={{ fontFamily: mono }}>
-            {project.timeFormat === "tc" ? "00:00" : "0分00秒"} ⇄
-          </button>
-          <div className="flex items-baseline gap-1.5 px-3 py-1 rounded-lg" style={{ background: "rgba(0,0,0,0.25)", fontFamily: mono }}>
+          <div className="flex items-baseline gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg" style={{ background: "rgba(0,0,0,0.25)", fontFamily: mono }}>
             <span className="text-[9px] tracking-widest opacity-60">TOTAL</span>
-            <span className="text-xl font-bold tabular-nums leading-none">{fmt(totalEst)}</span>
-            <span className="text-[10px] opacity-50">{totalChars.toLocaleString()}字</span>
-            <span className="text-[10px] tabular-nums opacity-50 ml-1 pl-1.5 border-l border-white/20" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
+            <span className="text-base sm:text-xl font-bold tabular-nums leading-none">{fmt(totalEst)}</span>
+            <span className="hidden sm:inline text-[10px] opacity-50">{totalChars.toLocaleString()}字</span>
+            <span className="hidden sm:inline text-[10px] tabular-nums opacity-50 ml-1 pl-1.5 border-l border-white/20" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
           </div>
-          <label className="flex items-center gap-1.5 text-[11px] opacity-80">
+          <label className="flex items-center gap-1 text-[11px] opacity-80">
             <input type="number" min="3" max="8" step="0.5" value={project.rate}
               onChange={(e) => setProject((p) => ({ ...p, rate: Number(e.target.value) || 5 }))}
-              className="w-12 bg-black/25 border border-white/20 rounded-md px-1.5 py-1 text-center focus:outline-none focus:border-white/60"
+              className="w-11 sm:w-12 bg-black/25 border border-white/20 rounded-md px-1 sm:px-1.5 py-1 text-center focus:outline-none focus:border-white/60"
               style={{ fontFamily: mono, color: mainText }} />
-            字/秒
+            <span className="hidden sm:inline">字/秒</span>
           </label>
           {/* 先方コメント */}
           {project.shareId && (
@@ -2354,12 +2357,6 @@ export default function App() {
               </div>
             </>)}
           </div>
-          <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
-            className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden" style={{ color: mainText }}>
-            {user && user.picture
-              ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-              : <Icon name="user" className="w-[18px] h-[18px]" />}
-          </button>
           <button onClick={() => setShowTheme((s) => !s)} title="テーマカラー変更"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: mainText }}>
@@ -3019,7 +3016,7 @@ export default function App() {
                     </div>
 
                     {/* 右：ロケーションカード */}
-                    <div className={"relative flex-1 mb-3 rounded-xl border overflow-visible transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : (loc.peak ? "border-2 bg-white shadow-md" : "border-stone-200 bg-white shadow-sm"))}
+                    <div className={"relative flex-1 min-w-0 mb-3 rounded-xl border overflow-visible transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : (loc.peak ? "border-2 bg-white shadow-md" : "border-stone-200 bg-white shadow-sm"))}
                       style={loc.peak && !loc.done ? { borderColor: theme.accent } : undefined}>
                       {loc.peak && !loc.done && (
                         <span className="absolute -top-2.5 left-3 z-20 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm inline-flex items-center gap-0.5"
