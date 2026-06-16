@@ -3061,8 +3061,13 @@ export default function App() {
                         onChange={(e) => updateRow(loc.id, { time: e.target.value })}
                         className="bg-transparent text-[11px] sm:text-[14px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                         style={{ fontFamily: mono, color: loc.done ? "#A8A29E" : theme.main, textDecoration: loc.done ? "line-through" : "none" }}
-                        title="到着・開始予定時刻"
+                        title="到着・開始予定時刻（最初のロケに時刻を入れると、以降は撮影尺から自動で連動）"
                       />
+                      {!parseClock(loc.time) && clocks[loc.id] != null && (
+                        <span className="text-[10px] sm:text-[12px] tabular-nums text-stone-400 leading-none mt-0.5" style={{ fontFamily: mono }} title="前のロケ到着時刻＋撮影尺の積み上げから自動算出（目安）">
+                          ≈{fmtClock(clocks[loc.id])}
+                        </span>
+                      )}
                       <div className="w-5 h-5 sm:w-7 sm:h-7 mt-1 rounded-full grid place-items-center font-bold text-[10px] sm:text-[12px] shadow-sm z-10 transition-colors"
                         style={{ background: loc.done ? "#A8A29E" : theme.accent, color: accentText, fontFamily: mono }}>
                         {loc.done ? <Icon name="check" className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : i + 1}
