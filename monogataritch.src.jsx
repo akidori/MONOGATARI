@@ -734,6 +734,7 @@ export default function App() {
   const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
   const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
   const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
+  const [thumbTest, setThumbTest] = useState(null);        // サムネ目立ちテスト {pid, keyword, items[], myPos, busy, reveal}
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
@@ -1274,6 +1275,49 @@ export default function App() {
       setRefBusy((b) => { const n = { ...b }; delete n[key]; return n; });
     }
   };
+
+  /* ===== 自作サムネ：アップロード（縮小してdataURLで案件に保存）＆ 目立ちテスト ===== */
+  const resizeImageFile = (file, maxW = 640) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("読み込み失敗"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("画像が不正です"));
+      img.onload = () => {
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        cv.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(cv.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  const onPickThumb = async (pid, file) => {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { showToast("画像ファイルを選んでね"); return; }
+    try { const dataUrl = await resizeImageFile(file); updatePlan(pid, { thumbImage: dataUrl }); showToast("サムネをアップしました"); }
+    catch (e) { showToast("失敗：" + (e.message || e)); }
+  };
+  const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  /* キーワード検索で競合サムネを取得 → 自分のサムネをランダム位置に混ぜて並べる */
+  const runThumbTest = async (pid, keyword) => {
+    const kw = (keyword || "").trim();
+    if (!kw) { showToast("テストするキーワードを入れてね"); return; }
+    setThumbTest({ pid, keyword: kw, items: [], myPos: 0, busy: true, reveal: false });
+    try {
+      const res = await fetch(SHARE_API + "/api/ytsearch?max=12&q=" + encodeURIComponent(kw));
+      const d = await res.json();
+      if (d.needKey) { showToast("YouTube APIキーが未設定（AKに設定を頼んで）"); setThumbTest(null); return; }
+      if (!res.ok || d.error) throw new Error(d.error || "検索失敗");
+      const items = shuffle(d.items || []).slice(0, 8);
+      if (!items.length) throw new Error("競合サムネが見つかりませんでした");
+      setThumbTest({ pid, keyword: kw, items, myPos: Math.floor(Math.random() * (items.length + 1)), busy: false, reveal: false });
+    } catch (e) { showToast("テスト失敗：" + (e.message || e)); setThumbTest(null); }
+  };
+  const reshuffleThumbTest = () => setThumbTest((t) => t && ({ ...t, items: shuffle(t.items), myPos: Math.floor(Math.random() * (t.items.length + 1)), reveal: false }));
 
   /* ===== チャンネル案件ボード（企画・サムネ = チャンネル内の全案件を1案件1カードで一覧）===== */
   const [boardCache, setBoardCache] = useState({});          // {id: 案件本体}（アクティブ以外の同チャンネル案件）
@@ -3218,6 +3262,48 @@ export default function App() {
                               );
                             })}
                           </div>
+
+                          {/* 自作サムネ＋目立ちテスト */}
+                          <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50/40 p-3">
+                            <span className="text-[11px] font-bold text-stone-500 inline-flex items-center gap-1"><Icon name="image" className="w-3.5 h-3.5" />自作サムネ（このタイトルのサムネ案）</span>
+                            <div className="flex flex-col sm:flex-row gap-3 mt-2">
+                              <div className="sm:w-56 shrink-0">
+                                {pl.thumbImage ? (
+                                  <div className="relative">
+                                    <img src={pl.thumbImage} alt="" className="w-full aspect-video object-cover rounded-lg border border-stone-200" />
+                                    <button onClick={() => updatePlan(pl.id, { thumbImage: "" })} title="削除"
+                                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 text-white grid place-items-center"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                                    <label className="absolute bottom-1 right-1 text-[10px] font-bold px-2 py-1 rounded-md bg-white/90 hover:bg-white text-stone-600 cursor-pointer shadow-sm">
+                                      差し替え<input type="file" accept="image/*" className="hidden" onChange={(e) => onPickThumb(pl.id, e.target.files && e.target.files[0])} />
+                                    </label>
+                                  </div>
+                                ) : (
+                                  <label className="aspect-video w-full rounded-lg border-2 border-dashed border-stone-300 hover:border-stone-400 cursor-pointer grid place-items-center text-center text-[11px] text-stone-400 bg-white">
+                                    <span className="inline-flex flex-col items-center gap-1"><Icon name="download" className="w-5 h-5" />サムネ画像をアップ<span className="text-[9px]">クリックで選択</span></span>
+                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => onPickThumb(pl.id, e.target.files && e.target.files[0])} />
+                                  </label>
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-[11px] font-bold text-stone-500 mb-1 inline-flex items-center gap-1"><Icon name="sparkle" className="w-3.5 h-3.5" />目立ちテスト</div>
+                                <p className="text-[11px] text-stone-400 leading-relaxed mb-2">キーワードで競合サムネを8枚集めて、自分のサムネをランダムに混ぜて並べます。一覧の中で自分のが目立つか確認できます。</p>
+                                <div className="flex gap-2">
+                                  <input value={pl.thumbKeyword != null ? pl.thumbKeyword : (title || thumbText || "")}
+                                    onChange={(e) => updatePlan(pl.id, { thumbKeyword: e.target.value })}
+                                    placeholder="検索キーワード（例：不動産 転職）"
+                                    className="flex-1 min-w-0 text-[12px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                                  <button onClick={() => runThumbTest(pl.id, pl.thumbKeyword != null ? pl.thumbKeyword : (title || thumbText || ""))}
+                                    disabled={!pl.thumbImage} title={pl.thumbImage ? "競合と並べて目立ちテスト" : "先にサムネをアップしてね"}
+                                    className="shrink-0 text-[12px] font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
+                                    style={{ background: theme.accent, color: accentText }}>
+                                    <Icon name="sparkle" className="w-3.5 h-3.5" />テスト
+                                  </button>
+                                </div>
+                                {!pl.thumbImage && <p className="text-[10px] text-amber-600 mt-1">※ 先に自作サムネをアップするとテストできます</p>}
+                              </div>
+                            </div>
+                          </div>
+
                           <label className="block mt-3">
                             <span className="text-[11px] font-bold text-stone-500">メモ・狙い（任意）</span>
                             <textarea value={pl.note} onChange={(e) => updatePlan(pl.id, { note: e.target.value })}
@@ -3243,6 +3329,52 @@ export default function App() {
         )}
       </main>
       </div>{/* /content wrapper */}
+
+      {/* ===== サムネ目立ちテスト モーダル ===== */}
+      {thumbTest && (() => {
+        const t = thumbTest;
+        const tp = (project.plans || []).find((p) => p.id === t.pid) || {};
+        const cells = [...t.items];
+        cells.splice(Math.min(t.myPos, cells.length), 0, { mine: true });
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-3" onClick={() => setThumbTest(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="px-5 py-3 flex items-center justify-between sticky top-0 z-10" style={{ background: theme.main, color: mainText }}>
+                <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="sparkle" className="w-4 h-4" />目立ちテスト「{t.keyword}」</h3>
+                <button onClick={() => setThumbTest(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+              </div>
+              <div className="p-4">
+                {t.busy ? (
+                  <div className="py-16 text-center text-stone-400 text-sm">競合サムネを集めています…</div>
+                ) : (
+                  <>
+                    <p className="text-[12px] text-stone-500 mb-3">この中にあなたのサムネが1枚混ざっています。<span className="font-bold">一覧でパッと目に入る？</span>　目立たなければ色・文字・構図を見直すサイン。</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {cells.map((c, i) => c.mine ? (
+                        <div key="mine" className="relative rounded-lg overflow-hidden transition-all" style={t.reveal ? { boxShadow: "0 0 0 3px " + theme.accent, transform: "scale(1.02)" } : {}}>
+                          {tp.thumbImage
+                            ? <img src={tp.thumbImage} alt="" className="w-full aspect-video object-cover" />
+                            : <div className="w-full aspect-video grid place-items-center bg-stone-200 text-[10px] text-stone-400">自作サムネ</div>}
+                          {t.reveal && <span className="absolute top-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded text-white" style={{ background: theme.accent }}>あなた</span>}
+                        </div>
+                      ) : (
+                        <a key={c.vid} href={"https://www.youtube.com/watch?v=" + c.vid} target="_blank" rel="noreferrer" className="relative block rounded-lg overflow-hidden bg-stone-100" title={c.title}>
+                          <img src={"https://img.youtube.com/vi/" + c.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <button onClick={reshuffleThumbTest} className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="refresh" className="w-3.5 h-3.5" />配置をシャッフル</button>
+                      <button onClick={() => setThumbTest((x) => x && ({ ...x, reveal: !x.reveal }))} className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name={t.reveal ? "close" : "checkCircle"} className="w-3.5 h-3.5" />{t.reveal ? "答えを隠す" : "自分のを光らせる"}</button>
+                      <button onClick={() => runThumbTest(t.pid, t.keyword)} className="text-[12px] font-bold px-4 py-2 rounded-lg shadow inline-flex items-center gap-1 ml-auto" style={{ background: theme.accent, color: accentText }}><Icon name="refresh" className="w-3.5 h-3.5" />競合を引き直す</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===== Claude出力 取り込みモーダル ===== */}
       {showImport && (

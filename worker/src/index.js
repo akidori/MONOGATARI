@@ -102,6 +102,25 @@ export default {
         });
       }
 
+      // GET /api/ytsearch?q=<keyword>&max=8  → キーワードに関連する動画を返す（競合サムネ比較用）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "ytsearch") {
+        if (!env.YT_API_KEY) return json({ error: "YT_API_KEY 未設定", needKey: true }, 200);
+        const q = (url.searchParams.get("q") || "").trim();
+        if (!q) return json({ error: "キーワードを入力してください" }, 400);
+        const max = Math.min(20, Math.max(1, parseInt(url.searchParams.get("max") || "12") || 12));
+        const sRes = await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=" + max + "&relevanceLanguage=ja&regionCode=JP&q=" + encodeURIComponent(q) + "&key=" + env.YT_API_KEY);
+        const sData = await sRes.json();
+        if (sData.error) return json({ error: (sData.error.message || "検索失敗") }, 502);
+        const items = (sData.items || [])
+          .filter((it) => it.id && it.id.videoId)
+          .map((it) => ({
+            vid: it.id.videoId,
+            title: (it.snippet && it.snippet.title) || "",
+            channel: (it.snippet && it.snippet.channelTitle) || "",
+          }));
+        return json({ items });
+      }
+
       // GET /api/ytchannel?u=<channelUrlOrHandle>  → YouTubeチャンネル統計（競合リサーチ用）
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "ytchannel") {
         if (!env.YT_API_KEY) return json({ error: "YT_API_KEY 未設定", needKey: true }, 200);
