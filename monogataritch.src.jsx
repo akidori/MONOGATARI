@@ -595,13 +595,13 @@ function AddressField({ loc, onChange }) {
   );
 }
 
-function ScriptCell({ value, onChange, placeholder, accent = "#E63946" }) {
+function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const textStyle = {
     fontFamily: "inherit",
-    fontSize: 13,
-    lineHeight: 1.7,
+    fontSize,
+    lineHeight: 1.8,
     whiteSpace: "pre-wrap",
     overflowWrap: "break-word",
     wordBreak: "break-word",
@@ -1762,10 +1762,27 @@ export default function App() {
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
     const mq = window.matchMedia("(max-width: 640px)");
-    const on = () => setIsNarrow(mq.matches);
+    const on = () => { setIsNarrow(mq.matches); if (mq.matches) setSidebarOpen(false); };
     on(); mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, []);
+  /* スマホ：スワイプでサイドバー（案件一覧）を開閉。左端から右スワイプで表示／左スワイプで非表示 */
+  useEffect(() => {
+    if (!isNarrow || typeof window === "undefined") return;
+    let sx = 0, sy = 0, st = 0;
+    const onStart = (e) => { const t = e.touches[0]; if (!t) return; sx = t.clientX; sy = t.clientY; st = Date.now(); };
+    const onEnd = (e) => {
+      const t = e.changedTouches[0]; if (!t) return;
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (Date.now() - st > 600) return;
+      if (Math.abs(dx) < 60 || Math.abs(dy) > 45) return; // ほぼ水平のスワイプだけ
+      if (dx > 0 && sx < 36 && !sidebarOpen) setSidebarOpen(true);  // 左端から右へ → 開く
+      else if (dx < 0 && sidebarOpen) setSidebarOpen(false);        // 左へ → 閉じる
+    };
+    window.addEventListener("touchstart", onStart, { passive: true });
+    window.addEventListener("touchend", onEnd, { passive: true });
+    return () => { window.removeEventListener("touchstart", onStart); window.removeEventListener("touchend", onEnd); };
+  }, [isNarrow, sidebarOpen]);
 
   /* 時間(TC)文字列 → 秒。"mm:ss" / "h:mm:ss" / "0分00秒" / 数字(秒) を許容 */
   const parseTC = (str) => {
@@ -2092,15 +2109,22 @@ export default function App() {
         {/* ===== チャンネル → 案件 ネスト ===== */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
           {channelGroups.map(({ channel, items }) => {
-            const isCollapsed = !!collapsed[channel];
             const hasActive = items.some((x) => x.id === activeId);
+            // 既定はすべて畳む（開いている案件のチャンネルだけ自動展開）。タップで開閉（アコーディオン＝1つだけ開く）
+            const isCollapsed = collapsed[channel] !== undefined ? !!collapsed[channel] : !hasActive;
+            const toggleChannel = () => setCollapsed(() => {
+              const next = {};
+              channelGroups.forEach((g) => { next[g.channel] = true; });
+              if (isCollapsed) next[channel] = false; // 畳んでいたら開く（他は畳む）
+              return next;
+            });
             return (
               <div key={channel} className="mb-1.5">
-                {/* チャンネル見出し */}
+                {/* チャンネル見出し（タップでそのチャンネルの台本一覧を開閉） */}
                 <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer select-none"
-                  onClick={() => openChannelBoard(channel)}
+                  onClick={toggleChannel}
                   onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
-                  <button title={isCollapsed ? "案件を表示" : "案件を隠す"} onClick={(e) => { e.stopPropagation(); setCollapsed((c) => ({ ...c, [channel]: !c[channel] })); }}
+                  <button title={isCollapsed ? "案件を表示" : "案件を隠す"} onClick={(e) => { e.stopPropagation(); toggleChannel(); }}
                     className="w-3.5 shrink-0 text-white/40 text-[10px] transition-transform grid place-items-center hover:text-white/80" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}>▾</button>
                   {channelIconOf(channel) ? (
                     <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }}
@@ -2207,7 +2231,7 @@ export default function App() {
       )}
 
       {/* ===== コンテンツ（サイドバー分シフト） ===== */}
-      <div className="pb-28 transition-all duration-200" style={{ marginLeft: sidebarOpen ? 248 : 0 }}>
+      <div className="pb-28 transition-all duration-200" style={{ marginLeft: sidebarOpen && !isNarrow ? 248 : 0 }}>
 
       {/* ===== ツールバー ===== */}
       <header className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
@@ -2346,13 +2370,14 @@ export default function App() {
             </svg>
           </button>
         </div>
-        {/* タブ */}
-        <div className="max-w-[1500px] mx-auto px-4 flex gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          {[["concept", "チャンネルコンセプト"], ["plan", "企画・サムネ"], ["script", "構成台本"], ...(project.format === "talk" ? [] : [["kouban", "香盤表"]])].map(([k, label]) => (
+        {/* タブ（アイコン＋短ラベルで1行に収める） */}
+        <div className="max-w-[1500px] mx-auto px-2 sm:px-4 flex gap-1">
+          {[["concept", "note", "コンセプト", "概要"], ["plan", "image", "企画・サムネ", "企画"], ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]])].map(([k, ic, label, short]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={"shrink-0 whitespace-nowrap px-3 sm:px-4 py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wider transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
+              className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap px-1 sm:px-4 py-2 sm:py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
-              {label}
+              <Icon name={ic} className="w-4 h-4 shrink-0" />
+              <span className="truncate"><span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span></span>
             </button>
           ))}
         </div>
@@ -2693,29 +2718,27 @@ export default function App() {
                     const dur = chars / project.rate;
                     const over = chars > 0 && dur > target * 1.5;
                     const locDone = sceneLocDone[r.id];
+                    const sceneDone = !!r.done || locDone;
                     return (
                       <tr key={r.id} id={"row-" + r.id}
                         {...dropZoneProps(idx)}
                         onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
-                        onPointerEnter={() => paintSelectTo(idx)}
-                        className={"border-b border-stone-100 transition-colors " + (isSelected(r.id) ? "" : "hover:bg-stone-50/70")}
+                        className="border-b border-stone-100 transition-colors hover:bg-stone-50/70"
                         style={{
-                          ...(isSelected(r.id) ? { background: t.bg } : {}),
-                          ...(locDone && !isSelected(r.id) ? { background: "#F5F5F4", opacity: 0.55 } : {}),
+                          ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : {}),
                           ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
                           ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}),
                         }}>
-                        <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: "3px solid " + t.color }}
-                          {...rowDragProps(idx, r.id)} title="ドラッグで移動（複数選択時はまとめて移動）">
-                          <div className="flex items-start gap-1 cursor-grab active:cursor-grabbing">
-                            <input type="checkbox" checked={isSelected(r.id)} draggable={false}
-                              onPointerDown={(e) => beginPaintSelect(idx, r.id, e)}
-                              onClick={(e) => { e.stopPropagation(); toggleSelect(r.id, e); }}
-                              onChange={() => {}}
-                              style={{ touchAction: "none" }}
-                              className={"mt-0.5 shrink-0 w-3.5 h-3.5 cursor-pointer transition-opacity " + (isSelected(r.id) || hoverId === r.id ? "opacity-100" : "opacity-25")}
-                              title="選択（クリックでON/OFF・Shiftで範囲・チェック欄をなぞって複数選択）" />
-                            <div className="min-w-0 flex-1 text-center">
+                        <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: "3px solid " + t.color }}>
+                          <div className="flex flex-col items-center gap-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); updateRow(r.id, { done: !r.done }); }}
+                              title={r.done ? "撮影完了を取り消す" : "このシーンを撮影完了にする"}
+                              className={"shrink-0 w-6 h-6 grid place-items-center rounded-md transition-colors " + (r.done ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-400 hover:bg-stone-200")}>
+                              <Icon name="check" className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="cursor-grab active:cursor-grabbing text-stone-300 text-[10px] leading-none select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">⋮⋮</span>
+                            <div className="min-w-0 w-full text-center">
                               {clocks[r.id] != null ? (
                                 <div
                                   className="w-full text-[11px] tabular-nums text-center px-0.5 py-0.5"
@@ -2850,12 +2873,19 @@ export default function App() {
                 const dur = chars / project.rate;
                 const over = chars > 0 && dur > target * 1.5;
                 const locDone = sceneLocDone[r.id];
+                const sceneDone = !!r.done || locDone;
                 return (
                   <div key={r.id} id={"row-" + r.id}
                     className="rounded-xl border border-stone-200 bg-white overflow-hidden mb-2"
-                    style={{ borderLeft: "3px solid " + t.color, ...(locDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
-                    {/* メタ：番号・時刻・所要 */}
+                    style={{ borderLeft: "3px solid " + t.color, ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
+                    {/* メタ：撮影完了・番号・時刻・所要 */}
                     <div className="flex items-center gap-2 px-3 pt-2">
+                      <button
+                        onClick={() => updateRow(r.id, { done: !r.done })}
+                        title={r.done ? "撮影完了を取り消す" : "このシーンを撮影完了にする"}
+                        className={"shrink-0 w-6 h-6 grid place-items-center rounded-md transition-colors " + (r.done ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-400")}>
+                        <Icon name="check" className="w-3.5 h-3.5" />
+                      </button>
                       <span className="text-[10px] text-stone-300 tabular-nums shrink-0" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
                       {clocks[r.id] != null ? (
                         <span className="text-[11px] tabular-nums shrink-0" style={{ fontFamily: mono, color: "#9CA3AF" }} title="ロケ到着時刻＋尺の積み上げ（実時刻）">{fmtClock(clocks[r.id])}</span>
@@ -2897,9 +2927,9 @@ export default function App() {
                       rows={1}
                       placeholder="内容（シーンの見出し）"
                       className="block w-full resize-none bg-transparent text-[13px] font-bold leading-snug px-3 pt-2 pb-1 focus:outline-none placeholder:text-stone-300 placeholder:font-normal" />
-                    {/* 原稿（全幅） */}
+                    {/* 原稿（全幅・スマホは大きめフォントで読みやすく） */}
                     <div className="border-t border-stone-100 mt-1">
-                      <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} />
+                      <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} fontSize={15} />
                     </div>
                     {/* 操作 */}
                     <div className="flex items-center gap-1 px-2 py-1 border-t border-stone-100 bg-stone-50/60">
@@ -2943,7 +2973,7 @@ export default function App() {
             </div>
 
             <p className="mt-3 text-[11px] text-stone-400 leading-relaxed">
-              原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の番号をドラッグで移動・チェックで複数選択してまとめて移動／削除　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
+              原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の⋮⋮をドラッグで移動・左の✓で撮影完了（グレーアウト）　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
             </p>
           </>
         )}
