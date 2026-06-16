@@ -190,6 +190,19 @@ const newPlan = () => ({ id: uid(), title: "", thumbText: "", note: "", refs: [e
 const ytIdFromUrl = (url) => { const m = (url || "").match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/); return m ? m[1] : ((url || "").trim().match(/^[a-zA-Z0-9_-]{11}$/) ? url.trim() : null); };
 const parseDur = (iso) => { const m = (iso || "").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if (!m) return ""; const h = +(m[1] || 0), mi = +(m[2] || 0), s = +(m[3] || 0); return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(s).padStart(2, "0"); };
 const fmtNum = (n) => { n = Number(n) || 0; if (n >= 1e8) return (n / 1e8).toFixed(1) + "億"; if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + "万"; return n.toLocaleString(); };
+/* YouTube APIのタイトルはHTMLエンティティ込み（&amp; 等）→ 復号 */
+const decodeHtml = (s) => { if (!s) return ""; if (typeof document === "undefined") return s; const e = document.createElement("textarea"); e.innerHTML = s; return e.value; };
+/* YouTube風「○○前」相対表記 */
+const relTime = (iso) => {
+  const t = new Date(iso || "").getTime();
+  if (!t || isNaN(t)) return "";
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 3600) return Math.max(1, Math.floor(s / 60)) + "分前";
+  if (s < 86400) return Math.floor(s / 3600) + "時間前";
+  if (s < 2592000) return Math.floor(s / 86400) + "日前";
+  if (s < 31536000) { const m = Math.floor(s / 2592000); return (m < 12 ? m : 11) + "か月前"; }
+  return Math.floor(s / 31536000) + "年前";
+};
 /* 評価：再生数÷登録者数の倍率＋投稿の新しさで S/A/B/C 判定（サムネ君と同ロジック） */
 const scoreVideo = (info, now) => {
   if (!info || !info.uploadDate) return null;
@@ -3338,7 +3351,7 @@ export default function App() {
         cells.splice(Math.min(t.myPos, cells.length), 0, { mine: true });
         return (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-3" onClick={() => setThumbTest(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <div className="px-5 py-3 flex items-center justify-between sticky top-0 z-10" style={{ background: theme.main, color: mainText }}>
                 <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="sparkle" className="w-4 h-4" />目立ちテスト「{t.keyword}」</h3>
                 <button onClick={() => setThumbTest(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
@@ -3348,18 +3361,45 @@ export default function App() {
                   <div className="py-16 text-center text-stone-400 text-sm">競合サムネを集めています…</div>
                 ) : (
                   <>
-                    <p className="text-[12px] text-stone-500 mb-3">この中にあなたのサムネが1枚混ざっています。<span className="font-bold">一覧でパッと目に入る？</span>　目立たなければ色・文字・構図を見直すサイン。</p>
-                    <div className="grid grid-cols-3 gap-2">
+                    <p className="text-[12px] text-stone-500 mb-3">YouTubeの一覧に並んだ想定。この中にあなたのサムネが1枚混ざっています。<span className="font-bold">タイトルごとパッと目に入る？</span>　目立たなければ色・文字・構図を見直すサイン。</p>
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-3 gap-y-4">
                       {cells.map((c, i) => c.mine ? (
-                        <div key="mine" className="relative rounded-lg overflow-hidden transition-all" style={t.reveal ? { boxShadow: "0 0 0 3px " + theme.accent, transform: "scale(1.02)" } : {}}>
-                          {tp.thumbImage
-                            ? <img src={tp.thumbImage} alt="" className="w-full aspect-video object-cover" />
-                            : <div className="w-full aspect-video grid place-items-center bg-stone-200 text-[10px] text-stone-400">自作サムネ</div>}
-                          {t.reveal && <span className="absolute top-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded text-white" style={{ background: theme.accent }}>あなた</span>}
+                        <div key="mine">
+                          <div className="relative rounded-xl overflow-hidden transition-all" style={t.reveal ? { boxShadow: "0 0 0 3px " + theme.accent } : {}}>
+                            {tp.thumbImage
+                              ? <img src={tp.thumbImage} alt="" className="w-full aspect-video object-cover" />
+                              : <div className="w-full aspect-video grid place-items-center bg-stone-200 text-[10px] text-stone-400">自作サムネ</div>}
+                            {t.reveal && <span className="absolute top-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow" style={{ background: theme.accent }}>あなた</span>}
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            {channelIconOf(curChannel)
+                              ? <div className="w-9 h-9 rounded-full shrink-0 bg-stone-100 grid place-items-center text-lg leading-none">{channelIconOf(curChannel)}</div>
+                              : user && user.picture
+                                ? <img src={user.picture} alt="" className="w-9 h-9 rounded-full shrink-0 object-cover" referrerPolicy="no-referrer" />
+                                : <div className="w-9 h-9 rounded-full shrink-0 grid place-items-center text-white text-xs font-bold" style={{ background: theme.accent }}>{(curChannel || "あ").slice(0, 1)}</div>}
+                            <div className="min-w-0">
+                              <div className="text-[13px] font-bold text-stone-900 leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={tp.title || tp.thumbText || ""}>{tp.title || tp.thumbText || "（タイトル未設定）"}</div>
+                              <div className="text-[11px] text-stone-500 mt-0.5 truncate">{curChannel}</div>
+                              <div className="text-[11px] text-stone-500 truncate">新着</div>
+                            </div>
+                          </div>
                         </div>
                       ) : (
-                        <a key={c.vid} href={"https://www.youtube.com/watch?v=" + c.vid} target="_blank" rel="noreferrer" className="relative block rounded-lg overflow-hidden bg-stone-100" title={c.title}>
-                          <img src={"https://img.youtube.com/vi/" + c.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover" />
+                        <a key={c.vid} href={"https://www.youtube.com/watch?v=" + c.vid} target="_blank" rel="noreferrer" className="block">
+                          <div className="relative rounded-xl overflow-hidden bg-stone-100">
+                            <img src={"https://img.youtube.com/vi/" + c.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover" />
+                            {parseDur(c.duration) && <span className="absolute bottom-1.5 right-1.5 text-[10px] font-bold text-white bg-black/80 px-1 py-0.5 rounded leading-none" style={{ fontFamily: mono }}>{parseDur(c.duration)}</span>}
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            {c.avatar
+                              ? <img src={c.avatar} alt="" className="w-9 h-9 rounded-full shrink-0 object-cover" referrerPolicy="no-referrer" />
+                              : <div className="w-9 h-9 rounded-full shrink-0 bg-stone-200" />}
+                            <div className="min-w-0">
+                              <div className="text-[13px] font-bold text-stone-900 leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={decodeHtml(c.title)}>{decodeHtml(c.title)}</div>
+                              <div className="text-[11px] text-stone-500 mt-0.5 truncate">{c.channel}</div>
+                              <div className="text-[11px] text-stone-500 truncate">{fmtNum(c.views)}回視聴{c.publishedAt ? "・" + relTime(c.publishedAt) : ""}</div>
+                            </div>
+                          </div>
                         </a>
                       ))}
                     </div>

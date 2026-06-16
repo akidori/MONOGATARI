@@ -111,13 +111,46 @@ export default {
         const sRes = await fetch("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=" + max + "&relevanceLanguage=ja&regionCode=JP&q=" + encodeURIComponent(q) + "&key=" + env.YT_API_KEY);
         const sData = await sRes.json();
         if (sData.error) return json({ error: (sData.error.message || "検索失敗") }, 502);
-        const items = (sData.items || [])
+        let items = (sData.items || [])
           .filter((it) => it.id && it.id.videoId)
           .map((it) => ({
             vid: it.id.videoId,
             title: (it.snippet && it.snippet.title) || "",
             channel: (it.snippet && it.snippet.channelTitle) || "",
+            channelId: (it.snippet && it.snippet.channelId) || "",
+            publishedAt: (it.snippet && it.snippet.publishedAt) || "",
+            views: 0,
+            duration: "PT0S",
+            avatar: "",
           }));
+        // 視聴回数・尺をまとめて取得（1回のvideos.list）
+        try {
+          const vids = items.map((x) => x.vid).join(",");
+          if (vids) {
+            const vRes = await fetch("https://www.googleapis.com/youtube/v3/videos?part=statistics,contentDetails&id=" + vids + "&key=" + env.YT_API_KEY);
+            const vData = await vRes.json();
+            const vm = {};
+            (vData.items || []).forEach((v) => { vm[v.id] = v; });
+            items.forEach((x) => {
+              const v = vm[x.vid];
+              if (v) {
+                x.views = parseInt((v.statistics && v.statistics.viewCount) || 0);
+                x.duration = (v.contentDetails && v.contentDetails.duration) || "PT0S";
+              }
+            });
+          }
+        } catch (e) {}
+        // チャンネルアバターをまとめて取得（1回のchannels.list）
+        try {
+          const chIds = Array.from(new Set(items.map((x) => x.channelId).filter(Boolean))).join(",");
+          if (chIds) {
+            const cRes = await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&id=" + chIds + "&key=" + env.YT_API_KEY);
+            const cData = await cRes.json();
+            const cm = {};
+            (cData.items || []).forEach((c) => { cm[c.id] = (c.snippet && c.snippet.thumbnails && (c.snippet.thumbnails.default || c.snippet.thumbnails.medium) || {}).url || ""; });
+            items.forEach((x) => { x.avatar = cm[x.channelId] || ""; });
+          }
+        } catch (e) {}
         return json({ items });
       }
 
