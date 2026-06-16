@@ -1438,26 +1438,16 @@ export default function App() {
       if (!text || !text.trim()) { showToast("ファイルから文字を読めませんでした"); return; }
       setFullImportText(text);
       setImportFileName(file.name);
-      showToast("「" + file.name + "」を読み込みました（" + text.length.toLocaleString() + "字）");
+      showToast("「" + file.name + "」を読み込み（" + text.length.toLocaleString() + "字）→ 取り込み中…");
+      await smartImport(text); // ファイルを入れたら中身を自動判定してそのまま構成へ
     } catch (err) {
       showToast("ファイル読み込み失敗：" + (err.message || err));
     }
   };
 
-  /* 構成台本（JSON / TSV）を貼り付けて取り込む（新規 or 現案件更新） */
-  const importAsNewProject = async () => {
-    const parsed = parseImportText(fullImportText);
-    if (!parsed || !parsed.rows.length) {
-      showToast("取り込めませんでした。JSON / 構成台本コピー以外は ✨AIで整形 を使ってください");
-      return;
-    }
-    if (!confirmUpdateIfNeeded()) return;
-    await dispatchParsed(parsed, { skipConfirm: true });
-  };
-
   /* 生原稿（Claude/GPT/Gemini出力やメモ）を Worker経由でClaude整形 → 新規 or 現案件更新 */
-  const aiParseImport = async () => {
-    const raw = fullImportText.trim();
+  const aiParseImport = async (rawArg) => {
+    const raw = (rawArg != null ? rawArg : fullImportText).trim();
     if (!raw) return;
     if (!confirmUpdateIfNeeded()) return; // 重いAI処理の前に確認（待った後にダイアログが出ない）
     setAiParsing(true);
@@ -1478,6 +1468,22 @@ export default function App() {
     } finally {
       setAiParsing(false);
     }
+  };
+
+  /* スマート取り込み：中身を自動判定。JSON/台本コピーTSVならそのまま即取込、
+     それ以外（生原稿・取材メモ・文字起こし）はAI整形に自動で回す。
+     貼り付けボタン・ファイル選択の両方からこれ1本に集約。 */
+  const smartImport = async (rawArg) => {
+    const raw = (rawArg != null ? rawArg : fullImportText).trim();
+    if (!raw || aiParsing) return;
+    const direct = parseImportText(raw); // JSON / 台本コピーTSV として読めるか
+    if (direct && direct.rows.length) {
+      if (!confirmUpdateIfNeeded()) return;
+      await dispatchParsed(direct, { skipConfirm: true });
+      showToast("✅ 取り込み完了（" + direct.rows.filter((r) => r.kind === "scene").length + "シーン）");
+      return;
+    }
+    await aiParseImport(raw); // 生原稿 → AIが自動で構成台本に整形
   };
 
   const duplicateProject = async (id) => {
@@ -3473,8 +3479,8 @@ export default function App() {
                 </button>
               </div>
               <p className="text-[12px] text-stone-500 mb-2">
-                <span className="font-bold inline-flex items-center gap-1" style={{ color: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />AIで整形：</span>Claude/GPT/Geminiで書いた原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼って押すと、AIが構成台本に整形します（数秒）。<br />
-                <span className="text-stone-400">きっちり形が決まっている場合：</span>このツールの「台本コピー」TSV や <span style={{ fontFamily: mono }}>{"{ rows:[...] }"}</span> JSON を貼って「取り込む」でもOK。
+                <span className="font-bold inline-flex items-center gap-1" style={{ color: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />なんでも放り込めばOK：</span>原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼るか、ファイルを選ぶだけ。中身を自動判定して、生原稿ならAIが構成台本に整形、台本コピーTSVや <span style={{ fontFamily: mono }}>{"{ rows:[...] }"}</span> JSON ならそのまま取り込みます。<br />
+                <span className="text-stone-400">ファイルは選んだ瞬間に自動で取り込み開始します。</span>
                 {importTarget === "current" && <><br /><span className="font-bold text-amber-600 inline-flex items-center gap-1"><Icon name="warn" className="w-3.5 h-3.5" />更新モード：</span>取り込んだ内容で今の構成を上書きします（案件名・共有リンクは維持）。</>}
               </p>
               {/* ファイルから読み込む（TXT / CSV / Excel）*/}
@@ -3495,15 +3501,11 @@ export default function App() {
               />
               <div className="mt-3 flex justify-end items-center gap-2">
                 <button onClick={() => setShowFullImport(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 mr-auto">キャンセル</button>
-                <button onClick={importAsNewProject} disabled={!fullImportText.trim() || aiParsing}
-                  title="JSON / 台本コピーTSV / CSV・Excel をそのまま取り込む"
-                  className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">
-                  {importTarget === "current" ? "そのまま上書き更新" : "そのまま取り込む"}
-                </button>
-                <button onClick={aiParseImport} disabled={!fullImportText.trim() || aiParsing}
+                <button onClick={() => smartImport()} disabled={!fullImportText.trim() || aiParsing}
+                  title="中身を自動判定して取り込む（生原稿はAI整形・JSON/台本コピーはそのまま）"
                   className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
                   style={{ background: theme.accent, color: accentText }}>
-                  {aiParsing ? "整形中…" : <><Icon name="sparkle" className="w-3.5 h-3.5" />{importTarget === "current" ? "AIで整形して更新" : "AIで整形して取り込む"}</>}
+                  {aiParsing ? "取り込み中…" : <><Icon name="sparkle" className="w-3.5 h-3.5" />{importTarget === "current" ? "取り込んで更新" : "取り込む"}</>}
                 </button>
               </div>
             </div>
