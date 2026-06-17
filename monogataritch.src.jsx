@@ -756,7 +756,8 @@ export default function App() {
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
-  const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id
+  const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
+  const [chanMenu, setChanMenu] = useState(null);          // 案件のチャンネル移動ドロップダウン {id, channel, x, y}
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -2256,7 +2257,7 @@ export default function App() {
                           </span>
                         )}
                         <div className="flex gap-0.5 opacity-0 group-hover/p:opacity-100 transition-opacity shrink-0">
-                          <button title="チャンネル（フォルダ）を移動" onClick={(e) => { e.stopPropagation(); setRenamingId(null); setChannelEditId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">
+                          <button title="チャンネル（フォルダ）を移動" onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setChanMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: r.left, y: r.bottom + 4 }); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">
                             <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
                           </button>
                           <button title="この案件を上へ（同じフォルダ内）" onClick={(e) => { e.stopPropagation(); moveCaseInChannel(p.id, -1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="up" className="w-3 h-3" /></button>
@@ -3786,6 +3787,35 @@ export default function App() {
             )}
             <button onClick={() => deleteChannel(ctxMenu.channel)} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[12px] font-bold text-red-500 flex items-center gap-2">
               <Icon name="trash" className="w-3.5 h-3.5" />フォルダごと削除
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ===== 案件のチャンネル移動 ドロップダウン ===== */}
+      {chanMenu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setChanMenu(null)} onContextMenu={(e) => { e.preventDefault(); setChanMenu(null); }} />
+          <div className="fixed z-[61] w-56 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+            style={{ left: Math.min(chanMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 236), top: chanMenu.y }}>
+            <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400">移動先のチャンネルを選ぶ</div>
+            <div className="max-h-72 overflow-y-auto">
+              {channelOptions.map((c) => {
+                const isCur = c === chanMenu.channel;
+                return (
+                  <button key={c} disabled={isCur}
+                    onClick={() => { const id = chanMenu.id; setChanMenu(null); if (!isCur) setProjectChannel(id, c); }}
+                    className={"w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 " + (isCur ? "bg-stone-50 text-stone-400 cursor-default" : "hover:bg-stone-50")}>
+                    <span className="w-4 shrink-0 text-center leading-none">{channelIconOf(c) || "📁"}</span>
+                    <span className="truncate flex-1">{c}</span>
+                    {isCur && <span className="text-[10px] text-stone-400 shrink-0">現在</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => { const id = chanMenu.id; setChanMenu(null); setRenamingId(null); setChannelEditId(id); }}
+              className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+              <Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />新規フォルダに移動…
             </button>
           </div>
         </>
