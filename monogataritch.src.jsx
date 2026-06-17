@@ -2245,7 +2245,7 @@ export default function App() {
                             placeholder="チャンネル名"
                             onClick={(e) => e.stopPropagation()}
                             onBlur={(e) => { setProjectChannel(p.id, e.target.value); setChannelEditId(null); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.preventDefault(); setChannelEditId(null); } }}
                             className="flex-1 min-w-0 bg-black/30 text-[12px] px-1.5 py-1 rounded focus:outline-none"
                           />
                         ) : (
@@ -2256,6 +2256,9 @@ export default function App() {
                           </span>
                         )}
                         <div className="flex gap-0.5 opacity-0 group-hover/p:opacity-100 transition-opacity shrink-0">
+                          <button title="チャンネル（フォルダ）を移動" onClick={(e) => { e.stopPropagation(); setRenamingId(null); setChannelEditId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">
+                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+                          </button>
                           <button title="この案件を上へ（同じフォルダ内）" onClick={(e) => { e.stopPropagation(); moveCaseInChannel(p.id, -1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="up" className="w-3 h-3" /></button>
                           <button title="この案件を下へ（同じフォルダ内）" onClick={(e) => { e.stopPropagation(); moveCaseInChannel(p.id, 1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="down" className="w-3 h-3" /></button>
                           <button title="名前変更" onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
