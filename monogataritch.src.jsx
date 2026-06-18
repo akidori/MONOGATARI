@@ -749,8 +749,70 @@ function VideoView({ video, main }) {
   );
 }
 
+/* 企画カードの動画レビュー（再生＋速度＋タイムコードコメント＋対応済）。frame.io的な試写をアプリ内で */
+function PlanVideoReview({ video, comments, canComment, onPost, onResolve, main, accent }) {
+  const vref = React.useRef(null);
+  const [rate, setRate] = React.useState(1);
+  const [cur, setCur] = React.useState(0);
+  const [open, setOpen] = React.useState(false);
+  const [text, setText] = React.useState("");
+  const [atSec, setAtSec] = React.useState(0);
+  const isMp4 = video.type !== "youtube";
+  const fmtTC = (s) => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60), sec = Math.floor(s % 60), cs = Math.floor((s * 100) % 100); return m + ":" + String(sec).padStart(2, "0") + "." + String(cs).padStart(2, "0"); };
+  const list = (comments || []).slice().sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
+  const seek = (t) => { if (isMp4 && vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); } };
+  const startComment = () => { setAtSec(isMp4 && vref.current ? vref.current.currentTime : 0); setText(""); setOpen(true); };
+  const submit = async () => { const ok = await onPost(isMp4 ? atSec : null, text); if (ok) { setText(""); setOpen(false); } };
+  const rates = [0.5, 1, 1.5, 2, 3, 4];
+  return (
+    <div>
+      {isMp4 ? (
+        <div>
+          <div className="rounded-lg overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
+            <video ref={vref} src={video.key ? (SHARE_API + "/api/file/" + video.key) : video.url} controls playsInline className="w-full h-full bg-black" onTimeUpdate={(e) => setCur(e.target.currentTime)} />
+          </div>
+          <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+            <span className="text-[10px] text-stone-400 mr-1">速度</span>
+            {rates.map((r) => (<button key={r} onClick={() => { if (vref.current) vref.current.playbackRate = r; setRate(r); }} className={"text-[10px] mono px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")} style={rate === r ? { background: main, borderColor: main } : {}}>{r}x</button>))}
+            <span className="ml-auto mono text-[11px] font-bold" style={{ color: main }}>{fmtTC(cur)}</span>
+            {canComment && <button onClick={startComment} className="text-[10px] font-bold text-white px-2 py-1 rounded shrink-0" style={{ background: accent }}>＋ここにコメント</button>}
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div className="rounded-lg overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
+            <iframe src={"https://www.youtube.com/embed/" + (ytIdFromUrl(video.url) || "")} className="w-full h-full" style={{ border: 0 }} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+          </div>
+          {canComment && <div className="mt-1.5 text-right"><button onClick={() => { setAtSec(0); setText(""); setOpen(true); }} className="text-[10px] font-bold text-white px-2 py-1 rounded" style={{ background: accent }}>＋コメント</button></div>}
+        </div>
+      )}
+      {open && (
+        <div className="mt-2 rounded-lg border border-stone-200 bg-white p-2">
+          {isMp4 && <div className="text-[10px] font-bold mb-1" style={{ color: accent }}>{fmtTC(atSec)} にコメント</div>}
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="修正依頼・気になる点…" className="w-full text-[12px] border border-stone-200 rounded px-2 py-1.5 focus:outline-none resize-y" />
+          <div className="flex justify-end gap-2 mt-1"><button onClick={() => setOpen(false)} className="text-[10px] text-stone-400 px-2 py-1">やめる</button><button onClick={submit} className="text-[10px] font-bold text-white px-3 py-1 rounded" style={{ background: main }}>送信</button></div>
+        </div>
+      )}
+      {list.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {list.map((c) => (
+            <div key={c.id} className={"rounded-lg border px-2.5 py-1.5 " + (c.resolved ? "bg-emerald-50 border-emerald-200" : "bg-stone-50 border-stone-200")}>
+              <div className="flex items-center gap-2">
+                {typeof c.timecode === "number" ? <button onClick={() => seek(c.timecode)} className="mono text-[10px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: accent }}>▶ {fmtTC(c.timecode)}</button> : <span className="text-[10px] text-stone-400">全体</span>}
+                <span className="text-[10px] font-bold text-stone-600">{c.author || "ゲスト"}</span>
+                <button onClick={() => onResolve(c.id, !c.resolved)} className={"ml-auto text-[10px] font-bold " + (c.resolved ? "text-emerald-600" : "text-stone-400")}>{c.resolved ? "✓対応済" : "未対応"}</button>
+              </div>
+              <div className="text-[12px] text-stone-800 whitespace-pre-wrap break-words mt-0.5">{c.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* 企画カード内の「確認用動画（その場で再生）＋素材ファイル」ブロック */
-function PlanMedia({ plan, canUpload, main, accent, onUploadVideo, onYouTube, onRemoveVideo, onUploadFile, onDeleteFile }) {
+function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onResolveComment, onUploadVideo, onYouTube, onRemoveVideo, onUploadFile, onDeleteFile }) {
   const [yt, setYt] = React.useState("");
   const [vprog, setVprog] = React.useState(-1);
   const [fprog, setFprog] = React.useState(-1);
@@ -764,7 +826,10 @@ function PlanMedia({ plan, canUpload, main, accent, onUploadVideo, onYouTube, on
         <div className="mt-2">
           {v ? (
             <div>
-              <VideoView video={v} main={main} />
+              <PlanVideoReview video={v} main={main} accent={accent} canComment={canUpload}
+                comments={(comments || []).filter((c) => (c.videoKey || "") === (v.key || v.url || ""))}
+                onPost={(tc, txt) => onPostComment(v.key || v.url || "", tc, txt)}
+                onResolve={onResolveComment} />
               <div className="flex items-center gap-2 mt-1.5">
                 <span className="text-[10px] text-stone-400 truncate flex-1">{v.title || v.name || v.url}</span>
                 <button onClick={onRemoveVideo} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
@@ -1993,6 +2058,23 @@ export default function App() {
       const d = await r.json();
       setComments(Array.isArray(d.comments) ? d.comments : []);
     } catch (e) { /* オフライン時は無視 */ }
+  };
+  // 企画カードの動画にコメント投稿（AK＝ディレクター視点。timecode付き）
+  const postPlanComment = async (videoKey, timecode, text) => {
+    const t = (text || "").trim();
+    if (!t) return false;
+    if (!project || !project.shareId) { showToast("先に共有リンクを発行してね"); return false; }
+    const author = (user && user.name) ? user.name : "ディレクター";
+    try {
+      const r = await fetch(SHARE_API + "/api/snap/" + project.shareId + "/comments", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timecode: (typeof timecode === "number" ? timecode : null), videoKey: videoKey || "", author, text: t }),
+      });
+      const d = await r.json();
+      if (d.comment) { setComments((cs) => [...cs, d.comment]); return d.comment; }
+    } catch (e) {}
+    showToast("コメント送信に失敗");
+    return false;
   };
   const resolveComment = async (cid, resolved) => {
     if (!project || !project.shareId) return;
@@ -3632,6 +3714,7 @@ export default function App() {
                           </div>
 
                           <PlanMedia plan={pl} canUpload={!!project.shareId} main={theme.main} accent={theme.accent}
+                            comments={comments} onPostComment={postPlanComment} onResolveComment={resolveComment}
                             onUploadVideo={(f, p) => uploadVideo(f, pl.id, p)}
                             onYouTube={(u) => registerYouTubeUrl(pl.id, u)}
                             onRemoveVideo={() => removeVideo(pl.id)}
