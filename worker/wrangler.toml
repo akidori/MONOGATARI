@@ -23,3 +23,12 @@ bucket_name = "mg-files"
 # 期限切れファイルの自動削除（毎日 UTC18:00 = JST3:00）
 [triggers]
 crons = ["0 18 * * *"]
+
+# リアルタイム共同編集（共有リンクの編集モード）。SQLite-backed=無料プラン枠
+[[durable_objects.bindings]]
+name = "LIVEDOC"
+class_name = "LiveDoc"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveDoc"]

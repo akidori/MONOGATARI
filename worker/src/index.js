@@ -9,6 +9,8 @@
      tok:{id}   -> 管理トークン（AKのみ保持。コメント解決/削除に必要）
    ============================================================ */
 
+import { DurableObject } from "cloudflare:workers";
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
@@ -35,6 +37,12 @@ export default {
 
     const url = new URL(request.url);
     const parts = url.pathname.split("/").filter(Boolean); // ["api","snap","{id}",...]
+
+    // WebSocket 接続は Durable Object(LiveDoc) へ委譲（リアルタイム共同編集）
+    if (parts[0] === "api" && parts[1] === "live" && parts[2] && parts[2] !== "create" && request.headers.get("Upgrade") === "websocket") {
+      const stub = env.LIVEDOC.get(env.LIVEDOC.idFromName(parts[2]));
+      return stub.fetch(request);
+    }
 
     try {
       // POST /api/parse  { raw }  → 生原稿をClaudeで構成台本(project JSON)に整形して返す
@@ -433,6 +441,20 @@ export default {
           return json({ project: doc.project, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
         }
         return json({ error: "unknown collab op" }, 400);
+      }
+
+      // ===== リアルタイム共同編集：ライブドキュメント発行 =====
+      // POST /api/live/create { project, prevLiveId?, editToken? } → { liveId, editToken }
+      if (request.method === "POST" && parts[1] === "live" && parts[2] === "create") {
+        const b = await request.json();
+        if (!b.project || !Array.isArray(b.project.rows)) return json({ error: "invalid project" }, 400);
+        let liveId = (b.prevLiveId || "").toString().slice(0, 16);
+        let editToken = (b.editToken || "").toString();
+        if (!liveId || !editToken) { liveId = rid(8); editToken = rid(20); }
+        const stub = env.LIVEDOC.get(env.LIVEDOC.idFromName(liveId));
+        const r = await stub.fetch("https://do/seed", { method: "POST", body: JSON.stringify({ project: b.project, editToken }) });
+        if (!r.ok) return json({ error: "ライブ発行に失敗" }, 500);
+        return json({ liveId, editToken });
       }
 
       // ===== 大容量ファイル転送＋動画レビュー（R2） =====
@@ -937,4 +959,56 @@ async function reviewWithClaude(project, env) {
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
+}
+
+/* ===== リアルタイム共同編集 Durable Object（1 liveId = 1 インスタンス） =====
+   B0: 全文同期（{t:"full",project}）。送信者を除いてブロードキャスト＋storage永続化。
+   無認証ゆえ editToken 照合・接続上限・docサイズで濫用を抑える。 */
+export class LiveDoc extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    this.sockets = new Set();
+  }
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.headers.get("Upgrade") !== "websocket") {
+      // seed（Worker からの内部 HTTP）
+      if (request.method === "POST" && url.pathname.endsWith("/seed")) {
+        const b = await request.json();
+        if (b.project) await this.ctx.storage.put("project", b.project);
+        if (b.editToken) await this.ctx.storage.put("editToken", b.editToken);
+        return new Response("ok");
+      }
+      return new Response("not found", { status: 404 });
+    }
+    // 編集トークン照合
+    const token = url.searchParams.get("k") || "";
+    const editToken = await this.ctx.storage.get("editToken");
+    if (!editToken || token !== editToken) return new Response("forbidden", { status: 403 });
+    if (this.sockets.size >= 30) return new Response("too many connections", { status: 429 });
+
+    const pair = new WebSocketPair();
+    const server = pair[1];
+    server.accept();
+    this.sockets.add(server);
+    const proj = await this.ctx.storage.get("project");
+    try { server.send(JSON.stringify({ t: "init", project: proj || null })); } catch (e) {}
+
+    server.addEventListener("message", async (ev) => {
+      let m;
+      try { m = JSON.parse(typeof ev.data === "string" ? ev.data : ""); } catch (e) { return; }
+      if (m && m.t === "full" && m.project) {
+        let s;
+        try { s = JSON.stringify(m.project); } catch (e) { return; }
+        if (s.length > 4000000) return; // 4MB ガード
+        await this.ctx.storage.put("project", m.project);
+        const out = JSON.stringify({ t: "full", project: m.project });
+        for (const peer of this.sockets) { if (peer !== server) { try { peer.send(out); } catch (e) {} } }
+      }
+    });
+    const cleanup = () => { this.sockets.delete(server); };
+    server.addEventListener("close", cleanup);
+    server.addEventListener("error", cleanup);
+    return new Response(null, { status: 101, webSocket: pair[0] });
+  }
 }

@@ -153,6 +153,8 @@ const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format
   plans: [],
   video: null,
   files: [],
+  liveId: null,
+  liveToken: null,
 });
 
 /* 案件データの欠損補完 */
@@ -185,6 +187,8 @@ const migrateProject = (p) => {
       : (p.talk || null),
     video: p.video || null,
     files: Array.isArray(p.files) ? p.files : [],
+    liveId: p.liveId || null,
+    liveToken: p.liveToken || null,
   };
 };
 
@@ -777,6 +781,9 @@ export default function App() {
   const [comments, setComments] = useState([]);             // 現案件の先方コメント
   const [showComments, setShowComments] = useState(false);
   const saveTimer = useRef(null);
+  const liveWS = useRef(null);          // リアルタイム編集の WebSocket
+  const lastRemoteRef = useRef("");     // 直近に受信した project JSON（自分の送信エコー抑止）
+  const liveSendTimer = useRef(null);
   /* 動画確認＋ファイル転送 */
   const [showMediaModal, setShowMediaModal] = useState(false); // 動画/ファイル登録モーダル
   const [mediaTarget, setMediaTarget] = useState("project");   // 動画/ファイルの対象 "project"|planId
@@ -898,6 +905,14 @@ export default function App() {
         const t = localStorage.getItem(AUTH_TOKEN_KEY), us = localStorage.getItem(AUTH_USER_KEY);
         if (t && us) { MG_SESSION = t; setUser(JSON.parse(us)); setActiveStorage(true); }
       } catch (e) {}
+      // 編集用リンク（?live=）はライブセッションに直行（loadAllしない）
+      const sp = new URLSearchParams(location.search);
+      const liveId = sp.get("live");
+      if (liveId) {
+        const hp = new URLSearchParams((location.hash || "").replace(/^#/, ""));
+        startLiveSession(liveId, hp.get("k") || "");
+        return;
+      }
       await loadAll();
     })();
   }, []);
@@ -918,9 +933,18 @@ export default function App() {
     return () => clearInterval(t);
   }, [showAccount, user]);
 
-  /* 案件本体の自動保存 */
+  /* 案件本体の自動保存（live時はDOへ送信、それ以外はローカル/クラウド保存） */
   useEffect(() => {
     if (!loaded || !project) return;
+    if (project.live) {
+      const js = JSON.stringify(cleanProj(project));
+      if (js === lastRemoteRef.current) return; // 受信直後の状態はエコー送信しない
+      clearTimeout(liveSendTimer.current);
+      liveSendTimer.current = setTimeout(() => {
+        try { if (liveWS.current && liveWS.current.readyState === 1) liveWS.current.send(JSON.stringify({ t: "full", project: cleanProj(project) })); } catch (e) {}
+      }, 400);
+      return () => clearTimeout(liveSendTimer.current);
+    }
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { saveProjectData(project); }, 700);
     return () => clearTimeout(saveTimer.current);
@@ -1681,6 +1705,55 @@ export default function App() {
     if (activeInChannel || idx.length === 0) setView("home");
     setCtxMenu(null);
     showToast("フォルダを削除しました");
+  };
+
+  /* ---- リアルタイム共同編集（live） ---- */
+  // 永続化・送信時に剥がすランタイム専用フラグ
+  const cleanProj = (p) => {
+    if (!p) return p;
+    const { live, liveId, liveToken, collab, collabRole, members, ownerEmail, role, ...rest } = p;
+    return rest;
+  };
+  const startLiveSession = (liveId, token) => {
+    setView("editor"); setLoaded(false);
+    try { if (liveWS.current) liveWS.current.close(); } catch (e) {}
+    let ws;
+    try { ws = new WebSocket(SHARE_API.replace(/^http/, "ws") + "/api/live/" + encodeURIComponent(liveId) + "?k=" + encodeURIComponent(token)); }
+    catch (e) { showToast("接続に失敗しました"); return; }
+    liveWS.current = ws;
+    let inited = false;
+    ws.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch (_) { return; }
+      if (m.t === "init" || (m.t === "full" && m.project)) {
+        const proj = m.project ? migrateProject(m.project) : newProjectData("共同編集");
+        lastRemoteRef.current = JSON.stringify(cleanProj(proj));
+        if (m.t === "init") { setActiveId(liveId); inited = true; }
+        setProject({ ...proj, live: true, liveId, liveToken: token });
+        if (m.t === "init") setLoaded(true);
+      }
+    };
+    ws.onclose = () => { if (liveWS.current === ws) liveWS.current = null; if (!inited) { setView("home"); setLoaded(true); loadAll(); showToast("編集リンクが無効か、期限切れの可能性があります"); } };
+    ws.onerror = () => {};
+  };
+  // 編集用（リアルタイム）リンクを発行
+  const publishShareLive = async () => {
+    if (!project) return;
+    setSharing(true);
+    try {
+      const res = await fetch(SHARE_API + "/api/live/create", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: { ...cleanProj(project), channelInfo: curChannelInfo }, prevLiveId: project.liveId || null, editToken: project.liveToken || null }),
+      });
+      const data = await res.json();
+      if (!data.liveId) throw new Error(data.error || "発行失敗");
+      const next = { ...project, liveId: data.liveId, liveToken: data.editToken };
+      setProject(next);
+      try { if (!next.collab && typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
+      const url = location.origin + location.pathname.replace(/[^/]*$/, "") + "index.html?live=" + data.liveId + "#k=" + data.editToken;
+      setShareModal({ id: data.liveId, url, updated: !!project.liveId, live: true });
+      try { await navigator.clipboard.writeText(url); } catch (e) {}
+    } catch (e) { showToast("編集リンクの発行に失敗：" + (e.message || e)); }
+    setSharing(false);
   };
 
   /* ---- 共有リンク発行 ---- */
@@ -2508,7 +2581,11 @@ export default function App() {
               <div className="absolute right-0 top-full mt-1 z-50 w-52 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700">
                 <button onClick={() => { setShareMenu(false); publishShare(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
-                  {project.shareId ? "共有リンクを更新" : "共有リンクを発行"}
+                  {project.shareId ? "閲覧用リンクを更新" : "閲覧用リンクを発行"}<span className="text-[10px] text-stone-400 font-normal ml-auto">読み取り専用</span>
+                </button>
+                <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                  {project.liveId ? "編集用リンクを更新" : "編集用リンクを発行"}<span className="text-[10px] text-stone-400 font-normal ml-auto">同時編集</span>
                 </button>
                 <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m22 8-6 4 6 4V8Z" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
@@ -4031,12 +4108,14 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShareModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">{(shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
+              <h3 className="text-sm font-bold tracking-wider">{(shareModal.live ? "編集用リンクを" : shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
               <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
-                {shareModal.channel
+                {shareModal.live
+                  ? <>このURLを渡すと、先方が<span className="font-bold">構成台本をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
+                  : shareModal.channel
                   ? <>このURLで<span className="font-bold">チャンネルのコンセプト＋配下の{shareModal.caseCount || 0}案件</span>をまとめて見せられます（読み取り専用）。チーム共有やクライアント説明用に。</>
                   : <>このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上のコメントボタンに届きます。</>}
               </p>
