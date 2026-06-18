@@ -626,7 +626,7 @@ function renderFileList(p, accent, main){
 }
 /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要）。onProg(0-100) */
 async function mpuUpload(file, extra, onProg){
-  const CHUNK = 48*1024*1024;
+  const CHUNK = Math.min(90*1024*1024, Math.max(48*1024*1024, Math.ceil(file.size/9000)));
   const cr = await fetch(API+"/api/file/mpu/create", { method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream" }, extra||{})) });
   const cd = await cr.json(); if(!cd.uploadId) throw new Error(cd.error||"開始に失敗");
@@ -634,11 +634,18 @@ async function mpuUpload(file, extra, onProg){
   const parts = [];
   for(let i=0;i<total;i++){
     const start=i*CHUNK, blob=file.slice(start, Math.min(file.size, start+CHUNK));
-    const etag = await new Promise((res,rej)=>{ const xhr=new XMLHttpRequest();
-      xhr.open("PUT", API+"/api/file/mpu/part?key="+encodeURIComponent(cd.key)+"&uploadId="+encodeURIComponent(cd.uploadId)+"&part="+(i+1));
-      xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg) onProg(Math.min(100, Math.round((start+e.loaded)/file.size*100))); };
-      xhr.onload=()=>{ if(xhr.status>=200&&xhr.status<300){ try{ res(JSON.parse(xhr.responseText).etag); }catch(_){ rej(new Error("part応答不正")); } } else rej(new Error("part失敗("+xhr.status+")")); };
-      xhr.onerror=()=>rej(new Error("通信エラー")); xhr.send(blob); });
+    let etag=null, lastErr;
+    for(let attempt=0; attempt<3; attempt++){
+      try{
+        etag = await new Promise((res,rej)=>{ const xhr=new XMLHttpRequest();
+          xhr.open("PUT", API+"/api/file/mpu/part?key="+encodeURIComponent(cd.key)+"&uploadId="+encodeURIComponent(cd.uploadId)+"&part="+(i+1));
+          xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg) onProg(Math.min(100, Math.round((start+e.loaded)/file.size*100))); };
+          xhr.onload=()=>{ if(xhr.status>=200&&xhr.status<300){ try{ res(JSON.parse(xhr.responseText).etag); }catch(_){ rej(new Error("part応答不正")); } } else rej(new Error("part失敗("+xhr.status+")")); };
+          xhr.onerror=()=>rej(new Error("通信エラー")); xhr.send(blob); });
+        break;
+      }catch(e){ lastErr=e; await new Promise(r=>setTimeout(r, 1500*(attempt+1))); }
+    }
+    if(etag==null) throw lastErr||new Error("part失敗");
     parts.push({ partNumber:i+1, etag });
   }
   const fr = await fetch(API+"/api/file/mpu/complete", { method:"POST", headers:{"Content-Type":"application/json"},

@@ -801,7 +801,7 @@ function PlanMedia({ plan, canUpload, main, accent, onUploadVideo, onYouTube, on
         {canUpload ? (
           <label className="block mt-2 rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2.5 text-[11px] text-stone-500 cursor-pointer hover:bg-stone-50 text-center">
             <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) { setFprog(0); Promise.resolve(onUploadFile(f, setFprog)).finally(() => setFprog(-1)); } e.target.value = ""; }} />
-            ⬆ ファイルを追加（最大50GB・GB級もそのまま）
+            ⬆ ファイルを追加（最大500GB・GB級もそのまま）
           </label>
         ) : <div className="text-[10px] text-amber-600 mt-2">ファイルを上げるには先に右上「共有 → 閲覧用リンクを発行」してね</div>}
         {fprog >= 0 && <div className="h-1.5 bg-stone-200 rounded overflow-hidden mt-1"><div className="h-full" style={{ width: fprog + "%", background: accent }} /></div>}
@@ -1885,7 +1885,8 @@ export default function App() {
   };
   /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要・GB級対応）。meta を返す */
   const uploadToR2 = async (file, planId = "", onProgress = null) => {
-    const CHUNK = 48 * 1024 * 1024;
+    // R2マルチパートは最大1万パート。500GB級でも収まるようチャンクを動的に（48〜90MB、Worker body上限内）
+    const CHUNK = Math.min(90 * 1024 * 1024, Math.max(48 * 1024 * 1024, Math.ceil(file.size / 9000)));
     const extra = { token: project.shareToken, retention, planId };
     const cr = await fetch(SHARE_API + "/api/file/mpu/create", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1897,14 +1898,21 @@ export default function App() {
     const parts = [];
     for (let i = 0; i < total; i++) {
       const start = i * CHUNK, blob = file.slice(start, Math.min(file.size, start + CHUNK));
-      const etag = await new Promise((res, rej) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("PUT", SHARE_API + "/api/file/mpu/part?key=" + encodeURIComponent(cd.key) + "&uploadId=" + encodeURIComponent(cd.uploadId) + "&part=" + (i + 1));
-        xhr.upload.onprogress = (e) => { if (e.lengthComputable) (onProgress || setMediaProg)(Math.min(100, Math.round((start + e.loaded) / file.size * 100))); };
-        xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) { try { res(JSON.parse(xhr.responseText).etag); } catch (_) { rej(new Error("part応答不正")); } } else rej(new Error("part失敗(" + xhr.status + ")")); };
-        xhr.onerror = () => rej(new Error("通信エラー"));
-        xhr.send(blob);
-      });
+      let etag = null, lastErr;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          etag = await new Promise((res, rej) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("PUT", SHARE_API + "/api/file/mpu/part?key=" + encodeURIComponent(cd.key) + "&uploadId=" + encodeURIComponent(cd.uploadId) + "&part=" + (i + 1));
+            xhr.upload.onprogress = (e) => { if (e.lengthComputable) (onProgress || setMediaProg)(Math.min(100, Math.round((start + e.loaded) / file.size * 100))); };
+            xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) { try { res(JSON.parse(xhr.responseText).etag); } catch (_) { rej(new Error("part応答不正")); } } else rej(new Error("part失敗(" + xhr.status + ")")); };
+            xhr.onerror = () => rej(new Error("通信エラー"));
+            xhr.send(blob);
+          });
+          break;
+        } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); }
+      }
+      if (etag == null) throw lastErr || new Error("part失敗");
       parts.push({ partNumber: i + 1, etag });
     }
     const fr = await fetch(SHARE_API + "/api/file/mpu/complete", {
@@ -4311,7 +4319,7 @@ export default function App() {
                     )}
                     <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
                       <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadFile(f, mediaTarget); e.target.value = ""; }} />
-                      ⬆ ファイルを追加（最大50GB）
+                      ⬆ ファイルを追加（最大500GB）
                     </label>
                     <p className="text-[10px] text-stone-400 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。</p>
                   </div>
