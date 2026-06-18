@@ -104,6 +104,7 @@ let UPLOADS = [];          // 先方アップロード一覧（/api/snap/{id}/up
 let ytPlayer = null;       // YouTube IFrame Player
 let videoEl = null;        // HTML5 video 要素
 let ytTimer = null;        // YouTube の再生位置ポーリング
+let VSEL = null;           // 動画確認タブで選択中の動画ID（案件全体 or 企画）
 function setTab(t){
   if(TAB==="video" && t!=="video"){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; }
   TAB = t; render();
@@ -283,8 +284,7 @@ function render(){
   if(hasPlans) tabs.push(["plan","企画・サムネ"]);
   tabs.push(["script","構成台本"]);
   if(!isTalk) tabs.push(["kouban","香盤表"]);
-  const hasVideo = !!(p.video && (p.video.url || p.video.key));
-  if(hasVideo) tabs.push(["video","動画確認"]);
+  if(videoOptions(p).length) tabs.push(["video","動画確認"]);
   tabs.push(["files","ファイル"]);
   if(!tabs.some(t=>t[0]===TAB)) TAB = "script";
 
@@ -370,21 +370,29 @@ function renderChannel(){
   const sel = cases[CASE_SEL];
   const isTalk = sel.format === "talk";
   const hasPlans = (sel.plans||[]).length>0;
+  const hasVid = videoOptions(sel).length > 0;
+  const hasFiles = fileGroups(sel).some(g=>g.files.length);
   const sub = [];
   if(hasPlans) sub.push(["plan","サムネ・タイトル"]);
   sub.push(["script","構成台本"]);
   if(!isTalk) sub.push(["kouban","香盤表"]);
+  if(hasVid) sub.push(["video","動画確認"]);
+  if(hasFiles) sub.push(["files","ファイル"]);
   if(!sub.some(s=>s[0]===CTAB)) CTAB="script";
+  SNAP = { project: sel };   // paneVideo/mountVideo/fileGroups が参照（チャンネルはコメント無し=CHMODE）
   const subBar = `<div class="flex gap-1 mb-3 border-b border-stone-200 overflow-x-auto">${sub.map(([k,label])=>`<button data-ctab="${k}" class="ctabbtn text-[12px] font-bold px-3 py-1.5 whitespace-nowrap ${CTAB===k?'border-b-2':''}" style="${CTAB===k?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
-  const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
+  const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):CTAB==="video"?paneVideo(sel,accentC,mainC):CTAB==="files"?paneFiles(sel,accentC,mainC):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
   document.getElementById("app").innerHTML = header
     + `<button id="backBtn" class="text-[12px] font-bold mb-3 inline-flex items-center gap-1" style="color:${mainC}">← 企画一覧へ戻る</button>`
     + `<div class="text-[16px] font-black mb-3">${esc(caseTitle(sel,CASE_SEL))}</div>`
     + subBar + `<div>${pane}</div>`
     + `<p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
-  document.getElementById("backBtn").addEventListener("click",()=>{ CASE_SEL=null; window.scrollTo(0,0); renderChannel(); });
-  document.querySelectorAll(".ctabbtn").forEach(b=>b.addEventListener("click",()=>{ CTAB=b.dataset.ctab; renderChannel(); }));
+  document.getElementById("backBtn").addEventListener("click",()=>{ chCleanup(); CASE_SEL=null; window.scrollTo(0,0); renderChannel(); });
+  document.querySelectorAll(".ctabbtn").forEach(b=>b.addEventListener("click",()=>{ chCleanup(); CTAB=b.dataset.ctab; renderChannel(); }));
+  if(CTAB==="video") mountVideo(sel,accentC,mainC);
+  if(CTAB==="files") mountFiles(sel,accentC,mainC);
 }
+function chCleanup(){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; }
 
 function fmtTime(iso){ return (iso||"").slice(5,16).replace("T"," "); }
 
@@ -449,25 +457,41 @@ function rateButtons(type){
   const rates = type==="youtube" ? [0.5,1,1.5,2] : [0.5,1,1.5,2,3,4];
   return rates.map(r=>`<button data-rate="${r}" class="vc-rate text-[11px] mono px-2 py-1 rounded border border-stone-200 ${r===1?'bg-stone-100':''}">${r}x</button>`).join("");
 }
+/* 動画の選択肢（案件全体＋企画ごと） */
+function vidKey(v){ return v ? (v.key || v.url || "") : ""; }
+function videoOptions(p){
+  const out=[];
+  if(p.video && (p.video.url||p.video.key)) out.push({ id: vidKey(p.video), label:"案件全体", video:p.video });
+  (p.plans||[]).forEach((pl,i)=>{ if(pl.video && (pl.video.url||pl.video.key)) out.push({ id: vidKey(pl.video), label:(pl.title||("企画"+(i+1))).slice(0,24), video:pl.video }); });
+  return out;
+}
+function curVideo(p){ const opts=videoOptions(p); if(!opts.length) return null; return opts.find(o=>o.id===VSEL) || opts[0]; }
+function selectVideo(id){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; VSEL=id; CHMODE?renderChannel():render(); }
 function paneVideo(p, accent, main){
-  const v = p.video||{};
+  const opts = videoOptions(p);
+  const cur = curVideo(p); if(cur) VSEL = cur.id;
+  const v = (cur&&cur.video)||{};
+  const selector = opts.length>1 ? `<div class="flex gap-1 flex-wrap mb-2">${opts.map(o=>`<button data-vsel="${esc(o.id)}" class="vc-sel text-[11px] font-bold px-2.5 py-1 rounded-full border ${o.id===VSEL?'text-white':'text-stone-500 border-stone-200'}" style="${o.id===VSEL?`background:${main};border-color:${main}`:''}">${esc(o.label)}</button>`).join("")}</div>` : "";
   return `
     <div>
+      ${selector}
       ${v.title?`<div class="text-[14px] font-bold mb-2" style="color:${main}">${esc(v.title)}</div>`:""}
       <div class="rounded-xl overflow-hidden bg-black mb-2" style="aspect-ratio:16/9"><div id="vc-player" class="w-full h-full"></div></div>
       <div class="flex items-center gap-2 flex-wrap mb-3">
         <span class="text-[11px] text-stone-400">再生速度</span>
         <div class="flex gap-1">${rateButtons(v.type)}</div>
         <div id="vc-tc" class="ml-auto mono text-[13px] font-bold" style="color:${main}">0:00.00</div>
-        <button id="vc-add" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shadow" style="background:${accent}">＋ ここにコメント</button>
+        ${CHMODE?"":`<button id="vc-add" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shadow" style="background:${accent}">＋ ここにコメント</button>`}
       </div>
-      <div id="vc-form" class="hidden mb-3"></div>
+      ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>
       <div id="vc-list"></div>
-      <p class="text-center text-[11px] text-stone-400 mt-6 leading-relaxed">再生を止めて「＋ ここにコメント」で、その時間に修正依頼を残せます。コメントの ▶ で頭出しできます。</p>
+      <p class="text-center text-[11px] text-stone-400 mt-6 leading-relaxed">再生を止めて「＋ ここにコメント」で、その時間に修正依頼を残せます。コメントの ▶ で頭出しできます。</p>`}
     </div>`;
 }
 function mountVideo(p, accent, main){
-  const v = p.video||{};
+  const cur = curVideo(p);
+  const v = (cur&&cur.video)||{};
+  document.querySelectorAll(".vc-sel").forEach(b=>b.addEventListener("click", ()=>selectVideo(b.dataset.vsel)));
   const stage = document.getElementById("vc-player");
   if(!stage) return;
   if(v.type==="youtube"){
@@ -490,13 +514,15 @@ function mountVideo(p, accent, main){
     document.querySelectorAll(".vc-rate").forEach(x=>x.classList.remove("bg-stone-100"));
     b.classList.add("bg-stone-100");
   }));
-  const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main));
-  renderVideoList(accent, main);
+  if(!CHMODE){ const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main)); renderVideoList(accent, main); }
 }
 function setRate(r){ if(videoEl){ videoEl.playbackRate=r; } else if(ytPlayer&&ytPlayer.setPlaybackRate){ ytPlayer.setPlaybackRate(r); } }
 function curTime(){ if(videoEl) return videoEl.currentTime||0; if(ytPlayer&&ytPlayer.getCurrentTime) return ytPlayer.getCurrentTime()||0; return 0; }
 function seekTo(sec){ sec=+sec||0; if(videoEl){ videoEl.currentTime=sec; const pr=videoEl.play&&videoEl.play(); if(pr&&pr.catch) pr.catch(()=>{}); } else if(ytPlayer&&ytPlayer.seekTo){ ytPlayer.seekTo(sec,true); if(ytPlayer.playVideo) ytPlayer.playVideo(); } }
-function videoComments(){ return COMMENTS.filter(c=>typeof c.timecode==="number").sort((a,b)=>a.timecode-b.timecode); }
+function videoComments(){
+  const multi = videoOptions(SNAP.project).length > 1;
+  return COMMENTS.filter(c=> typeof c.timecode==="number" && (!multi || (c.videoKey||"")===(VSEL||""))).sort((a,b)=>a.timecode-b.timecode);
+}
 function renderVideoList(accent, main){
   const el=document.getElementById("vc-list"); if(!el) return;
   const list=videoComments();
@@ -539,7 +565,7 @@ async function postVideoComment(sec, accent, main){
   const btn=document.getElementById("vc-send"); btn.disabled=true; btn.textContent="送信中…";
   try{
     const r=await fetch(API+"/api/snap/"+ID+"/comments", { method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({ timecode:sec, videoKey:(SNAP.project.video&&SNAP.project.video.key)||"", author:AUTHOR||"ゲスト", text }) });
+      body:JSON.stringify({ timecode:sec, videoKey:(VSEL||""), author:AUTHOR||"ゲスト", text }) });
     const d=await r.json();
     if(d.comment){ COMMENTS.push(d.comment); const f=document.getElementById("vc-form"); f.classList.add("hidden"); f.innerHTML=""; renderVideoList(accent, main); }
     else throw new Error(d.error||"送信失敗");
@@ -548,16 +574,32 @@ async function postVideoComment(sec, accent, main){
 
 /* ───────── ファイル転送タブ（DL＋先方アップ） ───────── */
 function fmtBytes(n){ n=+n||0; if(n>=1073741824) return (n/1073741824).toFixed(2)+" GB"; if(n>=1048576) return (n/1048576).toFixed(1)+" MB"; if(n>=1024) return (n/1024).toFixed(0)+" KB"; return n+" B"; }
+/* 企画別ファイルグループ（案件全体＋各企画。owner＝p.files/pl.files、guest＝UPLOADSをplanIdで振り分け） */
+function fileGroups(p){
+  const upBy = (pid)=> (UPLOADS||[]).filter(u=> (u.planId||"")===pid );
+  const groups=[{ id:"project", label:"案件全体", files:(p.files||[]).map(f=>({...f,by:"owner"})).concat(upBy("").map(f=>({...f,by:"guest"}))) }];
+  (p.plans||[]).forEach((pl,i)=>{
+    const files=((pl.files||[]).map(f=>({...f,by:"owner"}))).concat(upBy(pl.id).map(f=>({...f,by:"guest"})));
+    if(files.length) groups.push({ id:pl.id, label:(pl.title||("企画"+(i+1))), files });
+  });
+  return groups;
+}
 function paneFiles(p, accent, main){
+  const plans=(p.plans||[]);
+  const targetSel = plans.length ? `<select id="fl-target" class="text-[12px] border border-stone-200 rounded px-2 py-1 mb-2 block">
+      <option value="project">案件全体に送る</option>
+      ${plans.map((pl,i)=>`<option value="${esc(pl.id)}">${esc((pl.title||("企画"+(i+1))).slice(0,20))} に送る</option>`).join("")}
+    </select>` : "";
   return `
     <div>
       <div id="fl-list"></div>
-      <div class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3">
+      ${CHMODE?"":`<div class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3">
         <div class="text-[12px] font-bold text-stone-600 mb-1">ファイルを送る</div>
         <div class="text-[11px] text-stone-400 mb-2">素材や資料をアップロードできます（1ファイル2GBまで）。</div>
-        <input id="fl-input" type="file" class="text-[12px]">
+        ${targetSel}
+        <input id="fl-input" type="file" class="text-[12px] block">
         <div id="fl-prog" class="hidden mt-2"><div class="h-1.5 bg-stone-200 rounded overflow-hidden"><div id="fl-bar" class="h-full" style="width:0%;background:${accent}"></div></div><div id="fl-pct" class="text-[10px] text-stone-400 mt-1">0%</div></div>
-      </div>
+      </div>`}
     </div>`;
 }
 function mountFiles(p, accent, main){
@@ -567,15 +609,20 @@ function mountFiles(p, accent, main){
 }
 function renderFileList(p, accent, main){
   const el=document.getElementById("fl-list"); if(!el) return;
-  const all=(p.files||[]).map(f=>({...f,by:"owner"})).concat((UPLOADS||[]).map(f=>({...f,by:"guest"})));
-  el.innerHTML = all.length ? all.map(f=>`
-    <div class="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2 mb-1.5">
-      <div class="flex-1 min-w-0">
-        <div class="text-[13px] font-semibold text-stone-800 truncate">${esc(f.name||"file")}</div>
-        <div class="text-[10px] text-stone-400 mono">${fmtBytes(f.size)}${f.by==="guest"?" ・先方アップ":""}${f.expiresAt?` ・${fmtTime(f.expiresAt)}まで`:""}</div>
-      </div>
-      <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shrink-0" style="background:${main}">⬇ DL</a>
-    </div>`).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだファイルはありません。</div>';
+  const groups=fileGroups(p).filter(g=>g.files.length);
+  if(!groups.length){ el.innerHTML='<div class="text-[11px] text-stone-400 text-center py-4">まだファイルはありません。</div>'; return; }
+  const single = groups.length===1 && groups[0].id==="project";
+  el.innerHTML = groups.map(g=>`
+    <div class="mb-3">
+      ${single?"":`<div class="text-[11px] font-bold text-stone-500 mb-1">${esc(g.label)}</div>`}
+      ${g.files.map(f=>`<div class="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2 mb-1.5">
+        <div class="flex-1 min-w-0">
+          <div class="text-[13px] font-semibold text-stone-800 truncate">${esc(f.name||"file")}</div>
+          <div class="text-[10px] text-stone-400 mono">${fmtBytes(f.size)}${f.by==="guest"?" ・先方アップ":""}${f.expiresAt?` ・${fmtTime(f.expiresAt)}まで`:""}</div>
+        </div>
+        <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shrink-0" style="background:${main}">⬇ DL</a>
+      </div>`).join("")}
+    </div>`).join("");
 }
 /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要）。onProg(0-100) */
 async function mpuUpload(file, extra, onProg){
@@ -601,9 +648,10 @@ async function mpuUpload(file, extra, onProg){
 }
 async function guestUpload(file, p, accent, main){
   const prog=document.getElementById("fl-prog"), bar=document.getElementById("fl-bar"), pct=document.getElementById("fl-pct");
+  const selEl=document.getElementById("fl-target"); const target=selEl?selEl.value:"project";
   if(prog) prog.classList.remove("hidden");
   try{
-    const meta = await mpuUpload(file, {}, (v)=>{ if(bar){ bar.style.width=v+"%"; pct.textContent=v+"%"; } });
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target }, (v)=>{ if(bar){ bar.style.width=v+"%"; pct.textContent=v+"%"; } });
     UPLOADS.push(meta);
     if(prog) prog.classList.add("hidden"); if(bar){ bar.style.width="0%"; pct.textContent="0%"; }
     const inp=document.getElementById("fl-input"); if(inp) inp.value="";

@@ -501,6 +501,7 @@ export default {
           uploadedAt: now(),
           expiresAt: days ? new Date(Date.now() + days * 86400000).toISOString() : null,
           by: isOwner ? "owner" : "guest",
+          planId: (b.planId || "").toString().slice(0, 40),
         };
         await env.SNAPS.put("file:" + key, JSON.stringify(meta));
         // 先方アップは案件ごとの一覧 file_up:{snap} に積む（owner はクライアントが project.files に保持）
@@ -661,6 +662,21 @@ function slim(p) {
     plans: (p.plans || []).map((pl) => ({
       id: pl.id, title: pl.title || "", thumbText: pl.thumbText || "", note: pl.note || "",
       refs: (pl.refs || []).map((rf) => ({ vid: rf.vid || "", title: rf.title || "", channel: rf.channel || "", views: rf.views || 0, subs: rf.subs || 0, uploadDate: rf.uploadDate || "", duration: rf.duration || "" })),
+      video: pl.video ? {
+        type: pl.video.type === "youtube" ? "youtube" : "mp4",
+        url: (pl.video.url || "").slice(0, 500),
+        key: (pl.video.key || "").slice(0, 120),
+        title: (pl.video.title || "").slice(0, 200),
+        name: (pl.video.name || "").slice(0, 255),
+      } : null,
+      files: Array.isArray(pl.files) ? pl.files.slice(0, 50).map((f) => ({
+        key: (f.key || "").slice(0, 120),
+        name: (f.name || "").slice(0, 255),
+        size: +f.size || 0,
+        mime: (f.mime || "").slice(0, 120),
+        uploadedAt: f.uploadedAt || "",
+        expiresAt: f.expiresAt || null,
+      })) : [],
     })),
     channelInfo: slimCI(p.channelInfo),
     video: p.video ? {
