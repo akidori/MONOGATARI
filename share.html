@@ -282,11 +282,13 @@ function render(){
   const isTalk = p.format === "talk";
   if(hasConcept) tabs.push(["concept","チャンネルコンセプト"]);
   if(hasPlans) tabs.push(["plan","企画・サムネ"]);
-  tabs.push(["script","構成台本"]);
-  if(!isTalk) tabs.push(["kouban","香盤表"]);
+  const hasScript = isTalk ? !!(p.talk && ((p.talk.body||[]).some(b=>b.script||b.heading) || p.talk.intro || p.talk.highlight)) : (p.rows||[]).length > 0;
+  if(hasScript) tabs.push(["script","構成台本"]);
+  if(!isTalk && (p.rows||[]).length) tabs.push(["kouban","香盤表"]);
   if(videoOptions(p).length) tabs.push(["video","動画確認"]);
-  tabs.push(["files","ファイル"]);
-  if(!tabs.some(t=>t[0]===TAB)) TAB = "script";
+  const hasFilesAny = (p.files||[]).length || (p.plans||[]).some(pl=>(pl.files||[]).length) || (UPLOADS||[]).length;
+  if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
+  if(!tabs.some(t=>t[0]===TAB)) TAB = (tabs[0] && tabs[0][0]) || "script";
 
   const tabBar = `<div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto">${tabs.map(([k,label])=>
     `<button data-tab="${k}" class="tabbtn text-[12px] font-bold px-3 py-2 whitespace-nowrap ${TAB===k?'border-b-2':''}" style="${TAB===k?`color:${main};border-color:${accent}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;

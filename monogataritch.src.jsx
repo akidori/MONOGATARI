@@ -180,7 +180,7 @@ const migrateProject = (p) => {
     rows: (p.rows || templateRows()).map((r) =>
       r.kind === "scene" ? { sec: null, ...r, type: SECTION_TYPES[r.type] ? r.type : (typeFromText(r.type) || "解説系") } : { address: "", time: "", note: "", ...r }
     ),
-    plans: ((Array.isArray(p.plans) && p.plans.length) ? p.plans : seedPlansFromMeta(p.meta || {})).map((pl) => ({ video: null, files: [], ...pl })),
+    plans: ((Array.isArray(p.plans) && p.plans.length) ? p.plans : seedPlansFromMeta(p.meta || {})).map((pl) => ({ video: null, files: [], shareId: null, shareToken: null, ...pl })),
     format: p.format === "talk" ? "talk" : "documentary",
     talk: p.format === "talk"
       ? { ...newTalk(), ...(p.talk || {}), toc: (p.talk && p.talk.toc && p.talk.toc.length) ? p.talk.toc : [""], body: (p.talk && p.talk.body && p.talk.body.length) ? p.talk.body : [newTalkBody()] }
@@ -194,7 +194,7 @@ const migrateProject = (p) => {
 
 /* ===== 企画・サムネ：YouTube参考動画まわりのヘルパー ===== */
 const emptyRef = () => ({ url: "", vid: "", title: "", channel: "", views: 0, subs: 0, likes: 0, uploadDate: "", duration: "" });
-const newPlan = () => ({ id: uid(), title: "", thumbText: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], video: null, files: [] });
+const newPlan = () => ({ id: uid(), title: "", thumbText: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], video: null, files: [], shareId: null, shareToken: null });
 const ytIdFromUrl = (url) => { const m = (url || "").match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/); return m ? m[1] : ((url || "").trim().match(/^[a-zA-Z0-9_-]{11}$/) ? url.trim() : null); };
 const parseDur = (iso) => { const m = (iso || "").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if (!m) return ""; const h = +(m[1] || 0), mi = +(m[2] || 0), s = +(m[3] || 0); return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(s).padStart(2, "0"); };
 const fmtNum = (n) => { n = Number(n) || 0; if (n >= 1e8) return (n / 1e8).toFixed(1) + "億"; if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + "万"; return n.toLocaleString(); };
@@ -812,7 +812,7 @@ function PlanVideoReview({ video, comments, canComment, onPost, onResolve, main,
 }
 
 /* 企画カード内の「確認用動画（その場で再生）＋素材ファイル」ブロック */
-function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onResolveComment, onUploadVideo, onYouTube, onRemoveVideo, onUploadFile, onDeleteFile }) {
+function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onResolveComment, onShare, sharing, onUploadVideo, onYouTube, onRemoveVideo, onUploadFile, onDeleteFile }) {
   const [yt, setYt] = React.useState("");
   const [vprog, setVprog] = React.useState(-1);
   const [fprog, setFprog] = React.useState(-1);
@@ -828,7 +828,7 @@ function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onR
             <div>
               <PlanVideoReview video={v} main={main} accent={accent} canComment={canUpload}
                 comments={(comments || []).filter((c) => (c.videoKey || "") === (v.key || v.url || ""))}
-                onPost={(tc, txt) => onPostComment(v.key || v.url || "", tc, txt)}
+                onPost={(tc, txt) => onPostComment(v.key || v.url || "", tc, txt, plan.shareId, plan.shareToken)}
                 onResolve={onResolveComment} />
               <div className="flex items-center gap-2 mt-1.5">
                 <span className="text-[10px] text-stone-400 truncate flex-1">{v.title || v.name || v.url}</span>
@@ -870,6 +870,14 @@ function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onR
           </label>
         ) : <div className="text-[10px] text-amber-600 mt-2">ファイルを上げるには先に右上「共有 → 閲覧用リンクを発行」してね</div>}
         {fprog >= 0 && <div className="h-1.5 bg-stone-200 rounded overflow-hidden mt-1"><div className="h-full" style={{ width: fprog + "%", background: accent }} /></div>}
+      </div>
+      <div className="pt-1 border-t border-stone-200">
+        <span className="text-[11px] font-bold text-stone-500">🔗 この企画の試写リンク</span>
+        <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+          <button onClick={onShare} disabled={sharing} className="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg disabled:opacity-50" style={{ background: main }}>{sharing ? "発行中…" : (plan.shareId ? "試写リンクを更新" : "試写リンクを発行")}</button>
+          {plan.shareId && <a href={shareUrl(plan.shareId)} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: main }}>リンクを開く ↗</a>}
+        </div>
+        <p className="text-[10px] text-stone-400 mt-1">この企画の動画・素材・コメントだけを先方に見せる専用リンク（案件丸ごとは右上「共有」）。</p>
       </div>
     </div>
   );
@@ -1992,17 +2000,47 @@ export default function App() {
   const findPlan = (target) => (project.plans || []).find((pl) => pl.id === target);
   const getTargetVideo = (target) => { if (target === "project") return project.video; const pl = findPlan(target); return pl ? pl.video : null; };
   const getTargetFiles = (target) => { if (target === "project") return project.files || []; const pl = findPlan(target); return (pl && pl.files) ? pl.files : []; };
+  // 企画の試写スナップ（plan.shareId）に video/files を反映（あるときだけ）
+  const syncPlanShare = async (pl) => {
+    if (!pl || !pl.shareId) return;
+    try {
+      const mini = { name: pl.title || "企画", channel: project.channel, format: "documentary", meta: {}, theme: project.theme, rows: [], plans: [], talk: null, video: pl.video || null, files: pl.files || [] };
+      await fetch(SHARE_API + "/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: mini, prevId: pl.shareId, token: pl.shareToken }) });
+    } catch (e) {}
+  };
   const putVideo = async (target, video) => {
     const next = target === "project" ? { ...project, video }
       : { ...project, plans: (project.plans || []).map((pl) => (pl.id === target ? { ...pl, video } : pl)) };
     await saveProject(next);
     await syncProjectToShare(next);
+    if (target !== "project") await syncPlanShare(next.plans.find((p) => p.id === target));
   };
   const putFiles = async (target, files) => {
     const next = target === "project" ? { ...project, files }
       : { ...project, plans: (project.plans || []).map((pl) => (pl.id === target ? { ...pl, files } : pl)) };
     await saveProject(next);
     await syncProjectToShare(next);
+    if (target !== "project") await syncPlanShare(next.plans.find((p) => p.id === target));
+  };
+  // 企画ごとの試写リンク（その企画の動画・素材・コメントだけ）を発行
+  const publishPlanShare = async (planId) => {
+    if (!project) return;
+    const pl = (project.plans || []).find((p) => p.id === planId);
+    if (!pl) return;
+    if (!pl.video && !(pl.files || []).length) { showToast("先にこの企画へ動画かファイルを入れてね"); return; }
+    setSharing(true);
+    try {
+      const mini = { name: pl.title || "企画", channel: project.channel, format: "documentary", meta: {}, theme: project.theme, rows: [], plans: [], talk: null, video: pl.video || null, files: pl.files || [] };
+      const res = await fetch(SHARE_API + "/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: mini, prevId: pl.shareId || null, token: pl.shareToken || null }) });
+      const data = await res.json();
+      if (!data.id) throw new Error(data.error || "発行失敗");
+      const next = { ...project, plans: project.plans.map((p) => (p.id === planId ? { ...p, shareId: data.id, shareToken: data.token || p.shareToken } : p)) };
+      await saveProject(next);
+      const url = shareUrl(data.id);
+      setShareModal({ id: data.id, url, updated: !!pl.shareId, planShare: true });
+      try { await navigator.clipboard.writeText(url); } catch (e) {}
+    } catch (e) { showToast("企画の試写リンク発行に失敗：" + (e.message || e)); }
+    setSharing(false);
   };
   /* mp4 を動画として登録（onProgress指定時はカード内バー、未指定はモーダルの共通バー） */
   const uploadVideo = async (file, target = "project", onProgress = null) => {
@@ -2050,48 +2088,62 @@ export default function App() {
   };
 
   /* ---- 先方コメント ---- */
-  const fetchComments = async (sid) => {
-    const id = sid || (project && project.shareId);
-    if (!id) { setComments([]); return; }
+  // 案件スナップ＋各企画の試写スナップから集めて1つに（videoKeyで動画別に束ねる）
+  const fetchComments = async () => {
+    if (!project) { setComments([]); return; }
+    const sources = [];
+    if (project.shareId) sources.push({ id: project.shareId, token: project.shareToken });
+    (project.plans || []).forEach((pl) => { if (pl.shareId) sources.push({ id: pl.shareId, token: pl.shareToken }); });
+    if (!sources.length) { setComments([]); return; }
     try {
-      const r = await fetch(SHARE_API + "/api/snap/" + id + "/comments");
-      const d = await r.json();
-      setComments(Array.isArray(d.comments) ? d.comments : []);
+      const all = [], seen = new Set();
+      for (const s of sources) {
+        const r = await fetch(SHARE_API + "/api/snap/" + s.id + "/comments");
+        const d = await r.json();
+        (Array.isArray(d.comments) ? d.comments : []).forEach((c) => { if (!seen.has(c.id)) { seen.add(c.id); all.push({ ...c, _snap: s.id, _token: s.token }); } });
+      }
+      setComments(all);
     } catch (e) { /* オフライン時は無視 */ }
   };
-  // 企画カードの動画にコメント投稿（AK＝ディレクター視点。timecode付き）
-  const postPlanComment = async (videoKey, timecode, text) => {
+  // 企画カードの動画にコメント投稿（AK＝ディレクター視点。timecode付き。企画に試写リンクがあればそちらへ）
+  const postPlanComment = async (videoKey, timecode, text, snapId, snapToken) => {
     const t = (text || "").trim();
     if (!t) return false;
-    if (!project || !project.shareId) { showToast("先に共有リンクを発行してね"); return false; }
+    const snap = snapId || (project && project.shareId);
+    const token = snapToken || (project && project.shareToken);
+    if (!snap) { showToast("先に共有リンクを発行してね"); return false; }
     const author = (user && user.name) ? user.name : "ディレクター";
     try {
-      const r = await fetch(SHARE_API + "/api/snap/" + project.shareId + "/comments", {
+      const r = await fetch(SHARE_API + "/api/snap/" + snap + "/comments", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timecode: (typeof timecode === "number" ? timecode : null), videoKey: videoKey || "", author, text: t }),
       });
       const d = await r.json();
-      if (d.comment) { setComments((cs) => [...cs, d.comment]); return d.comment; }
+      if (d.comment) { setComments((cs) => [...cs, { ...d.comment, _snap: snap, _token: token }]); return d.comment; }
     } catch (e) {}
     showToast("コメント送信に失敗");
     return false;
   };
   const resolveComment = async (cid, resolved) => {
-    if (!project || !project.shareId) return;
-    setComments((cs) => cs.map((c) => (c.id === cid ? { ...c, resolved } : c))); // 楽観更新
+    const c = comments.find((x) => x.id === cid);
+    const snap = (c && c._snap) || (project && project.shareId);
+    const token = (c && c._token) || (project && project.shareToken);
+    if (!snap) return;
+    setComments((cs) => cs.map((x) => (x.id === cid ? { ...x, resolved } : x))); // 楽観更新
     try {
-      await fetch(SHARE_API + "/api/snap/" + project.shareId + "/comments/" + cid, {
+      await fetch(SHARE_API + "/api/snap/" + snap + "/comments/" + cid, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resolved, token: project.shareToken }),
+        body: JSON.stringify({ resolved, token }),
       });
     } catch (e) { showToast("更新に失敗しました"); }
   };
 
-  /* 案件を開いた / shareId が付いたらコメント取得 */
+  /* 案件を開いた / 案件・企画の共有が付いたらコメント取得（全スナップ集約） */
   useEffect(() => {
-    if (project && project.shareId) fetchComments(project.shareId);
+    const planSnaps = (project && project.plans || []).map((p) => p.shareId).filter(Boolean).join(",");
+    if (project && (project.shareId || planSnaps)) fetchComments();
     else setComments([]);
-  }, [activeId, project && project.shareId]);
+  }, [activeId, project && project.shareId, (project && project.plans || []).map((p) => p.shareId).join(",")]);
 
   const openComments = comments.filter((c) => !c.resolved);
 
@@ -3715,6 +3767,7 @@ export default function App() {
 
                           <PlanMedia plan={pl} canUpload={!!project.shareId} main={theme.main} accent={theme.accent}
                             comments={comments} onPostComment={postPlanComment} onResolveComment={resolveComment}
+                            onShare={() => publishPlanShare(pl.id)} sharing={sharing}
                             onUploadVideo={(f, p) => uploadVideo(f, pl.id, p)}
                             onYouTube={(u) => registerYouTubeUrl(pl.id, u)}
                             onRemoveVideo={() => removeVideo(pl.id)}
@@ -4297,13 +4350,15 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShareModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">{(shareModal.live ? "編集用リンクを" : shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
+              <h3 className="text-sm font-bold tracking-wider">{(shareModal.live ? "編集用リンクを" : shareModal.planShare ? "企画の試写リンクを" : shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
               <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
                 {shareModal.live
                   ? <>このURLを渡すと、先方が<span className="font-bold">構成台本をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
+                  : shareModal.planShare
+                  ? <>このURLは<span className="font-bold">この企画の動画・素材・コメントだけ</span>の専用ページです。先方は動画を見て（0.5〜4倍速）、時間を指定してコメントできます。コメントは右上💬とアプリ内の企画カードに届きます。</>
                   : shareModal.channel
                   ? <>このURLで<span className="font-bold">チャンネルのコンセプト＋配下の{shareModal.caseCount || 0}案件</span>をまとめて見せられます（読み取り専用）。チーム共有やクライアント説明用に。</>
                   : <>このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上のコメントボタンに届きます。</>}
