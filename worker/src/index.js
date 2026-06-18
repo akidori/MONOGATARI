@@ -459,8 +459,8 @@ export default {
 
       // ===== 大容量ファイル転送＋動画レビュー（R2） =====
       // 容量・件数のキャップ（先方=無認証アップの暴走防止）
-      const GUEST_MAX_SIZE = 2 * 1024 * 1024 * 1024;   // 先方 1ファイル上限 2GB
-      const OWNER_MAX_SIZE = 5 * 1024 * 1024 * 1024;   // AK 1ファイル上限 5GB（R2単発PUT上限）
+      const GUEST_MAX_SIZE = 2 * 1024 * 1024 * 1024;    // 先方 1ファイル上限 2GB
+      const OWNER_MAX_SIZE = 50 * 1024 * 1024 * 1024;   // AK 1ファイル上限 50GB（48MBチャンク×約1066パート＝R2上限1万以内）
       const GUEST_MAX_COUNT = 50;                       // 先方アップの件数上限/案件
 
       // ブラウザ→Worker→R2 のマルチパートアップロード（S3鍵・presign不要）。
@@ -481,7 +481,7 @@ export default {
           const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
           if (ups.length >= GUEST_MAX_COUNT) return json({ error: "アップロード件数の上限に達しています" }, 429);
         } else if (size > OWNER_MAX_SIZE) {
-          return json({ error: "ファイルが大きすぎます（5GBまで）" }, 413);
+          return json({ error: "ファイルが大きすぎます（50GBまで）" }, 413);
         }
         const key = "f/" + snap + "/" + rid(8) + "-" + Date.now();
         const mpu = await env.FILES.createMultipartUpload(key, {
