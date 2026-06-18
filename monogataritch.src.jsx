@@ -151,6 +151,8 @@ const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format
   rows: format === "talk" ? [] : templateRows(),
   talk: format === "talk" ? newTalk() : null,
   plans: [],
+  video: null,
+  files: [],
 });
 
 /* 案件データの欠損補完 */
@@ -181,6 +183,8 @@ const migrateProject = (p) => {
     talk: p.format === "talk"
       ? { ...newTalk(), ...(p.talk || {}), toc: (p.talk && p.talk.toc && p.talk.toc.length) ? p.talk.toc : [""], body: (p.talk && p.talk.body && p.talk.body.length) ? p.talk.body : [newTalkBody()] }
       : (p.talk || null),
+    video: p.video || null,
+    files: Array.isArray(p.files) ? p.files : [],
   };
 };
 
@@ -773,6 +777,12 @@ export default function App() {
   const [comments, setComments] = useState([]);             // 現案件の先方コメント
   const [showComments, setShowComments] = useState(false);
   const saveTimer = useRef(null);
+  /* 動画確認＋ファイル転送 */
+  const [showMediaModal, setShowMediaModal] = useState(false); // 動画/ファイル登録モーダル
+  const [ytInput, setYtInput] = useState("");                // YouTube URL入力
+  const [retention, setRetention] = useState(90);            // アップロードの保存期限（日）。0=無期限
+  const [mediaBusy, setMediaBusy] = useState("");            // アップロード中の表示メッセージ
+  const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
 
   /* フォント */
   useEffect(() => {
@@ -1693,6 +1703,106 @@ export default function App() {
     setSharing(false);
   };
 
+  /* ---- 動画確認＋ファイル転送（R2） ---- */
+  /* 共有済みスナップショットへ video/files を静かに反映（共有モーダルは出さない） */
+  const syncProjectToShare = async (proj) => {
+    if (!proj.shareId) return;
+    try {
+      await fetch(SHARE_API + "/api/publish", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project: { ...proj, channelInfo: curChannelInfo }, prevId: proj.shareId, token: proj.shareToken }),
+      });
+    } catch (e) {}
+  };
+  const saveProject = async (next) => {
+    setProject(next);
+    try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
+  };
+  /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要・GB級対応）。meta を返す */
+  const uploadToR2 = async (file) => {
+    const CHUNK = 48 * 1024 * 1024;
+    const extra = { token: project.shareToken, retention };
+    const cr = await fetch(SHARE_API + "/api/file/mpu/create", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snap: project.shareId, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
+    });
+    const cd = await cr.json();
+    if (!cd.uploadId) throw new Error(cd.error || "開始に失敗");
+    const total = Math.max(1, Math.ceil(file.size / CHUNK));
+    const parts = [];
+    for (let i = 0; i < total; i++) {
+      const start = i * CHUNK, blob = file.slice(start, Math.min(file.size, start + CHUNK));
+      const etag = await new Promise((res, rej) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("PUT", SHARE_API + "/api/file/mpu/part?key=" + encodeURIComponent(cd.key) + "&uploadId=" + encodeURIComponent(cd.uploadId) + "&part=" + (i + 1));
+        xhr.upload.onprogress = (e) => { if (e.lengthComputable) setMediaProg(Math.min(100, Math.round((start + e.loaded) / file.size * 100))); };
+        xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) { try { res(JSON.parse(xhr.responseText).etag); } catch (_) { rej(new Error("part応答不正")); } } else rej(new Error("part失敗(" + xhr.status + ")")); };
+        xhr.onerror = () => rej(new Error("通信エラー"));
+        xhr.send(blob);
+      });
+      parts.push({ partNumber: i + 1, etag });
+    }
+    const fr = await fetch(SHARE_API + "/api/file/mpu/complete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snap: project.shareId, key: cd.key, uploadId: cd.uploadId, parts, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
+    });
+    const fd = await fr.json();
+    if (!fd.file) throw new Error(fd.error || "確定に失敗");
+    return fd.file;
+  };
+  /* mp4 を動画として登録 */
+  const uploadVideo = async (file) => {
+    if (!project.shareId) { showToast("先に共有リンクを発行してね"); return; }
+    if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
+    setMediaBusy("動画をアップロード中…"); setMediaProg(0);
+    try {
+      const meta = await uploadToR2(file);
+      const next = { ...project, video: { type: "mp4", key: meta.key, name: meta.name, title: project.video && project.video.title || file.name } };
+      await saveProject(next);
+      await syncProjectToShare(next);
+      showToast("動画を登録したよ");
+    } catch (e) { showToast("動画アップロードに失敗：" + (e.message || e)); }
+    setMediaBusy("");
+  };
+  /* YouTube URL を動画として登録 */
+  const registerYouTube = async () => {
+    const vid = ytIdFromUrl(ytInput);
+    if (!vid) { showToast("YouTubeのURLが正しくないみたい"); return; }
+    const next = { ...project, video: { type: "youtube", url: "https://www.youtube.com/watch?v=" + vid, title: project.video && project.video.title || "" } };
+    await saveProject(next);
+    await syncProjectToShare(next);
+    setYtInput("");
+    showToast("YouTube動画を登録したよ");
+  };
+  const removeVideo = async () => {
+    const v = project.video;
+    const next = { ...project, video: null };
+    await saveProject(next);
+    await syncProjectToShare(next);
+    if (v && v.type === "mp4" && v.key) {
+      try { await fetch(SHARE_API + "/api/file/" + v.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {}
+    }
+  };
+  /* 転送ファイルを追加 */
+  const uploadFile = async (file) => {
+    if (!project.shareId) { showToast("先に共有リンクを発行してね"); return; }
+    setMediaBusy("アップロード中…"); setMediaProg(0);
+    try {
+      const meta = await uploadToR2(file);
+      const next = { ...project, files: [...(project.files || []), meta] };
+      await saveProject(next);
+      await syncProjectToShare(next);
+      showToast("ファイルを追加したよ");
+    } catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
+    setMediaBusy("");
+  };
+  const deleteFile = async (key) => {
+    const next = { ...project, files: (project.files || []).filter((f) => f.key !== key) };
+    await saveProject(next);
+    await syncProjectToShare(next);
+    try { await fetch(SHARE_API + "/api/file/" + key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {}
+  };
+
   /* ---- 先方コメント ---- */
   const fetchComments = async (sid) => {
     const id = sid || (project && project.shareId);
@@ -2390,6 +2500,10 @@ export default function App() {
                 <button onClick={() => { setShareMenu(false); publishShare(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
                   {project.shareId ? "共有リンクを更新" : "共有リンクを発行"}
+                </button>
+                <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m22 8-6 4 6 4V8Z" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
+                  動画確認・ファイル転送
                 </button>
                 <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptTSV)(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" /></svg>
@@ -3927,6 +4041,93 @@ export default function App() {
                 <a href={shareModal.url} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: theme.main }}>プレビューを開く ↗</a>
                 <span className="text-[10px] text-stone-400">内容を直したら「共有を更新」で同じURLに反映されます</span>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 動画確認・ファイル転送 モーダル ===== */}
+      {showMediaModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !mediaBusy && setShowMediaModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between sticky top-0 z-10" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider">動画確認・ファイル転送</h3>
+              <button onClick={() => !mediaBusy && setShowMediaModal(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-5">
+              {!project.shareId ? (
+                <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-[12px] text-amber-800">
+                  先に<span className="font-bold">共有リンクを発行</span>してね。発行すると、ここに動画やファイルを載せて先方に確認してもらえるよ。
+                  <div className="mt-3"><button onClick={() => { setShowMediaModal(false); publishShare(); }} className="text-[11px] font-bold px-4 py-2 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>共有リンクを発行</button></div>
+                </div>
+              ) : (
+                <>
+                  {/* 保存期限 */}
+                  <div className="flex items-center gap-2 text-[12px]">
+                    <span className="font-bold text-stone-600">保存期限</span>
+                    <select value={retention} onChange={(e) => setRetention(+e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[12px]">
+                      <option value={30}>30日</option>
+                      <option value={90}>90日</option>
+                      <option value={0}>無期限</option>
+                    </select>
+                    <span className="text-[10px] text-stone-400">アップロードするファイルに適用</span>
+                  </div>
+
+                  {/* 動画確認 */}
+                  <div>
+                    <div className="text-[12px] font-bold text-stone-700 mb-2">🎬 確認用の動画</div>
+                    {project.video ? (
+                      <div className="rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 flex items-center gap-2">
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: theme.main, color: mainText }}>{project.video.type === "youtube" ? "YouTube" : "mp4"}</span>
+                        <span className="flex-1 min-w-0 truncate text-[12px]">{project.video.title || project.video.name || project.video.url}</span>
+                        <button onClick={removeVideo} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
+                          <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadVideo(f); e.target.value = ""; }} />
+                          ⬆ mp4をアップロード（0.5〜4倍速で確認できる）
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input value={ytInput} onChange={(e) => setYtInput(e.target.value)} placeholder="または YouTube限定公開URL を貼る" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-1.5 text-[12px] focus:outline-none" />
+                          <button onClick={registerYouTube} className="text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>登録</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ファイル転送 */}
+                  <div>
+                    <div className="text-[12px] font-bold text-stone-700 mb-2">📁 ファイル転送（元のファイル名のまま渡せる）</div>
+                    {(project.files || []).length > 0 && (
+                      <div className="space-y-1.5 mb-2">
+                        {(project.files || []).map((f) => (
+                          <div key={f.key} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12px] font-semibold text-stone-800 truncate">{f.name}</div>
+                              <div className="text-[10px] text-stone-400" style={{ fontFamily: mono }}>{f.size >= 1073741824 ? (f.size / 1073741824).toFixed(2) + " GB" : f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(f.size / 1024)) + " KB"}{f.expiresAt ? " ・" + (f.expiresAt || "").slice(0, 10) + "まで" : " ・無期限"}</div>
+                            </div>
+                            <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>⬇</a>
+                            <button onClick={() => deleteFile(f.key)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
+                      <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadFile(f); e.target.value = ""; }} />
+                      ⬆ ファイルを追加（最大5GB）
+                    </label>
+                    <p className="text-[10px] text-stone-400 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。</p>
+                  </div>
+
+                  {mediaBusy && (
+                    <div className="rounded-lg bg-stone-50 border border-stone-200 p-3">
+                      <div className="text-[11px] text-stone-500 mb-1">{mediaBusy} {mediaProg}%</div>
+                      <div className="h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full" style={{ width: mediaProg + "%", background: theme.accent }} /></div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

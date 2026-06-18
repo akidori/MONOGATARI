@@ -77,6 +77,7 @@ async function load(){
     if(!sR.ok){ document.getElementById("loading").innerHTML = "この共有リンクは見つかりませんでした。<br>発行者にURLを確認してください。"; return; }
     SNAP = await sR.json();
     COMMENTS = (await cR.json()).comments || [];
+    try{ const uR = await fetch(API+"/api/snap/"+ID+"/uploads"); if(uR.ok) UPLOADS = (await uR.json()).uploads || []; }catch(e){}
     render();
   }catch(e){
     document.getElementById("loading").textContent = "読み込みに失敗しました：" + e.message;
@@ -98,7 +99,15 @@ function scoreVideo(info){
 }
 
 let TAB = "script";
-function setTab(t){ TAB = t; render(); }
+/* 動画確認タブ用の状態 */
+let UPLOADS = [];          // 先方アップロード一覧（/api/snap/{id}/uploads）
+let ytPlayer = null;       // YouTube IFrame Player
+let videoEl = null;        // HTML5 video 要素
+let ytTimer = null;        // YouTube の再生位置ポーリング
+function setTab(t){
+  if(TAB==="video" && t!=="video"){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; }
+  TAB = t; render();
+}
 
 /* ── 構成台本ペイン（コメント機能つき） ── */
 function paneScript(p, accent, main){
@@ -274,6 +283,9 @@ function render(){
   if(hasPlans) tabs.push(["plan","企画・サムネ"]);
   tabs.push(["script","構成台本"]);
   if(!isTalk) tabs.push(["kouban","香盤表"]);
+  const hasVideo = !!(p.video && (p.video.url || p.video.key));
+  if(hasVideo) tabs.push(["video","動画確認"]);
+  tabs.push(["files","ファイル"]);
   if(!tabs.some(t=>t[0]===TAB)) TAB = "script";
 
   const tabBar = `<div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto">${tabs.map(([k,label])=>
@@ -282,6 +294,8 @@ function render(){
   const pane = TAB==="concept" ? paneConcept(p)
     : TAB==="plan" ? panePlans(p)
     : TAB==="kouban" ? paneKouban(p)
+    : TAB==="video" ? paneVideo(p, accent, main)
+    : TAB==="files" ? paneFiles(p, accent, main)
     : isTalk ? paneTalk(p, accent, main)
     : paneScript(p, accent, main);
 
@@ -309,6 +323,8 @@ function render(){
 
   document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
   document.querySelectorAll(".cbtn").forEach(b => b.addEventListener("click", () => toggleComments(b.dataset.c, b.dataset.l)));
+  if(TAB==="video") mountVideo(p, accent, main);
+  if(TAB==="files") mountFiles(p, accent, main);
 }
 
 function renderChannel(){
@@ -424,6 +440,175 @@ async function postComment(sid, label){
     btn.disabled=false; btn.textContent="送信";
     alert("送信に失敗しました：" + e.message);
   }
+}
+
+/* ───────── 動画確認タブ（Frame.io風） ───────── */
+function fmtTC(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), sec=Math.floor(s%60), cs=Math.floor((s*100)%100); return `${m}:${String(sec).padStart(2,"0")}.${String(cs).padStart(2,"0")}`; }
+function ytId(u){ const m=(u||"").match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/)([A-Za-z0-9_-]{11})/); return m?m[1]:""; }
+function rateButtons(type){
+  const rates = type==="youtube" ? [0.5,1,1.5,2] : [0.5,1,1.5,2,3,4];
+  return rates.map(r=>`<button data-rate="${r}" class="vc-rate text-[11px] mono px-2 py-1 rounded border border-stone-200 ${r===1?'bg-stone-100':''}">${r}x</button>`).join("");
+}
+function paneVideo(p, accent, main){
+  const v = p.video||{};
+  return `
+    <div>
+      ${v.title?`<div class="text-[14px] font-bold mb-2" style="color:${main}">${esc(v.title)}</div>`:""}
+      <div class="rounded-xl overflow-hidden bg-black mb-2" style="aspect-ratio:16/9"><div id="vc-player" class="w-full h-full"></div></div>
+      <div class="flex items-center gap-2 flex-wrap mb-3">
+        <span class="text-[11px] text-stone-400">再生速度</span>
+        <div class="flex gap-1">${rateButtons(v.type)}</div>
+        <div id="vc-tc" class="ml-auto mono text-[13px] font-bold" style="color:${main}">0:00.00</div>
+        <button id="vc-add" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shadow" style="background:${accent}">＋ ここにコメント</button>
+      </div>
+      <div id="vc-form" class="hidden mb-3"></div>
+      <div id="vc-list"></div>
+      <p class="text-center text-[11px] text-stone-400 mt-6 leading-relaxed">再生を止めて「＋ ここにコメント」で、その時間に修正依頼を残せます。コメントの ▶ で頭出しできます。</p>
+    </div>`;
+}
+function mountVideo(p, accent, main){
+  const v = p.video||{};
+  const stage = document.getElementById("vc-player");
+  if(!stage) return;
+  if(v.type==="youtube"){
+    const id = ytId(v.url);
+    const make = ()=>{
+      ytPlayer = new YT.Player("vc-player", { videoId:id, playerVars:{rel:0, modestbranding:1, playsinline:1},
+        events:{ onReady:()=>{ if(ytTimer) clearInterval(ytTimer); ytTimer=setInterval(()=>{ if(ytPlayer&&ytPlayer.getCurrentTime){ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(ytPlayer.getCurrentTime()); } },200); } } });
+    };
+    if(window.YT && window.YT.Player){ make(); }
+    else { window.onYouTubeIframeAPIReady = make; if(!document.getElementById("yt-api")){ const s=document.createElement("script"); s.id="yt-api"; s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s); } }
+  } else {
+    videoEl = document.createElement("video");
+    videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||"");
+    videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
+    stage.replaceWith(videoEl); videoEl.id = "vc-player";
+    videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
+  }
+  document.querySelectorAll(".vc-rate").forEach(b=>b.addEventListener("click", ()=>{
+    setRate(+b.dataset.rate);
+    document.querySelectorAll(".vc-rate").forEach(x=>x.classList.remove("bg-stone-100"));
+    b.classList.add("bg-stone-100");
+  }));
+  const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main));
+  renderVideoList(accent, main);
+}
+function setRate(r){ if(videoEl){ videoEl.playbackRate=r; } else if(ytPlayer&&ytPlayer.setPlaybackRate){ ytPlayer.setPlaybackRate(r); } }
+function curTime(){ if(videoEl) return videoEl.currentTime||0; if(ytPlayer&&ytPlayer.getCurrentTime) return ytPlayer.getCurrentTime()||0; return 0; }
+function seekTo(sec){ sec=+sec||0; if(videoEl){ videoEl.currentTime=sec; const pr=videoEl.play&&videoEl.play(); if(pr&&pr.catch) pr.catch(()=>{}); } else if(ytPlayer&&ytPlayer.seekTo){ ytPlayer.seekTo(sec,true); if(ytPlayer.playVideo) ytPlayer.playVideo(); } }
+function videoComments(){ return COMMENTS.filter(c=>typeof c.timecode==="number").sort((a,b)=>a.timecode-b.timecode); }
+function renderVideoList(accent, main){
+  const el=document.getElementById("vc-list"); if(!el) return;
+  const list=videoComments();
+  el.innerHTML = list.length ? list.map(c=>`
+    <div class="rounded-lg border ${c.resolved?'bg-emerald-50 border-emerald-200':'bg-stone-50 border-stone-200'} px-3 py-2 mb-1.5">
+      <div class="flex items-center gap-2">
+        <button data-seek="${c.timecode}" class="vc-seek mono text-[11px] font-bold px-2 py-0.5 rounded text-white" style="background:${accent}">▶ ${fmtTC(c.timecode)}</button>
+        <span class="text-[11px] font-bold text-stone-600">${esc(c.author||"ゲスト")}${c.resolved?' <span class="text-emerald-600">✓対応済</span>':''}</span>
+        <span class="ml-auto text-[10px] text-stone-400">${fmtTime(c.createdAt)}</span>
+      </div>
+      <div class="text-[12.5px] text-stone-800 whitespace-pre-wrap break-words mt-1">${esc(c.text)}</div>
+    </div>`).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだコメントはありません。</div>';
+  el.querySelectorAll(".vc-seek").forEach(b=>b.addEventListener("click", ()=>seekTo(+b.dataset.seek)));
+}
+function openVideoForm(accent, main){
+  const sec=curTime();
+  const f=document.getElementById("vc-form"); if(!f) return;
+  f.classList.remove("hidden");
+  f.innerHTML = `
+    <div class="rounded-lg border border-stone-200 bg-white p-2">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="mono text-[12px] font-bold px-2 py-0.5 rounded text-white" style="background:${accent}">${fmtTC(sec)}</span>
+        <span class="text-[11px] text-stone-400">この時間にコメント</span>
+      </div>
+      <input id="vc-au" value="${esc(AUTHOR)}" placeholder="お名前（任意）" class="w-full text-[12px] px-2 py-1.5 mb-1.5 bg-stone-50 rounded focus:outline-none">
+      <textarea id="vc-tx" rows="2" placeholder="修正依頼・気になる点…" class="w-full text-[13px] px-2 py-1.5 border border-stone-200 rounded focus:outline-none resize-y"></textarea>
+      <div class="flex justify-end gap-2 mt-1.5">
+        <button id="vc-cancel" class="text-[11px] text-stone-400 px-3 py-1.5">キャンセル</button>
+        <button id="vc-send" class="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg shadow" style="background:var(--main)">送信</button>
+      </div>
+    </div>`;
+  const tx=document.getElementById("vc-tx"); if(tx) tx.focus();
+  document.getElementById("vc-cancel").addEventListener("click", ()=>{ f.classList.add("hidden"); f.innerHTML=""; });
+  document.getElementById("vc-send").addEventListener("click", ()=>postVideoComment(sec, accent, main));
+}
+async function postVideoComment(sec, accent, main){
+  const tx=document.getElementById("vc-tx"), au=document.getElementById("vc-au");
+  const text=(tx.value||"").trim(); if(!text){ tx.focus(); return; }
+  AUTHOR=(au.value||"").trim(); try{ localStorage.setItem("mg:shareAuthor", AUTHOR); }catch(e){}
+  const btn=document.getElementById("vc-send"); btn.disabled=true; btn.textContent="送信中…";
+  try{
+    const r=await fetch(API+"/api/snap/"+ID+"/comments", { method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ timecode:sec, videoKey:(SNAP.project.video&&SNAP.project.video.key)||"", author:AUTHOR||"ゲスト", text }) });
+    const d=await r.json();
+    if(d.comment){ COMMENTS.push(d.comment); const f=document.getElementById("vc-form"); f.classList.add("hidden"); f.innerHTML=""; renderVideoList(accent, main); }
+    else throw new Error(d.error||"送信失敗");
+  }catch(e){ btn.disabled=false; btn.textContent="送信"; alert("送信に失敗しました："+e.message); }
+}
+
+/* ───────── ファイル転送タブ（DL＋先方アップ） ───────── */
+function fmtBytes(n){ n=+n||0; if(n>=1073741824) return (n/1073741824).toFixed(2)+" GB"; if(n>=1048576) return (n/1048576).toFixed(1)+" MB"; if(n>=1024) return (n/1024).toFixed(0)+" KB"; return n+" B"; }
+function paneFiles(p, accent, main){
+  return `
+    <div>
+      <div id="fl-list"></div>
+      <div class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3">
+        <div class="text-[12px] font-bold text-stone-600 mb-1">ファイルを送る</div>
+        <div class="text-[11px] text-stone-400 mb-2">素材や資料をアップロードできます（1ファイル2GBまで）。</div>
+        <input id="fl-input" type="file" class="text-[12px]">
+        <div id="fl-prog" class="hidden mt-2"><div class="h-1.5 bg-stone-200 rounded overflow-hidden"><div id="fl-bar" class="h-full" style="width:0%;background:${accent}"></div></div><div id="fl-pct" class="text-[10px] text-stone-400 mt-1">0%</div></div>
+      </div>
+    </div>`;
+}
+function mountFiles(p, accent, main){
+  renderFileList(p, accent, main);
+  const inp=document.getElementById("fl-input");
+  if(inp) inp.addEventListener("change", ()=>{ if(inp.files&&inp.files[0]) guestUpload(inp.files[0], p, accent, main); });
+}
+function renderFileList(p, accent, main){
+  const el=document.getElementById("fl-list"); if(!el) return;
+  const all=(p.files||[]).map(f=>({...f,by:"owner"})).concat((UPLOADS||[]).map(f=>({...f,by:"guest"})));
+  el.innerHTML = all.length ? all.map(f=>`
+    <div class="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2 mb-1.5">
+      <div class="flex-1 min-w-0">
+        <div class="text-[13px] font-semibold text-stone-800 truncate">${esc(f.name||"file")}</div>
+        <div class="text-[10px] text-stone-400 mono">${fmtBytes(f.size)}${f.by==="guest"?" ・先方アップ":""}${f.expiresAt?` ・${fmtTime(f.expiresAt)}まで`:""}</div>
+      </div>
+      <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shrink-0" style="background:${main}">⬇ DL</a>
+    </div>`).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだファイルはありません。</div>';
+}
+/* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要）。onProg(0-100) */
+async function mpuUpload(file, extra, onProg){
+  const CHUNK = 48*1024*1024;
+  const cr = await fetch(API+"/api/file/mpu/create", { method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream" }, extra||{})) });
+  const cd = await cr.json(); if(!cd.uploadId) throw new Error(cd.error||"開始に失敗");
+  const total = Math.max(1, Math.ceil(file.size/CHUNK));
+  const parts = [];
+  for(let i=0;i<total;i++){
+    const start=i*CHUNK, blob=file.slice(start, Math.min(file.size, start+CHUNK));
+    const etag = await new Promise((res,rej)=>{ const xhr=new XMLHttpRequest();
+      xhr.open("PUT", API+"/api/file/mpu/part?key="+encodeURIComponent(cd.key)+"&uploadId="+encodeURIComponent(cd.uploadId)+"&part="+(i+1));
+      xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg) onProg(Math.min(100, Math.round((start+e.loaded)/file.size*100))); };
+      xhr.onload=()=>{ if(xhr.status>=200&&xhr.status<300){ try{ res(JSON.parse(xhr.responseText).etag); }catch(_){ rej(new Error("part応答不正")); } } else rej(new Error("part失敗("+xhr.status+")")); };
+      xhr.onerror=()=>rej(new Error("通信エラー")); xhr.send(blob); });
+    parts.push({ partNumber:i+1, etag });
+  }
+  const fr = await fetch(API+"/api/file/mpu/complete", { method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(Object.assign({ snap:ID, key:cd.key, uploadId:cd.uploadId, parts, name:file.name, size:file.size, mime:file.type||"application/octet-stream" }, extra||{})) });
+  const fd = await fr.json(); if(!fd.file) throw new Error(fd.error||"確定に失敗");
+  return fd.file;
+}
+async function guestUpload(file, p, accent, main){
+  const prog=document.getElementById("fl-prog"), bar=document.getElementById("fl-bar"), pct=document.getElementById("fl-pct");
+  if(prog) prog.classList.remove("hidden");
+  try{
+    const meta = await mpuUpload(file, {}, (v)=>{ if(bar){ bar.style.width=v+"%"; pct.textContent=v+"%"; } });
+    UPLOADS.push(meta);
+    if(prog) prog.classList.add("hidden"); if(bar){ bar.style.width="0%"; pct.textContent="0%"; }
+    const inp=document.getElementById("fl-input"); if(inp) inp.value="";
+    renderFileList(p, accent, main);
+  }catch(e){ if(prog) prog.classList.add("hidden"); alert("アップロードに失敗しました："+e.message); }
 }
 
 load();

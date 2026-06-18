@@ -13,3 +13,13 @@ GOOGLE_CLIENT_ID = "177151250196-ta2k23m2fe1ac9bras75ajk6ia79h88k.apps.googleuse
 [[kv_namespaces]]
 binding = "SNAPS"
 id = "dae9e99997cc4ad29722f28f4c23476f"
+
+# 大容量ファイル転送＋動画レビュー用 R2
+# 初回: npx wrangler r2 bucket create mg-files
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "mg-files"
+
+# 期限切れファイルの自動削除（毎日 UTC18:00 = JST3:00）
+[triggers]
+crons = ["0 18 * * *"]

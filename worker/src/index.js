@@ -11,7 +11,7 @@
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization",
   "Access-Control-Max-Age": "86400",
 };
@@ -273,6 +273,8 @@ export default {
           sceneLabel: (b.sceneLabel || "").toString().slice(0, 200),
           author: (b.author || "ゲスト").toString().slice(0, 60),
           text,
+          timecode: (typeof b.timecode === "number" && isFinite(b.timecode)) ? Math.max(0, b.timecode) : null,
+          videoKey: (b.videoKey || "").toString().slice(0, 80) || null,
           createdAt: new Date().toISOString(),
           resolved: false,
         };
@@ -433,10 +435,139 @@ export default {
         return json({ error: "unknown collab op" }, 400);
       }
 
+      // ===== 大容量ファイル転送＋動画レビュー（R2） =====
+      // 容量・件数のキャップ（先方=無認証アップの暴走防止）
+      const GUEST_MAX_SIZE = 2 * 1024 * 1024 * 1024;   // 先方 1ファイル上限 2GB
+      const OWNER_MAX_SIZE = 5 * 1024 * 1024 * 1024;   // AK 1ファイル上限 5GB（R2単発PUT上限）
+      const GUEST_MAX_COUNT = 50;                       // 先方アップの件数上限/案件
+
+      // ブラウザ→Worker→R2 のマルチパートアップロード（S3鍵・presign不要）。
+      // 大容量はクライアントがチャンク分割し、各パートを PUT で Worker に送る。
+
+      // POST /api/file/mpu/create  { snap, name, size, mime, token? } → { key, uploadId }
+      if (request.method === "POST" && parts[1] === "file" && parts[2] === "mpu" && parts[3] === "create") {
+        const b = await request.json();
+        const snap = (b.snap || "").toString().slice(0, 16);
+        if (!snap) return json({ error: "snap がありません" }, 400);
+        if (!(await env.SNAPS.get("snap:" + snap)) && !(await env.SNAPS.get("chan:" + snap)))
+          return json({ error: "not found" }, 404);
+        const tok = await env.SNAPS.get("tok:" + snap);
+        const isOwner = !!tok && tok === (b.token || "");
+        const size = Math.max(0, +b.size || 0);
+        if (!isOwner) {
+          if (size > GUEST_MAX_SIZE) return json({ error: "ファイルが大きすぎます（先方アップは2GBまで）" }, 413);
+          const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
+          if (ups.length >= GUEST_MAX_COUNT) return json({ error: "アップロード件数の上限に達しています" }, 429);
+        } else if (size > OWNER_MAX_SIZE) {
+          return json({ error: "ファイルが大きすぎます（5GBまで）" }, 413);
+        }
+        const key = "f/" + snap + "/" + rid(8) + "-" + Date.now();
+        const mpu = await env.FILES.createMultipartUpload(key, {
+          httpMetadata: { contentType: (b.mime || "application/octet-stream").toString().slice(0, 120) },
+        });
+        return json({ key, uploadId: mpu.uploadId });
+      }
+
+      // PUT /api/file/mpu/part?key=&uploadId=&part=N   (body=チャンク) → { partNumber, etag }
+      if (request.method === "PUT" && parts[1] === "file" && parts[2] === "mpu" && parts[3] === "part") {
+        const key = url.searchParams.get("key") || "";
+        const uploadId = url.searchParams.get("uploadId") || "";
+        const partNumber = +(url.searchParams.get("part") || 0);
+        if (!key || !uploadId || !partNumber) return json({ error: "パラメータ不足" }, 400);
+        const mpu = env.FILES.resumeMultipartUpload(key, uploadId);
+        const body = await request.arrayBuffer();
+        const uploaded = await mpu.uploadPart(partNumber, body);
+        return json({ partNumber, etag: uploaded.etag });
+      }
+
+      // POST /api/file/mpu/complete  { snap, key, uploadId, parts, name, size, mime, token?, retention } → { file }
+      if (request.method === "POST" && parts[1] === "file" && parts[2] === "mpu" && parts[3] === "complete") {
+        const b = await request.json();
+        const snap = (b.snap || "").toString().slice(0, 16);
+        const key = (b.key || "").toString();
+        if (!snap || !key || !key.startsWith("f/" + snap + "/")) return json({ error: "不正なキーです" }, 400);
+        const tok = await env.SNAPS.get("tok:" + snap);
+        const isOwner = !!tok && tok === (b.token || "");
+        const mpu = env.FILES.resumeMultipartUpload(key, (b.uploadId || "").toString());
+        const partList = (Array.isArray(b.parts) ? b.parts : []).map((p) => ({ partNumber: +p.partNumber, etag: (p.etag || "").toString() }));
+        await mpu.complete(partList);
+        const ret = +b.retention; // 30 | 90 | 0(無期限)
+        const days = ret === 30 || ret === 90 ? ret : 0;
+        const meta = {
+          key,
+          name: (b.name || "file").toString().slice(0, 255),
+          size: Math.max(0, +b.size || 0),
+          mime: (b.mime || "application/octet-stream").toString().slice(0, 120),
+          uploadedAt: now(),
+          expiresAt: days ? new Date(Date.now() + days * 86400000).toISOString() : null,
+          by: isOwner ? "owner" : "guest",
+        };
+        await env.SNAPS.put("file:" + key, JSON.stringify(meta));
+        // 先方アップは案件ごとの一覧 file_up:{snap} に積む（owner はクライアントが project.files に保持）
+        if (!isOwner) {
+          const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
+          ups.push(meta);
+          await env.SNAPS.put("file_up:" + snap, JSON.stringify(ups));
+        }
+        return json({ file: meta });
+      }
+
+      // GET /api/snap/{id}/uploads  → 先方アップロード一覧
+      if (request.method === "GET" && parts[1] === "snap" && parts[3] === "uploads" && !parts[4]) {
+        const ups = (await env.SNAPS.get("file_up:" + parts[2], "json")) || [];
+        return json({ uploads: ups });
+      }
+
+      // GET /api/file/{key...}?dl=1  → R2 から原本ストリーム配信（Range対応・元ファイル名復元）
+      if (request.method === "GET" && parts[1] === "file" && parts[2] && parts[2] !== "mpu") {
+        const key = parts.slice(2).join("/");
+        const meta = (await env.SNAPS.get("file:" + key, "json")) || {};
+        const obj = await env.FILES.get(key, { range: request.headers, onlyIf: request.headers });
+        if (!obj) return json({ error: "not found" }, 404);
+        const h = new Headers(CORS);
+        obj.writeHttpMetadata(h);
+        h.set("Content-Type", meta.mime || h.get("Content-Type") || "application/octet-stream");
+        h.set("etag", obj.httpEtag);
+        h.set("Accept-Ranges", "bytes");
+        h.set("Access-Control-Expose-Headers", "Content-Length,Content-Range,Content-Disposition,ETag,Accept-Ranges");
+        const fname = meta.name || key.split("/").pop() || "download";
+        const dl = url.searchParams.get("dl");
+        h.set("Content-Disposition", `${dl ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fname)}`);
+        if (!("body" in obj) || !obj.body) return new Response(null, { status: 304, headers: h }); // onlyIf 不一致
+        if (obj.range) {
+          let start = 0, end = (obj.size || 1) - 1;
+          if ("suffix" in obj.range) { start = (obj.size || 0) - obj.range.suffix; end = (obj.size || 1) - 1; }
+          else { start = obj.range.offset || 0; end = obj.range.length != null ? start + obj.range.length - 1 : (obj.size || 1) - 1; }
+          h.set("Content-Range", `bytes ${start}-${end}/${obj.size}`);
+          return new Response(obj.body, { status: 206, headers: h });
+        }
+        return new Response(obj.body, { status: 200, headers: h });
+      }
+
+      // DELETE /api/file/{key...}?snap=&token=  → オーナーのみ削除
+      if (request.method === "DELETE" && parts[1] === "file" && parts[2]) {
+        const key = parts.slice(2).join("/");
+        const snap = url.searchParams.get("snap") || "";
+        const tok = await env.SNAPS.get("tok:" + snap);
+        if (!tok || tok !== (url.searchParams.get("token") || "")) return json({ error: "forbidden" }, 403);
+        await env.FILES.delete(key);
+        await env.SNAPS.delete("file:" + key);
+        let ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
+        const before = ups.length;
+        ups = ups.filter((f) => f.key !== key);
+        if (ups.length !== before) await env.SNAPS.put("file_up:" + snap, JSON.stringify(ups));
+        return json({ ok: true });
+      }
+
       return json({ error: "no route" }, 404);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 500);
     }
+  },
+
+  // ===== 期限切れファイルの自動削除（cron） =====
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(cleanupExpired(env));
   },
 };
 
@@ -481,6 +612,32 @@ async function requireUser(request, env) {
   return verifySession(m[1], sessionSecret(env));
 }
 
+/* ===== 期限切れファイルの掃除（cron から呼ぶ） ===== */
+async function cleanupExpired(env) {
+  const nowMs = Date.now();
+  let cursor;
+  do {
+    const res = await env.SNAPS.list({ prefix: "file:", cursor, limit: 1000 });
+    for (const k of res.keys) {
+      const meta = await env.SNAPS.get(k.name, "json");
+      if (meta && meta.expiresAt && new Date(meta.expiresAt).getTime() < nowMs) {
+        const key = k.name.slice("file:".length);
+        await env.FILES.delete(key);
+        await env.SNAPS.delete(k.name);
+        // 案件アップ一覧からも除去（file_up:{snap}）
+        const m = key.match(/^f\/([^/]+)\//);
+        if (m) {
+          const upKey = "file_up:" + m[1];
+          let ups = (await env.SNAPS.get(upKey, "json")) || [];
+          const filtered = ups.filter((f) => f.key !== key);
+          if (filtered.length !== ups.length) await env.SNAPS.put(upKey, JSON.stringify(filtered));
+        }
+      }
+    }
+    cursor = res.list_complete ? null : res.cursor;
+  } while (cursor);
+}
+
 /* 共有スナップショットは必要な項目だけに絞る（テーマ/原稿は残す、巨大化を防ぐ） */
 function slim(p) {
   return {
@@ -506,6 +663,21 @@ function slim(p) {
       refs: (pl.refs || []).map((rf) => ({ vid: rf.vid || "", title: rf.title || "", channel: rf.channel || "", views: rf.views || 0, subs: rf.subs || 0, uploadDate: rf.uploadDate || "", duration: rf.duration || "" })),
     })),
     channelInfo: slimCI(p.channelInfo),
+    video: p.video ? {
+      type: p.video.type === "youtube" ? "youtube" : "mp4",
+      url: (p.video.url || "").slice(0, 500),
+      key: (p.video.key || "").slice(0, 120),
+      title: (p.video.title || "").slice(0, 200),
+      name: (p.video.name || "").slice(0, 255),
+    } : null,
+    files: Array.isArray(p.files) ? p.files.slice(0, 200).map((f) => ({
+      key: (f.key || "").slice(0, 120),
+      name: (f.name || "").slice(0, 255),
+      size: +f.size || 0,
+      mime: (f.mime || "").slice(0, 120),
+      uploadedAt: f.uploadedAt || "",
+      expiresAt: f.expiresAt || null,
+    })) : [],
   };
 }
 
