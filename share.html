@@ -361,26 +361,30 @@ function renderChannel(){
     + (editable ? `<div class="rounded-xl border px-4 py-2.5 mb-4 text-[12px] flex items-start gap-2" style="border-color:${accentC};background:#fff;color:#57534e"><span style="color:${accentC}">✏️</span><span><span class="font-bold" style="color:${accentC}">編集できる共有です。</span>各案件を開いて「この案件を編集」から、企画・サムネ・構成台本を直接直せます（ログイン不要・直したらすぐ反映）。</span></div>` : "");
 
   if(CASE_SEL === null || !cases[CASE_SEL]){
-    // 企画一覧（カード）
-    const listHtml = cases.length ? `<div class="grid sm:grid-cols-2 gap-2.5">${cases.map((c,i)=>{
-      const th = caseThumb(c);
-      const badge = c.format==="talk" ? '🎙️ トーク' : '🎬 一日密着';
-      const sc = (c.rows||[]).filter(r=>r.kind==='scene').length;
-      const meta = c.format==="talk" ? `${(c.talk&&c.talk.body||[]).length}本編` : `${sc}シーン`;
-      return `<button data-case="${i}" class="caseopen text-left bg-white border border-stone-200 rounded-xl overflow-hidden hover:shadow-md transition-shadow flex">
-        <div class="w-24 shrink-0 bg-stone-100">${th?`<img src="${th}" class="w-full h-full object-cover">`:`<div class="w-full h-full aspect-video grid place-items-center text-stone-300 text-[10px]">no img</div>`}</div>
-        <div class="p-2.5 min-w-0 flex-1">
-          <div class="text-[10px] text-stone-400 mb-0.5">${badge} ・ ${meta}</div>
-          <div class="text-[13px] font-bold leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(caseTitle(c,i))}</div>
-          <div class="text-[11px] mt-1 font-bold" style="color:${accentC}">開く →</div>
-        </div></button>`;
+    // 企画一覧（アプリの「企画・サムネ」タブと同じ 1案件=1行 のリスト）
+    const listHtml = cases.length ? `<div class="space-y-1.5">${cases.map((c,i)=>{
+      const fv = (c.plans||[]).map(p=>(p.refs||[]).find(x=>x&&x.vid)).find(Boolean);
+      const vid = fv ? fv.vid : "";
+      const thumbText = (c.plans&&c.plans[0]&&c.plans[0].thumbText)||"";
+      const el = editLink(c);
+      return `<section class="rounded-xl border border-stone-200 bg-white overflow-hidden">
+        <div class="caseopen flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-stone-50" data-case="${i}">
+          <div class="shrink-0 w-6 h-6 grid place-items-center rounded-lg text-[11px] font-bold tabular-nums" style="background:#f5f5f4;color:#78716c">#${i+1}</div>
+          ${vid?`<img src="https://img.youtube.com/vi/${vid}/default.jpg" alt="" class="shrink-0 w-12 h-7 object-cover rounded">`:`<div class="shrink-0 w-12 h-7 rounded bg-stone-100 grid place-items-center text-[10px] text-stone-300">—</div>`}
+          <div class="flex-1 min-w-0 text-[13px] font-bold truncate">${esc(caseTitle(c,i))}</div>
+          ${thumbText?`<div class="hidden md:block w-44 shrink-0 text-[12px] font-bold text-stone-600 bg-stone-50 rounded-lg px-2 py-1.5 truncate">${esc(thumbText)}</div>`:`<div class="hidden md:block w-44 shrink-0 text-[12px] text-stone-300 px-2 py-1.5">サムネ文言</div>`}
+          ${el?`<a href="${el}" class="editbtn shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white" style="background:${accentC}" title="この案件を編集">✏️<span class="hidden sm:inline">編集</span></a>`:""}
+          <span class="shrink-0 text-[11px] font-bold whitespace-nowrap" style="color:${mainC}">開く →</span>
+        </div>
+      </section>`;
     }).join("")}</div>` : '<p class="text-stone-400 text-[12px] py-4 text-center">案件がありません</p>';
     document.getElementById("app").innerHTML = header
       + `<div class="mb-6">${paneConcept({channelInfo: ci})}</div>`
-      + `<div class="text-[11px] font-bold tracking-[0.15em] text-stone-400 mb-2">企画一覧（${cases.length}）</div>`
+      + `<div class="flex items-baseline justify-between mb-2"><div class="text-[11px] font-bold tracking-[0.15em] text-stone-400">企画一覧（${cases.length}）</div><div class="text-[11px] text-stone-400">1つの企画＝1本の動画</div></div>`
       + listHtml
       + `<p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
-    document.querySelectorAll(".caseopen").forEach(b=>b.addEventListener("click",()=>{ CASE_SEL=+b.dataset.case; CTAB="script"; window.scrollTo(0,0); renderChannel(); }));
+    document.querySelectorAll(".editbtn").forEach(a=>a.addEventListener("click",(e)=>e.stopPropagation()));
+    document.querySelectorAll(".caseopen").forEach(b=>b.addEventListener("click",()=>{ const c=cases[+b.dataset.case]; CASE_SEL=+b.dataset.case; CTAB=(c&&(c.plans||[]).length)?"plan":"script"; window.scrollTo(0,0); renderChannel(); }));
     return;
   }
 
