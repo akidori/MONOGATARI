@@ -3847,6 +3847,29 @@ export default function App() {
                       <span className="shrink-0 w-4 text-center text-[10px] text-stone-400 transition-transform" style={{ transform: expanded ? "none" : "rotate(-90deg)" }}>▾</span>
                     </div>
 
+                    {/* 折り畳み時：参考サムネを横並びで一覧表示（サムネ君風・クリックで展開して編集） */}
+                    {!expanded && (() => {
+                      const refs = (data && data.plans ? data.plans.flatMap((pl) => pl.refs || []) : []).filter((r) => r.vid);
+                      if (!refs.length) return null;
+                      return (
+                        <div className="px-2.5 pb-2 flex gap-1.5 overflow-x-auto cursor-pointer" onClick={() => openBoardCase(entry.id)}>
+                          {refs.map((rf, ri) => {
+                            const sc = rf.uploadDate ? scoreVideo(rf, Date.now()) : null;
+                            return (
+                              <div key={ri} className="shrink-0 w-32">
+                                <div className="relative">
+                                  <img src={"https://img.youtube.com/vi/" + rf.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover rounded-md border border-stone-200" />
+                                  {sc && <span className="absolute top-0.5 left-0.5 text-[9px] font-bold text-white px-1 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
+                                  {sc && <span className="absolute top-0.5 right-0.5 text-[8px] font-bold text-white bg-black/70 px-1 rounded" style={{ fontFamily: mono }}>{sc.ratioStr}</span>}
+                                </div>
+                                <div className="text-[9px] font-bold leading-tight mt-0.5 line-clamp-2 text-stone-600">{rf.title}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+
                     {/* 旧データ：複数企画案を持つ案件 → 分割導線 */}
                     {hasMulti && (
                       <div className="mx-2.5 mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-center justify-between gap-2">
