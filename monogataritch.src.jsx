@@ -541,12 +541,64 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
 function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80 }) {
   const ref = useRef(null);
   const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
-  useEffect(() => { resize(ref.current); }, [value]);
+  // 親へは合成イベント({target:{value}})で渡す＝呼び出し側のe.target.value流儀を維持
+  const [val, set, flush] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
+  useEffect(() => { resize(ref.current); }, [val]);
   return (
-    <textarea ref={ref} value={value} placeholder={placeholder} className={className}
+    <textarea ref={ref} value={val} placeholder={placeholder} className={className}
       style={{ overflow: "hidden", resize: "none", minHeight }}
-      onChange={(e) => { onChange(e); resize(e.target); }} />
+      onChange={(e) => { set(e.target.value); resize(e.target); }}
+      onBlur={flush} />
   );
+}
+
+/* ===== 入力のもたつき対策：ローカルバッファ =====
+   巨大な案件stateを1打鍵ごとに更新すると全行が再描画され重い。
+   打鍵は即ローカル反映し、親(updateRow→setProject)への反映は入力が
+   止まった瞬間だけdebounceで流す。外部更新(AI反映/共同編集)は即取り込む。 */
+function useBufferedField(value, onChange, delay = 220) {
+  const norm = value == null ? "" : value;
+  const [val, setVal] = useState(norm);
+  const sent = useRef(norm);      // 直近で親へ送った値
+  const pending = useRef(null);   // 未送信のローカル値
+  const timer = useRef(null);
+  const cbRef = useRef(onChange);
+  cbRef.current = onChange;
+  // 外部から値が変わった（自分の送信エコー以外）ら取り込む
+  useEffect(() => {
+    if (norm !== sent.current && norm !== val) {
+      setVal(norm); sent.current = norm; pending.current = null;
+      if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    }
+  }, [norm]);
+  const flush = () => {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    if (pending.current != null && pending.current !== sent.current) {
+      sent.current = pending.current; cbRef.current(pending.current);
+    }
+    pending.current = null;
+  };
+  const set = (nv) => {
+    setVal(nv); pending.current = nv;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(flush, delay);
+  };
+  useEffect(() => () => { flush(); }, []); // アンマウント時に未送信分を確定
+  return [val, set, flush];
+}
+
+function BufferedTextarea({ value, onChange, onBlur, ...rest }) {
+  const [val, set, flush] = useBufferedField(value, onChange);
+  return <textarea {...rest} value={val}
+    onChange={(e) => set(e.target.value)}
+    onBlur={(e) => { flush(); if (onBlur) onBlur(e); }} />;
+}
+
+function BufferedInput({ value, onChange, onBlur, ...rest }) {
+  const [val, set, flush] = useBufferedField(value, onChange);
+  return <input {...rest} value={val}
+    onChange={(e) => set(e.target.value)}
+    onBlur={(e) => { flush(); if (onBlur) onBlur(e); }} />;
 }
 
 /* ===== 住所オートコンプリート（Google Places）=====
@@ -621,6 +673,7 @@ function AddressField({ loc, onChange }) {
 function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
+  const [val, set, flush] = useBufferedField(value, onChange);
   const textStyle = {
     fontFamily: "inherit",
     fontSize,
@@ -635,10 +688,10 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize
     const ta = taRef.current;
     if (!ta) return;
     const s = ta.selectionStart, e = ta.selectionEnd;
-    const v = value || "";
+    const v = val || "";
     const sel = e > s ? v.slice(s, e) : "ここ";
     const nv = v.slice(0, s) + mk + sel + mk + v.slice(e);
-    onChange(nv);
+    set(nv);
     requestAnimationFrame(() => {
       ta.focus();
       ta.selectionStart = s + mk.length;
@@ -656,15 +709,15 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize
     if (v.slice(lineStart, pos).trim() === "") {
       e.preventDefault();
       const insert = "\n◼︎ ";
-      onChange(v.slice(0, pos) + insert + v.slice(pos));
+      set(v.slice(0, pos) + insert + v.slice(pos));
       requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = pos + insert.length; });
     }
   };
 
   const handleFocus = (e) => {
     setFocused(true);
-    if (!value) {
-      onChange("◼︎ ");
+    if (!val) {
+      set("◼︎ ");
       const ta = e.target;
       requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = 3; });
     }
@@ -672,7 +725,7 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize
 
   /* 質問行（◼︎始まり）に色と太字をつけた表示レイヤー。
      太字/赤文字は全文を run 化してから行に流すので、改行をまたぐ ** でも崩れない */
-  const runs = buildStyledRuns(value || "");
+  const runs = buildStyledRuns(val || "");
   const qFlags = runs.map((r) => r.text).join("").split("\n").map((l) => /^\s*◼/.test(l));
   const styleFor = (r, isQ) => {
     const st = {};
@@ -702,16 +755,16 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize
         </div>
       )}
       <div aria-hidden className="px-3 py-2 text-stone-800" style={{ ...textStyle, minHeight: 38 }}>
-        {value ? nodes : <span className="text-stone-300">{placeholder || "クリックして原稿を入力"}</span>}
+        {val ? nodes : <span className="text-stone-300">{placeholder || "クリックして原稿を入力"}</span>}
         {"\u200b"}
       </div>
       <textarea
         ref={taRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={val}
+        onChange={(e) => set(e.target.value)}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
-        onBlur={() => setFocused(false)}
+        onBlur={() => { setFocused(false); flush(); }}
         spellCheck={false}
         className="absolute inset-0 w-full h-full resize-none bg-transparent px-3 py-2 focus:outline-none"
         style={{ ...textStyle, color: "transparent", caretColor: "#1C1C1E" }}
@@ -916,6 +969,8 @@ export default function App() {
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewResult, setReviewResult] = useState(null);   // { issues:[], summary } | null
   const [chatOpen, setChatOpen] = useState(false);          // AIチャットパネル開閉
+  // AIチャットは塩漬け中：本番は非表示。検証時は localStorage.setItem("mg:aiChat","1") で表示
+  const aiChatEnabled = (() => { try { return window.localStorage.getItem("mg:aiChat") === "1"; } catch (e) { return false; } })();
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
   const [chatProposal, setChatProposal] = useState(null);   // AIの変更提案（承認待ち）
@@ -1219,29 +1274,52 @@ export default function App() {
     } catch (e) { showToast("招待失敗：" + (e.message || e)); }
     finally { setInviteBusy(false); }
   };
-  /* チャンネル（フォルダ）を丸ごと共有：コンセプト＋配下の全案件を1つのURLで公開 */
-  const publishChannel = async (channel) => {
+  /* チャンネル（フォルダ）を丸ごと共有：コンセプト＋配下の全案件を1つのURLで公開
+     editable=true なら案件ごとに live 編集リンクを発行/再シードし、先方がURLから全部編集できる（ログイン不要・リアルタイム反映） */
+  const publishChannel = async (channel, editable = false) => {
     setChSharing(true);
     try {
+      const ci = channelInfo[channel] || {};
       const entries = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === channel);
       const projects = [];
       for (const x of entries) {
-        if (x.id === activeId && project) { projects.push(project); continue; }
+        let p = null;
         try {
-          if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); projects.push(r.project); }
-          else { const r = await window.storage.get(STORE_PROJ(x.id)); if (r && r.value) projects.push(JSON.parse(r.value)); }
+          if (x.id === activeId && project) p = project;
+          else if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); p = r.project ? { ...r.project, id: x.id, collab: true } : null; }
+          else { const r = await window.storage.get(STORE_PROJ(x.id)); if (r && r.value) p = JSON.parse(r.value); }
         } catch (e) {}
+        if (!p) continue;
+        // 編集共有：案件ごとに live 文書を発行（既存があれば現在の内容で再シード）して編集リンクを得る
+        if (editable) {
+          try {
+            const lr = await fetch(SHARE_API + "/api/live/create", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ project: { ...cleanProj(p), channelInfo: { ...ci, name: ci.name || channel } }, prevLiveId: p.liveId || null, editToken: p.liveToken || null }),
+            });
+            const ld = await lr.json();
+            if (ld.liveId) {
+              p = { ...p, liveId: ld.liveId, liveToken: ld.editToken };
+              // live リンクを案件に永続化（AK と先方が同じ文書を共同編集できるように）
+              if (x.id === activeId) setProject((cur) => (cur && cur.id === p.id ? { ...cur, liveId: ld.liveId, liveToken: ld.editToken } : cur));
+              try {
+                if (x.collab && MG_SESSION) await authFetch("/api/collab/upsert", { id: p.id, project: p });
+                else if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(p.id), JSON.stringify(p));
+              } catch (e) {}
+            }
+          } catch (e) {}
+        }
+        projects.push(p);
       }
-      const ci = channelInfo[channel] || {};
       const res = await fetch(SHARE_API + "/api/publish-channel", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: channel, channelInfo: { ...ci, name: ci.name || channel }, projects, prevId: ci.shareId || null, token: ci.shareToken || null }),
+        body: JSON.stringify({ name: channel, channelInfo: { ...ci, name: ci.name || channel }, projects, edit: editable, prevId: ci.shareId || null, token: ci.shareToken || null }),
       });
       const d = await res.json();
       if (!d.id) throw new Error(d.error || "発行に失敗しました");
-      setChannelInfo((c) => ({ ...c, [channel]: { ...emptyChannelInfo(), name: channel, ...(c[channel] || {}), shareId: d.id, shareToken: d.token || (c[channel] && c[channel].shareToken) } }));
+      setChannelInfo((c) => ({ ...c, [channel]: { ...emptyChannelInfo(), name: channel, ...(c[channel] || {}), shareId: d.id, shareToken: d.token || (c[channel] && c[channel].shareToken), shareEditable: editable } }));
       const url = location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?ch=" + d.id;
-      setShareModal({ id: d.id, url, updated: !!ci.shareId, channel: true, caseCount: projects.length });
+      setShareModal({ id: d.id, url, updated: !!ci.shareId, channel: true, caseCount: projects.length, editable });
       try { await navigator.clipboard.writeText(url); } catch (e) {}
     } catch (e) { showToast("チャンネル共有の発行に失敗：" + (e.message || e)); }
     finally { setChSharing(false); }
@@ -3005,12 +3083,20 @@ export default function App() {
                 チャンネル「<span className="font-bold" style={{ color: theme.main }}>{curChannel}</span>」のコンセプト。<span className="font-bold">同じチャンネル（フォルダ）の全案件で共有</span>されます。
               </p>
               {curChannel !== DEFAULT_CHANNEL && (
-                <button onClick={() => publishChannel(curChannel)} disabled={chSharing}
-                  title="このチャンネルのコンセプト＋配下の全案件をまとめて見せる共有URLを発行"
-                  className="shrink-0 h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50" style={{ background: theme.main }}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
-                  {chSharing ? "発行中…" : (channelInfo[curChannel] && channelInfo[curChannel].shareId) ? "チャンネル共有を更新" : "チャンネルを共有"}
-                </button>
+                <div className="shrink-0 flex items-center gap-1.5">
+                  <button onClick={() => publishChannel(curChannel, false)} disabled={chSharing}
+                    title="このチャンネルのコンセプト＋配下の全案件をまとめて見せる共有URLを発行（読み取り専用）"
+                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50" style={{ background: theme.main }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
+                    {chSharing ? "発行中…" : (channelInfo[curChannel] && channelInfo[curChannel].shareId) ? "共有を更新" : "見せる用に共有"}
+                  </button>
+                  <button onClick={() => publishChannel(curChannel, true)} disabled={chSharing}
+                    title="先方がURLから全案件の企画・サムネ・構成台本を直接編集できる共有URLを発行（ログイン不要・リアルタイム反映）"
+                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold shadow disabled:opacity-50 border" style={{ borderColor: theme.accent, color: theme.accent }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                    {chSharing ? "発行中…" : "編集つきで共有"}
+                  </button>
+                </div>
               )}
             </div>
             {curChannel === DEFAULT_CHANNEL && (
@@ -3251,9 +3337,9 @@ export default function App() {
                             <div className="flex items-stretch overflow-hidden" style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1 }}>
                               <div className="w-6 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" style={{ background: stripe }}
                                 {...rowDragProps(idx, r.id)} title="ドラッグで移動" />
-                              <input
+                              <BufferedInput
                                 value={r.label}
-                                onChange={(e) => updateRow(r.id, { label: e.target.value })}
+                                onChange={(v) => updateRow(r.id, { label: v })}
                                 placeholder="ロケーション名（例：ご自宅）"
                                 className="flex-1 bg-transparent text-[13px] font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
                                 style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
@@ -3347,9 +3433,9 @@ export default function App() {
                           </div>
                         </td>
                         <td className="align-top p-0">
-                          <textarea
+                          <BufferedTextarea
                             value={r.label}
-                            onChange={(e) => updateRow(r.id, { label: e.target.value })}
+                            onChange={(v) => updateRow(r.id, { label: v })}
                             rows={1}
                             placeholder="内容"
                             className="block w-full resize-none bg-transparent text-[13px] font-medium leading-snug px-3 py-2 focus:outline-none placeholder:text-stone-300"
@@ -3425,9 +3511,9 @@ export default function App() {
                       className="flex items-stretch overflow-hidden rounded-lg mt-3 mb-1.5 shadow-sm"
                       style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1, ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
                       <div className="w-1.5 shrink-0" style={{ background: stripe }} />
-                      <input
+                      <BufferedInput
                         value={r.label}
-                        onChange={(e) => updateRow(r.id, { label: e.target.value })}
+                        onChange={(v) => updateRow(r.id, { label: v })}
                         placeholder="ロケーション名（例：ご自宅）"
                         className="flex-1 min-w-0 bg-transparent text-[13px] font-bold tracking-[0.06em] px-2.5 py-2 focus:outline-none"
                         style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
@@ -3505,9 +3591,9 @@ export default function App() {
                         title="このシーンの目安秒数" />
                     </div>
                     {/* 内容 */}
-                    <textarea
+                    <BufferedTextarea
                       value={r.label}
-                      onChange={(e) => updateRow(r.id, { label: e.target.value })}
+                      onChange={(v) => updateRow(r.id, { label: v })}
                       rows={1}
                       placeholder="内容（シーンの見出し）"
                       className="block w-full resize-none bg-transparent text-[13px] font-bold leading-snug px-3 pt-2 pb-1 focus:outline-none placeholder:text-stone-300 placeholder:font-normal" />
@@ -4452,6 +4538,8 @@ export default function App() {
                   ? <>このURLを渡すと、先方が<span className="font-bold">構成台本をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
                   : shareModal.planShare
                   ? <>このURLは<span className="font-bold">この企画の動画・素材・コメントだけ</span>の専用ページです。先方は動画を見て（0.5〜4倍速）、時間を指定してコメントできます。コメントは右上💬とアプリ内の企画カードに届きます。</>
+                  : shareModal.channel && shareModal.editable
+                  ? <>このURLで<span className="font-bold">チャンネルの全{shareModal.caseCount || 0}案件を先方がその場で編集</span>できます（企画・サムネ・構成台本すべて／ログイン不要／リアルタイム反映）。各案件を開いて「編集」から直せます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span>他のチャンネルは見えません。</>
                   : shareModal.channel
                   ? <>このURLで<span className="font-bold">チャンネルのコンセプト＋配下の{shareModal.caseCount || 0}案件</span>をまとめて見せられます（読み取り専用）。チーム共有やクライアント説明用に。</>
                   : <>このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上のコメントボタンに届きます。</>}
@@ -4625,14 +4713,14 @@ export default function App() {
       )}
 
       {/* ===== AIチャットパネル（会話で台本を作る・磨く。提案→承認）===== */}
-      {view === "editor" && !chatOpen && (
+      {view === "editor" && aiChatEnabled && !chatOpen && (
         <button onClick={() => setChatOpen(true)} title="AIと話しながら台本を作る"
           className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full shadow-xl grid place-items-center text-2xl hover:scale-105 transition-transform"
           style={{ background: theme.main, color: mainText }}>
           🤖
         </button>
       )}
-      {view === "editor" && chatOpen && (
+      {view === "editor" && aiChatEnabled && chatOpen && (
         <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[400px] bg-white shadow-2xl border-l border-stone-200 flex flex-col">
           {/* ヘッダ */}
           <div className="px-4 py-3 flex items-center gap-2 shrink-0" style={{ background: theme.main, color: mainText }}>

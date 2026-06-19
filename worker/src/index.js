@@ -252,7 +252,16 @@ export default {
           else { token = et; const prev = await env.SNAPS.get("chan:" + id, "json"); if (prev && prev.createdAt) createdAt = prev.createdAt; }
         }
         if (!id) { id = rid(8); token = rid(20); }
-        const doc = { name: b.name, channelInfo: slimCI(b.channelInfo), cases: projects.map(slim), createdAt, updatedAt: nowt };
+        // edit:true のときは案件ごとに live 編集リンク（liveId/editToken）を埋めて「URLで全部編集」を可能にする
+        const cases = projects.map((p) => {
+          const c = slim(p);
+          c.id = (p && p.id ? p.id : "").toString().slice(0, 40);
+          if (b.edit && p && p.liveId && p.liveToken) {
+            c.edit = { liveId: ("" + p.liveId).slice(0, 16), editToken: ("" + p.liveToken).slice(0, 40) };
+          }
+          return c;
+        });
+        const doc = { name: b.name, channelInfo: slimCI(b.channelInfo), cases, editable: !!b.edit, createdAt, updatedAt: nowt };
         await env.SNAPS.put("chan:" + id, JSON.stringify(doc));
         await env.SNAPS.put("chtok:" + id, token);
         return json({ id, token });
@@ -469,6 +478,14 @@ export default {
         const r = await stub.fetch("https://do/seed", { method: "POST", body: JSON.stringify({ project: b.project, editToken }) });
         if (!r.ok) return json({ error: "ライブ発行に失敗" }, 500);
         return json({ liveId, editToken });
+      }
+
+      // GET /api/live/{id}/snapshot?k=token → ライブ文書の現在値（チャンネル編集共有で最新の企画・サムネを見せる用）
+      if (request.method === "GET" && parts[1] === "live" && parts[2] && parts[3] === "snapshot") {
+        const stub = env.LIVEDOC.get(env.LIVEDOC.idFromName(parts[2]));
+        const r = await stub.fetch("https://do/snapshot?k=" + encodeURIComponent(url.searchParams.get("k") || ""));
+        const d = await r.json().catch(() => ({}));
+        return json(d, r.status);
       }
 
       // ===== 大容量ファイル転送＋動画レビュー（R2） =====
@@ -1127,6 +1144,14 @@ export class LiveDoc extends DurableObject {
         if (b.project) await this.ctx.storage.put("project", b.project);
         if (b.editToken) await this.ctx.storage.put("editToken", b.editToken);
         return new Response("ok");
+      }
+      // snapshot（編集トークン照合つき）：チャンネル編集共有の最新表示用
+      if (request.method === "GET" && url.pathname.endsWith("/snapshot")) {
+        const token = url.searchParams.get("k") || "";
+        const editToken = await this.ctx.storage.get("editToken");
+        if (!editToken || token !== editToken) return new Response(JSON.stringify({ error: "forbidden" }), { status: 403, headers: { "Content-Type": "application/json" } });
+        const proj = await this.ctx.storage.get("project");
+        return new Response(JSON.stringify({ project: proj || null }), { headers: { "Content-Type": "application/json" } });
       }
       return new Response("not found", { status: 404 });
     }

@@ -64,6 +64,18 @@ async function load(){
       const r = await fetch(API+"/api/chan/"+CHID);
       if(!r.ok){ document.getElementById("loading").innerHTML = "このチャンネル共有リンクは見つかりませんでした。"; return; }
       CHANNEL = await r.json();
+      // 編集つき共有：各案件を live 文書の最新値で上書き（先方が直した内容を一覧にも反映）
+      if(CHANNEL.editable && Array.isArray(CHANNEL.cases)){
+        CHANNEL.cases = await Promise.all(CHANNEL.cases.map(async (c)=>{
+          if(c && c.edit && c.edit.liveId && c.edit.editToken){
+            try{
+              const sr = await fetch(API+"/api/live/"+c.edit.liveId+"/snapshot?k="+encodeURIComponent(c.edit.editToken));
+              if(sr.ok){ const sd = await sr.json(); if(sd && sd.project) return { ...sd.project, edit:c.edit }; }
+            }catch(e){}
+          }
+          return c;
+        }));
+      }
       renderChannel();
     }catch(e){ document.getElementById("loading").textContent = "読み込みに失敗しました：" + e.message; }
     return;
@@ -338,11 +350,15 @@ function renderChannel(){
   const caseTitle = (c,i) => (c.plans&&c.plans[0]&&c.plans[0].title)||c.name||('案件'+(i+1));
   const caseThumb = (c) => { const r=(c.plans||[]).map(p=>(p.refs||[]).find(x=>x&&x.vid)).find(Boolean); return r?`https://img.youtube.com/vi/${r.vid}/mqdefault.jpg`:null; };
 
+  const editable = !!ch.editable;
+  const editLink = (c) => (editable && c && c.edit && c.edit.liveId && c.edit.editToken)
+    ? "index.html?live=" + encodeURIComponent(c.edit.liveId) + "#k=" + encodeURIComponent(c.edit.editToken) : "";
   const header = `
     <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400 mb-2">CHANNEL / チャンネル資料</div>
     <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
       <div class="px-5 py-4" style="background:${mainC};color:#fff"><div class="text-[18px] font-black">${esc((ci.name)||ch.name||"チャンネル")}</div>${ci.url?`<a href="${safeUrl(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] opacity-80 mono break-all">${esc(ci.url)}</a>`:""}</div>
-    </div>`;
+    </div>`
+    + (editable ? `<div class="rounded-xl border px-4 py-2.5 mb-4 text-[12px] flex items-start gap-2" style="border-color:${accentC};background:#fff;color:#57534e"><span style="color:${accentC}">✏️</span><span><span class="font-bold" style="color:${accentC}">編集できる共有です。</span>各案件を開いて「この案件を編集」から、企画・サムネ・構成台本を直接直せます（ログイン不要・直したらすぐ反映）。</span></div>` : "");
 
   if(CASE_SEL === null || !cases[CASE_SEL]){
     // 企画一覧（カード）
@@ -384,9 +400,13 @@ function renderChannel(){
   SNAP = { project: sel };   // paneVideo/mountVideo/fileGroups が参照（チャンネルはコメント無し=CHMODE）
   const subBar = `<div class="flex gap-1 mb-3 border-b border-stone-200 overflow-x-auto">${sub.map(([k,label])=>`<button data-ctab="${k}" class="ctabbtn text-[12px] font-bold px-3 py-1.5 whitespace-nowrap ${CTAB===k?'border-b-2':''}" style="${CTAB===k?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
   const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):CTAB==="video"?paneVideo(sel,accentC,mainC):CTAB==="files"?paneFiles(sel,accentC,mainC):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
+  const selEdit = editLink(sel);
   document.getElementById("app").innerHTML = header
     + `<button id="backBtn" class="text-[12px] font-bold mb-3 inline-flex items-center gap-1" style="color:${mainC}">← 企画一覧へ戻る</button>`
-    + `<div class="text-[16px] font-black mb-3">${esc(caseTitle(sel,CASE_SEL))}</div>`
+    + `<div class="flex items-start justify-between gap-3 mb-3">`
+      + `<div class="text-[16px] font-black">${esc(caseTitle(sel,CASE_SEL))}</div>`
+      + (selEdit ? `<a href="${selEdit}" class="shrink-0 inline-flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-lg text-white shadow" style="background:${accentC}">✏️ この案件を編集</a>` : "")
+    + `</div>`
     + subBar + `<div>${pane}</div>`
     + `<p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
   document.getElementById("backBtn").addEventListener("click",()=>{ chCleanup(); CASE_SEL=null; window.scrollTo(0,0); renderChannel(); });
