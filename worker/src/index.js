@@ -83,6 +83,20 @@ export default {
         return json({ issues: Array.isArray(out.issues) ? out.issues : [], summary: (out.summary || "").toString() });
       }
 
+      // POST /api/chat  { project, history?, message }  → 会話しながら台本を提案（提案→承認フロー）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "chat") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const message = (b && b.message ? b.message : "").toString();
+        const project = b && b.project;
+        const history = Array.isArray(b && b.history) ? b.history : [];
+        if (!message.trim()) return json({ error: "メッセージが空です" }, 400);
+        if (message.length > 40000) return json({ error: "メッセージが長すぎます（4万字まで）" }, 413);
+        if (!project || typeof project !== "object") return json({ error: "現在の案件が必要です" }, 400);
+        const out = await chatWithClaude(project, history, message, env);
+        return json(out);
+      }
+
       // GET /api/yt?v=<videoId>  → YouTube動画＋チャンネル統計を返す（APIキーはサーバ側に秘匿）
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "yt") {
         if (!env.YT_API_KEY) return json({ error: "YT_API_KEY 未設定", needKey: true }, 200);
@@ -959,6 +973,141 @@ async function reviewWithClaude(project, env) {
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
+}
+
+/* ===== AIチャット：会話しながら台本を作る・磨く（提案→承認フロー）===== */
+const CHAT_SYSTEM = `あなたは動画プロダクション「Bird Flip」専属の構成ディレクター兼作家アシスタント「ピッピ」です。構成台本ツール「ものがたりっち！」の中で、ディレクター(AK)と会話しながら台本を一緒に書き・磨きます。一日密着ドキュメンタリー(format=documentary)とトーク系YouTube台本(format=talk)の両方を扱います。
+
+# あなたの口調・態度
+- 相手はプロのディレクター。要点を先に、短く、率直に。長い前置きや一般論は不要
+- 提案にはBird Flip流の「なぜ」を一言添える（例：「ここは重い話だから尺を半分にして強くした」）
+- 分からない・素材に無いことは勝手に創作せず、その旨を伝えて取材で埋める導線を残す
+
+# Bird Flip流の型（常にこれで書く＝あなたの判断基準）
+A. セクション5種(documentaryのscene type)と役割
+  - インサート(5秒)=映像のみ。映像指示を3〜4カットの小さな物語に
+  - VLOG(15〜30秒)=他愛ない会話で人柄を出す
+  - 解説系(30秒〜1分)=今から/今やる業務の説明
+  - 訴求(2〜3分)=最も伝えたい核（想い・原点・商品）。動画の山場
+  - ブリッジ(5〜10秒)=次の場面への自然なつなぎ
+B. 脳の順番で飽きさせない設計
+  - 冒頭は軽い脳から：予測→自分ごと→共感
+  - 共感パートは長くてOK。重い話(決断・葛藤・意味づけ)は短く強く
+  - 2〜3分に1回、予想外の「驚き」(ギャップ・意外な過去・本音)を入れる
+  - ラストは「達成」より「安心・余韻」で終わる
+C. インタビュアースタンス（最重要）
+  - 演者を事前に知らない前提で、視聴者と同じ目線で素朴に質問する。「知ってる感」は絶対NG
+  - ❌「教室もやられてるんですね！」 ⭕「それ以外にも何かされてるんですか？」
+  - 核心は作業中・移動中に語らせる（手を動かしながらの本音が刺さる）
+D. 原稿(script)の書式
+  - インタビュアーの質問は行頭「◼ 」。演者の回答は話し言葉のまま。改行は維持
+  - 目安文字数 = 秒数 × 5字（±2割）
+  - 素材に無い事実・数字・固有名詞は絶対に作らない。本人の生声が要る所は「★取材：（何を聞くか）」と書いて空ける
+E. トーク系(format=talk)の構成: highlight(冒頭フック/結論先出し)→intro(冒頭)→toc(目次)→body[](本編=heading+script)→cta。冒頭で結論・メリットを出し、目次と本編を一致させ、CTAを必ず置く
+
+# 動き方（提案→承認フロー）
+- ユーザーの依頼が台本の作成・編集・校正反映など「中身を変える」ものなら、propose_changes ツールを呼んで変更後の台本を提案する。実際の反映はユーザーが承認してから行われる（あなたは反映しない、提案するだけ）
+- 相談・質問・雑談・方針決めなど「まだ変えない」ものは、ツールを呼ばずテキストだけで会話で返す
+- propose_changes を呼ぶ時も、必ずテキストでも一言「何をどう変えたか・なぜ」を会話で添える
+- propose_changes は format に合わせて片方だけ埋める：documentaryなら rows を【全行】省略せず、talkなら talk を丸ごと。変更しない行・既存内容も含めて完全な状態で返す
+- 既存の id は維持する（rows[].id / body[].id）。新規行は id を空でよい
+- 大きく作り直す時も、ユーザーが触れていない部分は極力そのまま残す`;
+
+const PROPOSE_TOOL = {
+  name: "propose_changes",
+  description: "台本の変更案を提案する（ユーザーが承認すると反映される）。format に合わせて documentary なら rows、talk なら talk を、変更しない部分も含めた完全な状態で返す。",
+  input_schema: {
+    type: "object",
+    properties: {
+      summary: { type: "string", description: "今回の変更点を日本語で1〜3行（プレビューに表示される）" },
+      format: { type: "string", enum: ["documentary", "talk"], description: "対象の台本形式" },
+      name: { type: "string", description: "演者名｜案件名（変える時のみ）" },
+      channel: { type: "string", description: "クライアント名（変える時のみ）" },
+      meta: {
+        type: "object",
+        properties: {
+          shootDate: { type: "string" }, place: { type: "string" },
+          titles: { type: "array", items: { type: "string" } },
+          thumbs: { type: "array", items: { type: "string" } },
+          highlight: { type: "string" },
+        },
+      },
+      rows: {
+        type: "array", description: "documentary時：構成台本の全行（省略しない）",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "既存行はそのid、新規は空" },
+            kind: { type: "string", enum: ["location", "scene"] },
+            label: { type: "string" },
+            time: { type: "string" },
+            address: { type: "string" },
+            note: { type: "string" },
+            type: { type: "string", enum: ["インサート", "ブリッジ", "VLOG", "解説系", "訴求"] },
+            sec: { type: "number" },
+            script: { type: "string" },
+          },
+          required: ["kind"],
+        },
+      },
+      talk: {
+        type: "object", description: "talk時：トーク台本の全体",
+        properties: {
+          highlight: { type: "string" }, intro: { type: "string" }, cta: { type: "string" },
+          toc: { type: "array", items: { type: "string" } },
+          body: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { id: { type: "string" }, heading: { type: "string" }, script: { type: "string" } },
+            },
+          },
+        },
+      },
+    },
+    required: ["summary", "format"],
+  },
+};
+
+async function chatWithClaude(project, history, message, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const fmt = project && project.format === "talk" ? "talk" : "documentary";
+  // 直近の会話履歴のみ（role/contentを正規化、最大20件）
+  const msgs = history
+    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+    .slice(-20)
+    .map((m) => ({ role: m.role, content: m.content.slice(0, 8000) }));
+  // 最新ターン：現在の台本(JSON)＋依頼。台本は毎回最新を渡す
+  const ctx = "現在の台本(format=" + fmt + "):\n```json\n" + JSON.stringify(slim(project)) + "\n```\n\n依頼：" + message;
+  msgs.push({ role: "user", content: ctx });
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model,
+      max_tokens: 32000,
+      system: CHAT_SYSTEM,
+      tools: [PROPOSE_TOOL],
+      messages: msgs,
+    }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
+  const data = await res.json();
+  const blocks = data.content || [];
+  const reply = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  const tu = blocks.find((b) => b.type === "tool_use" && b.name === "propose_changes");
+  let proposal = null;
+  if (tu && tu.input) {
+    const p = tu.input;
+    const pf = p.format === "talk" ? "talk" : "documentary";
+    // 形式に合った中身がある時だけ提案として返す（空提案を弾く）
+    if (pf === "documentary" && Array.isArray(p.rows) && p.rows.length) {
+      proposal = { format: "documentary", summary: (p.summary || "").toString(), rows: p.rows, name: p.name, channel: p.channel, meta: p.meta };
+    } else if (pf === "talk" && p.talk && typeof p.talk === "object") {
+      proposal = { format: "talk", summary: (p.summary || "").toString(), talk: p.talk, name: p.name, channel: p.channel, meta: p.meta };
+    }
+  }
+  return { reply: reply || (proposal ? (proposal.summary || "変更案を用意しました。") : "（応答がありませんでした）"), proposal };
 }
 
 /* ===== リアルタイム共同編集 Durable Object（1 liveId = 1 インスタンス） =====
