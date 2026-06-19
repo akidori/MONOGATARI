@@ -189,6 +189,7 @@ const migrateProject = (p) => {
     files: Array.isArray(p.files) ? p.files : [],
     liveId: p.liveId || null,
     liveToken: p.liveToken || null,
+    aiChat: Array.isArray(p.aiChat) ? p.aiChat : [],
   };
 };
 
@@ -914,6 +915,12 @@ export default function App() {
   const [showReview, setShowReview] = useState(false);      // 校正チェックモーダル
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewResult, setReviewResult] = useState(null);   // { issues:[], summary } | null
+  const [chatOpen, setChatOpen] = useState(false);          // AIチャットパネル開閉
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [chatProposal, setChatProposal] = useState(null);   // AIの変更提案（承認待ち）
+  const [chatUndo, setChatUndo] = useState(null);           // 反映直前の台本スナップ（取り消し用）
+  const chatEndRef = useRef(null);
   const [flashId, setFlashId] = useState(null);             // ジャンプ先シーンの一時ハイライト
   const [editHeaderChannel, setEditHeaderChannel] = useState(false); // ヘッダーからカテゴリ変更中
   const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
@@ -1431,6 +1438,86 @@ export default function App() {
     }, 60);
   };
 
+  /* ===== AIチャット（会話しながら台本を作る・磨く。提案→承認）===== */
+  const chatMsgs = (project && project.aiChat) || [];
+  const pushChat = (m) => setProject((p) => (p ? { ...p, aiChat: [...((p.aiChat) || []).slice(-39), m] } : p));
+  const sendChat = async () => {
+    const msg = chatInput.trim();
+    if (!msg || !project || chatBusy) return;
+    const history = ((project.aiChat) || []).filter((m) => m.role === "user" || m.role === "assistant").map((m) => ({ role: m.role, content: m.content }));
+    pushChat({ role: "user", content: msg, ts: Date.now() });
+    setChatInput(""); setChatBusy(true); setChatProposal(null);
+    try {
+      const res = await fetch(SHARE_API + "/api/chat", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project, history, message: msg }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "応答に失敗しました");
+      pushChat({ role: "assistant", content: d.reply || "", ts: Date.now() });
+      if (d.proposal) setChatProposal(d.proposal);
+    } catch (e) {
+      pushChat({ role: "assistant", content: "⚠️ エラー：" + (e.message || e), ts: Date.now() });
+    } finally { setChatBusy(false); }
+  };
+  /* 提案を承認して台本に反映（地図リンク/撮影完了はロケ名で引き継ぐ。直前を退避してUndo可） */
+  const applyProposal = () => {
+    if (!chatProposal || !project) return;
+    const prop = chatProposal;
+    setChatUndo({ rows: project.rows, talk: project.talk, meta: project.meta, name: project.name, channel: project.channel, plans: project.plans });
+    const m = prop.meta || {};
+    const meta = { ...project.meta };
+    if (m.shootDate) meta.shootDate = m.shootDate;
+    if (m.place) meta.place = m.place;
+    if (m.highlight) meta.highlight = m.highlight;
+    if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
+    if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
+    const base = { ...project, meta };
+    if (prop.name) base.name = prop.name;
+    if (prop.channel) base.channel = prop.channel;
+    if ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean))) base.plans = applyTitlesToPlans(project.plans, m.titles, m.thumbs);
+    let data;
+    if (prop.format === "talk" && prop.talk) {
+      const t = prop.talk;
+      base.format = "talk";
+      base.talk = {
+        highlight: t.highlight || "", intro: t.intro || "", cta: t.cta || "",
+        toc: Array.isArray(t.toc) && t.toc.length ? t.toc : [""],
+        body: (Array.isArray(t.body) && t.body.length ? t.body : [newTalkBody()]).map((b) => ({ id: b.id || uid(), heading: b.heading || "", script: b.script || "" })),
+      };
+      data = base;
+    } else if (Array.isArray(prop.rows)) {
+      const parsed = normalizeImport({ meta, rows: prop.rows });
+      const prevByLabel = {};
+      (project.rows || []).forEach((r) => { if (r.kind === "location") prevByLabel[(r.label || "").trim()] = r; });
+      const rows = parsed.rows.map((r) => {
+        if (r.kind !== "location") return r;
+        const prev = prevByLabel[(r.label || "").trim()];
+        if (!prev) return r;
+        const out = { ...r };
+        if (prev.done) out.done = true;
+        if ((prev.address || "").trim() === (r.address || "").trim() && (prev.placeId || prev.lat != null)) {
+          out.placeId = prev.placeId || ""; out.lat = prev.lat ?? null; out.lng = prev.lng ?? null;
+        }
+        return out;
+      });
+      data = { ...base, rows };
+    } else { data = base; }
+    setProject(data);
+    setChatProposal(null);
+    pushChat({ role: "system", content: "✅ 反映しました：" + (prop.summary || ""), ts: Date.now() });
+    showToast("AIの提案を反映しました（取り消し可）");
+  };
+  const undoChat = () => {
+    if (!chatUndo) return;
+    setProject((p) => (p ? { ...p, ...chatUndo } : p));
+    setChatUndo(null);
+    pushChat({ role: "system", content: "↩️ 反映を取り消しました", ts: Date.now() });
+    showToast("取り消しました");
+  };
+  const clearChat = () => { if (window.confirm("この案件のAIとの会話履歴を消しますか？")) { setProject((p) => (p ? { ...p, aiChat: [] } : p)); setChatProposal(null); } };
+  useEffect(() => { if (chatOpen && chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMsgs.length, chatBusy, chatOpen, chatProposal]);
+
   /* ===== 企画・サムネ タブ ===== */
   const setPlans = (updater) => setProject((p) => ({ ...p, plans: typeof updater === "function" ? updater(p.plans || []) : updater }));
   const addPlan = () => setPlans((ps) => [...(ps || []), newPlan()]);
@@ -1875,7 +1962,7 @@ export default function App() {
   // 永続化・送信時に剥がすランタイム専用フラグ
   const cleanProj = (p) => {
     if (!p) return p;
-    const { live, liveId, liveToken, collab, collabRole, members, ownerEmail, role, ...rest } = p;
+    const { live, liveId, liveToken, collab, collabRole, members, ownerEmail, role, aiChat, ...rest } = p;
     return rest;
   };
   const startLiveSession = (liveId, token) => {
@@ -4534,6 +4621,93 @@ export default function App() {
             className="text-[11px] font-bold px-3 py-1.5 rounded-full" style={{ background: "#DC2645", color: "#fff" }}>削除</button>
           <button onClick={clearSelection}
             className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/25">選択解除</button>
+        </div>
+      )}
+
+      {/* ===== AIチャットパネル（会話で台本を作る・磨く。提案→承認）===== */}
+      {view === "editor" && !chatOpen && (
+        <button onClick={() => setChatOpen(true)} title="AIと話しながら台本を作る"
+          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full shadow-xl grid place-items-center text-2xl hover:scale-105 transition-transform"
+          style={{ background: theme.main, color: mainText }}>
+          🤖
+        </button>
+      )}
+      {view === "editor" && chatOpen && (
+        <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[400px] bg-white shadow-2xl border-l border-stone-200 flex flex-col">
+          {/* ヘッダ */}
+          <div className="px-4 py-3 flex items-center gap-2 shrink-0" style={{ background: theme.main, color: mainText }}>
+            <span className="text-lg">🤖</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold leading-tight">AIアシスタント</div>
+              <div className="text-[10px] opacity-70 truncate">{project.format === "talk" ? "トーク系" : "一日密着"}・Bird Flip流で一緒に書く</div>
+            </div>
+            {chatMsgs.length > 0 && (
+              <button onClick={clearChat} title="会話をクリア" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15 text-[11px]">🗑</button>
+            )}
+            <button onClick={() => setChatOpen(false)} title="閉じる" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+          </div>
+
+          {/* メッセージ */}
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 bg-stone-50">
+            {chatMsgs.length === 0 && !chatBusy && (
+              <div className="text-[12px] text-stone-400 leading-relaxed px-1 py-2">
+                <p className="font-bold text-stone-500 mb-1.5">台本を一緒に作れます。例えば：</p>
+                <ul className="space-y-1.5">
+                  {["この文字起こし貼るね → 5シーンの台本にして", "#2の質問、知ってる感が出てる。素朴に直して", "冒頭に視聴者が思わず見ちゃう驚きを足して", "全体ざっと校正して気になる所教えて"].map((ex, i) => (
+                    <li key={i}><button onClick={() => setChatInput(ex.replace(/^.+→ /, ""))} className="text-left w-full px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 hover:border-stone-400 text-stone-600">{ex}</button></li>
+                  ))}
+                </ul>
+                <p className="mt-2.5 text-[11px] text-stone-400">変更は<span className="font-bold">提案として</span>出る → ✅で反映。勝手には書き換えないよ。</p>
+              </div>
+            )}
+            {chatMsgs.map((msg, i) => {
+              if (msg.role === "system") return <div key={i} className="text-center text-[10px] text-stone-400 py-0.5">{msg.content}</div>;
+              const mine = msg.role === "user";
+              return (
+                <div key={i} className={"flex " + (mine ? "justify-end" : "justify-start")}>
+                  <div className={"max-w-[88%] text-[12.5px] leading-relaxed rounded-2xl px-3 py-2 whitespace-pre-wrap break-words " + (mine ? "rounded-br-sm" : "bg-white border border-stone-200 text-stone-700 rounded-bl-sm")}
+                    style={mine ? { background: theme.accent, color: accentText } : undefined}>{msg.content}</div>
+                </div>
+              );
+            })}
+            {chatBusy && (
+              <div className="flex justify-start"><div className="bg-white border border-stone-200 rounded-2xl rounded-bl-sm px-3 py-2 text-[12px] text-stone-400 inline-flex items-center gap-1">考え中<span className="animate-pulse">…</span></div></div>
+            )}
+
+            {/* 変更提案カード（承認待ち） */}
+            {chatProposal && (
+              <div className="rounded-xl border-2 bg-white p-3 shadow-sm" style={{ borderColor: theme.accent }}>
+                <div className="text-[11px] font-bold mb-1 inline-flex items-center gap-1" style={{ color: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />変更の提案</div>
+                <p className="text-[12px] text-stone-700 leading-relaxed whitespace-pre-wrap">{chatProposal.summary || "台本を更新します。"}</p>
+                <div className="text-[10px] text-stone-400 mt-1">{chatProposal.format === "talk" ? "トーク台本を更新" : "構成台本 全" + ((chatProposal.rows || []).length) + "行に更新"}</div>
+                <div className="flex gap-2 mt-2.5">
+                  <button onClick={applyProposal} className="flex-1 text-[12px] font-bold py-2 rounded-lg text-white" style={{ background: theme.accent, color: accentText }}>✅ この内容で反映</button>
+                  <button onClick={() => setChatProposal(null)} className="text-[12px] font-bold px-3 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-500">却下</button>
+                </div>
+              </div>
+            )}
+            {/* 直前の反映を取り消す */}
+            {chatUndo && !chatProposal && (
+              <div className="flex justify-center">
+                <button onClick={undoChat} className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-stone-200 hover:bg-stone-300 text-stone-600 inline-flex items-center gap-1">↩️ 直前の反映を取り消す</button>
+              </div>
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* 入力 */}
+          <div className="shrink-0 border-t border-stone-200 p-2.5 bg-white">
+            <div className="flex items-end gap-2">
+              <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendChat(); } }}
+                placeholder="依頼や相談を入力（⌘+Enterで送信）。素材を貼ってもOK"
+                className="flex-1 min-w-0 text-[12.5px] border border-stone-200 rounded-xl px-3 py-2 max-h-40 resize-y focus:outline-none focus:border-stone-400" rows={2} />
+              <button onClick={sendChat} disabled={chatBusy || !chatInput.trim()}
+                className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-white disabled:opacity-30" style={{ background: theme.main, color: mainText }}>
+                <Icon name="up" className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
