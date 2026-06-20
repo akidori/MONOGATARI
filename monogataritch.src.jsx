@@ -3852,17 +3852,17 @@ export default function App() {
                       const refs = (data && data.plans ? data.plans.flatMap((pl) => pl.refs || []) : []).filter((r) => r.vid);
                       if (!refs.length) return null;
                       return (
-                        <div className="px-2.5 pb-2 flex gap-1.5 overflow-x-auto cursor-pointer" onClick={() => openBoardCase(entry.id)}>
+                        <div className="px-2.5 pb-2.5 flex gap-2 overflow-x-auto cursor-pointer" onClick={() => openBoardCase(entry.id)}>
                           {refs.map((rf, ri) => {
                             const sc = rf.uploadDate ? scoreVideo(rf, Date.now()) : null;
                             return (
-                              <div key={ri} className="shrink-0 w-32">
+                              <div key={ri} className="shrink-0 w-48">
                                 <div className="relative">
                                   <img src={"https://img.youtube.com/vi/" + rf.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover rounded-md border border-stone-200" />
-                                  {sc && <span className="absolute top-0.5 left-0.5 text-[9px] font-bold text-white px-1 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
-                                  {sc && <span className="absolute top-0.5 right-0.5 text-[8px] font-bold text-white bg-black/70 px-1 rounded" style={{ fontFamily: mono }}>{sc.ratioStr}</span>}
+                                  {sc && <span className="absolute top-1 left-1 text-[10px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
+                                  {sc && <span className="absolute top-1 right-1 text-[10px] font-bold text-white bg-black/70 px-1.5 py-0.5 rounded" style={{ fontFamily: mono }}>{sc.ratioStr}</span>}
                                 </div>
-                                <div className="text-[9px] font-bold leading-tight mt-0.5 line-clamp-2 text-stone-600">{rf.title}</div>
+                                <div className="text-[10px] font-bold leading-tight mt-1 line-clamp-2 text-stone-600">{rf.title}</div>
                               </div>
                             );
                           })}
