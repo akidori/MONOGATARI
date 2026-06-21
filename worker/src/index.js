@@ -306,6 +306,13 @@ export default {
           text,
           timecode: (typeof b.timecode === "number" && isFinite(b.timecode)) ? Math.max(0, b.timecode) : null,
           videoKey: (b.videoKey || "").toString().slice(0, 80) || null,
+          // ===== 修正管理（Frame.io型）=====
+          category: (b.category || "その他").toString().slice(0, 20),
+          priority: (b.priority || "中").toString().slice(0, 4),
+          status: (b.status || "未対応").toString().slice(0, 8),
+          assignee: (b.assignee || "").toString().slice(0, 60),
+          versionId: (b.versionId || "").toString().slice(0, 40),
+          replies: [],
           createdAt: new Date().toISOString(),
           resolved: false,
         };
@@ -314,16 +321,32 @@ export default {
         return json({ comment: c });
       }
 
-      // POST /api/snap/{id}/comments/{cid}  { resolved?, token }  （AK側・要トークン）
+      // POST /api/snap/{id}/comments/{cid}
+      //  返信: { reply:{author,text} } はトークン不要（先方も編集者も返信可）
+      //  状態/属性変更: { status?, category?, priority?, assignee?, resolved?, token } は要トークン（編集者）
       if (request.method === "POST" && parts[1] === "snap" && parts[3] === "comments" && parts[4]) {
         const id = parts[2], cid = parts[4];
         const b = await request.json();
-        const tok = await env.SNAPS.get("tok:" + id);
-        if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
         const list = (await env.SNAPS.get("cmt:" + id, "json")) || [];
         const c = list.find((x) => x.id === cid);
         if (!c) return json({ error: "not found" }, 404);
-        if (typeof b.resolved === "boolean") c.resolved = b.resolved;
+        // 返信（無認証OK）
+        if (b.reply && (b.reply.text || "").toString().trim()) {
+          if (!Array.isArray(c.replies)) c.replies = [];
+          if (c.replies.length < 200) {
+            c.replies.push({ id: rid(8), author: (b.reply.author || "ゲスト").toString().slice(0, 60), text: b.reply.text.toString().trim().slice(0, 2000), createdAt: new Date().toISOString() });
+          }
+          await env.SNAPS.put("cmt:" + id, JSON.stringify(list));
+          return json({ comment: c });
+        }
+        // 状態・属性の変更は要トークン
+        const tok = await env.SNAPS.get("tok:" + id);
+        if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
+        if (typeof b.resolved === "boolean") { c.resolved = b.resolved; if (b.resolved && !b.status) c.status = "完了"; }
+        if (typeof b.status === "string") { c.status = b.status.slice(0, 8); c.resolved = (c.status === "完了"); }
+        if (typeof b.category === "string") c.category = b.category.slice(0, 20);
+        if (typeof b.priority === "string") c.priority = b.priority.slice(0, 4);
+        if (typeof b.assignee === "string") c.assignee = b.assignee.slice(0, 60);
         await env.SNAPS.put("cmt:" + id, JSON.stringify(list));
         return json({ comment: c });
       }
