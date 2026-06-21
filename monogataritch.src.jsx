@@ -180,7 +180,7 @@ const migrateProject = (p) => {
     rows: (p.rows || templateRows()).map((r) =>
       r.kind === "scene" ? { sec: null, ...r, type: SECTION_TYPES[r.type] ? r.type : (typeFromText(r.type) || "解説系") } : { address: "", time: "", note: "", ...r }
     ),
-    plans: ((Array.isArray(p.plans) && p.plans.length) ? p.plans : seedPlansFromMeta(p.meta || {})).map((pl) => ({ video: null, files: [], shareId: null, shareToken: null, ...pl })),
+    plans: ((Array.isArray(p.plans) && p.plans.length) ? p.plans : seedPlansFromMeta(p.meta || {})).map((pl) => ({ video: null, files: [], shareId: null, shareToken: null, ...pl, thumbImages: Array.isArray(pl.thumbImages) ? pl.thumbImages.slice(0, 5) : (pl.thumbImage ? [pl.thumbImage] : []) })),
     format: p.format === "talk" ? "talk" : "documentary",
     talk: p.format === "talk"
       ? { ...newTalk(), ...(p.talk || {}), toc: (p.talk && p.talk.toc && p.talk.toc.length) ? p.talk.toc : [""], body: (p.talk && p.talk.body && p.talk.body.length) ? p.talk.body : [newTalkBody()] }
@@ -195,7 +195,7 @@ const migrateProject = (p) => {
 
 /* ===== 企画・サムネ：YouTube参考動画まわりのヘルパー ===== */
 const emptyRef = () => ({ url: "", vid: "", title: "", channel: "", views: 0, subs: 0, likes: 0, uploadDate: "", duration: "" });
-const newPlan = () => ({ id: uid(), title: "", thumbText: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], video: null, files: [], shareId: null, shareToken: null });
+const newPlan = () => ({ id: uid(), title: "", thumbText: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], thumbImages: [], video: null, files: [], shareId: null, shareToken: null });
 const ytIdFromUrl = (url) => { const m = (url || "").match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/); return m ? m[1] : ((url || "").trim().match(/^[a-zA-Z0-9_-]{11}$/) ? url.trim() : null); };
 const parseDur = (iso) => { const m = (iso || "").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if (!m) return ""; const h = +(m[1] || 0), mi = +(m[2] || 0), s = +(m[3] || 0); return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(s).padStart(2, "0"); };
 const fmtNum = (n) => { n = Number(n) || 0; if (n >= 1e8) return (n / 1e8).toFixed(1) + "億"; if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + "万"; return n.toLocaleString(); };
@@ -530,7 +530,9 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
     case "trash": return (<svg {...c}><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-12" /></svg>);
     case "spellcheck": return (<svg {...c}><path d="M4 16l4-10 4 10M5.2 13h5.6" /><path d="M14.5 14.5l2 2 4-4.5" /></svg>);
     case "image": return (<svg {...c}><rect x="4" y="5" width="16" height="14" rx="2" /><circle cx="9" cy="10" r="1.6" /><path d="M5 17l4-4 3 3 3-3 4 4" /></svg>);
+    case "video": return (<svg {...c}><rect x="3" y="6" width="13" height="12" rx="2" /><path d="M16 10l5-3v10l-5-3z" /></svg>);
     case "menu": return (<svg {...c}><path d="M4 7h16M4 12h16M4 17h16" /></svg>);
+    case "search": return (<svg {...c}><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>);
     case "up": return (<svg {...c}><path d="M6 14l6-6 6 6" /></svg>);
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     default: return null;
@@ -981,7 +983,11 @@ export default function App() {
   const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
   const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
   const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
-  const [thumbTest, setThumbTest] = useState(null);        // サムネ目立ちテスト {pid, keyword, items[], myPos, busy, reveal}
+  const [thumbTest, setThumbTest] = useState(null);        // サムネ目立ちテスト {pid, keyword, myImage, items[], myPos, busy, reveal}
+  const [thumbPick, setThumbPick] = useState({});          // {pid: idx} 目立ちテストの対象サムネ（既定=最初の非空）
+  const [caseSearch, setCaseSearch] = useState("");        // 全案件横断検索クエリ
+  const [searchHits, setSearchHits] = useState(null);      // null=閉, []=ヒットなし, [...]=結果
+  const searchIndexRef = useRef({});                       // {id: 検索インデックス}（前計算キャッシュ）
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
@@ -1517,6 +1523,69 @@ export default function App() {
     }, 60);
   };
 
+  /* ===== 全案件 横断検索（インデックス方式）===== */
+  /* 案件本体 → 検索インデックス1件を構築（小文字化済の干し草＋行テキストを前計算）。
+     キーストローク毎の全行スキャンを避け、案件数が増えても重くならない。 */
+  const buildSearchEntry = (id, d, fallbackName, fallbackChannel) => {
+    const name = ((d && d.name) || fallbackName || "") + "";
+    const channel = (d && d.channel) || fallbackChannel || DEFAULT_CHANNEL;
+    const plans = (d && d.plans) || [];
+    const plansDisplay = (plans[0] && (plans[0].title || plans[0].thumbText)) || name;
+    const plansLC = plans.map((p) => (p.title || "") + " " + (p.thumbText || "")).join(" ").toLowerCase();
+    const rows = ((d && d.rows) || []).map((r) => {
+      const text = (r.kind === "location" ? (r.label || "") : (r.script || "")) + "";
+      return { id: r.id, kind: r.kind, text, textLC: text.toLowerCase() };
+    });
+    return { id, name, channel, nameLC: name.toLowerCase(), plansLC, plansDisplay, rows, rowsBlobLC: rows.map((r) => r.textLC).join("\n") };
+  };
+  /* フォーカス時に未読込のローカル案件を読み込み→インデックス化（collabは名前のみ）。各案件1回だけ。 */
+  const primeSearch = async () => {
+    for (const x of index) {
+      if (x.id === activeId || boardCache[x.id] || searchIndexRef.current[x.id]) continue;
+      if (x.collab) { searchIndexRef.current[x.id] = buildSearchEntry(x.id, null, x.name, x.channel); continue; }
+      try {
+        const r = await window.storage.get(STORE_PROJ(x.id));
+        const d = r && r.value ? migrateProject(JSON.parse(r.value)) : null;
+        searchIndexRef.current[x.id] = buildSearchEntry(x.id, d, x.name, x.channel);
+      } catch (e) { searchIndexRef.current[x.id] = buildSearchEntry(x.id, null, x.name, x.channel); }
+    }
+    if (caseSearch.trim()) searchNow(caseSearch);
+  };
+  const searchNow = (q) => {
+    const query = (q || "").trim().toLowerCase();
+    if (!query) { setSearchHits(null); return; }
+    const hits = [];
+    for (const x of index) {
+      if (hits.length >= 20) break;
+      // アクティブ/ボードは編集中なので毎回再インデックス（1〜数件・軽い）。他は前計算を再利用。
+      const entry = x.id === activeId ? buildSearchEntry(x.id, project, x.name, x.channel)
+        : boardCache[x.id] ? buildSearchEntry(x.id, boardCache[x.id], x.name, x.channel)
+        : (searchIndexRef.current[x.id] || buildSearchEntry(x.id, null, x.name, x.channel));
+      let snippet = "", rowId = null;
+      if (entry.nameLC.includes(query)) { snippet = entry.name; }
+      else if (entry.plansLC.includes(query)) { snippet = entry.plansDisplay; }
+      else if (entry.rowsBlobLC.includes(query)) {
+        for (const r of entry.rows) {
+          const at = r.textLC.indexOf(query);
+          if (at >= 0) {
+            const snip = r.text.slice(Math.max(0, at - 12), at + query.length + 20).replace(/\s+/g, " ").trim();
+            snippet = (r.kind === "location" ? "📍 " : "") + snip;
+            rowId = r.id;
+            break;
+          }
+        }
+      } else continue;
+      hits.push({ caseId: x.id, caseName: entry.name, channel: entry.channel, snippet, rowId });
+    }
+    setSearchHits(hits);
+  };
+  const jumpToCaseRow = async (caseId, rowId) => {
+    setSearchHits(null); setCaseSearch("");
+    if (caseId !== activeId) await switchProject(caseId);
+    setTab("script");
+    if (rowId) setTimeout(() => jumpToRow(rowId), 160);
+  };
+
   /* ===== AIチャット（会話しながら台本を作る・磨く。提案→承認）===== */
   const chatMsgs = (project && project.aiChat) || [];
   const pushChat = (m) => setProject((p) => (p ? { ...p, aiChat: [...((p.aiChat) || []).slice(-39), m] } : p));
@@ -1674,18 +1743,26 @@ export default function App() {
     };
     reader.readAsDataURL(file);
   });
-  const onPickThumb = async (pid, file) => {
+  /* 自作サムネ（最大5枚）の idx 番目を差し替え／削除 */
+  const setThumbAt = (pid, idx, dataUrl) => setPlans((ps) => (ps || []).map((x) => {
+    if (x.id !== pid) return x;
+    const arr = (x.thumbImages || []).slice(0, 5);
+    while (arr.length <= idx) arr.push("");
+    arr[idx] = dataUrl || "";
+    return { ...x, thumbImages: arr };
+  }));
+  const onPickThumb = async (pid, idx, file) => {
     if (!file) return;
     if (!/^image\//.test(file.type)) { showToast("画像ファイルを選んでね"); return; }
-    try { const dataUrl = await resizeImageFile(file); updatePlan(pid, { thumbImage: dataUrl }); showToast("サムネをアップしました"); }
+    try { const dataUrl = await resizeImageFile(file); setThumbAt(pid, idx, dataUrl); showToast("サムネをアップしました"); }
     catch (e) { showToast("失敗：" + (e.message || e)); }
   };
   const shuffle = (arr) => { const a = [...arr]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   /* キーワード検索で競合サムネを取得 → 自分のサムネをランダム位置に混ぜて並べる */
-  const runThumbTest = async (pid, keyword) => {
+  const runThumbTest = async (pid, keyword, myImage) => {
     const kw = (keyword || "").trim();
     if (!kw) { showToast("テストするキーワードを入れてね"); return; }
-    setThumbTest({ pid, keyword: kw, items: [], myPos: 0, busy: true, reveal: false });
+    setThumbTest({ pid, keyword: kw, myImage: myImage || "", items: [], myPos: 0, busy: true, reveal: false });
     try {
       const res = await fetch(SHARE_API + "/api/ytsearch?max=12&q=" + encodeURIComponent(kw));
       const d = await res.json();
@@ -1693,7 +1770,7 @@ export default function App() {
       if (!res.ok || d.error) throw new Error(d.error || "検索失敗");
       const items = shuffle(d.items || []).slice(0, 8);
       if (!items.length) throw new Error("競合サムネが見つかりませんでした");
-      setThumbTest({ pid, keyword: kw, items, myPos: Math.floor(Math.random() * (items.length + 1)), busy: false, reveal: false });
+      setThumbTest({ pid, keyword: kw, myImage: myImage || "", items, myPos: Math.floor(Math.random() * (items.length + 1)), busy: false, reveal: false });
     } catch (e) { showToast("テスト失敗：" + (e.message || e)); setThumbTest(null); }
   };
   const reshuffleThumbTest = () => setThumbTest((t) => t && ({ ...t, items: shuffle(t.items), myPos: Math.floor(Math.random() * (t.items.length + 1)), reveal: false }));
@@ -2253,6 +2330,96 @@ export default function App() {
     try { await fetch(SHARE_API + "/api/file/" + key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {}
   };
 
+  /* 動画アップ＆ギガファイルの本体（モーダルと「動画・ファイル」タブで共用） */
+  const renderMediaBody = (inModal = false) => {
+    if (!project.shareId) {
+      return (
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-[12px] text-amber-800">
+          先に<span className="font-bold">共有リンクを発行</span>してね。発行すると、ここに動画やファイルを載せて先方に確認してもらえるよ。
+          <div className="mt-3"><button onClick={() => { if (inModal) setShowMediaModal(false); publishShare(); }} className="text-[11px] font-bold px-4 py-2 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>共有リンクを発行</button></div>
+        </div>
+      );
+    }
+    return (
+      <>
+        {/* 対象（案件全体 / 企画ごと）＋保存期限 */}
+        <div className="flex items-center gap-2 text-[12px] flex-wrap">
+          <span className="font-bold text-stone-600">対象</span>
+          <select value={mediaTarget} onChange={(e) => setMediaTarget(e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[12px] max-w-[200px]">
+            <option value="project">案件全体</option>
+            {(project.plans || []).map((pl, i) => (
+              <option key={pl.id} value={pl.id}>{"企画" + (i + 1) + (pl.title ? "：" + pl.title.slice(0, 16) : "")}</option>
+            ))}
+          </select>
+          <span className="font-bold text-stone-600 ml-2">保存期限</span>
+          <select value={retention} onChange={(e) => setRetention(+e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[12px]">
+            <option value={30}>30日</option>
+            <option value={90}>90日</option>
+            <option value={0}>無期限</option>
+          </select>
+        </div>
+        <p className="text-[10px] text-stone-400 -mt-3">企画ごとに動画・ファイルを1セット設定できるよ（本編／ショート等を分けて試写）。</p>
+
+        {/* 動画確認 */}
+        <div>
+          <div className="text-[12px] font-bold text-stone-700 mb-2">🎬 確認用の動画</div>
+          {getTargetVideo(mediaTarget) ? (
+            <div>
+              <VideoView video={getTargetVideo(mediaTarget)} main={theme.main} />
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: theme.main, color: mainText }}>{getTargetVideo(mediaTarget).type === "youtube" ? "YouTube" : "mp4"}</span>
+                <span className="flex-1 min-w-0 truncate text-[12px]">{getTargetVideo(mediaTarget).title || getTargetVideo(mediaTarget).name || getTargetVideo(mediaTarget).url}</span>
+                <button onClick={() => removeVideo(mediaTarget)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
+                <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadVideo(f, mediaTarget); e.target.value = ""; }} />
+                ⬆ mp4をアップロード（0.5〜4倍速で確認できる）
+              </label>
+              <div className="flex items-center gap-2">
+                <input value={ytInput} onChange={(e) => setYtInput(e.target.value)} placeholder="または YouTube限定公開URL を貼る" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-1.5 text-[12px] focus:outline-none" />
+                <button onClick={() => registerYouTube(mediaTarget)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>登録</button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ファイル転送 */}
+        <div>
+          <div className="text-[12px] font-bold text-stone-700 mb-2">📁 ファイル転送（元のファイル名のまま渡せる）</div>
+          {getTargetFiles(mediaTarget).length > 0 && (
+            <div className="space-y-1.5 mb-2">
+              {getTargetFiles(mediaTarget).map((f) => (
+                <div key={f.key} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-semibold text-stone-800 truncate">{f.name}</div>
+                    <div className="text-[10px] text-stone-400" style={{ fontFamily: mono }}>{f.size >= 1073741824 ? (f.size / 1073741824).toFixed(2) + " GB" : f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(f.size / 1024)) + " KB"}{f.expiresAt ? " ・" + (f.expiresAt || "").slice(0, 10) + "まで" : " ・無期限"}</div>
+                  </div>
+                  <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>⬇</a>
+                  <button onClick={() => deleteFile(mediaTarget, f.key)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
+            <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadFile(f, mediaTarget); e.target.value = ""; }} />
+            ⬆ ファイルを追加（最大500GB）
+          </label>
+          <p className="text-[10px] text-stone-400 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。</p>
+        </div>
+
+        {mediaBusy && (
+          <div className="rounded-lg bg-stone-50 border border-stone-200 p-3">
+            <div className="text-[11px] text-stone-500 mb-1">{mediaBusy} {mediaProg}%</div>
+            <div className="h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full" style={{ width: mediaProg + "%", background: theme.accent }} /></div>
+          </div>
+        )}
+      </>
+    );
+  };
+
   /* ---- 先方コメント ---- */
   // 案件スナップ＋各企画の試写スナップから集めて1つに（videoKeyで動画別に束ねる）
   const fetchComments = async () => {
@@ -2794,9 +2961,10 @@ export default function App() {
                       </svg>
                     </button>
                   )}
-                  <span className="flex-1 min-w-0 truncate text-[11.5px] font-bold tracking-wide"
+                  <span className="flex-1 min-w-0 truncate text-[11.5px] font-bold tracking-wide cursor-pointer hover:underline"
                     style={{ color: hasActive ? "#fff" : "rgba(255,255,255,0.7)" }}
-                    title={channel}>
+                    title="このチャンネルの企画・サムネ一覧を開く"
+                    onClick={(e) => { e.stopPropagation(); if (isCollapsed) toggleChannel(); openChannelBoard(channel); }}>
                     {channel}
                   </span>
                   <span className="text-[10px] text-white/30 tabular-nums">{items.length}</span>
@@ -3035,7 +3203,7 @@ export default function App() {
         </div>
         {/* タブ（アイコン＋短ラベルで1行に収める） */}
         <div className="max-w-[1500px] mx-auto px-2 sm:px-4 flex gap-1">
-          {[["concept", "note", "コンセプト", "概要"], ["plan", "image", "企画・サムネ", "企画"], ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]])].map(([k, ic, label, short]) => (
+          {[["concept", "note", "コンセプト", "概要"], ["plan", "image", "企画・サムネ", "企画"], ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["media", "video", "動画・ファイル", "動画"]].map(([k, ic, label, short]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap px-1 sm:px-4 py-2 sm:py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -3198,6 +3366,42 @@ export default function App() {
             <p className="text-[11px] text-stone-400 leading-relaxed">
               ここで決めたコンセプト・ターゲット・競合は、このチャンネルの全案件で共有されます。企画やタイトルを考えるときの土台にしてください。
             </p>
+          </div>
+        )}
+
+        {/* ================= 全案件 横断検索バー（本編上部） ================= */}
+        {tab === "script" && (
+          <div className="relative mb-3 max-w-[900px] mx-auto">
+            <div className="relative z-30 flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-sm">
+              <Icon name="search" className="w-4 h-4 text-stone-400 shrink-0" />
+              <input value={caseSearch}
+                onFocus={primeSearch}
+                onChange={(e) => { setCaseSearch(e.target.value); searchNow(e.target.value); }}
+                onKeyDown={(e) => { if (e.key === "Escape") { setCaseSearch(""); setSearchHits(null); } }}
+                placeholder="全案件を横断検索（案件名・タイトル・ロケ名・原稿）"
+                className="flex-1 min-w-0 text-[13px] bg-transparent focus:outline-none" />
+              {caseSearch && <button onClick={() => { setCaseSearch(""); setSearchHits(null); }} title="クリア" className="shrink-0 w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-100"><Icon name="close" className="w-3.5 h-3.5" /></button>}
+            </div>
+            {searchHits != null && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setSearchHits(null)} />
+                <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-stone-200 bg-white shadow-xl max-h-[60vh] overflow-y-auto">
+                  {searchHits.length === 0 ? (
+                    <div className="px-4 py-3 text-[12px] text-stone-400">「{caseSearch}」にヒットなし</div>
+                  ) : searchHits.map((h, i) => (
+                    <button key={h.caseId + ":" + i} onClick={() => jumpToCaseRow(h.caseId, h.rowId)}
+                      className="w-full text-left px-3 py-2 border-b border-stone-100 last:border-0 hover:bg-stone-50 flex flex-col gap-0.5">
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[10px] text-stone-400 shrink-0">{(channelIconOf(h.channel) || "📁") + h.channel}</span>
+                        <span className="text-[13px] font-bold text-stone-700 truncate">{h.caseName || "（無題）"}</span>
+                        {h.caseId === activeId && <span className="text-[9px] text-stone-400 shrink-0">表示中</span>}
+                      </span>
+                      {h.snippet && <span className="text-[11px] text-stone-500 truncate">{h.snippet}</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -3366,6 +3570,11 @@ export default function App() {
                                   ? <span className="inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />完了</span>
                                   : <span className="inline-flex items-center gap-1"><Icon name="check" className="w-3.5 h-3.5" />撮影完了</span>}
                               </button>
+                              {r.done && (() => { const lc = locations.find((l) => l.id === r.id); return (
+                                <span className="shrink-0 self-center mr-2 text-[10px] whitespace-nowrap opacity-60" style={{ color: mainText, fontFamily: mono }} title="撮影完了で畳み中">
+                                  {lc ? lc.scenes.length : 0}シーン・尺 {fmt(lc ? lc.secSum : 0)} ▾畳み
+                                </span>
+                              ); })()}
                               <span className="self-center pr-3 text-[9px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
                             </div>
                           </td>
@@ -3389,7 +3598,8 @@ export default function App() {
                     const dur = chars / project.rate;
                     const over = chars > 0 && dur > target * 1.5;
                     const locDone = sceneLocDone[r.id];
-                    const sceneDone = !!r.done || locDone;
+                    if (locDone) return null; // 所属ロケが撮影完了 → 畳んで非表示
+                    const sceneDone = !!r.done;
                     return (
                       <tr key={r.id} id={"row-" + r.id}
                         {...dropZoneProps(idx)}
@@ -3534,6 +3744,11 @@ export default function App() {
                           ? <span className="inline-flex items-center gap-0.5"><Icon name="checkCircle" className="w-3 h-3" />済</span>
                           : <span className="inline-flex items-center gap-0.5"><Icon name="check" className="w-3 h-3" />完了</span>}
                       </button>
+                      {r.done && (() => { const lc = locations.find((l) => l.id === r.id); return (
+                        <span className="shrink-0 self-center mr-2 text-[10px] whitespace-nowrap opacity-60" style={{ color: mainText, fontFamily: mono }}>
+                          {lc ? lc.scenes.length : 0}シーン・{fmt(lc ? lc.secSum : 0)} ▾
+                        </span>
+                      ); })()}
                     </div>
                   );
                 }
@@ -3544,7 +3759,8 @@ export default function App() {
                 const dur = chars / project.rate;
                 const over = chars > 0 && dur > target * 1.5;
                 const locDone = sceneLocDone[r.id];
-                const sceneDone = !!r.done || locDone;
+                if (locDone) return null; // 所属ロケが撮影完了 → 畳んで非表示
+                const sceneDone = !!r.done;
                 return (
                   <div key={r.id} id={"row-" + r.id}
                     className="rounded-xl border border-stone-200 bg-white overflow-hidden mb-2"
@@ -3927,46 +4143,70 @@ export default function App() {
                             })}
                           </div>
 
-                          {/* 自作サムネ＋目立ちテスト */}
+                          {/* 自作サムネ（最大5枚）＋目立ちテスト */}
+                          {(() => {
+                            const thumbs = pl.thumbImages || [];
+                            const firstFilled = thumbs.findIndex(Boolean);
+                            const selIdx = (thumbPick[pl.id] != null && thumbs[thumbPick[pl.id]]) ? thumbPick[pl.id] : (firstFilled < 0 ? 0 : firstFilled);
+                            const selImg = thumbs[selIdx] || "";
+                            const hasAny = thumbs.some(Boolean);
+                            const kw = pl.thumbKeyword != null ? pl.thumbKeyword : (title || thumbText || "");
+                            return (
                           <div className="mt-4 rounded-xl border border-stone-200 bg-stone-50/40 p-3">
-                            <span className="text-[11px] font-bold text-stone-500 inline-flex items-center gap-1"><Icon name="image" className="w-3.5 h-3.5" />自作サムネ（このタイトルのサムネ案）</span>
-                            <div className="flex flex-col sm:flex-row gap-3 mt-2">
-                              <div className="sm:w-56 shrink-0">
-                                {pl.thumbImage ? (
-                                  <div className="relative">
-                                    <img src={pl.thumbImage} alt="" className="w-full aspect-video object-cover rounded-lg border border-stone-200" />
-                                    <button onClick={() => updatePlan(pl.id, { thumbImage: "" })} title="削除"
-                                      className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/60 hover:bg-black/80 text-white grid place-items-center"><Icon name="trash" className="w-3.5 h-3.5" /></button>
-                                    <label className="absolute bottom-1 right-1 text-[10px] font-bold px-2 py-1 rounded-md bg-white/90 hover:bg-white text-stone-600 cursor-pointer shadow-sm">
-                                      差し替え<input type="file" accept="image/*" className="hidden" onChange={(e) => onPickThumb(pl.id, e.target.files && e.target.files[0])} />
-                                    </label>
+                            <span className="text-[11px] font-bold text-stone-500 inline-flex items-center gap-1"><Icon name="image" className="w-3.5 h-3.5" />自作サムネ（このタイトルのサムネ案・最大5枚）</span>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-2">
+                              {[0, 1, 2, 3, 4].map((i) => {
+                                const img = thumbs[i] || "";
+                                const isSel = hasAny && i === selIdx;
+                                return (
+                                  <div key={i} className="border border-stone-200 rounded-xl overflow-hidden flex flex-col bg-white">
+                                    <div className="px-2 pt-1.5 flex items-center justify-between text-[9px] font-bold text-stone-400">
+                                      <span>自作 {i + 1}</span>
+                                      {img && (isSel
+                                        ? <span className="text-[8px] font-bold px-1.5 py-0.5 rounded text-white" style={{ background: theme.accent }}>テスト対象</span>
+                                        : <button onClick={() => setThumbPick((m) => ({ ...m, [pl.id]: i }))} title="このサムネを目立ちテストの対象にする" className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-stone-100 hover:bg-stone-200 text-stone-500">対象に</button>)}
+                                    </div>
+                                    {img ? (
+                                      <div className="relative mx-2 mt-1">
+                                        <img src={img} alt="" onClick={() => setThumbPick((m) => ({ ...m, [pl.id]: i }))}
+                                          className={"w-full aspect-video object-cover rounded-lg cursor-pointer " + (isSel ? "ring-2" : "")} style={isSel ? { boxShadow: "0 0 0 2px " + theme.accent } : {}} title="クリックでテスト対象に" />
+                                        <button onClick={() => setThumbAt(pl.id, i, "")} title="削除"
+                                          className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 hover:bg-black/80 text-white grid place-items-center"><Icon name="trash" className="w-3 h-3" /></button>
+                                        <label className="absolute bottom-1 right-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-white/90 hover:bg-white text-stone-600 cursor-pointer shadow-sm">
+                                          差替<input type="file" accept="image/*" className="hidden" onChange={(e) => onPickThumb(pl.id, i, e.target.files && e.target.files[0])} />
+                                        </label>
+                                      </div>
+                                    ) : (
+                                      <label className="aspect-video mx-2 my-1 rounded-lg border-2 border-dashed border-stone-300 hover:border-stone-400 cursor-pointer grid place-items-center text-center text-[10px] text-stone-400">
+                                        <span className="inline-flex flex-col items-center gap-0.5"><Icon name="download" className="w-4 h-4" />アップ</span>
+                                        <input type="file" accept="image/*" className="hidden" onChange={(e) => onPickThumb(pl.id, i, e.target.files && e.target.files[0])} />
+                                      </label>
+                                    )}
+                                    <div className="h-1.5" />
                                   </div>
-                                ) : (
-                                  <label className="aspect-video w-full rounded-lg border-2 border-dashed border-stone-300 hover:border-stone-400 cursor-pointer grid place-items-center text-center text-[11px] text-stone-400 bg-white">
-                                    <span className="inline-flex flex-col items-center gap-1"><Icon name="download" className="w-5 h-5" />サムネ画像をアップ<span className="text-[9px]">クリックで選択</span></span>
-                                    <input type="file" accept="image/*" className="hidden" onChange={(e) => onPickThumb(pl.id, e.target.files && e.target.files[0])} />
-                                  </label>
-                                )}
+                                );
+                              })}
+                            </div>
+                            <div className="mt-3 pt-3 border-t border-stone-200">
+                              <div className="text-[11px] font-bold text-stone-500 mb-1 inline-flex items-center gap-1"><Icon name="sparkle" className="w-3.5 h-3.5" />目立ちテスト{hasAny && <span className="text-[10px] font-normal text-stone-400">（自作 {selIdx + 1} でテスト）</span>}</div>
+                              <p className="text-[11px] text-stone-400 leading-relaxed mb-2">キーワードで競合サムネを8枚集めて、選んだ自作サムネをランダムに混ぜて並べます。一覧の中で自分のが目立つか確認できます。</p>
+                              <div className="flex gap-2">
+                                <input value={kw}
+                                  onChange={(e) => updatePlan(pl.id, { thumbKeyword: e.target.value })}
+                                  placeholder="検索キーワード（例：不動産 転職）"
+                                  className="flex-1 min-w-0 text-[12px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                                <button onClick={() => runThumbTest(pl.id, kw, selImg)}
+                                  disabled={!hasAny} title={hasAny ? "競合と並べて目立ちテスト" : "先にサムネをアップしてね"}
+                                  className="shrink-0 text-[12px] font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
+                                  style={{ background: theme.accent, color: accentText }}>
+                                  <Icon name="sparkle" className="w-3.5 h-3.5" />テスト
+                                </button>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="text-[11px] font-bold text-stone-500 mb-1 inline-flex items-center gap-1"><Icon name="sparkle" className="w-3.5 h-3.5" />目立ちテスト</div>
-                                <p className="text-[11px] text-stone-400 leading-relaxed mb-2">キーワードで競合サムネを8枚集めて、自分のサムネをランダムに混ぜて並べます。一覧の中で自分のが目立つか確認できます。</p>
-                                <div className="flex gap-2">
-                                  <input value={pl.thumbKeyword != null ? pl.thumbKeyword : (title || thumbText || "")}
-                                    onChange={(e) => updatePlan(pl.id, { thumbKeyword: e.target.value })}
-                                    placeholder="検索キーワード（例：不動産 転職）"
-                                    className="flex-1 min-w-0 text-[12px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
-                                  <button onClick={() => runThumbTest(pl.id, pl.thumbKeyword != null ? pl.thumbKeyword : (title || thumbText || ""))}
-                                    disabled={!pl.thumbImage} title={pl.thumbImage ? "競合と並べて目立ちテスト" : "先にサムネをアップしてね"}
-                                    className="shrink-0 text-[12px] font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
-                                    style={{ background: theme.accent, color: accentText }}>
-                                    <Icon name="sparkle" className="w-3.5 h-3.5" />テスト
-                                  </button>
-                                </div>
-                                {!pl.thumbImage && <p className="text-[10px] text-amber-600 mt-1">※ 先に自作サムネをアップするとテストできます</p>}
-                              </div>
+                              {!hasAny && <p className="text-[10px] text-amber-600 mt-1">※ 先に自作サムネをアップするとテストできます</p>}
                             </div>
                           </div>
+                            );
+                          })()}
 
                           <PlanMedia plan={pl} canUpload={!!project.shareId} main={theme.main} accent={theme.accent}
                             comments={comments} onPostComment={postPlanComment} onResolveComment={resolveComment}
@@ -4000,6 +4240,18 @@ export default function App() {
             </p>
           </>
         )}
+
+        {tab === "media" && (
+          <div className="max-w-2xl mx-auto px-3 sm:px-0 py-2">
+            <div className="mb-3">
+              <h2 className="text-[15px] font-bold text-stone-800">動画アップ・ギガファイル転送</h2>
+              <p className="text-[12px] text-stone-500 mt-0.5">完成動画の試写（0.5〜4倍速・タイムコードコメント）と、素材ファイルを元の名前のまま受け渡し。共有リンクを発行すると先方にも届きます。</p>
+            </div>
+            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5 space-y-5">
+              {renderMediaBody(false)}
+            </div>
+          </div>
+        )}
       </main>
       </div>{/* /content wrapper */}
 
@@ -4026,8 +4278,8 @@ export default function App() {
                       {cells.map((c, i) => c.mine ? (
                         <div key="mine">
                           <div className="relative rounded-xl overflow-hidden transition-all" style={t.reveal ? { boxShadow: "0 0 0 3px " + theme.accent } : {}}>
-                            {tp.thumbImage
-                              ? <img src={tp.thumbImage} alt="" className="w-full aspect-video object-cover" />
+                            {(t.myImage || tp.thumbImage)
+                              ? <img src={t.myImage || tp.thumbImage} alt="" className="w-full aspect-video object-cover" />
                               : <div className="w-full aspect-video grid place-items-center bg-stone-200 text-[10px] text-stone-400">自作サムネ</div>}
                             {t.reveal && <span className="absolute top-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow" style={{ background: theme.accent }}>あなた</span>}
                           </div>
@@ -4616,89 +4868,7 @@ export default function App() {
               <button onClick={() => !mediaBusy && setShowMediaModal(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-5">
-              {!project.shareId ? (
-                <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-[12px] text-amber-800">
-                  先に<span className="font-bold">共有リンクを発行</span>してね。発行すると、ここに動画やファイルを載せて先方に確認してもらえるよ。
-                  <div className="mt-3"><button onClick={() => { setShowMediaModal(false); publishShare(); }} className="text-[11px] font-bold px-4 py-2 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>共有リンクを発行</button></div>
-                </div>
-              ) : (
-                <>
-                  {/* 対象（案件全体 / 企画ごと）＋保存期限 */}
-                  <div className="flex items-center gap-2 text-[12px] flex-wrap">
-                    <span className="font-bold text-stone-600">対象</span>
-                    <select value={mediaTarget} onChange={(e) => setMediaTarget(e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[12px] max-w-[200px]">
-                      <option value="project">案件全体</option>
-                      {(project.plans || []).map((pl, i) => (
-                        <option key={pl.id} value={pl.id}>{"企画" + (i + 1) + (pl.title ? "：" + pl.title.slice(0, 16) : "")}</option>
-                      ))}
-                    </select>
-                    <span className="font-bold text-stone-600 ml-2">保存期限</span>
-                    <select value={retention} onChange={(e) => setRetention(+e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[12px]">
-                      <option value={30}>30日</option>
-                      <option value={90}>90日</option>
-                      <option value={0}>無期限</option>
-                    </select>
-                  </div>
-                  <p className="text-[10px] text-stone-400 -mt-3">企画ごとに動画・ファイルを1セット設定できるよ（本編／ショート等を分けて試写）。</p>
-
-                  {/* 動画確認 */}
-                  <div>
-                    <div className="text-[12px] font-bold text-stone-700 mb-2">🎬 確認用の動画</div>
-                    {getTargetVideo(mediaTarget) ? (
-                      <div>
-                        <VideoView video={getTargetVideo(mediaTarget)} main={theme.main} />
-                        <div className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: theme.main, color: mainText }}>{getTargetVideo(mediaTarget).type === "youtube" ? "YouTube" : "mp4"}</span>
-                          <span className="flex-1 min-w-0 truncate text-[12px]">{getTargetVideo(mediaTarget).title || getTargetVideo(mediaTarget).name || getTargetVideo(mediaTarget).url}</span>
-                          <button onClick={() => removeVideo(mediaTarget)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
-                          <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadVideo(f, mediaTarget); e.target.value = ""; }} />
-                          ⬆ mp4をアップロード（0.5〜4倍速で確認できる）
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <input value={ytInput} onChange={(e) => setYtInput(e.target.value)} placeholder="または YouTube限定公開URL を貼る" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-1.5 text-[12px] focus:outline-none" />
-                          <button onClick={() => registerYouTube(mediaTarget)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>登録</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ファイル転送 */}
-                  <div>
-                    <div className="text-[12px] font-bold text-stone-700 mb-2">📁 ファイル転送（元のファイル名のまま渡せる）</div>
-                    {getTargetFiles(mediaTarget).length > 0 && (
-                      <div className="space-y-1.5 mb-2">
-                        {getTargetFiles(mediaTarget).map((f) => (
-                          <div key={f.key} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2">
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[12px] font-semibold text-stone-800 truncate">{f.name}</div>
-                              <div className="text-[10px] text-stone-400" style={{ fontFamily: mono }}>{f.size >= 1073741824 ? (f.size / 1073741824).toFixed(2) + " GB" : f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(f.size / 1024)) + " KB"}{f.expiresAt ? " ・" + (f.expiresAt || "").slice(0, 10) + "まで" : " ・無期限"}</div>
-                            </div>
-                            <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>⬇</a>
-                            <button onClick={() => deleteFile(mediaTarget, f.key)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
-                      <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadFile(f, mediaTarget); e.target.value = ""; }} />
-                      ⬆ ファイルを追加（最大500GB）
-                    </label>
-                    <p className="text-[10px] text-stone-400 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。</p>
-                  </div>
-
-                  {mediaBusy && (
-                    <div className="rounded-lg bg-stone-50 border border-stone-200 p-3">
-                      <div className="text-[11px] text-stone-500 mb-1">{mediaBusy} {mediaProg}%</div>
-                      <div className="h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full" style={{ width: mediaProg + "%", background: theme.accent }} /></div>
-                    </div>
-                  )}
-                </>
-              )}
+              {renderMediaBody(true)}
             </div>
           </div>
         </div>
