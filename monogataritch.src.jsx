@@ -1011,6 +1011,15 @@ function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onR
   );
 }
 
+/* hls.js を必要時だけCDNから読み込む（Cloudflare Stream のHLS再生用） */
+let _hlsP = null;
+function loadHls() {
+  if (typeof window !== "undefined" && window.Hls) return Promise.resolve(window.Hls);
+  if (_hlsP) return _hlsP;
+  _hlsP = new Promise((res) => { const s = document.createElement("script"); s.src = "https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"; s.onload = () => res(window.Hls); s.onerror = () => res(null); document.head.appendChild(s); });
+  return _hlsP;
+}
+
 /* ===== 動画確認：Frame.io型 修正管理ボード（バージョン＋ステータス/カテゴリ/優先度/返信/フィルタ） ===== */
 function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName }) {
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
@@ -1026,13 +1035,22 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
   const [cur, setCur] = React.useState(0);
   React.useEffect(() => { if (!versions.some((v) => v.id === selId)) setSelId(versions[0] ? versions[0].id : null); }, [versions.map((v) => v.id).join(",")]);
   const sel = versions.find((v) => v.id === selId) || versions[0] || null;
-  const vKey = sel ? (sel.key || sel.url || "") : "";
+  const vKey = sel ? (sel.uid || sel.key || sel.url || "") : "";
   const fmtTC = (s) => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60), sec = Math.floor(s % 60), cs = Math.floor((s * 100) % 100); return m + ":" + String(sec).padStart(2, "0") + "." + String(cs).padStart(2, "0"); };
-  const belongs = (c) => sel && (c.versionId === sel.id || (c.videoKey || "") === vKey);
+  const belongs = (c) => sel && (c.versionId === sel.id || (c.videoKey || "") === vKey || (sel.uid && c.videoKey === sel.uid) || (sel.key && c.videoKey === sel.key));
   const verComments = comments.filter(belongs);
   const counts = CMT_STATUSES.reduce((o, s) => { o[s] = verComments.filter((c) => cstat(c) === s).length; return o; }, {});
   const seek = (t) => { if (sel && sel.type !== "youtube" && vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); } };
   const isMp4 = sel && sel.type !== "youtube";
+  const streamPending = sel && sel.type === "stream" && !sel.ready;
+  // Cloudflare Stream(HLS) を hls.js で attach（Safariはネイティブ）
+  React.useEffect(() => {
+    if (!sel || sel.type !== "stream" || !sel.ready || !sel.hls || !vref.current) return;
+    const video = vref.current; let hls;
+    if (video.canPlayType("application/vnd.apple.mpegurl")) { video.src = sel.hls; }
+    else { loadHls().then((Hls) => { if (Hls && Hls.isSupported()) { hls = new Hls(); hls.loadSource(sel.hls); hls.attachMedia(video); } else { video.src = sel.hls; } }); }
+    return () => { if (hls) hls.destroy(); };
+  }, [sel && sel.id, sel && sel.ready, sel && sel.hls]);
   const filtered = verComments.filter((c) => filter === "全部" ? true : filter === "高優先度" ? c.priority === "高" : CMT_STATUSES.includes(filter) ? cstat(c) === filter : CMT_CATEGORIES.includes(filter) ? (c.category || "その他") === filter : true)
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
   const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: isMp4 && vref.current ? vref.current.currentTime : null, text: t, category: cat, priority: prio, status: "未対応" }); setText(""); };
@@ -1089,10 +1107,14 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
         {/* 左：プレイヤー */}
         <div>
-          <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
+          <div className="rounded-xl overflow-hidden bg-black grid place-items-center" style={{ aspectRatio: "16/9" }}>
             {sel.type === "youtube"
               ? <iframe src={"https://www.youtube.com/embed/" + (ytIdFromUrl(sel.url) || "")} className="w-full h-full" style={{ border: 0 }} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
-              : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
+              : streamPending
+                ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 軽量版に変換中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">完了すると回線が細くてもサクサク再生できます（数分）。このまま待つか、後で開いてOK。</div></div>
+                : sel.type === "stream"
+                  ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />
+                  : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
           </div>
           {isMp4 && (
             <div className="flex items-center gap-1 mt-2 flex-wrap">
@@ -2844,17 +2866,41 @@ export default function App() {
   const addVersionFromVideo = async (vobj, name) => {
     setVersions((arr) => {
       const label = "v" + (arr.length + 1);
-      const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
-      // 素材管理の「確認用動画」にもミラー（単一正本との整合）
-      setAssets((as) => [newAsset("確認用動画", { type: vobj.type, key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id }), ...as]);
+      const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
+      // 素材管理の「確認用動画」にもミラー（DLは元のR2マスター）
+      setAssets((as) => [newAsset("確認用動画", { type: vobj.type === "youtube" ? "youtube" : "mp4", key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id }), ...as]);
       return [...arr, v];
     });
+  };
+  /* Stream変換状況をポーリングして hls を埋める */
+  const pollStreamReady = async (sid, tries = 0) => {
+    if (tries > 80) return; // 約7分で打ち切り
+    try {
+      const r = await fetch(SHARE_API + "/api/stream/" + sid);
+      const d = await r.json();
+      if (d.ready && d.hls) { setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, ready: true, hls: d.hls, pct: 100 } : x))); return; }
+      setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, pct: d.pct || x.pct } : x)));
+    } catch (e) {}
+    setTimeout(() => pollStreamReady(sid, tries + 1), 5000);
   };
   const uploadVersionVideo = async (file, onProgress = null) => {
     if (!project.shareId) { showToast("先に確認用URLを発行してね"); return; }
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
     setMediaBusy("動画をアップロード中…"); setMediaProg(0);
-    try { const meta = await uploadToR2(file, "", onProgress); await addVersionFromVideo({ type: "mp4", key: meta.key }, file.name); showToast("バージョンを追加したよ"); }
+    try {
+      const meta = await uploadToR2(file, "", onProgress);
+      // Streamへ取り込み（自動で軽量化）。無効/失敗ならR2直再生にフォールバック
+      let v = null;
+      try {
+        const r = await fetch(SHARE_API + "/api/stream/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: project.shareId, token: project.shareToken, key: meta.key, name: file.name }) });
+        const d = await r.json();
+        if (d.uid) v = { type: "stream", uid: d.uid, key: meta.key, ready: false };
+      } catch (e) {}
+      if (!v) v = { type: "mp4", key: meta.key };
+      await addVersionFromVideo(v, file.name);
+      if (v.type === "stream") { pollStreamReady(v.uid); showToast("アップ完了。変換中…（少し待つと軽く再生できる）"); }
+      else showToast("バージョンを追加したよ（Stream未設定のためR2直再生）");
+    }
     catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
     setMediaBusy("");
   };
@@ -2868,6 +2914,7 @@ export default function App() {
     setVersions((arr) => arr.filter((x) => x.id !== vid));
     setAssets((as) => as.filter((a) => a.versionId !== vid));
     if (v && v.key) { try { await fetch(SHARE_API + "/api/file/" + v.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
+    if (v && v.uid) { try { await fetch(SHARE_API + "/api/stream/" + v.uid + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
   };
   const renameVersion = (vid, name) => setVersions((arr) => arr.map((x) => (x.id === vid ? { ...x, name } : x)));
 

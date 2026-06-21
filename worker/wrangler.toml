@@ -7,6 +7,8 @@ workers_dev = true
 # セッション署名鍵は秘密： wrangler secret put SESSION_SECRET
 [vars]
 GOOGLE_CLIENT_ID = "177151250196-ta2k23m2fe1ac9bras75ajk6ia79h88k.apps.googleusercontent.com"
+# Cloudflare Stream（確認用動画の自動トランスコード）。トークンは秘密： wrangler secret put STREAM_API_TOKEN
+STREAM_ACCOUNT_ID = "fa27b051015cf14d2a1af3acc35c4d0f"
 
 # 共有スナップショット＋コメント保存用 KV
 # 初回: wrangler kv namespace create SNAPS で id を発行して下記に貼る

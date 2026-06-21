@@ -638,6 +638,51 @@ export default {
         return json({ ok: true });
       }
 
+      // ===== Cloudflare Stream（確認用動画の自動トランスコード＝Frame.io方式） =====
+      // 設定: wrangler.toml [vars] STREAM_ACCOUNT_ID ＋ secret STREAM_API_TOKEN（Stream:Edit）
+      const streamCfg = () => env.STREAM_ACCOUNT_ID && env.STREAM_API_TOKEN
+        ? { base: "https://api.cloudflare.com/client/v4/accounts/" + env.STREAM_ACCOUNT_ID + "/stream", auth: { Authorization: "Bearer " + env.STREAM_API_TOKEN } } : null;
+
+      // POST /api/stream/copy  { snap, token, key, name }  → R2の動画をStreamに取り込み（コピー）→ { uid }
+      if (request.method === "POST" && parts[1] === "stream" && parts[2] === "copy") {
+        const cfg = streamCfg();
+        if (!cfg) return json({ error: "stream_disabled" }, 200);
+        const b = await request.json();
+        const key = (b.key || "").toString();
+        if (!key) return json({ error: "key required" }, 400);
+        const tok = await env.SNAPS.get("tok:" + (b.snap || ""));
+        if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
+        const srcUrl = new URL(request.url).origin + "/api/file/" + key; // /api/file は公開GET＝Streamが取得可能
+        const r = await fetch(cfg.base + "/copy", {
+          method: "POST", headers: { ...cfg.auth, "Content-Type": "application/json" },
+          body: JSON.stringify({ url: srcUrl, meta: { name: (b.name || "確認用動画").toString().slice(0, 120) }, requireSignedURLs: false }),
+        });
+        const d = await r.json();
+        if (!d.success) return json({ error: (d.errors && d.errors[0] && d.errors[0].message) || "stream copy失敗" }, 502);
+        return json({ uid: d.result.uid });
+      }
+
+      // GET /api/stream/{uid}  → 変換状況＋再生URL（HLS）
+      if (request.method === "GET" && parts[1] === "stream" && parts[2]) {
+        const cfg = streamCfg();
+        if (!cfg) return json({ error: "stream_disabled" }, 200);
+        const r = await fetch(cfg.base + "/" + parts[2], { headers: cfg.auth });
+        const d = await r.json();
+        if (!d.success) return json({ error: "not found" }, 404);
+        const v = d.result;
+        return json({ ready: !!v.readyToStream, pct: (v.status && v.status.pctComplete) || null, hls: v.playback && v.playback.hls, thumbnail: v.thumbnail, duration: v.duration });
+      }
+
+      // DELETE /api/stream/{uid}?snap=&token=  → オーナーのみ
+      if (request.method === "DELETE" && parts[1] === "stream" && parts[2]) {
+        const cfg = streamCfg();
+        if (!cfg) return json({ error: "stream_disabled" }, 200);
+        const tok = await env.SNAPS.get("tok:" + (url.searchParams.get("snap") || ""));
+        if (!tok || tok !== (url.searchParams.get("token") || "")) return json({ error: "forbidden" }, 403);
+        await fetch(cfg.base + "/" + parts[2], { method: "DELETE", headers: cfg.auth });
+        return json({ ok: true });
+      }
+
       return json({ error: "no route" }, 404);
     } catch (e) {
       return json({ error: String(e && e.message || e) }, 500);

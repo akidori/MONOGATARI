@@ -42,6 +42,8 @@ const CMT_CATS = ["編集","構成","サムネ","BGM","SE","テロップ","色�
 const CMT_STATUS_COL = {"未対応":["#FBE5EA","#DC2645"],"対応中":["#FCF0DC","#D97706"],"確認待ち":["#E3EBFC","#2563EB"],"完了":["#E7F6EC","#15803D"]};
 const CMT_PRIO_COL = {"高":["#DC2645","#fff"],"中":["#E8A33D","#fff"],"低":["#E5E5E5","#57534E"]};
 const cStat = (c) => c.status || (c.resolved ? "完了" : "未対応");
+let _hlsShareP = null;
+function loadHlsShare(){ if(window.Hls) return Promise.resolve(window.Hls); if(_hlsShareP) return _hlsShareP; _hlsShareP = new Promise((res)=>{ const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"; s.onload=()=>res(window.Hls); s.onerror=()=>res(null); document.head.appendChild(s); }); return _hlsShareP; }
 /* href用：http(s)のみ許可（javascript:等のスキーム注入を弾く） */
 const safeUrl = (u) => { u=(u||"").trim(); return /^https?:\/\//i.test(u) ? esc(u) : ""; };
 
@@ -543,9 +545,12 @@ function rateButtons(type){
   return rates.map(r=>`<button data-rate="${r}" class="vc-rate text-[11px] mono px-2 py-1 rounded border border-stone-200 ${r===1?'bg-stone-100':''}">${r}x</button>`).join("");
 }
 /* 動画の選択肢（案件全体＋企画ごと） */
-function vidKey(v){ return v ? (v.key || v.url || "") : ""; }
+function vidKey(v){ return v ? (v.uid || v.key || v.url || "") : ""; }
 function videoOptions(p){
   const out=[];
+  // 確認用バージョン（v1/v2/v3）。Stream変換済み(hls)を優先表示
+  const vers = (p.review && Array.isArray(p.review.versions)) ? p.review.versions : [];
+  vers.forEach((v)=>{ if(v.uid || v.url || v.key) out.push({ id: v.uid || v.key || v.url, label: v.label + (v.name && v.name!==v.label ? " "+v.name : ""), video: { type: v.type, key: v.key, url: v.url, uid: v.uid, hls: v.hls, ready: v.ready } }); });
   if(p.video && (p.video.url||p.video.key)) out.push({ id: vidKey(p.video), label:"案件全体", video:p.video });
   (p.plans||[]).forEach((pl,i)=>{ if(pl.video && (pl.video.url||pl.video.key)) out.push({ id: vidKey(pl.video), label:(pl.title||("企画"+(i+1))).slice(0,24), video:pl.video }); });
   return out;
@@ -587,6 +592,14 @@ function mountVideo(p, accent, main){
     };
     if(window.YT && window.YT.Player){ make(); }
     else { window.onYouTubeIframeAPIReady = make; if(!document.getElementById("yt-api")){ const s=document.createElement("script"); s.id="yt-api"; s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s); } }
+  } else if(v.type==="stream"){
+    if(!v.ready || !v.hls){ stage.innerHTML = '<div class="w-full h-full grid place-items-center text-white/80 text-[12px] px-4 text-center">⚙️ 軽量版に変換中です。少し待ってから開いてください。</div>'; return; }
+    videoEl = document.createElement("video");
+    videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
+    stage.replaceWith(videoEl); videoEl.id = "vc-player";
+    videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
+    if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src = v.hls; }
+    else { loadHlsShare().then((Hls)=>{ if(Hls && Hls.isSupported()){ const h=new Hls(); h.loadSource(v.hls); h.attachMedia(videoEl); } else { videoEl.src = v.hls; } }); }
   } else {
     videoEl = document.createElement("video");
     videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||"");
