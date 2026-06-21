@@ -599,7 +599,9 @@ export default {
       if (request.method === "GET" && parts[1] === "file" && parts[2] && parts[2] !== "mpu") {
         const key = parts.slice(2).join("/");
         const meta = (await env.SNAPS.get("file:" + key, "json")) || {};
-        const obj = await env.FILES.get(key, { range: request.headers, onlyIf: request.headers });
+        // Range再生（動画シーク）時は onlyIf を渡さない＝条件付きGETでbody無し応答になりカクつくのを防ぐ
+        const hasRange = request.headers.has("Range");
+        const obj = await env.FILES.get(key, hasRange ? { range: request.headers } : { onlyIf: request.headers });
         if (!obj) return json({ error: "not found" }, 404);
         const h = new Headers(CORS);
         obj.writeHttpMetadata(h);

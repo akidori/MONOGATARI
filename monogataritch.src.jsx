@@ -1092,7 +1092,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
           <div className="rounded-xl overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
             {sel.type === "youtube"
               ? <iframe src={"https://www.youtube.com/embed/" + (ytIdFromUrl(sel.url) || "")} className="w-full h-full" style={{ border: 0 }} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
-              : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
+              : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
           </div>
           {isMp4 && (
             <div className="flex items-center gap-1 mt-2 flex-wrap">
