@@ -158,9 +158,11 @@ const CMT_STATUS_COLOR = {
 const CMT_PRIO_COLOR = { "高": { bg: "#DC2645", fg: "#fff" }, "中": { bg: "#E8A33D", fg: "#fff" }, "低": { bg: "#E5E5E5", fg: "#57534E" } };
 const cstat = (c) => c.status || (c.resolved ? "完了" : "未対応");
 
-/* 素材カテゴリ4種。素材の実体はここに一元化し、企画/シーン/確認バージョンはassetIdで参照する */
-const ASSET_CATEGORIES = ["撮影素材", "確認用動画", "参考素材", "納品物"];
-const ASSET_CAT_ICON = { "撮影素材": "🎥", "確認用動画": "🎬", "参考素材": "📎", "納品物": "📦" };
+/* 素材管理に表示するカテゴリ（確認用動画は動画確認タブ・納品も動画確認OK＝ここは撮影素材とテンプレ素材だけ）。
+   ※"確認用動画"はバージョンのミラー等で内部的には使うが、素材管理UIには出さない */
+const ASSET_CATEGORIES = ["撮影素材", "テンプレ素材"];
+const ASSET_CAT_ICON = { "撮影素材": "🎥", "テンプレ素材": "🧩", "確認用動画": "🎬", "参考素材": "📎", "納品物": "📦" };
+const ASSET_CAT_DESC = { "撮影素材": "元動画・音声・写真・Bロール・インタビュー音声・文字起こしなど", "テンプレ素材": "OP/ED・テロップ・BGM・ロゴなど使い回す素材" };
 /* asset: { id, category, type:"mp4"|"youtube"|"file", key?, url?, name, size?, mime?, planId?, sceneId?, createdAt } */
 const newAsset = (category = "撮影素材", patch = {}) => ({ id: uid(), category, type: "file", key: "", url: "", name: "", size: 0, mime: "", planId: "", sceneId: "", createdAt: Date.now(), ...patch });
 
@@ -1265,6 +1267,7 @@ export default function App() {
   const [retention, setRetention] = useState(90);            // アップロードの保存期限（日）。0=無期限
   const [mediaBusy, setMediaBusy] = useState("");            // アップロード中の表示メッセージ
   const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
+  const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
 
   /* フォント */
   useEffect(() => {
@@ -2647,16 +2650,16 @@ export default function App() {
   /* ===== 素材管理（assets単一正本）のCRUD ===== */
   const setAssets = (updater) => setProject((p) => ({ ...p, assets: typeof updater === "function" ? updater(Array.isArray(p.assets) ? p.assets : []) : updater }));
   /* ファイル/動画を素材として登録（カテゴリ指定）。R2へ上げて asset を1件追加 */
-  const uploadAsset = async (file, category = "撮影素材", onProgress = null) => {
-    if (!project.shareId) { showToast("先に共有リンクを発行してね（ヘッダーの共有）"); return; }
-    if (!onProgress) { setMediaBusy("アップロード中…"); setMediaProg(0); }
+  const uploadAsset = async (file, category = "撮影素材") => {
+    if (!project.shareId) { showToast("先に確認用URLを発行してね（ヘッダーの共有）"); return; }
+    setAssetUp({ cat: category, name: file.name, pct: 0 });
     try {
-      const meta = await uploadToR2(file, "", onProgress);
+      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: file.name, pct: p }));
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
       setAssets((arr) => [newAsset(category, { type: isVideo ? "mp4" : "file", key: meta.key, name: meta.name, size: meta.size || file.size, mime: meta.mime || file.type }), ...arr]);
       showToast(category + "に追加したよ");
     } catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
-    if (!onProgress) setMediaBusy("");
+    setAssetUp(null);
   };
   /* YouTube/参考URLを素材として登録 */
   const addAssetUrl = (category, rawUrl, name = "") => {
@@ -4703,34 +4706,35 @@ export default function App() {
         {/* ================= 素材管理タブ（assets単一正本） ================= */}
         {tab === "assets" && (
           <div className="max-w-[920px] mx-auto px-1 sm:px-0 py-1">
-            <p className="text-[12px] text-stone-500 mb-3">撮影素材・確認用動画・参考素材・納品物を<span className="font-bold">この案件に一元管理</span>。企画や構成台本からはここの素材を参照します。</p>
+            <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。</p>
             {!project.shareId && (
               <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[12px] text-amber-800 mb-3">
-                ファイルを上げるには先に<span className="font-bold">共有リンクの発行</span>が必要です（保存先R2の確保のため）。
-                <button onClick={() => publishShare()} className="ml-2 text-[11px] font-bold px-3 py-1 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>共有リンクを発行</button>
+                ファイルを上げるには先に<span className="font-bold">確認用URLの発行</span>が必要です（保存先R2の確保のため）。
+                <button onClick={() => publishShare()} className="ml-2 text-[11px] font-bold px-3 py-1 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>確認用URLを発行</button>
               </div>
             )}
             <div className="space-y-4">
               {ASSET_CATEGORIES.map((cat) => {
                 const items = (project.assets || []).filter((a) => a.category === cat);
-                const allowUrl = cat === "確認用動画" || cat === "参考素材";
+                const uping = assetUp && assetUp.cat === cat;
                 return (
                   <section key={cat} className="rounded-2xl border border-stone-200 bg-white p-4">
-                    <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
+                    <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
                       <h3 className="text-[13px] font-bold text-stone-800">{ASSET_CAT_ICON[cat]} {cat} <span className="text-stone-400 font-normal">{items.length}</span></h3>
-                      <div className="flex items-center gap-1.5">
-                        {allowUrl && (
-                          <button onClick={() => { const u = window.prompt(cat === "確認用動画" ? "YouTube動画のURL" : "参考URL（YouTube/任意）"); if (u) addAssetUrl(cat, u); }}
-                            className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600">＋URL</button>
-                        )}
-                        <label className={"text-[11px] font-bold px-2.5 py-1.5 rounded-lg shadow cursor-pointer " + (project.shareId ? "" : "opacity-40 pointer-events-none")} style={{ background: theme.main, color: "#fff" }}>
-                          ＋ファイル
-                          <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); fs.forEach((f) => uploadAsset(f, cat)); e.target.value = ""; }} />
-                        </label>
-                      </div>
+                      <label className={"text-[11px] font-bold px-2.5 py-1.5 rounded-lg shadow cursor-pointer " + (project.shareId ? "" : "opacity-40 pointer-events-none")} style={{ background: theme.main, color: "#fff" }}>
+                        ＋ファイル
+                        <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); fs.forEach((f) => uploadAsset(f, cat)); e.target.value = ""; }} />
+                      </label>
                     </div>
+                    <p className="text-[10px] text-stone-400 mb-2">{ASSET_CAT_DESC[cat]}</p>
+                    {uping && (
+                      <div className="mb-2 rounded-lg bg-stone-50 border border-stone-200 px-3 py-2">
+                        <div className="text-[11px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬆ {assetUp.name}</span><span className="font-bold tabular-nums">{assetUp.pct}%</span></div>
+                        <div className="mt-1 h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full transition-all" style={{ width: assetUp.pct + "%", background: theme.accent }} /></div>
+                      </div>
+                    )}
                     {items.length === 0 ? (
-                      <p className="text-[11px] text-stone-400 py-2">まだありません</p>
+                      <p className="text-[11px] text-stone-400 py-2">{uping ? "" : "まだありません"}</p>
                     ) : (
                       <ul className="divide-y divide-stone-100">
                         {items.map((a) => (
