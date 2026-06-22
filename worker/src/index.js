@@ -771,6 +771,14 @@ async function cleanupExpired(env) {
 }
 
 /* 共有スナップショットは必要な項目だけに絞る（テーマ/原稿は残す、巨大化を防ぐ） */
+// マニュアル/指示書（この案件・チャンネル・全体）。share.html の paneManual が読む。
+// slim/slimCI が落とすと共有ページで指示書が全部消える（review.versions と同型のバグ）。
+function slimManuals(arr) {
+  return Array.isArray(arr) ? arr.slice(0, 100).map((m) => ({
+    id: m.id, cat: (m.cat || "").slice(0, 40), title: (m.title || "").slice(0, 200), body: (m.body || "").slice(0, 5000),
+  })) : [];
+}
+
 function slim(p) {
   return {
     name: p.name || "構成台本",
@@ -785,6 +793,8 @@ function slim(p) {
       body: (p.talk.body || []).map((b) => ({ id: b.id, heading: b.heading || "", script: b.script || "" })),
     } : null,
     meta: p.meta || {},
+    manuals: slimManuals(p.manuals),
+    manualsGlobal: slimManuals(p.manualsGlobal),
     theme: p.theme || { main: "#1F2430", accent: "#E63946" },
     rate: p.rate || 5,
     timeFormat: p.timeFormat || "tc",
@@ -853,6 +863,7 @@ function slimCI(ci) {
     name: ci.name || "", url: ci.url || "", concept: ci.concept || "",
     target: ci.target || "", purpose: ci.purpose || "",
     competitors: (ci.competitors || []).map((c) => ({ name: c.name || "", url: c.url || "", subs: c.subs || 0, videos: c.videos || 0, note: c.note || "", thumb: c.thumb || "" })),
+    manuals: slimManuals(ci.manuals),
   };
 }
 

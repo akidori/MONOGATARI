@@ -2327,6 +2327,13 @@ export default function App() {
       // 行IDを振り直し（衝突回避）
       copy.rows = copy.rows.map((r) => ({ ...r, id: uid() }));
       copy.shareId = null; // 複製は別の共有リンク
+      copy.shareToken = null; copy.liveId = null; copy.liveToken = null;
+      // アップロード済みメディアは元案件の共有(snap)配下のキーを指すので引き継がない。
+      // 引き継ぐと複製案件を公開したとき元案件の動画/ファイルが出る（別動画事故）。
+      copy.video = null; copy.files = [];
+      copy.review = { versions: [], comments: [] };
+      copy.assets = [];
+      copy.plans = (copy.plans || []).map((pl) => ({ ...pl, video: null, files: [], shareId: null, shareToken: null }));
       const srcIdx = index.findIndex((x) => x.id === id);
       const idx = [...index];
       idx.splice(srcIdx + 1, 0, { id: copy.id, name: copy.name, channel: copy.channel || DEFAULT_CHANNEL, createdAt: copy.createdAt });
