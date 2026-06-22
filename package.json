@@ -3,7 +3,8 @@
   "private": true,
   "version": "1.0.0",
   "scripts": {
-    "build": "esbuild src/entry.jsx --bundle --minify --charset=utf8 --format=iife --outfile=app.js --loader:.jsx=jsx --jsx=transform",
+    "build": "esbuild src/entry.jsx --bundle --minify --charset=utf8 --format=iife --outfile=app.js --loader:.jsx=jsx --jsx=transform && npm run css",
+    "css": "tailwindcss -i src/tw.css -o tailwind.css --minify",
     "dev": "esbuild src/entry.jsx --bundle --charset=utf8 --format=iife --outfile=app.js --loader:.jsx=jsx --jsx=transform --watch"
   },
   "dependencies": {
@@ -11,6 +12,7 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
-    "esbuild": "0.23.1"
+    "esbuild": "0.23.1",
+    "tailwindcss": "^3.4.19"
   }
 }
