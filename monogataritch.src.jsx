@@ -2615,12 +2615,14 @@ export default function App() {
   const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id) + (pane ? "&tab=" + pane : ""); };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
   const copyShareUrl = async (t) => {
-    let id = project.shareId;
-    const had = !!id;
-    if (!id) { id = await publishShare(true); if (!id) return; }
+    const had = !!project.shareId;
+    // 既存リンクでも必ず再発行してから渡す。動画確認の版など最新状態をスナップに反映するため
+    // （これが無いと「URLをコピーするだけ」になり、追加した確認動画が共有ページに出ず別動画にフォールバックする）
+    const id = await publishShare(true);
+    if (!id) return;
     const u = buildShareUrl(id, t);
     setShareModal({ id, url: u, updated: had, tab: t || "" });
-    try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLをコピーしたよ"); } catch (e) {}
+    try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLを更新してコピーしたよ"); } catch (e) {}
   };
   const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", concept: "チャンネル" };
 
