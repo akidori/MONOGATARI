@@ -274,6 +274,19 @@ export default {
         return json(doc);
       }
 
+      // GET /api/snaps?key=<MG_LIST_KEY> → 公開スナップ一覧 [{id,name,channel}]
+      // Flip Board の自動リンク(cron)用。token保護。案件名だけ返す（低機密）。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "snaps" && !parts[2]) {
+        if (!env.MG_LIST_KEY || url.searchParams.get("key") !== env.MG_LIST_KEY) return json({ error: "forbidden" }, 403);
+        const listed = await env.SNAPS.list({ prefix: "snap:", limit: 1000 });
+        const snaps = [];
+        for (const k of listed.keys) {
+          const s = await env.SNAPS.get(k.name, "json");
+          if (s && s.project) snaps.push({ id: k.name.slice(5), name: s.project.name || "", channel: s.project.channel || "", updatedAt: s.updatedAt || "" });
+        }
+        return json({ snaps });
+      }
+
       // GET /api/snap/{id}
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "snap" && parts[2] && !parts[3]) {
         const snap = await env.SNAPS.get("snap:" + parts[2], "json");
