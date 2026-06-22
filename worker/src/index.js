@@ -351,12 +351,20 @@ export default {
         return json({ comment: c });
       }
 
-      // DELETE /api/snap/{id}/comments/{cid}?token=...  （AK側・要トークン）
+      // DELETE /api/snap/{id}/comments/{cid}
+      //  ?token=... ＝AK側(要トークン・無制限) / ?own=1 ＝先方が自分の誤投稿を取消（無認証・投稿から24h以内のみ）
       if (request.method === "DELETE" && parts[1] === "snap" && parts[3] === "comments" && parts[4]) {
         const id = parts[2], cid = parts[4];
-        const tok = await env.SNAPS.get("tok:" + id);
-        if (!tok || tok !== (url.searchParams.get("token") || "")) return json({ error: "forbidden" }, 403);
         let list = (await env.SNAPS.get("cmt:" + id, "json")) || [];
+        const c = list.find((x) => x.id === cid);
+        const own = url.searchParams.get("own") === "1";
+        if (own) {
+          // 私物の取消：24h以内のみ＝荒らしで過去コメント一掃されるのを防ぐ
+          if (c && (Date.now() - new Date(c.createdAt).getTime()) > 24 * 3600 * 1000) return json({ error: "期限切れ（投稿から24時間以内のみ取消可）" }, 403);
+        } else {
+          const tok = await env.SNAPS.get("tok:" + id);
+          if (!tok || tok !== (url.searchParams.get("token") || "")) return json({ error: "forbidden" }, 403);
+        }
         list = list.filter((x) => x.id !== cid);
         await env.SNAPS.put("cmt:" + id, JSON.stringify(list));
         return json({ ok: true });

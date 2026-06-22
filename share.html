@@ -44,6 +44,9 @@ const CMT_PRIO_COL = {"高":["#DC2645","#fff"],"中":["#E8A33D","#fff"],"低":["
 const cStat = (c) => c.status || (c.resolved ? "完了" : "未対応");
 let _hlsShareP = null;
 function loadHlsShare(){ if(window.Hls) return Promise.resolve(window.Hls); if(_hlsShareP) return _hlsShareP; _hlsShareP = new Promise((res)=>{ const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/hls.js@1/dist/hls.min.js"; s.onload=()=>res(window.Hls); s.onerror=()=>res(null); document.head.appendChild(s); }); return _hlsShareP; }
+/* この端末で投稿したコメントID（自分の投稿だけ削除ボタンを出す） */
+let MINE = (()=>{ try{ return JSON.parse(localStorage.getItem("mg:myc:"+ID)||"[]"); }catch(e){ return []; } })();
+function markMine(cid){ if(cid && !MINE.includes(cid)){ MINE.push(cid); try{ localStorage.setItem("mg:myc:"+ID, JSON.stringify(MINE)); }catch(e){} } }
 /* href用：http(s)のみ許可（javascript:等のスキーム注入を弾く） */
 const safeUrl = (u) => { u=(u||"").trim(); return /^https?:\/\//i.test(u) ? esc(u) : ""; };
 
@@ -323,7 +326,9 @@ function render(){
     : isTalk ? paneTalk(p, accent, main)
     : paneScript(p, accent, main);
 
-  document.getElementById("app").innerHTML = `
+  const appEl = document.getElementById("app");
+  if(appEl) appEl.style.maxWidth = (TAB==="video") ? "1280px" : "820px";
+  appEl.innerHTML = `
     <div class="flex items-center justify-between mb-3">
       <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">ものがたりっち！</div>
       <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
@@ -331,10 +336,10 @@ function render(){
     <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
       <div class="px-5 py-4" style="background:${main};color:#fff">
         <div class="text-[18px] font-black leading-snug">${esc(titles[0]||p.name||"構成台本")}</div>
-        <div class="mt-1 text-[12px] opacity-80 flex flex-wrap gap-x-4">
+        ${TAB!=="video" && (m.shootDate||m.place) ? `<div class="mt-1 text-[12px] opacity-80 flex flex-wrap gap-x-4">
           ${m.shootDate?`<span>撮影日 ${esc(m.shootDate)}</span>`:""}
           ${m.place?`<span>場所 ${esc(m.place)}</span>`:""}
-        </div>
+        </div>` : ""}
       </div>
       ${m.highlight&&TAB==="script"?`<div class="bg-white px-5 py-3 border-t border-stone-100">
         <div class="text-[10px] font-bold text-stone-400 mb-1">冒頭フック</div>
@@ -563,19 +568,24 @@ function paneVideo(p, accent, main){
   const v = (cur&&cur.video)||{};
   const selector = opts.length>1 ? `<div class="flex gap-1 flex-wrap mb-2">${opts.map(o=>`<button data-vsel="${esc(o.id)}" class="vc-sel text-[11px] font-bold px-2.5 py-1 rounded-full border ${o.id===VSEL?'text-white':'text-stone-500 border-stone-200'}" style="${o.id===VSEL?`background:${main};border-color:${main}`:''}">${esc(o.label)}</button>`).join("")}</div>` : "";
   return `
-    <div>
-      ${selector}
-      ${v.title?`<div class="text-[14px] font-bold mb-2" style="color:${main}">${esc(v.title)}</div>`:""}
-      <div class="rounded-xl overflow-hidden bg-black mb-2" style="aspect-ratio:16/9"><div id="vc-player" class="w-full h-full"></div></div>
-      <div class="flex items-center gap-2 flex-wrap mb-3">
-        <span class="text-[11px] text-stone-400">再生速度</span>
-        <div class="flex gap-1">${rateButtons(v.type)}</div>
-        <div id="vc-tc" class="ml-auto mono text-[13px] font-bold" style="color:${main}">0:00.00</div>
-        ${CHMODE?"":`<button id="vc-add" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shadow" style="background:${accent}">＋ ここにコメント</button>`}
+    <div class="lg:flex lg:gap-4 lg:items-start">
+      <div class="lg:flex-[1.7] min-w-0">
+        ${selector}
+        ${v.title?`<div class="text-[14px] font-bold mb-2" style="color:${main}">${esc(v.title)}</div>`:""}
+        <div class="rounded-xl overflow-hidden bg-black mb-2" style="aspect-ratio:16/9"><div id="vc-player" class="w-full h-full"></div></div>
+        <div class="flex items-center gap-2 flex-wrap mb-3">
+          <span class="text-[11px] text-stone-400">再生速度</span>
+          <div class="flex gap-1">${rateButtons(v.type)}</div>
+          <div id="vc-tc" class="ml-auto mono text-[13px] font-bold" style="color:${main}">0:00.00</div>
+          ${CHMODE?"":`<button id="vc-add" class="text-[12px] font-bold text-white px-3 py-1.5 rounded-lg shadow" style="background:${accent}">＋ ここにコメント</button>`}
+        </div>
+        ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>`}
       </div>
-      ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>
-      <div id="vc-list"></div>
-      <p class="text-center text-[11px] text-stone-400 mt-6 leading-relaxed">再生を止めて「＋ ここにコメント」で、その時間に修正依頼を残せます。コメントの ▶ で頭出しできます。</p>`}
+      ${CHMODE?"":`<div class="lg:flex-1 lg:max-w-[440px] lg:border-l lg:border-stone-200 lg:pl-4">
+        <div class="text-[12px] font-bold text-stone-500 mb-2">修正コメント</div>
+        <div id="vc-list" class="lg:max-h-[70vh] lg:overflow-y-auto lg:pr-1"></div>
+        <p class="text-[11px] text-stone-400 mt-3 leading-relaxed">動画を止めて「＋ ここにコメント」で、その時間に修正依頼を残せます。▶ で頭出し。送信は ⌘+Enter。</p>
+      </div>`}
     </div>`;
 }
 function mountVideo(p, accent, main){
@@ -635,6 +645,7 @@ function renderVideoList(accent, main){
         ${pc?`<span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${pc[0]};color:${pc[1]}">${esc(c.priority)}</span>`:""}
         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${sc[0]};color:${sc[1]}">${st}</span>
         <span class="ml-auto text-[10px] text-stone-400">${fmtTime(c.createdAt)}</span>
+        ${MINE.includes(c.id)?`<button data-del="${c.id}" class="vc-del text-[10px] text-stone-300 hover:text-rose-500 font-bold" title="自分のコメントを削除">削除</button>`:""}
       </div>
       <div class="text-[11px] font-bold text-stone-600 mt-1">${esc(c.author||"ゲスト")}</div>
       <div class="text-[12.5px] text-stone-800 whitespace-pre-wrap break-words mt-0.5">${esc(c.text)}</div>
@@ -647,6 +658,15 @@ function renderVideoList(accent, main){
   el.querySelectorAll(".vc-seek").forEach(b=>b.addEventListener("click", ()=>seekTo(+b.dataset.seek)));
   el.querySelectorAll(".vc-repbtn").forEach(b=>b.addEventListener("click", ()=>postReply(b.dataset.repbtn, accent, main)));
   el.querySelectorAll(".vc-rep").forEach(i=>i.addEventListener("keydown", e=>{ if(e.key==="Enter") postReply(i.dataset.rep, accent, main); }));
+  el.querySelectorAll(".vc-del").forEach(b=>b.addEventListener("click", ()=>deleteOwn(b.dataset.del, accent, main)));
+}
+async function deleteOwn(cid, accent, main){
+  if(!confirm("このコメントを削除しますか？")) return;
+  try{
+    await fetch(API+"/api/snap/"+ID+"/comments/"+cid+"?own=1", { method:"DELETE" });
+    const i=COMMENTS.findIndex(x=>x.id===cid); if(i>=0) COMMENTS.splice(i,1);
+    renderVideoList(accent, main);
+  }catch(e){ alert("削除に失敗しました"); }
 }
 async function postReply(cid, accent, main){
   const inp=document.querySelector('.vc-rep[data-rep="'+cid+'"]'); if(!inp) return;
@@ -676,10 +696,10 @@ function openVideoForm(accent, main){
       <textarea id="vc-tx" rows="2" placeholder="修正依頼・気になる点…" class="w-full text-[13px] px-2 py-1.5 border border-stone-200 rounded focus:outline-none resize-y"></textarea>
       <div class="flex justify-end gap-2 mt-1.5">
         <button id="vc-cancel" class="text-[11px] text-stone-400 px-3 py-1.5">キャンセル</button>
-        <button id="vc-send" class="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg shadow" style="background:var(--main)">送信</button>
+        <button id="vc-send" class="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg shadow" style="background:var(--main)">送信 <span class="opacity-70">⌘↵</span></button>
       </div>
     </div>`;
-  const tx=document.getElementById("vc-tx"); if(tx) tx.focus();
+  const tx=document.getElementById("vc-tx"); if(tx){ tx.focus(); tx.addEventListener("keydown", e=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){ e.preventDefault(); postVideoComment(sec, accent, main); } }); }
   document.getElementById("vc-cancel").addEventListener("click", ()=>{ f.classList.add("hidden"); f.innerHTML=""; });
   document.getElementById("vc-send").addEventListener("click", ()=>postVideoComment(sec, accent, main));
 }
@@ -694,7 +714,7 @@ async function postVideoComment(sec, accent, main){
     const r=await fetch(API+"/api/snap/"+ID+"/comments", { method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({ timecode:sec, videoKey:(VSEL||""), author:AUTHOR||"ゲスト", text, category:cat, priority:prio, status:"未対応" }) });
     const d=await r.json();
-    if(d.comment){ COMMENTS.push(d.comment); const f=document.getElementById("vc-form"); f.classList.add("hidden"); f.innerHTML=""; renderVideoList(accent, main); }
+    if(d.comment){ markMine(d.comment.id); COMMENTS.push(d.comment); const f=document.getElementById("vc-form"); f.classList.add("hidden"); f.innerHTML=""; renderVideoList(accent, main); }
     else throw new Error(d.error||"送信失敗");
   }catch(e){ btn.disabled=false; btn.textContent="送信"; alert("送信に失敗しました："+e.message); }
 }

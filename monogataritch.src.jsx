@@ -1133,7 +1133,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
               <select value={cat} onChange={(e) => setCat(e.target.value)} className="text-[11px] border border-stone-200 rounded px-1.5 py-1">{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
               <select value={prio} onChange={(e) => setPrio(e.target.value)} className="text-[11px] border border-stone-200 rounded px-1.5 py-1">{CMT_PRIORITIES.map((p) => <option key={p}>優先:{p}</option>)}</select>
             </div>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="修正内容を入力（例：テロップが読みにくい）" className="w-full h-16 text-[12px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
+            <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } }} placeholder="修正内容を入力（⌘+Enterで送信）" className="w-full h-16 text-[12px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
             <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={!text.trim()} className="text-[11px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>修正を追加</button></div>
           </div>
         </div>
