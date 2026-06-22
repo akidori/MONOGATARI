@@ -2585,7 +2585,7 @@ export default function App() {
   };
 
   /* ---- 共有リンク発行 ---- */
-  const publishShare = async () => {
+  const publishShare = async (silent = false) => {
     if (!project) return;
     setSharing(true);
     try {
@@ -2598,9 +2598,11 @@ export default function App() {
       const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken };
       setProject(next);
       try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
-      const url = shareUrl(data.id);
-      setShareModal({ id: data.id, url, updated: !!project.shareId });
-      try { await navigator.clipboard.writeText(url); } catch (e) {}
+      if (!silent) {
+        const url = shareUrl(data.id);
+        setShareModal({ id: data.id, url, updated: !!project.shareId });
+        try { await navigator.clipboard.writeText(url); } catch (e) {}
+      }
       setSharing(false);
       return data.id;
     } catch (e) { showToast("共有リンクの発行に失敗：" + (e.message || e)); }
@@ -2614,9 +2616,11 @@ export default function App() {
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
   const copyShareUrl = async (t) => {
     let id = project.shareId;
-    if (!id) { id = await publishShare(); if (!id) return; }
+    const had = !!id;
+    if (!id) { id = await publishShare(true); if (!id) return; }
     const u = buildShareUrl(id, t);
-    try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLをコピーしたよ"); } catch (e) { setShareModal({ id, url: u, updated: true }); }
+    setShareModal({ id, url: u, updated: had, tab: t || "" });
+    try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLをコピーしたよ"); } catch (e) {}
   };
   const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", concept: "チャンネル" };
 
@@ -5549,7 +5553,11 @@ export default function App() {
                   ? <>このURLで<span className="font-bold">チャンネルの全{shareModal.caseCount || 0}案件を先方がその場で編集</span>できます（企画・サムネ・構成台本すべて／ログイン不要／リアルタイム反映）。各案件を開いて「編集」から直せます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span>他のチャンネルは見えません。</>
                   : shareModal.channel
                   ? <>このURLで<span className="font-bold">チャンネルのコンセプト＋配下の{shareModal.caseCount || 0}案件</span>をまとめて見せられます（読み取り専用）。チーム共有やクライアント説明用に。</>
-                  : <>このURLを先方に送ってください。<span className="font-bold">構成台本（読み取り専用）</span>が開き、各シーンにコメント・修正依頼を書き込めます。書き込まれたコメントは右上のコメントボタンに届きます。</>}
+                  : shareModal.tab === "review"
+                  ? <>このURLを先方に送ってください。<span className="font-bold">動画確認ページ（読み取り専用）</span>が開き、再生しながら時間を指定して修正コメントを書き込めます。コメントは右上💬と動画確認タブに届きます。</>
+                  : shareModal.tab
+                  ? <>このURLを先方に送ってください。<span className="font-bold">「{TAB_LABEL[shareModal.tab] || shareModal.tab}」だけ（読み取り専用）</span>が開きます。他のタブは表示されません。</>
+                  : <>このURLを先方に送ってください。<span className="font-bold">案件まるごと（読み取り専用）</span>が開きます。各ページにコメント・修正依頼を書き込めます。</>}
               </p>
               <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
                 <input readOnly value={shareModal.url} className="flex-1 min-w-0 bg-transparent text-[12px] focus:outline-none" style={{ fontFamily: mono }}
