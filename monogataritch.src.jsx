@@ -1020,6 +1020,18 @@ function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onR
   );
 }
 
+/* YouTube IFrame Player API（再生/停止・速度・タイムコードをアプリから制御） */
+let _ytP = null;
+function loadYT() {
+  if (typeof window !== "undefined" && window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (_ytP) return _ytP;
+  _ytP = new Promise((res) => {
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { if (prev) try { prev(); } catch (e) {} res(window.YT); };
+    if (!document.getElementById("yt-iframe-api")) { const s = document.createElement("script"); s.id = "yt-iframe-api"; s.src = "https://www.youtube.com/iframe_api"; document.head.appendChild(s); }
+  });
+  return _ytP;
+}
 /* hls.js を必要時だけCDNから読み込む（Cloudflare Stream のHLS再生用） */
 let _hlsP = null;
 function loadHls() {
@@ -1089,7 +1101,10 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
   const belongs = (c) => sel && (c.versionId === sel.id || (c.videoKey || "") === vKey || (sel.uid && c.videoKey === sel.uid) || (sel.key && c.videoKey === sel.key));
   const verComments = comments.filter(belongs);
   const counts = CMT_STATUSES.reduce((o, s) => { o[s] = verComments.filter((c) => cstat(c) === s).length; return o; }, {});
-  const seek = (t) => { if (sel && sel.type !== "youtube" && vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); } };
+  const seek = (t) => {
+    if (sel && sel.type === "youtube") { const p = ytPlayerRef.current; if (p && p.seekTo) { p.seekTo(+t || 0, true); if (p.playVideo) p.playVideo(); } return; }
+    if (vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); }
+  };
   const isMp4 = sel && sel.type !== "youtube";
   const streamPending = sel && sel.type === "stream" && !sel.ready;
   // Cloudflare Stream(HLS) を hls.js で attach（Safariはネイティブ）
@@ -1100,9 +1115,44 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
     else { loadHls().then((Hls) => { if (Hls && Hls.isSupported()) { hls = new Hls(); hls.loadSource(sel.hls); hls.attachMedia(video); } else { video.src = sel.hls; } }); }
     return () => { if (hls) hls.destroy(); };
   }, [sel && sel.id, sel && sel.ready, sel && sel.hls]);
+  const isYT = sel && sel.type === "youtube";
+  // YouTubeは IFrame API で制御（再生/停止・速度・タイムコード）。※YouTubeは仕様上2倍速まで
+  const ytDivRef = React.useRef(null);
+  const ytPlayerRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!isYT || !ytDivRef.current) return;
+    let timer, destroyed = false;
+    loadYT().then((YT) => {
+      if (destroyed || !YT || !ytDivRef.current) return;
+      ytPlayerRef.current = new YT.Player(ytDivRef.current, {
+        videoId: ytIdFromUrl(sel.url) || "",
+        playerVars: { rel: 0, modestbranding: 1, iv_load_policy: 3, playsinline: 1 },
+        events: { onReady: () => { timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) setCur(p.getCurrentTime() || 0); }, 200); } },
+      });
+    });
+    return () => { destroyed = true; if (timer) clearInterval(timer); try { ytPlayerRef.current && ytPlayerRef.current.destroy && ytPlayerRef.current.destroy(); } catch (e) {} ytPlayerRef.current = null; };
+  }, [sel && sel.id, isYT]);
+  const getTime = () => isYT ? (ytPlayerRef.current && ytPlayerRef.current.getCurrentTime ? ytPlayerRef.current.getCurrentTime() : 0) : (vref.current ? vref.current.currentTime : 0);
+  const applyRate = (r) => { if (isYT) { try { ytPlayerRef.current && ytPlayerRef.current.setPlaybackRate(r); } catch (e) {} } else if (vref.current) vref.current.playbackRate = r; setRate(r); };
+  const togglePlay = () => {
+    if (isYT) { const p = ytPlayerRef.current; if (!p || !p.getPlayerState) return; if (p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo(); }
+    else if (vref.current) { if (vref.current.paused) { const pr = vref.current.play(); if (pr && pr.catch) pr.catch(() => {}); } else vref.current.pause(); }
+  };
+  // Enterで再生/停止（入力欄にフォーカス中は無効）
+  React.useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Enter") return;
+      const t = e.target, tag = (t && t.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) return;
+      if (streamPending) return;
+      e.preventDefault(); togglePlay();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sel && sel.id, isYT, streamPending]);
   const filtered = verComments.filter((c) => filter === "全部" ? true : filter === "高優先度" ? c.priority === "高" : CMT_STATUSES.includes(filter) ? cstat(c) === filter : CMT_CATEGORIES.includes(filter) ? (c.category || "その他") === filter : true)
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
-  const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: isMp4 && vref.current ? vref.current.currentTime : null, text: t, category: cat, priority: prio, status: "未対応" }); setText(""); };
+  const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); };
 
   if (!versions.length) {
     return (
@@ -1123,7 +1173,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
       </div>
     );
   }
-  const rates = [0.5, 1, 1.5, 2, 3, 4];
+  const rates = isYT ? [0.5, 1, 1.5, 2] : [0.5, 1, 1.5, 2, 3, 4];
   return (
     <div>
       {/* バージョンタブ */}
@@ -1157,28 +1207,31 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
         {/* 左：プレイヤー */}
         <div>
           <div className="rounded-xl overflow-hidden bg-black grid place-items-center" style={{ aspectRatio: "16/9" }}>
-            {sel.type === "youtube"
-              ? <iframe src={"https://www.youtube.com/embed/" + (ytIdFromUrl(sel.url) || "")} className="w-full h-full" style={{ border: 0 }} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
+            {isYT
+              ? <div ref={ytDivRef} className="w-full h-full" />
               : streamPending
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 軽量版に変換中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">完了すると回線が細くてもサクサク再生できます（数分）。このまま待つか、後で開いてOK。</div></div>
                 : sel.type === "stream"
                   ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />
                   : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
           </div>
-          {isMp4 && (
+          {!streamPending && (
             <div className="flex items-center gap-1 mt-2 flex-wrap">
               <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}</span>
+              <button onClick={togglePlay} title="再生/停止（Enter）" className="text-[11px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⏯</button>
               <span className="text-[10px] text-stone-400 ml-1 mr-0.5">速度</span>
               {rates.map((r) => (
-                <button key={r} onClick={() => { if (vref.current) vref.current.playbackRate = r; setRate(r); }}
+                <button key={r} onClick={() => applyRate(r)}
                   className={"text-[11px] px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")} style={rate === r ? { background: main, borderColor: main, fontFamily: mono } : { fontFamily: mono }}>{r}x</button>
               ))}
+              {isYT && <span className="text-[10px] text-stone-400">（YouTubeは2倍まで）</span>}
+              <span className="text-[10px] text-stone-400 ml-auto">Enterで再生/停止</span>
             </div>
           )}
           {/* 新規修正コメント */}
           <div className="mt-3 rounded-xl border border-stone-200 bg-white p-3">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              {isMp4 && <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} に</span>}
+              {!streamPending && <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} に</span>}
               <select value={cat} onChange={(e) => setCat(e.target.value)} className="text-[11px] border border-stone-200 rounded px-1.5 py-1">{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
               <select value={prio} onChange={(e) => setPrio(e.target.value)} className="text-[11px] border border-stone-200 rounded px-1.5 py-1">{CMT_PRIORITIES.map((p) => <option key={p}>優先:{p}</option>)}</select>
             </div>
