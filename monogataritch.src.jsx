@@ -1094,6 +1094,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
   const vref = React.useRef(null);
   const [rate, setRate] = React.useState(1);
   const [cur, setCur] = React.useState(0);
+  const [dur, setDur] = React.useState(0);
   React.useEffect(() => { if (!versions.some((v) => v.id === selId)) setSelId(versions[0] ? versions[0].id : null); }, [versions.map((v) => v.id).join(",")]);
   const sel = versions.find((v) => v.id === selId) || versions[0] || null;
   const vKey = sel ? (sel.uid || sel.key || sel.url || "") : "";
@@ -1127,7 +1128,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
       ytPlayerRef.current = new YT.Player(ytDivRef.current, {
         videoId: ytIdFromUrl(sel.url) || "",
         playerVars: { rel: 0, modestbranding: 1, iv_load_policy: 3, playsinline: 1 },
-        events: { onReady: () => { timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) setCur(p.getCurrentTime() || 0); }, 200); } },
+        events: { onReady: () => { timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) { setCur(p.getCurrentTime() || 0); if (p.getDuration) setDur(p.getDuration() || 0); } }, 200); } },
       });
     });
     return () => { destroyed = true; if (timer) clearInterval(timer); try { ytPlayerRef.current && ytPlayerRef.current.destroy && ytPlayerRef.current.destroy(); } catch (e) {} ytPlayerRef.current = null; };
@@ -1206,18 +1207,24 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
         {/* 左：プレイヤー */}
         <div>
-          <div className="rounded-xl overflow-hidden bg-black grid place-items-center" style={{ aspectRatio: "16/9" }}>
+          <div className="relative rounded-xl overflow-hidden bg-black grid place-items-center" style={{ aspectRatio: "16/9" }}>
             {isYT
-              ? <div ref={ytDivRef} className="w-full h-full" />
+              ? <><div ref={ytDivRef} className="w-full h-full pointer-events-none" />
+                  {/* 透明レイヤーでYouTubeのhover検知を遮断＝タイトル/関連動画などの情報を非表示に。クリックで再生/停止 */}
+                  <div className="absolute inset-0 cursor-pointer" onClick={togglePlay} title="クリックで再生/停止" /></>
               : streamPending
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 軽量版に変換中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">完了すると回線が細くてもサクサク再生できます（数分）。このまま待つか、後で開いてOK。</div></div>
                 : sel.type === "stream"
                   ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />
                   : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
           </div>
+          {!streamPending && isYT && dur > 0 && (
+            <input type="range" min={0} max={dur} step="0.1" value={cur} onChange={(e) => seek(+e.target.value)}
+              className="w-full mt-2 accent-current" style={{ color: accent }} />
+          )}
           {!streamPending && (
             <div className="flex items-center gap-1 mt-2 flex-wrap">
-              <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}</span>
+              <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}{isYT && dur ? " / " + fmtTC(dur) : ""}</span>
               <button onClick={togglePlay} title="再生/停止（Enter）" className="text-[11px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⏯</button>
               <span className="text-[10px] text-stone-400 ml-1 mr-0.5">速度</span>
               {rates.map((r) => (
