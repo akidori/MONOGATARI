@@ -775,6 +775,9 @@ function slim(p) {
   return {
     name: p.name || "構成台本",
     channel: p.channel || "",
+    // 制作OS進捗シグナル（Flip Board連携・2026-06-22）: 案件phase自動反映用。表示は不変、読むだけ。
+    status: p.status || "",
+    reviewCount: (p.review && Array.isArray(p.review.versions)) ? p.review.versions.length : 0,
     format: p.format === "talk" ? "talk" : "documentary",
     talk: p.talk ? {
       highlight: p.talk.highlight || "", intro: p.talk.intro || "", cta: p.talk.cta || "",
@@ -787,7 +790,7 @@ function slim(p) {
     timeFormat: p.timeFormat || "tc",
     rows: (p.rows || []).map((r) =>
       r.kind === "location"
-        ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "" }
+        ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", done: !!r.done }
         : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, script: r.script || "" }
     ),
     plans: (p.plans || []).map((pl) => ({

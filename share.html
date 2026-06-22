@@ -6,7 +6,7 @@
 <title>構成台本 — ものがたりっち！</title>
 <meta name="theme-color" content="#1F2430">
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="tailwind.css?v=20260622e">
+<link rel="stylesheet" href="tailwind.css?v=20260622f">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
 <style>
   html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
@@ -264,6 +264,15 @@ function panePlans(p){
 }
 
 /* ── チャンネルコンセプトペイン ── */
+function paneManual(p, accent, main){
+  const groups = [["この案件", p.manuals||[]], [(p.channelInfo&&p.channelInfo.name)||"チャンネル", (p.channelInfo&&p.channelInfo.manuals)||[]], ["全体の決め事", p.manualsGlobal||[]]];
+  const card = (m)=>`<div class="rounded-xl border border-stone-200 bg-white p-3 mb-2">
+      <div class="flex items-center gap-2 mb-1"><span class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:#F0F0F2;color:#57534E">${esc(m.cat||"その他")}</span><span class="text-[13px] font-bold text-stone-800">${esc(m.title||"")}</span></div>
+      <div class="text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">${esc(m.body||"")}</div></div>`;
+  const sections = groups.filter(([,arr])=>arr.length).map(([label,arr])=>`
+    <div class="mb-5"><div class="text-[12px] font-bold mb-2" style="color:${main}">${esc(label)}</div>${arr.map(card).join("")}</div>`).join("");
+  return sections || '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>';
+}
 function paneConcept(p){
   const ci = p.channelInfo;
   if(!ci || !(ci.name||ci.url||ci.concept||ci.target||ci.purpose||(ci.competitors||[]).length))
@@ -310,6 +319,8 @@ function render(){
   if(videoOptions(p).length) tabs.push(["video","動画確認"]);
   const hasFilesAny = (p.files||[]).length || (p.plans||[]).some(pl=>(pl.files||[]).length) || (UPLOADS||[]).length;
   if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
+  const manualCount = ((p.manuals||[]).length) + (((p.channelInfo&&p.channelInfo.manuals)||[]).length) + ((p.manualsGlobal||[]).length);
+  if(manualCount) tabs.push(["manual","マニュアル"]);
   // 単一タブ共有：指定ペインだけ表示。タブバーは隠す
   const lockedTab = (LOCK_TAB && tabs.some(t=>t[0]===LOCK_TAB)) ? LOCK_TAB : null;
   if(lockedTab) TAB = lockedTab;
@@ -323,6 +334,7 @@ function render(){
     : TAB==="kouban" ? paneKouban(p)
     : TAB==="video" ? paneVideo(p, accent, main)
     : TAB==="files" ? paneFiles(p, accent, main)
+    : TAB==="manual" ? paneManual(p, accent, main)
     : isTalk ? paneTalk(p, accent, main)
     : paneScript(p, accent, main);
 
