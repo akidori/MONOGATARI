@@ -820,6 +820,22 @@ function slim(p) {
       title: (p.video.title || "").slice(0, 200),
       name: (p.video.name || "").slice(0, 255),
     } : null,
+    // 動画確認（試写・修正管理）の各版。share.html の videoOptions が読む。
+    // ここが無いと共有ページは review 動画を出せず p.video へフォールバック＝別動画が出る原因になる。
+    review: (p.review && Array.isArray(p.review.versions)) ? {
+      versions: p.review.versions.slice(0, 50).map((v) => ({
+        id: v.id,
+        label: (v.label || "").slice(0, 40),
+        name: (v.name || "").slice(0, 255),
+        type: v.type === "youtube" ? "youtube" : v.type === "stream" ? "stream" : "mp4",
+        key: (v.key || "").slice(0, 120),
+        url: (v.url || "").slice(0, 500),
+        uid: (v.uid || "").slice(0, 120),
+        hls: (v.hls || "").slice(0, 500),
+        ready: !!v.ready,
+        createdAt: v.createdAt || "",
+      })),
+    } : undefined,
     files: Array.isArray(p.files) ? p.files.slice(0, 200).map((f) => ({
       key: (f.key || "").slice(0, 120),
       name: (f.name || "").slice(0, 255),
