@@ -174,6 +174,29 @@ const STORE_MANUALS_GLOBAL = "manuals-global-v1"; // 全体の決め事（window
 /* トーク系台本の中身（タイトルは企画・サムネと連携、ハイライト/冒頭/目次/本編/CTA） */
 const newTalkBody = () => ({ id: uid(), heading: "", script: "" });
 const newTalk = () => ({ highlight: "", intro: "", toc: [""], body: [newTalkBody()], cta: "" });
+/* 密着の事前ヒアリングシート（演者の人物理解→構成台本のネタ元）。セクション＋項目の配列。 */
+const hearingItem = (label, hint = "") => ({ id: uid(), label, value: "", hint });
+const HEARING_TEMPLATE = () => ([
+  { id: uid(), title: "基本情報", items: [
+    hearingItem("名前"), hearingItem("出身"), hearingItem("学歴"), hearingItem("年齢"), hearingItem("お住まい"),
+  ] },
+  { id: uid(), title: "現在の活動", items: [
+    hearingItem("今やっていること", "何をしている人か。肩書き・事業・役割"),
+    hearingItem("活動のきっかけ", "なぜ始めたか"),
+    hearingItem("問題提起", "業界・世の中の何に課題を感じているか"),
+    hearingItem("活動の原点", "この活動につながる原体験"),
+    hearingItem("人生を変えた瞬間", "ターニングポイント・決断の瞬間"),
+  ] },
+  { id: uid(), title: "現在の活動に至るまで", items: [
+    hearingItem("現在の活動の原点", "今に至るルーツ"),
+    hearingItem("幼少期", "どんな子どもだったか・家庭環境"),
+  ] },
+  { id: uid(), title: "今後の目標", items: [
+    hearingItem("今後の目標", "これから成し遂げたいこと"),
+    hearingItem("それを達成するための現在の壁", "いま立ちはだかっている課題"),
+  ] },
+]);
+
 const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format = "documentary") => ({
   id: uid(),
   name,
@@ -192,6 +215,7 @@ const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format
   rows: format === "talk" ? [] : templateRows(),
   talk: format === "talk" ? newTalk() : null,
   plans: [],
+  hearing: HEARING_TEMPLATE(),
   assets: [],
   review: { versions: [], comments: [] },
   manuals: [],
@@ -260,6 +284,7 @@ const migrateProject = (p) => {
     talk: p.format === "talk"
       ? { ...newTalk(), ...(p.talk || {}), toc: (p.talk && p.talk.toc && p.talk.toc.length) ? p.talk.toc : [""], body: (p.talk && p.talk.body && p.talk.body.length) ? p.talk.body : [newTalkBody()] }
       : (p.talk || null),
+    hearing: (Array.isArray(p.hearing) && p.hearing.length) ? p.hearing : HEARING_TEMPLATE(),
     assets: assetsFromLegacy(p),
     review: { versions: Array.isArray(p.review && p.review.versions) ? p.review.versions : [], comments: Array.isArray(p.review && p.review.comments) ? p.review.comments : [] },
     manuals: Array.isArray(p.manuals) ? p.manuals : [],
@@ -2034,6 +2059,17 @@ export default function App() {
   const clearChat = () => { if (window.confirm("この案件のAIとの会話履歴を消しますか？")) { setProject((p) => (p ? { ...p, aiChat: [] } : p)); setChatProposal(null); } };
   useEffect(() => { if (chatOpen && chatEndRef.current) chatEndRef.current.scrollIntoView({ behavior: "smooth" }); }, [chatMsgs.length, chatBusy, chatOpen, chatProposal]);
 
+  /* ===== ヒアリング タブ ===== */
+  const setHearing = (updater) => setProject((p) => ({ ...p, hearing: typeof updater === "function" ? updater(Array.isArray(p.hearing) ? p.hearing : []) : updater }));
+  const setHearingItem = (secId, itemId, value) => setHearing((secs) => secs.map((s) => s.id !== secId ? s : { ...s, items: s.items.map((it) => it.id === itemId ? { ...it, value } : it) }));
+  const setHearingItemLabel = (secId, itemId, label) => setHearing((secs) => secs.map((s) => s.id !== secId ? s : { ...s, items: s.items.map((it) => it.id === itemId ? { ...it, label } : it) }));
+  const addHearingItem = (secId) => setHearing((secs) => secs.map((s) => s.id !== secId ? s : { ...s, items: [...s.items, hearingItem("新しい項目")] }));
+  const removeHearingItem = (secId, itemId) => setHearing((secs) => secs.map((s) => s.id !== secId ? s : { ...s, items: s.items.filter((it) => it.id !== itemId) }));
+  const setHearingTitle = (secId, title) => setHearing((secs) => secs.map((s) => s.id === secId ? { ...s, title } : s));
+  const addHearingSection = () => setHearing((secs) => [...secs, { id: uid(), title: "新しいセクション", items: [hearingItem("項目")] }]);
+  const removeHearingSection = (secId) => { if (window.confirm("このセクションを削除しますか？")) setHearing((secs) => secs.filter((s) => s.id !== secId)); };
+  const resetHearing = () => { if (window.confirm("ヒアリング項目を初期テンプレに戻しますか？（入力した内容は消えます）")) setHearing(HEARING_TEMPLATE()); };
+
   /* ===== 企画・サムネ タブ ===== */
   const setPlans = (updater) => setProject((p) => ({ ...p, plans: typeof updater === "function" ? updater(p.plans || []) : updater }));
   const addPlan = () => setPlans((ps) => [...(ps || []), newPlan()]);
@@ -2618,7 +2654,7 @@ export default function App() {
   };
   /* ===== 共有URL：タブ別／案件まるごと ===== */
   /* アプリのタブ → share.html のペイン名 */
-  const TAB_SHARE_PANE = { plan: "plan", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files" };
+  const TAB_SHARE_PANE = { plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files" };
   const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id) + (pane ? "&tab=" + pane : ""); };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
   const copyShareUrl = async (t) => {
@@ -2631,7 +2667,17 @@ export default function App() {
     setShareModal({ id, url: u, updated: had, tab: t || "" });
     try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLを更新してコピーしたよ"); } catch (e) {}
   };
-  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", concept: "チャンネル" };
+  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", concept: "チャンネル" };
+  /* AI（Claude/GPT）に読ませる用リンク。share.html ではなくサーバー読み取り可能な JSON エンドポイントを渡す。
+     #フラグメントは外部fetchで読めないので live URL は不可。/api/snap/{id} はトークン不要の読み取り専用JSON。 */
+  const copyAiUrl = async () => {
+    const had = !!project.shareId;
+    const id = await publishShare(true); // 最新状態をスナップに反映してから渡す
+    if (!id) return;
+    const u = SHARE_API + "/api/snap/" + id;
+    setShareModal({ id, url: u, updated: had, ai: true });
+    try { await navigator.clipboard.writeText(u); showToast("AI用リンク（JSON）を更新してコピーしたよ"); } catch (e) {}
+  };
 
   /* ---- 動画確認＋ファイル転送（R2） ---- */
   /* 共有済みスナップショットへ video/files を静かに反映（共有モーダルは出さない） */
@@ -3752,6 +3798,10 @@ export default function App() {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                   {project.liveId ? "編集用リンクを更新" : "編集用リンクを発行"}<span className="text-[10px] text-stone-400 font-normal ml-auto">同時編集</span>
                 </button>
+                <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
+                  <span className="text-[14px] leading-none">🤖</span>
+                  AIに読ませる用リンク<span className="text-[10px] text-stone-400 font-normal ml-auto">Claude/GPT</span>
+                </button>
                 <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m22 8-6 4 6 4V8Z" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
                   動画確認・ファイル転送
@@ -3801,7 +3851,7 @@ export default function App() {
         </div>
         {/* タブ（アイコン＋短ラベルで1行に収める） */}
         <div className="max-w-[1500px] mx-auto px-2 sm:px-4 flex gap-1">
-          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["concept", "user", "チャンネル", "CH"]].map(([k, ic, label, short]) => (
+          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["concept", "user", "チャンネル", "CH"]].map(([k, ic, label, short]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap px-1 sm:px-4 py-2 sm:py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -4781,6 +4831,42 @@ export default function App() {
           </>
         )}
 
+        {/* ================= ヒアリングタブ（演者の事前聞き取り→構成のネタ元） ================= */}
+        {tab === "hearing" && (
+          <div className="max-w-[820px] mx-auto px-1 sm:px-0 py-1 space-y-4">
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <p className="text-[12px] text-stone-500">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
+              <button onClick={resetHearing} className="shrink-0 text-[11px] font-bold text-stone-400 hover:text-stone-600 underline">初期テンプレに戻す</button>
+            </div>
+            {(project.hearing || []).map((sec) => (
+              <div key={sec.id} className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)}
+                    className="flex-1 min-w-0 text-[14px] font-bold text-stone-800 bg-transparent border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none py-0.5" />
+                  <button onClick={() => removeHearingSection(sec.id)} title="セクション削除" className="shrink-0 text-stone-300 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
+                </div>
+                <div className="space-y-3">
+                  {sec.items.map((it) => (
+                    <div key={it.id} className="group">
+                      <div className="flex items-center gap-2 mb-1">
+                        <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)}
+                          className="text-[11px] font-bold text-stone-500 bg-transparent border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none" />
+                        {it.hint && <span className="text-[10px] text-stone-300 truncate">{it.hint}</span>}
+                        <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="ml-auto shrink-0 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500"><Icon name="close" className="w-3.5 h-3.5" /></button>
+                      </div>
+                      <textarea value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
+                        placeholder={it.hint || "ここに聞き取った内容を入力…"}
+                        className="w-full min-h-[44px] text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y leading-relaxed" />
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => addHearingItem(sec.id)} className="mt-3 text-[12px] font-bold text-stone-500 hover:text-stone-800 inline-flex items-center gap-1"><Icon name="plus" className="w-3.5 h-3.5" />項目を追加</button>
+              </div>
+            ))}
+            <button onClick={addHearingSection} className="w-full rounded-2xl border-2 border-dashed border-stone-200 hover:border-stone-300 text-[12px] font-bold text-stone-400 hover:text-stone-600 py-3 inline-flex items-center justify-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
+          </div>
+        )}
+
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
           <div className="max-w-[820px] mx-auto px-1 sm:px-0 py-1 space-y-4">
@@ -5549,12 +5635,14 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShareModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">{(shareModal.live ? "編集用リンクを" : shareModal.planShare ? "企画の試写リンクを" : shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
+              <h3 className="text-sm font-bold tracking-wider">{(shareModal.ai ? "AIに読ませる用リンクを" : shareModal.live ? "編集用リンクを" : shareModal.planShare ? "企画の試写リンクを" : shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
               <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
-                {shareModal.live
+                {shareModal.ai
+                  ? <>このURLを<span className="font-bold">Claude や ChatGPT に貼り付け</span>てください。構成台本の中身（JSON）をそのまま読み込めます。編集者向けの構成づくりや校正・変更点まとめを頼めます。<span className="text-stone-400">※ share.html ではなく中身データのリンク。内容を直したら押し直せば最新に。</span></>
+                  : shareModal.live
                   ? <>このURLを渡すと、先方が<span className="font-bold">構成台本をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
                   : shareModal.planShare
                   ? <>このURLは<span className="font-bold">この企画の動画・素材・コメントだけ</span>の専用ページです。先方は動画を見て（0.5〜4倍速）、時間を指定してコメントできます。コメントは右上💬とアプリ内の企画カードに届きます。</>

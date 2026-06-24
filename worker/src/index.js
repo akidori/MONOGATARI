@@ -806,6 +806,17 @@ function slim(p) {
       body: (p.talk.body || []).map((b) => ({ id: b.id, heading: b.heading || "", script: b.script || "" })),
     } : null,
     meta: p.meta || {},
+    // 事前ヒアリングシート（演者の人物理解→構成のネタ元）。share.html とAI用リンク(/api/snap)で読む。
+    hearing: Array.isArray(p.hearing) ? p.hearing.slice(0, 40).map((s) => ({
+      id: s.id,
+      title: (s.title || "").slice(0, 80),
+      items: Array.isArray(s.items) ? s.items.slice(0, 40).map((it) => ({
+        id: it.id,
+        label: (it.label || "").slice(0, 80),
+        value: (it.value || "").slice(0, 4000),
+        hint: (it.hint || "").slice(0, 120),
+      })) : [],
+    })) : [],
     manuals: slimManuals(p.manuals),
     manualsGlobal: slimManuals(p.manualsGlobal),
     theme: p.theme || { main: "#1F2430", accent: "#E63946" },
