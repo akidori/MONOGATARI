@@ -1382,6 +1382,9 @@ export default function App() {
   const [painting, setPainting] = useState(false);          // チェック欄ドラッグ選択中
   const [isNarrow, setIsNarrow] = useState(false);          // スマホ幅（操作列を隠す等）
   const lastSelRef = useRef(null);                          // shift範囲選択の起点
+  /* ヒアリング：文字起こし取込 */
+  const [hearingImport, setHearingImport] = useState(null); // { raw } モーダル開いてる時 or null
+  const [hearingBusy, setHearingBusy] = useState(false);
   /* 共有・コメント */
   const [shareModal, setShareModal] = useState(null);       // {url, id} or null
   const [sharing, setSharing] = useState(false);
@@ -2069,6 +2072,30 @@ export default function App() {
   const addHearingSection = () => setHearing((secs) => [...secs, { id: uid(), title: "新しいセクション", items: [hearingItem("項目")] }]);
   const removeHearingSection = (secId) => { if (window.confirm("このセクションを削除しますか？")) setHearing((secs) => secs.filter((s) => s.id !== secId)); };
   const resetHearing = () => { if (window.confirm("ヒアリング項目を初期テンプレに戻しますか？（入力した内容は消えます）")) setHearing(HEARING_TEMPLATE()); };
+  /* 文字起こし→AIで各項目を埋める。既存の入力は残し、空欄＆AIが内容を返した項目だけ埋める */
+  const runHearingFill = async () => {
+    const raw = (hearingImport && hearingImport.raw || "").trim();
+    if (!raw) { showToast("文字起こしを貼ってね"); return; }
+    setHearingBusy(true);
+    try {
+      const res = await fetch(SHARE_API + "/api/hearing", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw, hearing: project.hearing || [] }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "失敗");
+      const map = {}; (data.items || []).forEach((it) => { if (it && it.id) map[it.id] = (it.value || "").toString(); });
+      let filled = 0;
+      setHearing((secs) => secs.map((s) => ({ ...s, items: s.items.map((it) => {
+        const v = map[it.id];
+        if (v && v.trim() && !(it.value || "").trim()) { filled++; return { ...it, value: v }; } // 空欄だけ埋める
+        return it;
+      }) })));
+      setHearingImport(null);
+      showToast((data.summary ? data.summary + "｜" : "") + filled + "項目を埋めたよ" + (filled === 0 ? "（既に入力済みは上書きしてない）" : ""));
+    } catch (e) { showToast("ヒアリング整形に失敗：" + (e.message || e)); }
+    setHearingBusy(false);
+  };
 
   /* ===== 企画・サムネ タブ ===== */
   const setPlans = (updater) => setProject((p) => ({ ...p, plans: typeof updater === "function" ? updater(p.plans || []) : updater }));
@@ -4838,6 +4865,11 @@ export default function App() {
               <p className="text-[12px] text-stone-500">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
               <button onClick={resetHearing} className="shrink-0 text-[11px] font-bold text-stone-400 hover:text-stone-600 underline">初期テンプレに戻す</button>
             </div>
+            <button onClick={() => setHearingImport({ raw: "" })}
+              className="w-full rounded-xl border border-dashed p-3 text-[12px] font-bold inline-flex items-center justify-center gap-2 transition-colors"
+              style={{ borderColor: theme.accent, color: theme.accent }}>
+              <Icon name="sparkle" className="w-4 h-4" />文字起こしを貼ってAIに自動でまとめてもらう
+            </button>
             {(project.hearing || []).map((sec) => (
               <div key={sec.id} className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="flex items-center gap-2 mb-3">
@@ -5665,6 +5697,32 @@ export default function App() {
               <div className="mt-3 flex justify-between items-center">
                 <a href={shareModal.url} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: theme.main }}>プレビューを開く ↗</a>
                 <span className="text-[10px] text-stone-400">内容を直したら「共有を更新」で同じURLに反映されます</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== ヒアリング：文字起こし取込モーダル ===== */}
+      {hearingImport && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !hearingBusy && setHearingImport(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-2">
+              <Icon name="sparkle" className="w-5 h-5" style={{ color: theme.accent }} />
+              <h3 className="text-sm font-bold tracking-wider">文字起こしから自動でまとめる</h3>
+            </div>
+            <p className="text-[12px] text-stone-500 mb-3">取材・打ち合わせ・電話の<span className="font-bold">文字起こしやメモ</span>を貼り付けて。AIが各ヒアリング項目に振り分けて要約します。<span className="text-stone-400">※空欄の項目だけ埋めます（入力済みは上書きしません）。該当が無い項目は空のままにします。</span></p>
+            <textarea autoFocus value={hearingImport.raw} onChange={(e) => setHearingImport({ raw: e.target.value })}
+              placeholder="ここに文字起こし・取材メモを貼り付け…"
+              className="w-full h-56 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y leading-relaxed" />
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-[11px] text-stone-400">{(hearingImport.raw || "").length.toLocaleString()} 字</span>
+              <div className="flex gap-2">
+                <button onClick={() => setHearingImport(null)} disabled={hearingBusy} className="text-[12px] font-bold px-3 py-2 rounded-lg text-stone-500 hover:bg-stone-100 disabled:opacity-40">キャンセル</button>
+                <button onClick={runHearingFill} disabled={hearingBusy || !(hearingImport.raw || "").trim()}
+                  className="text-[12px] font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
+                  {hearingBusy ? <><span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />まとめてる…</> : <><Icon name="sparkle" className="w-3.5 h-3.5" />AIでまとめる</>}
+                </button>
               </div>
             </div>
           </div>

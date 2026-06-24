@@ -83,6 +83,19 @@ export default {
         return json({ issues: Array.isArray(out.issues) ? out.issues : [], summary: (out.summary || "").toString() });
       }
 
+      // POST /api/hearing  { raw, hearing }  → 文字起こしからヒアリング項目を埋める
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "hearing") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const raw = (b && b.raw ? b.raw : "").toString();
+        const hearing = b && Array.isArray(b.hearing) ? b.hearing : [];
+        if (!raw.trim()) return json({ error: "文字起こしが空です" }, 400);
+        if (raw.length > 120000) return json({ error: "文字起こしが長すぎます（12万字まで）" }, 413);
+        if (!hearing.length) return json({ error: "ヒアリング項目がありません" }, 400);
+        const out = await fillHearingWithClaude(hearing, raw, env);
+        return json({ items: Array.isArray(out.items) ? out.items : [], summary: (out.summary || "").toString() });
+      }
+
       // POST /api/chat  { project, history?, message }  → 会話しながら台本を提案（提案→承認フロー）
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "chat") {
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
@@ -1120,6 +1133,74 @@ async function reviewWithClaude(project, env) {
   if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
   const data = await res.json();
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
+  if (!block || !block.input) throw new Error("tool_use が返りませんでした");
+  return block.input;
+}
+
+/* ===== ヒアリング：文字起こしから各項目を埋める ===== */
+const HEARING_SYSTEM = `あなたは動画プロダクション「Bird Flip」専属の取材ディレクター補助です。一日密着ドキュメンタリーの「事前ヒアリングシート」を、演者へのインタビュー文字起こし（雑多な会話・打ち合わせ・取材メモ等）から埋めます。
+
+# やること
+- 渡された各ヒアリング項目（id・label・hint）について、文字起こしから該当する情報を抜き出し、簡潔にまとめて value に入れる
+- fill_hearing ツールで、items（id と value の配列）を返す
+
+# まとめ方のルール
+- 話し言葉は要点を整理した書き言葉にする。ただし本人のニュアンス・印象的な言い回しは活かす
+- 1項目は1〜数行程度。長すぎる転記はしない。事実・固有名詞・数字はそのまま正確に拾う
+- 文字起こしに該当情報が無い項目は、value を空文字 "" にする（絶対に創作・推測で埋めない）
+- label と hint の意図に合う内容だけを入れる（例：「幼少期」には子ども時代の話だけ）
+- 1つの発言が複数項目に関係するなら、それぞれに適切に振り分ける
+- summary に「埋まった項目数／取材で追加で聞くべきこと」を1〜2行で書く`;
+
+const HEARING_TOOL = {
+  name: "fill_hearing",
+  description: "文字起こしから各ヒアリング項目を埋めて返す。渡された項目の id をそのまま使い、該当情報が無い項目は value を空文字にする。",
+  input_schema: {
+    type: "object",
+    properties: {
+      items: {
+        type: "array",
+        description: "埋めた項目の配列。渡された全項目分（該当無しは value 空）を返す",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", description: "渡された項目の id をそのまま" },
+            value: { type: "string", description: "文字起こしからまとめた内容。該当無しは空文字" },
+          },
+          required: ["id", "value"],
+        },
+      },
+      summary: { type: "string", description: "埋まり具合・取材で追加で聞くべき点を1〜2行" },
+    },
+    required: ["items"],
+  },
+};
+
+async function fillHearingWithClaude(hearing, raw, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  // 構造を id/label/hint だけのコンパクト表現に（value は渡さない＝上書き判断はフロント）
+  const struct = hearing.map((s) => ({
+    section: s.title || "",
+    items: (s.items || []).map((it) => ({ id: it.id, label: it.label || "", hint: it.hint || "" })),
+  }));
+  const ctx = "----- 埋めるヒアリング項目(JSON) -----\n" + JSON.stringify(struct) +
+    "\n----- 文字起こし -----\n" + raw +
+    "\n----- ここまで -----\n\n上の文字起こしから各項目を埋めて fill_hearing で返してください。";
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model,
+      max_tokens: 16000,
+      system: HEARING_SYSTEM,
+      tools: [HEARING_TOOL],
+      tool_choice: { type: "tool", name: "fill_hearing" },
+      messages: [{ role: "user", content: ctx }],
+    }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
+  const data = await res.json();
+  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "fill_hearing");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
 }
