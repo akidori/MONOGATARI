@@ -2903,6 +2903,21 @@ export default function App() {
     return dl.length;
   };
   const toggleSelAsset = (id) => setSelAssets((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
+  // 編集者が共有リンクから上げた素材(file_up)を、この案件の素材管理に取り込む
+  const importGuestUploads = async (silent) => {
+    if (!project || !project.shareId) { if (!silent) showToast("先に確認用URLを発行してね"); return; }
+    let ups = [];
+    try { const r = await fetch(SHARE_API + "/api/snap/" + project.shareId + "/uploads"); const d = await r.json(); ups = (d && d.uploads) || []; }
+    catch (e) { if (!silent) showToast("取り込み失敗：" + (e.message || e)); return; }
+    const have0 = new Set((project.assets || []).map((a) => a.key).filter(Boolean));
+    const fresh = ups.filter((u) => u && u.key && !have0.has(u.key));
+    if (!fresh.length) { if (!silent) showToast("新しい編集者アップはありません"); return; }
+    const mk = (u) => { const isVid = /^video\//.test(u.mime || "") || /\.(mp4|mov|m4v|webm)$/i.test(u.name || ""); return newAsset("撮影素材", { type: isVid ? "mp4" : "file", key: u.key, name: u.name || "ファイル", size: u.size || 0, mime: u.mime || "", planId: u.planId || "", by: "guest" }); };
+    setAssets((arr) => { const have = new Set(arr.map((a) => a.key).filter(Boolean)); const add = fresh.filter((u) => !have.has(u.key)).map(mk); return add.length ? [...add, ...arr] : arr; });
+    if (!silent) showToast("編集者アップを" + fresh.length + "件 素材管理に取り込んだよ");
+  };
+  // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）
+  React.useEffect(() => { if (tab === "assets" && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
 
   /* 動画アップ＆ギガファイルの本体（モーダルと「動画・ファイル」タブで共用） */
   const renderMediaBody = (inModal = false) => {
@@ -4953,12 +4968,22 @@ export default function App() {
         {tab === "assets" && (
           <div className="max-w-[920px] mx-auto px-1 sm:px-0 py-1">
             <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。</p>
-            {(project.assets || []).some((a) => a.key && a.type !== "youtube") && (
+            {project.shareId && (
               <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => a.key && a.type !== "youtube")); showToast(n + "件のダウンロードを開始"); }}
-                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
-                  <Icon name="download" className="w-3.5 h-3.5" /> 全部DL
+                <button onClick={() => copyShareUrl("files")} title="編集者に渡すリンク。素材のDLと、編集者からのアップロードができる（ファイルタブだけ表示）"
+                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
+                  <Icon name="share" className="w-3.5 h-3.5" /> 編集者用リンク（DL+アップ）
                 </button>
+                <button onClick={() => importGuestUploads(false)} title="編集者が共有リンクから上げた素材をここに取り込む"
+                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                  <Icon name="refresh" className="w-3.5 h-3.5" /> 編集者アップを取り込み
+                </button>
+                {(project.assets || []).some((a) => a.key && a.type !== "youtube") && (
+                  <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => a.key && a.type !== "youtube")); showToast(n + "件のダウンロードを開始"); }}
+                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                    <Icon name="download" className="w-3.5 h-3.5" /> 全部DL
+                  </button>
+                )}
                 {selAssets.length > 0 && (<>
                   <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => selAssets.includes(a.id))); showToast(n + "件のダウンロードを開始"); }}
                     className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.main }}>

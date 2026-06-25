@@ -330,7 +330,7 @@ function render(){
   if(hasScript) tabs.push(["script","構成台本"]);
   if(!isTalk && (p.rows||[]).length) tabs.push(["kouban","香盤表"]);
   if(videoOptions(p).length) tabs.push(["video","動画確認"]);
-  const hasFilesAny = (p.files||[]).length || (p.plans||[]).some(pl=>(pl.files||[]).length) || (UPLOADS||[]).length;
+  const hasFilesAny = (p.files||[]).length || (p.plans||[]).some(pl=>(pl.files||[]).length) || (UPLOADS||[]).length || (p.assets||[]).some(a=>a&&a.key&&a.type!=="youtube");
   if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
   const manualCount = ((p.manuals||[]).length) + (((p.channelInfo&&p.channelInfo.manuals)||[]).length) + ((p.manualsGlobal||[]).length);
   if(manualCount) tabs.push(["manual","マニュアル"]);
@@ -752,9 +752,12 @@ function fmtBytes(n){ n=+n||0; if(n>=1073741824) return (n/1073741824).toFixed(2
 /* 企画別ファイルグループ（案件全体＋各企画。owner＝p.files/pl.files、guest＝UPLOADSをplanIdで振り分け） */
 function fileGroups(p){
   const upBy = (pid)=> (UPLOADS||[]).filter(u=> (u.planId||"")===pid );
-  const groups=[{ id:"project", label:"案件全体", files:(p.files||[]).map(f=>({...f,by:"owner"})).concat(upBy("").map(f=>({...f,by:"guest"}))) }];
+  // 素材管理(project.assets)のファイルも共有でDLできるように取り込む（key有り・YouTube以外）
+  const asBy = (pid)=> (p.assets||[]).filter(a=> a && a.key && a.type!=="youtube" && (a.planId||"")===pid ).map(a=>({ key:a.key, name:a.name, size:a.size, by:"owner" }));
+  const dedup = (arr)=>{ const seen=new Set(); return arr.filter(f=>{ const k=f.key||f.name; if(seen.has(k)) return false; seen.add(k); return true; }); };
+  const groups=[{ id:"project", label:"案件全体", files:dedup((p.files||[]).map(f=>({...f,by:"owner"})).concat(asBy("")).concat(upBy("").map(f=>({...f,by:"guest"})))) }];
   (p.plans||[]).forEach((pl,i)=>{
-    const files=((pl.files||[]).map(f=>({...f,by:"owner"}))).concat(upBy(pl.id).map(f=>({...f,by:"guest"})));
+    const files=dedup(((pl.files||[]).map(f=>({...f,by:"owner"}))).concat(asBy(pl.id)).concat(upBy(pl.id).map(f=>({...f,by:"guest"}))));
     if(files.length) groups.push({ id:pl.id, label:(pl.title||("企画"+(i+1))), files });
   });
   return groups;
