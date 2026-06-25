@@ -1367,6 +1367,7 @@ export default function App() {
   const [thumbPick, setThumbPick] = useState({});          // {pid: idx} 目立ちテストの対象サムネ（既定=最初の非空）
   const [caseSearch, setCaseSearch] = useState("");        // 全案件横断検索クエリ
   const [searchHits, setSearchHits] = useState(null);      // null=閉, []=ヒットなし, [...]=結果
+  const [selAssets, setSelAssets] = useState([]);          // 素材管理: 複数選択DL用の選択id配列
   const searchIndexRef = useRef({});                       // {id: 検索インデックス}（前計算キャッシュ）
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
@@ -2887,6 +2888,21 @@ export default function App() {
   const moveAsset = (id, category) => setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, category } : x)));
   const assetUrl = (a) => a.type === "youtube" ? a.url : (a.key ? (SHARE_API + "/api/file/" + a.key) : a.url);
   const fmtSize = (n) => { n = Number(n) || 0; if (n >= 1e9) return (n / 1e9).toFixed(1) + "GB"; if (n >= 1e6) return (n / 1e6).toFixed(1) + "MB"; if (n >= 1e3) return Math.round(n / 1e3) + "KB"; return n + "B"; };
+  // 素材ダウンロード（?dl=1 で worker が Content-Disposition を付け元ファイル名で保存）
+  const downloadAsset = (a) => {
+    if (!a || a.type === "youtube" || !a.key) return false;
+    const link = document.createElement("a");
+    link.href = SHARE_API + "/api/file/" + a.key + "?dl=1";
+    link.download = a.name || ""; link.rel = "noreferrer";
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    return true;
+  };
+  const downloadAssets = (list) => {
+    const dl = (list || []).filter((a) => a && a.key && a.type !== "youtube");
+    dl.forEach((a, i) => setTimeout(() => downloadAsset(a), i * 600)); // 連続DLブロック回避でずらす
+    return dl.length;
+  };
+  const toggleSelAsset = (id) => setSelAssets((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
 
   /* 動画アップ＆ギガファイルの本体（モーダルと「動画・ファイル」タブで共用） */
   const renderMediaBody = (inModal = false) => {
@@ -4937,6 +4953,21 @@ export default function App() {
         {tab === "assets" && (
           <div className="max-w-[920px] mx-auto px-1 sm:px-0 py-1">
             <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。</p>
+            {(project.assets || []).some((a) => a.key && a.type !== "youtube") && (
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => a.key && a.type !== "youtube")); showToast(n + "件のダウンロードを開始"); }}
+                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                  <Icon name="download" className="w-3.5 h-3.5" /> 全部DL
+                </button>
+                {selAssets.length > 0 && (<>
+                  <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => selAssets.includes(a.id))); showToast(n + "件のダウンロードを開始"); }}
+                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.main }}>
+                    <Icon name="download" className="w-3.5 h-3.5" /> 選択をDL（{selAssets.length}）
+                  </button>
+                  <button onClick={() => setSelAssets([])} className="text-[11px] text-stone-400 hover:text-stone-600 underline">選択解除</button>
+                </>)}
+              </div>
+            )}
             {!project.shareId && (
               <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[12px] text-amber-800 mb-3">
                 ファイルを上げるには先に<span className="font-bold">確認用URLの発行</span>が必要です（保存先R2の確保のため）。
@@ -4969,12 +5000,18 @@ export default function App() {
                       <ul className="divide-y divide-stone-100">
                         {items.map((a) => (
                           <li key={a.id} className="flex items-center gap-2 py-2 text-[12px]">
+                            {a.key && a.type !== "youtube"
+                              ? <input type="checkbox" checked={selAssets.includes(a.id)} onChange={() => toggleSelAsset(a.id)} title="まとめてDL用に選択" className="shrink-0 w-3.5 h-3.5 accent-stone-600 cursor-pointer" />
+                              : <span className="shrink-0 w-3.5" />}
                             <span className="shrink-0">{a.type === "youtube" ? "▶️" : a.type === "mp4" ? "🎬" : "📄"}</span>
                             <a href={assetUrl(a)} target="_blank" rel="noreferrer" className="flex-1 min-w-0 truncate text-stone-700 hover:underline">{a.name || "(無題)"}</a>
                             {a.size ? <span className="shrink-0 text-stone-400">{fmtSize(a.size)}</span> : null}
                             <select value={a.category} onChange={(e) => moveAsset(a.id, e.target.value)} className="shrink-0 border border-stone-200 rounded px-1 py-0.5 text-[10px] text-stone-500">
                               {ASSET_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
+                            {a.key && a.type !== "youtube" && (
+                              <button onClick={() => downloadAsset(a)} title="ダウンロード" className="shrink-0 text-stone-400 hover:text-stone-700"><Icon name="download" className="w-4 h-4" /></button>
+                            )}
                             <button onClick={() => { if (window.confirm("この素材を削除しますか？")) removeAsset(a.id); }} className="shrink-0 text-stone-300 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
                           </li>
                         ))}
