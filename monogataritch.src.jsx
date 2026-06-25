@@ -4909,34 +4909,7 @@ export default function App() {
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
           <div className="max-w-[820px] mx-auto px-1 sm:px-0 py-1 space-y-4">
-            {/* 現在地：ステータス */}
-            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h2 className="text-[14px] font-bold text-stone-800">いまの状態</h2>
-                <span className="text-[11px] text-stone-400">最終更新 {project.updatedAt ? new Date(project.updatedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}</span>
-              </div>
-              <div className="flex flex-wrap gap-1.5 mb-4">
-                {STATUSES.map((s) => {
-                  const on = (project.status || "未着手") === s; const col = STATUS_COLOR[s];
-                  return (
-                    <button key={s} onClick={() => setProject((p) => ({ ...p, status: s }))}
-                      className={"px-3 py-1.5 rounded-full text-[12px] font-bold transition-all " + (on ? "ring-2 ring-offset-1" : "opacity-60 hover:opacity-100")}
-                      style={{ background: col.bg, color: col.fg, ...(on ? { boxShadow: "0 0 0 2px " + col.fg } : {}) }}>{s}</button>
-                  );
-                })}
-              </div>
-              <label className="block mb-3">
-                <span className="text-[11px] font-bold text-stone-500">次にやること</span>
-                <input value={project.nextAction || ""} onChange={(e) => setProject((p) => ({ ...p, nextAction: e.target.value }))}
-                  placeholder="例：参考動画を追加 / 撮影素材をアップロード / 初稿を確認 …"
-                  className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
-              </label>
-              <label className="block">
-                <span className="text-[11px] font-bold text-stone-500">締切</span>
-                <input type="date" value={project.deadline || ""} onChange={(e) => setProject((p) => ({ ...p, deadline: e.target.value }))}
-                  className="mt-1 block text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
-              </label>
-            </div>
+            {/* 「いまの状態」(ステータス/次にやること/締切)はタスク管理＝Flip Boardに集約のため削除 */}
             {/* 基本情報 */}
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
               <h2 className="text-[14px] font-bold text-stone-800 mb-3">基本情報</h2>
@@ -5489,24 +5462,16 @@ export default function App() {
               </button>
             </div>
 
-            {/* ===== 作業の入口：今日やること / 確認待ち / 期限が近い / 最近触った ===== */}
+            {/* ===== 最近触った（クイックアクセス）。タスク管理(今日やること/確認待ち/期限)はFlip Boardに集約 ===== */}
             {(() => {
-              const { todo, review, due, recent } = homeSections;
-              const Section = ({ title, accent, items, empty }) => (
-                <div className="mb-5">
-                  <div className="text-[12px] font-bold mb-2 flex items-center gap-2" style={{ color: accent || "#57534E" }}>{title}<span className="text-stone-300 font-normal">{items.length}</span></div>
-                  {items.length === 0 ? <p className="text-[11px] text-stone-400">{empty}</p> : <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{items.map(renderCaseCard)}</div>}
-                </div>
-              );
-              const anyWork = todo.length || review.length || due.length || recent.length;
-              if (!index.length) return null;
+              const { recent } = homeSections;
+              if (!index.length || !recent.length) return null;
               return (
                 <div className="mb-7">
-                  {todo.length > 0 && <Section title="📌 今日やること" items={todo} empty="" />}
-                  {review.length > 0 && <Section title="👀 確認待ち" accent="#DC2645" items={review} empty="" />}
-                  {due.length > 0 && <Section title="⏰ 期限が近い" accent="#D97706" items={due} empty="" />}
-                  {recent.length > 0 && <Section title="🕒 最近触った" items={recent} empty="" />}
-                  {!anyWork && <p className="text-[12px] text-stone-400 bg-white border border-stone-200 rounded-xl px-4 py-5 text-center">いまは「次にやること」が登録された案件がありません。<br />各案件の<span className="font-bold">概要</span>タブでステータスと次の一手を入れると、ここに並びます。</p>}
+                  <div className="mb-5">
+                    <div className="text-[12px] font-bold mb-2 flex items-center gap-2 text-stone-600">🕒 最近触った<span className="text-stone-300 font-normal">{recent.length}</span></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{recent.map(renderCaseCard)}</div>
+                  </div>
                 </div>
               );
             })()}
