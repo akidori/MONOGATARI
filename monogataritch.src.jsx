@@ -1983,7 +1983,7 @@ export default function App() {
   const jumpToCaseRow = async (caseId, rowId) => {
     setSearchHits(null); setCaseSearch("");
     if (caseId !== activeId) await switchProject(caseId);
-    setTab("script");
+    setTab("script"); setView("editor"); // ホーム検索からでも案件編集へ遷移
     if (rowId) setTimeout(() => jumpToRow(rowId), 160);
   };
 
@@ -3770,6 +3770,8 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
           </span>
           <div className="flex-1" />
+          {/* 構成台本の指標（TOTAL尺・字数・字/秒）は構成台本タブの時だけ表示 */}
+          {tab === "script" && (<>
           <div className="flex items-baseline gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg" style={{ background: "rgba(0,0,0,0.25)", fontFamily: mono }}>
             <span className="text-[9px] tracking-widest opacity-60">TOTAL</span>
             <span className="text-base sm:text-xl font-bold tabular-nums leading-none">{fmt(totalEst)}</span>
@@ -3783,6 +3785,7 @@ export default function App() {
               style={{ fontFamily: mono, color: mainText }} />
             <span className="hidden sm:inline">字/秒</span>
           </label>
+          </>)}
           {/* 先方コメント */}
           {project.shareId && (
             <button onClick={() => { setShowComments(true); fetchComments(); }} title="先方コメント"
@@ -3883,7 +3886,7 @@ export default function App() {
         </div>
         {/* タブ（アイコン＋短ラベルで1行に収める） */}
         <div className="max-w-[1500px] mx-auto px-2 sm:px-4 flex gap-1">
-          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["concept", "user", "チャンネル", "CH"]].map(([k, ic, label, short]) => (
+          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"]].map(([k, ic, label, short]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap px-1 sm:px-4 py-2 sm:py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -3925,8 +3928,9 @@ export default function App() {
       <main className="max-w-[1500px] mx-auto px-3 sm:px-5 pt-5">
 
         {/* ================= チャンネルコンセプトタブ ================= */}
-        {tab === "concept" && (
-          <div className="max-w-[1000px] mx-auto">
+        {/* チャンネル（コンセプト）は概要タブに統合 */}
+        {tab === "overview" && (
+          <div className="max-w-[1000px] mx-auto mb-8">
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <p className="text-[12px] text-stone-500 leading-relaxed flex-1 min-w-[200px]">
                 チャンネル「<span className="font-bold" style={{ color: theme.main }}>{curChannel}</span>」のコンセプト。<span className="font-bold">同じチャンネル（フォルダ）の全案件で共有</span>されます。
@@ -4071,41 +4075,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= 全案件 横断検索バー（本編上部） ================= */}
-        {tab === "script" && (
-          <div className="relative mb-3 max-w-[900px] mx-auto">
-            <div className="relative z-30 flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-sm">
-              <Icon name="search" className="w-4 h-4 text-stone-400 shrink-0" />
-              <input value={caseSearch}
-                onFocus={primeSearch}
-                onChange={(e) => { setCaseSearch(e.target.value); searchNow(e.target.value); }}
-                onKeyDown={(e) => { if (e.key === "Escape") { setCaseSearch(""); setSearchHits(null); } }}
-                placeholder="全案件を横断検索（案件名・タイトル・ロケ名・原稿）"
-                className="flex-1 min-w-0 text-[13px] bg-transparent focus:outline-none" />
-              {caseSearch && <button onClick={() => { setCaseSearch(""); setSearchHits(null); }} title="クリア" className="shrink-0 w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-100"><Icon name="close" className="w-3.5 h-3.5" /></button>}
-            </div>
-            {searchHits != null && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={() => setSearchHits(null)} />
-                <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-stone-200 bg-white shadow-xl max-h-[60vh] overflow-y-auto">
-                  {searchHits.length === 0 ? (
-                    <div className="px-4 py-3 text-[12px] text-stone-400">「{caseSearch}」にヒットなし</div>
-                  ) : searchHits.map((h, i) => (
-                    <button key={h.caseId + ":" + i} onClick={() => jumpToCaseRow(h.caseId, h.rowId)}
-                      className="w-full text-left px-3 py-2 border-b border-stone-100 last:border-0 hover:bg-stone-50 flex flex-col gap-0.5">
-                      <span className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[10px] text-stone-400 shrink-0">{(channelIconOf(h.channel) || "📁") + h.channel}</span>
-                        <span className="text-[13px] font-bold text-stone-700 truncate">{h.caseName || "（無題）"}</span>
-                        {h.caseId === activeId && <span className="text-[9px] text-stone-400 shrink-0">表示中</span>}
-                      </span>
-                      {h.snippet && <span className="text-[11px] text-stone-500 truncate">{h.snippet}</span>}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        {/* 全案件 横断検索バーはホーム（案件一覧）へ移設 */}
 
         {/* ================= トーク系 構成台本タブ ================= */}
         {tab === "script" && project.format === "talk" && (() => {
@@ -5401,6 +5371,39 @@ export default function App() {
             </div>
           </header>
           <main className="max-w-3xl mx-auto px-4 py-7">
+            {/* 全案件 横断検索（ホーム） */}
+            <div className="relative mb-5">
+              <div className="relative z-30 flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-sm">
+                <Icon name="search" className="w-4 h-4 text-stone-400 shrink-0" />
+                <input value={caseSearch}
+                  onFocus={primeSearch}
+                  onChange={(e) => { setCaseSearch(e.target.value); searchNow(e.target.value); }}
+                  onKeyDown={(e) => { if (e.key === "Escape") { setCaseSearch(""); setSearchHits(null); } }}
+                  placeholder="全案件を横断検索（案件名・タイトル・ロケ名・原稿）"
+                  className="flex-1 min-w-0 text-[13px] bg-transparent focus:outline-none" />
+                {caseSearch && <button onClick={() => { setCaseSearch(""); setSearchHits(null); }} title="クリア" className="shrink-0 w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-100"><Icon name="close" className="w-3.5 h-3.5" /></button>}
+              </div>
+              {searchHits != null && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setSearchHits(null)} />
+                  <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-stone-200 bg-white shadow-xl max-h-[60vh] overflow-y-auto">
+                    {searchHits.length === 0 ? (
+                      <div className="px-4 py-3 text-[12px] text-stone-400">「{caseSearch}」にヒットなし</div>
+                    ) : searchHits.map((h, i) => (
+                      <button key={h.caseId + ":" + i} onClick={() => jumpToCaseRow(h.caseId, h.rowId)}
+                        className="w-full text-left px-3 py-2 border-b border-stone-100 last:border-0 hover:bg-stone-50 flex flex-col gap-0.5">
+                        <span className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[10px] text-stone-400 shrink-0">{(channelIconOf(h.channel) || "📁") + h.channel}</span>
+                          <span className="text-[13px] font-bold text-stone-700 truncate">{h.caseName || "（無題）"}</span>
+                          {h.caseId === activeId && <span className="text-[9px] text-stone-400 shrink-0">表示中</span>}
+                        </span>
+                        {h.snippet && <span className="text-[11px] text-stone-500 truncate">{h.snippet}</span>}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             {!user && (
               <div className="mb-5 text-[12px] text-stone-600 bg-white border border-stone-200 rounded-xl px-4 py-3 flex items-start gap-2">
                 <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
