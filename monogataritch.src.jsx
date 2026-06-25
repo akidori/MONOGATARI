@@ -1368,6 +1368,7 @@ export default function App() {
   const [caseSearch, setCaseSearch] = useState("");        // 全案件横断検索クエリ
   const [searchHits, setSearchHits] = useState(null);      // null=閉, []=ヒットなし, [...]=結果
   const [selAssets, setSelAssets] = useState([]);          // 素材管理: 複数選択DL用の選択id配列
+  const [dragCat, setDragCat] = useState(null);            // 素材管理: ドラッグ＆ドロップ中のカテゴリ
   const searchIndexRef = useRef({});                       // {id: 検索インデックス}（前計算キャッシュ）
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
@@ -4967,7 +4968,7 @@ export default function App() {
         {/* ================= 素材管理タブ（assets単一正本） ================= */}
         {tab === "assets" && (
           <div className="max-w-[920px] mx-auto px-1 sm:px-0 py-1">
-            <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。</p>
+            <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-400">ファイルは各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でもアップできます。</span></p>
             {project.shareId && (
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <button onClick={() => copyShareUrl("files")} title="編集者に渡すリンク。素材のDLと、編集者からのアップロードができる（ファイルタブだけ表示）"
@@ -5004,7 +5005,12 @@ export default function App() {
                 const items = (project.assets || []).filter((a) => a.category === cat);
                 const uping = assetUp && assetUp.cat === cat;
                 return (
-                  <section key={cat} className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <section key={cat}
+                    onDragOver={(e) => { e.preventDefault(); if (project.shareId) setDragCat(cat); }}
+                    onDragLeave={(e) => { if (e.currentTarget === e.target) setDragCat(null); }}
+                    onDrop={(e) => { e.preventDefault(); setDragCat(null); if (!project.shareId) { showToast("先に確認用URLを発行してね（ヘッダーの共有）"); return; } const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) fs.forEach((f) => uploadAsset(f, cat)); }}
+                    className={"rounded-2xl bg-white p-4 transition-colors " + (dragCat === cat ? "border-2 border-dashed" : "border border-stone-200")}
+                    style={dragCat === cat ? { borderColor: theme.accent, background: "#fafaf8" } : {}}>
                     <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
                       <h3 className="text-[13px] font-bold text-stone-800">{ASSET_CAT_ICON[cat]} {cat} <span className="text-stone-400 font-normal">{items.length}</span></h3>
                       <label className={"text-[11px] font-bold px-2.5 py-1.5 rounded-lg shadow cursor-pointer " + (project.shareId ? "" : "opacity-40 pointer-events-none")} style={{ background: theme.main, color: "#fff" }}>
@@ -5012,7 +5018,7 @@ export default function App() {
                         <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); fs.forEach((f) => uploadAsset(f, cat)); e.target.value = ""; }} />
                       </label>
                     </div>
-                    <p className="text-[10px] text-stone-400 mb-2">{ASSET_CAT_DESC[cat]}</p>
+                    <p className="text-[10px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#a8a29e" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}</p>
                     {uping && (
                       <div className="mb-2 rounded-lg bg-stone-50 border border-stone-200 px-3 py-2">
                         <div className="text-[11px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬆ {assetUp.name}</span><span className="font-bold tabular-nums">{assetUp.pct}%</span></div>

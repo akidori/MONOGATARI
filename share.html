@@ -771,19 +771,26 @@ function paneFiles(p, accent, main){
   return `
     <div>
       <div id="fl-list"></div>
-      ${CHMODE?"":`<div class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3">
+      ${CHMODE?"":`<div id="fl-drop" class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3 transition-colors">
         <div class="text-[12px] font-bold text-stone-600 mb-1">ファイルを送る</div>
-        <div class="text-[11px] text-stone-400 mb-2">素材や資料をアップロードできます（1ファイル2GBまで）。</div>
+        <div class="text-[11px] text-stone-400 mb-2">ここに<span class="font-bold">ドラッグ＆ドロップ</span>、または下から選択（1ファイル2GBまで・複数可）。</div>
         ${targetSel}
-        <input id="fl-input" type="file" class="text-[12px] block">
+        <input id="fl-input" type="file" multiple class="text-[12px] block">
         <div id="fl-prog" class="hidden mt-2"><div class="h-1.5 bg-stone-200 rounded overflow-hidden"><div id="fl-bar" class="h-full" style="width:0%;background:${accent}"></div></div><div id="fl-pct" class="text-[10px] text-stone-400 mt-1">0%</div></div>
       </div>`}
     </div>`;
 }
+async function guestUploadMany(files, p, accent, main){ for(const f of (files||[])){ await guestUpload(f, p, accent, main); } }
 function mountFiles(p, accent, main){
   renderFileList(p, accent, main);
   const inp=document.getElementById("fl-input");
-  if(inp) inp.addEventListener("change", ()=>{ if(inp.files&&inp.files[0]) guestUpload(inp.files[0], p, accent, main); });
+  if(inp) inp.addEventListener("change", ()=>{ const fs=Array.from(inp.files||[]); if(fs.length) guestUploadMany(fs, p, accent, main); });
+  const drop=document.getElementById("fl-drop");
+  if(drop){
+    drop.addEventListener("dragover", (e)=>{ e.preventDefault(); drop.style.background="#f5f3ff"; drop.style.borderColor=accent; });
+    drop.addEventListener("dragleave", (e)=>{ if(e.target===drop){ drop.style.background=""; drop.style.borderColor=""; } });
+    drop.addEventListener("drop", (e)=>{ e.preventDefault(); drop.style.background=""; drop.style.borderColor=""; const fs=Array.from((e.dataTransfer&&e.dataTransfer.files)||[]); if(fs.length) guestUploadMany(fs, p, accent, main); });
+  }
 }
 function renderFileList(p, accent, main){
   const el=document.getElementById("fl-list"); if(!el) return;
