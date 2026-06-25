@@ -1109,7 +1109,7 @@ function ManualPanel({ entries, onChange, main, accent, readOnly }) {
 /* ===== 動画確認：Frame.io型 修正管理ボード（バージョン＋ステータス/カテゴリ/優先度/返信/フィルタ） ===== */
 function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName }) {
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
-  const [selId, setSelId] = React.useState(versions[0] ? versions[0].id : null);
+  const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
   const [filter, setFilter] = React.useState("全部");
   const [cat, setCat] = React.useState("編集");
   const [prio, setPrio] = React.useState("中");
@@ -1120,8 +1120,13 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
   const [rate, setRate] = React.useState(1);
   const [cur, setCur] = React.useState(0);
   const [dur, setDur] = React.useState(0);
-  React.useEffect(() => { if (!versions.some((v) => v.id === selId)) setSelId(versions[0] ? versions[0].id : null); }, [versions.map((v) => v.id).join(",")]);
-  const sel = versions.find((v) => v.id === selId) || versions[0] || null;
+  const prevVerLen = React.useRef(versions.length);
+  React.useEffect(() => {
+    if (versions.length > prevVerLen.current) { setSelId(versions[versions.length - 1].id); } // 新ver追加→最新を自動表示（旧版誤確認の防止）
+    else if (!versions.some((v) => v.id === selId)) setSelId(versions.length ? versions[versions.length - 1].id : null);
+    prevVerLen.current = versions.length;
+  }, [versions.map((v) => v.id).join(",")]);
+  const sel = versions.find((v) => v.id === selId) || versions[versions.length - 1] || null;
   const vKey = sel ? (sel.uid || sel.key || sel.url || "") : "";
   const fmtTC = (s) => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60), sec = Math.floor(s % 60), cs = Math.floor((s * 100) % 100); return m + ":" + String(sec).padStart(2, "0") + "." + String(cs).padStart(2, "0"); };
   const belongs = (c) => sel && (c.versionId === sel.id || (c.videoKey || "") === vKey || (sel.uid && c.videoKey === sel.uid) || (sel.key && c.videoKey === sel.key));
