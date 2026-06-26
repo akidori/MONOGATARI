@@ -36,6 +36,8 @@ const params = new URLSearchParams(location.search);
 const ID = params.get("id");
 const CHID = params.get("ch");
 const LOCK_TAB = params.get("tab");  // 単一タブ共有（&tab=script等）。指定時はそのペインだけ表示しタブバー非表示
+const ALLOW_TABS = (params.get("tabs")||"").split(",").map(s=>s.trim()).filter(Boolean);  // 複数タブ束ね共有（&tabs=video,script）。指定タブだけ見せる（その中での切替は可）
+const START_TAB = params.get("start");  // 着地タブ（&start=video）。最初に開くタブ
 let CHANNEL = null, CASE_SEL = null, CTAB = "script", CHMODE = false;
 const esc = (s) => (s||"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
 const CMT_CATS = ["編集","構成","サムネ","BGM","SE","テロップ","色味","演出","その他"];
@@ -120,7 +122,7 @@ function scoreVideo(info){
   return {grade,ratioStr};
 }
 
-let TAB = "script";
+let TAB = START_TAB || "script";
 /* 動画確認タブ用の状態 */
 let UPLOADS = [];          // 先方アップロード一覧（/api/snap/{id}/uploads）
 let ytPlayer = null;       // YouTube IFrame Player
@@ -334,6 +336,11 @@ function render(){
   if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
   const manualCount = ((p.manuals||[]).length) + (((p.channelInfo&&p.channelInfo.manuals)||[]).length) + ((p.manualsGlobal||[]).length);
   if(manualCount) tabs.push(["manual","マニュアル"]);
+  // 複数タブ束ね共有：許可タブだけに絞る（タブバーは出す＝相手は許可タブ内で切替できる）
+  if(ALLOW_TABS.length){
+    const allowed = tabs.filter(t=>ALLOW_TABS.includes(t[0]));
+    if(allowed.length){ tabs.length=0; tabs.push(...allowed); }
+  }
   // 単一タブ共有：指定ペインだけ表示。タブバーは隠す
   const lockedTab = (LOCK_TAB && tabs.some(t=>t[0]===LOCK_TAB)) ? LOCK_TAB : null;
   if(lockedTab) TAB = lockedTab;
@@ -630,15 +637,19 @@ function mountVideo(p, accent, main){
     };
     if(window.YT && window.YT.Player){ make(); }
     else { window.onYouTubeIframeAPIReady = make; if(!document.getElementById("yt-api")){ const s=document.createElement("script"); s.id="yt-api"; s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s); } }
-  } else if(v.type==="stream"){
-    if(!v.ready || !v.hls){ stage.innerHTML = '<div class="w-full h-full grid place-items-center text-white/80 text-[12px] px-4 text-center">⚙️ 軽量版に変換中です。少し待ってから開いてください。</div>'; return; }
+  } else if(v.type==="stream" && v.ready && v.hls){
+    // Stream変換済み：軽量HLSを再生
     videoEl = document.createElement("video");
     videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
     stage.replaceWith(videoEl); videoEl.id = "vc-player";
     videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
     if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src = v.hls; }
     else { loadHlsShare().then((Hls)=>{ if(Hls && Hls.isSupported()){ const h=new Hls(); h.loadSource(v.hls); h.attachMedia(videoEl); } else { videoEl.src = v.hls; } }); }
+  } else if(v.type==="stream" && !v.key && !v.url){
+    // 変換未完で元ファイルも無い場合のみ待機表示（Stream変換が走らない＝STREAM_API_TOKEN未設定だと永久にここなので、元ファイルがあれば下でフォールバック）
+    stage.innerHTML = '<div class="w-full h-full grid place-items-center text-white/80 text-[12px] px-4 text-center">⚙️ 軽量版に変換中です。少し待ってから開いてください。</div>'; return;
   } else {
+    // 生mp4（R2/外部URL）を直接再生。stream指定でも変換が未完なら元ファイルで再生し、永久「変換中」を防ぐ
     videoEl = document.createElement("video");
     videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||"");
     videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";

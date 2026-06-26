@@ -136,6 +136,19 @@ const DEFAULT_CHANNEL = "未分類";
 
 /* ===== 制作OS：案件ステータス & 素材（assets単一正本） ===== */
 /* ステータス6種（順序＝制作フロー）。色は案件カード/概要のバッジ用 */
+/* ===== 受け渡し（ラリー）プリセット =====
+   相手に渡すとき、見せるタブ（tabs）・最初に開くタブ（start）・コピーされる文面（msg）をまとめて1ボタンに。
+   tabs はアプリのタブキー（script/kouban/assets/review/concept/plan/hearing）。share.html へは TAB_SHARE_PANE 経由でペイン名に変換して渡す。
+   msg の {url} はリンクに、{name} は案件名に置換される。mg:handoff に保存され、UIから自由に編集できる。 */
+const HANDOFF_KEY = "mg:handoff";
+const HANDOFF_DEFAULTS = [
+  { id: "editor", emoji: "✂️", label: "編集へ", tabs: ["script", "kouban", "assets"], start: "script",
+    msg: "{name}、構成・香盤・素材まとめました！編集よろしくお願いします🙏\n{url}" },
+  { id: "client", emoji: "🎬", label: "先方へ", tabs: ["review"], start: "review",
+    msg: "{name} の動画が上がりました。ご確認お願いします（再生しながら時間指定でコメント頂けます）\n{url}" },
+  { id: "talent", emoji: "🎤", label: "演者へ", tabs: ["review", "script"], start: "review",
+    msg: "{name} の確認用ページです。動画と構成こちらからご覧いただけます\n{url}" },
+];
 const STATUSES = ["未着手", "企画中", "撮影前", "編集中", "確認中", "完了"];
 const STATUS_COLOR = {
   "未着手": { bg: "#F0F0F2", fg: "#71717A" },
@@ -1394,6 +1407,12 @@ export default function App() {
   const [hearingBusy, setHearingBusy] = useState(false);
   /* 共有・コメント */
   const [shareModal, setShareModal] = useState(null);       // {url, id} or null
+  const [showHandoffEdit, setShowHandoffEdit] = useState(false); // 受け渡しプリセットのカスタマイズモーダル
+  const [handoffs, setHandoffs] = useState(() => {          // 相手別の受け渡しプリセット（リンク＋文面）。mg:handoff に保存
+    try { const s = localStorage.getItem(HANDOFF_KEY); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch (e) {}
+    return HANDOFF_DEFAULTS.map((h) => ({ ...h, tabs: [...h.tabs] }));
+  });
+  const saveHandoffs = (next) => { setHandoffs(next); try { localStorage.setItem(HANDOFF_KEY, JSON.stringify(next)); } catch (e) {} };
   const [sharing, setSharing] = useState(false);
   const [chSharing, setChSharing] = useState(false);        // チャンネル丸ごと共有の発行中
   const [comments, setComments] = useState([]);             // 現案件の先方コメント
@@ -2701,7 +2720,24 @@ export default function App() {
     setShareModal({ id, url: u, updated: had, tab: t || "" });
     try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLを更新してコピーしたよ"); } catch (e) {}
   };
+  /* ===== 受け渡し（ラリー）：相手別に「見せるタブ＋着地タブ＋文面」をまとめてコピー ===== */
+  /* アプリのタブキー配列 → share.html?id=..&tabs=ペイン,..&start=ペイン を組み立て */
+  const buildHandoffUrl = (id, appTabs, startTab) => {
+    const panes = (appTabs || []).map((t) => TAB_SHARE_PANE[t]).filter(Boolean);
+    const startPane = TAB_SHARE_PANE[startTab] || panes[0] || "";
+    return shareUrl(id) + (panes.length ? "&tabs=" + panes.join(",") : "") + (startPane ? "&start=" + startPane : "");
+  };
+  /* 受け渡しボタン押下：最新スナップを発行 → スコープ付きリンク＋文面をクリップボードへ */
+  const doHandoff = async (h) => {
+    const id = await publishShare(true); // 最新状態を共有スナップに反映してから渡す
+    if (!id) return;
+    const url = buildHandoffUrl(id, h.tabs, h.start);
+    const text = (h.msg || "{url}").replace(/\{url\}/g, url).replace(/\{name\}/g, project.name || "この案件");
+    setShareModal({ id, url, updated: !!project.shareId, handoff: h, text });
+    try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
+  };
   const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", concept: "チャンネル" };
+  const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept"]; // 受け渡しで選べるタブ
   /* AI（Claude/GPT）に読ませる用リンク。share.html ではなくサーバー読み取り可能な JSON エンドポイントを渡す。
      #フラグメントは外部fetchで読めないので live URL は不可。/api/snap/{id} はトークン不要の読み取り専用JSON。 */
   const copyAiUrl = async () => {
@@ -3845,7 +3881,18 @@ export default function App() {
             </button>
             {shareMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700">
+              <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 max-h-[80vh] overflow-y-auto">
+                <div className="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wider text-stone-400">受け渡し（リンク＋文面をコピー）</div>
+                {handoffs.map((h) => (
+                  <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                    <span className="text-[14px] leading-none">{h.emoji || "📨"}</span>
+                    {h.label}
+                    <span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
+                  </button>
+                ))}
+                <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2 border-b border-stone-100">
+                  <span className="text-[12px] leading-none">⚙️</span> 受け渡しをカスタマイズ
+                </button>
                 <div className="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wider text-stone-400">確認用URLをコピー（読み取り専用）</div>
                 {TAB_SHARE_PANE[tab] && (
                   <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
@@ -5708,12 +5755,14 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShareModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">{(shareModal.ai ? "AIに読ませる用リンクを" : shareModal.live ? "編集用リンクを" : shareModal.planShare ? "企画の試写リンクを" : shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました")}</h3>
+              <h3 className="text-sm font-bold tracking-wider">{shareModal.handoff ? ((shareModal.handoff.emoji || "📨") + " " + shareModal.handoff.label + "：リンク＋文面をコピーしました") : ((shareModal.ai ? "AIに読ませる用リンクを" : shareModal.live ? "編集用リンクを" : shareModal.planShare ? "企画の試写リンクを" : shareModal.channel ? "チャンネル共有リンクを" : "共有リンクを") + (shareModal.updated ? "更新しました" : "発行しました"))}</h3>
               <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
               <p className="text-[12px] text-stone-500 mb-2">
-                {shareModal.ai
+                {shareModal.handoff
+                  ? <>下の<span className="font-bold">文面（リンク入り）はもうコピー済み</span>。DiscordやLINEにそのまま貼るだけ。相手には<span className="font-bold">{(shareModal.handoff.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>だけが見えます（その中で切替OK・読み取り専用）。内容を直したら押し直せば同じURLに反映。</>
+                  : shareModal.ai
                   ? <>このURLを<span className="font-bold">Claude や ChatGPT に貼り付け</span>てください。構成台本の中身（JSON）をそのまま読み込めます。編集者向けの構成づくりや校正・変更点まとめを頼めます。<span className="text-stone-400">※ share.html ではなく中身データのリンク。内容を直したら押し直せば最新に。</span></>
                   : shareModal.live
                   ? <>このURLを渡すと、先方が<span className="font-bold">構成台本をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
@@ -5735,9 +5784,79 @@ export default function App() {
                 <button onClick={async () => { try { await navigator.clipboard.writeText(shareModal.url); showToast("URLをコピーしました"); } catch (e) {} }}
                   className="text-[11px] font-bold px-3 py-1.5 rounded-md shadow shrink-0" style={{ background: theme.accent, color: accentText }}>コピー</button>
               </div>
+              {shareModal.handoff && shareModal.text && (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] font-bold tracking-wider text-stone-400">送る文面（コピー済み）</span>
+                    <button onClick={async () => { try { await navigator.clipboard.writeText(shareModal.text); showToast("文面をコピーしました"); } catch (e) {} }}
+                      className="text-[10px] font-bold px-2 py-1 rounded-md border border-stone-200 hover:bg-stone-50">文面を再コピー</button>
+                  </div>
+                  <textarea readOnly value={shareModal.text} rows={4} onFocus={(e) => e.target.select()}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-[12px] text-stone-700 resize-none focus:outline-none" />
+                </div>
+              )}
               <div className="mt-3 flex justify-between items-center">
                 <a href={shareModal.url} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: theme.main }}>プレビューを開く ↗</a>
                 <span className="text-[10px] text-stone-400">内容を直したら「共有を更新」で同じURLに反映されます</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 受け渡し（ラリー）プリセットのカスタマイズ ===== */}
+      {showHandoffEdit && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowHandoffEdit(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between sticky top-0 z-10" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider">受け渡しのカスタマイズ</h3>
+              <button onClick={() => setShowHandoffEdit(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-[11px] text-stone-500 leading-relaxed">相手ごとに「見せるタブ・最初に開くタブ・送る文面」を決められます。文面の <code className="bg-stone-100 px-1 rounded">{"{url}"}</code> はリンクに、<code className="bg-stone-100 px-1 rounded">{"{name}"}</code> は案件名に置き換わります。</p>
+              {handoffs.map((h, idx) => (
+                <div key={h.id} className="border border-stone-200 rounded-xl p-3 space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <input value={h.emoji || ""} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, emoji: e.target.value.slice(0, 2) } : x))}
+                      className="w-10 text-center text-[15px] border border-stone-200 rounded-lg py-1.5" placeholder="📨" />
+                    <input value={h.label} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, label: e.target.value } : x))}
+                      className="flex-1 text-[13px] font-bold border border-stone-200 rounded-lg px-3 py-1.5" placeholder="ボタン名（例：編集へ）" />
+                    <button onClick={() => saveHandoffs(handoffs.filter((_, i) => i !== idx))} title="このプリセットを削除"
+                      className="w-8 h-8 grid place-items-center rounded-lg text-stone-400 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold text-stone-400 mb-1">見せるタブ</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {HANDOFF_TAB_CHOICES.map((t) => {
+                        const on = (h.tabs || []).includes(t);
+                        return (
+                          <button key={t} onClick={() => {
+                            const tabs = on ? h.tabs.filter((x) => x !== t) : [...h.tabs, t];
+                            const start = tabs.includes(h.start) ? h.start : (tabs[0] || "");
+                            saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, tabs, start } : x));
+                          }}
+                            className={"text-[11px] font-bold px-2.5 py-1 rounded-full border " + (on ? "text-white border-transparent" : "text-stone-500 border-stone-200 hover:bg-stone-50")}
+                            style={on ? { background: theme.accent } : {}}>{TAB_LABEL[t]}</button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-stone-400">最初に開く</span>
+                    <select value={h.start || ""} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, start: e.target.value } : x))}
+                      className="text-[12px] border border-stone-200 rounded-lg px-2 py-1 bg-white">
+                      {(h.tabs || []).map((t) => <option key={t} value={t}>{TAB_LABEL[t]}</option>)}
+                    </select>
+                  </div>
+                  <textarea value={h.msg || ""} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, msg: e.target.value } : x))} rows={3}
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-[12px] text-stone-700 resize-none focus:outline-none" placeholder="送る文面（{url} と {name} が使えます）" />
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1">
+                <button onClick={() => saveHandoffs([...handoffs, { id: "custom-" + Date.now(), emoji: "📨", label: "新しい受け渡し", tabs: ["review"], start: "review", msg: "{name}\n{url}" }])}
+                  className="text-[12px] font-bold flex items-center gap-1" style={{ color: theme.main }}><Icon name="plus" className="w-4 h-4" />受け渡しを追加</button>
+                <button onClick={() => { if (confirm("初期の3つ（編集へ／先方へ／演者へ）に戻す？")) saveHandoffs(HANDOFF_DEFAULTS.map((h) => ({ ...h, tabs: [...h.tabs] }))); }}
+                  className="text-[11px] text-stone-400 hover:text-stone-600 underline">初期設定に戻す</button>
               </div>
             </div>
           </div>
