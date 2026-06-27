@@ -1120,7 +1120,7 @@ function ManualPanel({ entries, onChange, main, accent, readOnly }) {
 }
 
 /* ===== 動画確認：Frame.io型 修正管理ボード（バージョン＋ステータス/カテゴリ/優先度/返信/フィルタ） ===== */
-function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName }) {
+function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream }) {
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
   const [filter, setFilter] = React.useState("全部");
@@ -1150,7 +1150,9 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
     if (vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); }
   };
   const isMp4 = sel && sel.type !== "youtube";
-  const streamPending = sel && sel.type === "stream" && !sel.ready;
+  const [forceRaw, setForceRaw] = React.useState(false);
+  React.useEffect(() => { setForceRaw(false); }, [sel && sel.id]);
+  const streamPending = sel && sel.type === "stream" && !sel.ready && !forceRaw;
   // Cloudflare Stream(HLS) を hls.js で attach（Safariはネイティブ）
   React.useEffect(() => {
     if (!sel || sel.type !== "stream" || !sel.ready || !sel.hls || !vref.current) return;
@@ -1256,8 +1258,12 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
                   {/* 透明レイヤーでYouTubeのhover検知を遮断＝タイトル/関連動画などの情報を非表示に。クリックで再生/停止 */}
                   <div className="absolute inset-0 cursor-pointer" onClick={togglePlay} title="クリックで再生/停止" /></>
               : streamPending
-                ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 軽量版に変換中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">完了すると回線が細くてもサクサク再生できます（数分）。このまま待つか、後で開いてOK。</div></div>
-                : sel.type === "stream"
+                ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 軽量版に変換中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">完了すると回線が細くてもサクサク再生できます（数分）。このまま待つか、後で開いてOK。</div>
+                    <div className="mt-3 flex items-center justify-center gap-2">
+                      {onRefreshStream && <button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 変換状況を更新</button>}
+                      {sel.key && <button onClick={() => setForceRaw(true)} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25" title="軽量版を待たず元データで再生（重い場合あり）">▶ そのまま再生</button>}
+                    </div></div>
+                : (sel.type === "stream" && sel.ready)
                   ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />
                   : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
           </div>
@@ -3006,6 +3012,18 @@ export default function App() {
   };
   // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）
   React.useEffect(() => { if ((tab === "assets" || tab === "review") && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
+
+  // 変換中(stream)のまま戻ってきた版のポーリングを再開＝リロードで「変換中%」が固まる問題の根治
+  const streamResumeRef = React.useRef({});
+  const resumeStreamPolls = (force) => {
+    for (const v of reviewVersions()) {
+      if (v && v.type === "stream" && !v.ready && v.uid && (force || !streamResumeRef.current[v.uid])) {
+        streamResumeRef.current[v.uid] = 1;
+        pollStreamReady(v.uid);
+      }
+    }
+  };
+  React.useEffect(() => { if (tab === "review" && project) resumeStreamPolls(false); }, [tab, project && project.id]);
 
   /* 動画アップ＆ギガファイルの本体（モーダルと「動画・ファイル」タブで共用） */
   const renderMediaBody = (inModal = false) => {
@@ -5268,7 +5286,7 @@ export default function App() {
               busy={mediaBusy} prog={mediaProg} userName={(user && user.name) || "ディレクター"}
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
               onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)}
-              onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} />
+              onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />
           </div>
           );
         })()}
