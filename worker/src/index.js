@@ -249,7 +249,10 @@ export default {
 
         await env.SNAPS.put("snap:" + id, JSON.stringify({ project: slim(project), createdAt, updatedAt: now }));
         await env.SNAPS.put("tok:" + id, token);
-        return json({ id, token });
+        // 編集者用アップロードトークン：大容量アップだけ許可（コメント削除等の管理権限は持たせない）。無ければ発行。
+        let uptok = await env.SNAPS.get("uptok:" + id);
+        if (!uptok) { uptok = rid(20); await env.SNAPS.put("uptok:" + id, uptok); }
+        return json({ id, token, uptok });
       }
 
       // POST /api/publish-channel { name, channelInfo, projects:[...], prevId?, token? } → チャンネル丸ごと公開
@@ -563,13 +566,17 @@ export default {
           return json({ error: "not found" }, 404);
         const tok = await env.SNAPS.get("tok:" + snap);
         const isOwner = !!tok && tok === (b.token || "");
+        // 編集者アップトークン（&up=）：大容量アップだけ owner 並みに許可（管理権限は無し）
+        const uptok = await env.SNAPS.get("uptok:" + snap);
+        const isEditor = !isOwner && !!uptok && uptok === (b.up || "");
+        const isUploader = isOwner || isEditor;
         const size = Math.max(0, +b.size || 0);
-        if (!isOwner) {
-          if (size > GUEST_MAX_SIZE) return json({ error: "ファイルが大きすぎます（先方アップは2GBまで）" }, 413);
+        if (isUploader) {
+          if (size > OWNER_MAX_SIZE) return json({ error: "ファイルが大きすぎます（500GBまで）" }, 413);
+        } else {
+          if (size > GUEST_MAX_SIZE) return json({ error: "ファイルが大きすぎます（このリンクは2GBまで。編集者は配布された編集者用リンクから上げてね）" }, 413);
           const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
           if (ups.length >= GUEST_MAX_COUNT) return json({ error: "アップロード件数の上限に達しています" }, 429);
-        } else if (size > OWNER_MAX_SIZE) {
-          return json({ error: "ファイルが大きすぎます（500GBまで）" }, 413);
         }
         const key = "f/" + snap + "/" + rid(8) + "-" + Date.now();
         const mpu = await env.FILES.createMultipartUpload(key, {
@@ -598,6 +605,8 @@ export default {
         if (!snap || !key || !key.startsWith("f/" + snap + "/")) return json({ error: "不正なキーです" }, 400);
         const tok = await env.SNAPS.get("tok:" + snap);
         const isOwner = !!tok && tok === (b.token || "");
+        const uptok = await env.SNAPS.get("uptok:" + snap);
+        const isEditor = !isOwner && !!uptok && uptok === (b.up || "");
         const mpu = env.FILES.resumeMultipartUpload(key, (b.uploadId || "").toString());
         const partList = (Array.isArray(b.parts) ? b.parts : []).map((p) => ({ partNumber: +p.partNumber, etag: (p.etag || "").toString() }));
         await mpu.complete(partList);
@@ -610,11 +619,13 @@ export default {
           mime: (b.mime || "application/octet-stream").toString().slice(0, 120),
           uploadedAt: now(),
           expiresAt: days ? new Date(Date.now() + days * 86400000).toISOString() : null,
-          by: isOwner ? "owner" : "guest",
+          by: isOwner ? "owner" : (isEditor ? "editor" : "guest"),
+          // role: "review"=完成動画（動画確認に出す） / 既定=素材
+          role: (b.role === "review") ? "review" : "",
           planId: (b.planId || "").toString().slice(0, 40),
         };
         await env.SNAPS.put("file:" + key, JSON.stringify(meta));
-        // 先方アップは案件ごとの一覧 file_up:{snap} に積む（owner はクライアントが project.files に保持）
+        // 先方・編集者アップは案件ごとの一覧 file_up:{snap} に積む（owner はクライアントが project.files に保持）
         if (!isOwner) {
           const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
           ups.push(meta);

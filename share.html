@@ -38,6 +38,7 @@ const CHID = params.get("ch");
 const LOCK_TAB = params.get("tab");  // 単一タブ共有（&tab=script等）。指定時はそのペインだけ表示しタブバー非表示
 const ALLOW_TABS = (params.get("tabs")||"").split(",").map(s=>s.trim()).filter(Boolean);  // 複数タブ束ね共有（&tabs=video,script）。指定タブだけ見せる（その中での切替は可）
 const START_TAB = params.get("start");  // 着地タブ（&start=video）。最初に開くタブ
+const UP_TOKEN = params.get("up") || "";  // 編集者用アップロードトークン。あれば大容量アップ可＋動画タブ常時表示
 let CHANNEL = null, CASE_SEL = null, CTAB = "script", CHMODE = false;
 const esc = (s) => (s||"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
 const CMT_CATS = ["編集","構成","サムネ","BGM","SE","テロップ","色味","演出","その他"];
@@ -331,7 +332,8 @@ function render(){
   const hasScript = isTalk ? !!(p.talk && ((p.talk.body||[]).some(b=>b.script||b.heading) || p.talk.intro || p.talk.highlight)) : (p.rows||[]).length > 0;
   if(hasScript) tabs.push(["script","構成台本"]);
   if(!isTalk && (p.rows||[]).length) tabs.push(["kouban","香盤表"]);
-  if(videoOptions(p).length) tabs.push(["video","動画確認"]);
+  // 動画タブ：動画があれば「確認」、編集者URL(UP_TOKEN)なら動画ゼロでも常時表示してアップ枠を出す
+  if(videoOptions(p).length || UP_TOKEN) tabs.push(["video", UP_TOKEN && !videoOptions(p).length ? "動画アップ" : "動画確認"]);
   const hasFilesAny = (p.files||[]).length || (p.plans||[]).some(pl=>(pl.files||[]).length) || (UPLOADS||[]).length || (p.assets||[]).some(a=>a&&a.key&&a.type!=="youtube");
   if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
   const manualCount = ((p.manuals||[]).length) + (((p.channelInfo&&p.channelInfo.manuals)||[]).length) + ((p.manualsGlobal||[]).length);
@@ -591,14 +593,28 @@ function videoOptions(p){
   vers.forEach((v)=>{ if(v.uid || v.url || v.key) out.push({ id: v.uid || v.key || v.url, label: v.label + (v.name && v.name!==v.label ? " "+v.name : ""), video: { type: v.type, key: v.key, url: v.url, uid: v.uid, hls: v.hls, ready: v.ready } }); });
   if(p.video && (p.video.url||p.video.key)) out.push({ id: vidKey(p.video), label:"案件全体", video:p.video });
   (p.plans||[]).forEach((pl,i)=>{ if(pl.video && (pl.video.url||pl.video.key)) out.push({ id: vidKey(pl.video), label:(pl.title||("企画"+(i+1))).slice(0,24), video:pl.video }); });
+  // 編集者が共有リンクから上げた動画（role:review もしくは動画mime/拡張子）も確認対象に合流。AKの取り込み待ちなく即見える。
+  const isVid = (u)=> u && u.key && (u.role==="review" || /^video\//.test(u.mime||"") || /\.(mp4|mov|m4v|webm)$/i.test(u.name||""));
+  (UPLOADS||[]).filter(isVid).forEach((u)=>{ const id="up:"+u.key; if(out.some(o=>o.id===id)) return; out.push({ id, label:"編集者アップ"+(u.name?"："+u.name.slice(0,20):""), up:true, video:{ type:"r2", key:u.key } }); });
   return out;
 }
 // 最新の確認用バージョンID（vers配列の末尾＝一番新しい修正版）。旧版を誤って確認するミス防止。
 function newestVerId(p){ const vers=(p.review&&Array.isArray(p.review.versions))?p.review.versions:[]; for(let i=vers.length-1;i>=0;i--){ const v=vers[i]; const id=v.uid||v.key||v.url; if(id) return id; } return null; }
 function curVideo(p){ const opts=videoOptions(p); if(!opts.length) return null; if(VSEL){ const f=opts.find(o=>o.id===VSEL); if(f) return f; } const nv=newestVerId(p); return (nv&&opts.find(o=>o.id===nv)) || opts[0]; }
 function selectVideo(id){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; VSEL=id; CHMODE?renderChannel():render(); }
+/* 編集者URL用：完成動画アップ枠（mpuUpload を role:review で叩く） */
+function videoUploadBox(accent, main, compact){
+  return `<div id="vu-drop" class="rounded-xl border border-dashed border-stone-300 bg-stone-50 ${compact?'p-3':'p-5'} transition-colors text-center">
+      <div class="text-[13px] font-bold text-stone-600 mb-1">${compact?'別バージョンを上げる':'完成動画をアップロード'}</div>
+      <div class="text-[11px] text-stone-400 mb-2">ここに<span class="font-bold">ドラッグ＆ドロップ</span>、または下から選択。上げると即この画面で確認できます（大容量OK）。</div>
+      <input id="vu-input" type="file" accept="video/*" class="text-[12px] block mx-auto">
+      <div id="vu-prog" class="hidden mt-2"><div class="h-1.5 bg-stone-200 rounded overflow-hidden"><div id="vu-bar" class="h-full" style="width:0%;background:${accent}"></div></div><div id="vu-pct" class="text-[10px] text-stone-400 mt-1">0%</div></div>
+    </div>`;
+}
 function paneVideo(p, accent, main){
   const opts = videoOptions(p);
+  // 動画ゼロ＆編集者URL：確認対象がまだ無いのでアップ枠だけ出す
+  if(!opts.length && UP_TOKEN) return `<div class="max-w-[560px] mx-auto py-2">${videoUploadBox(accent, main, false)}</div>`;
   const cur = curVideo(p); if(cur) VSEL = cur.id;
   const v = (cur&&cur.video)||{};
   const selector = opts.length>1 ? `<div class="flex gap-1 flex-wrap mb-2">${opts.map(o=>`<button data-vsel="${esc(o.id)}" class="vc-sel text-[11px] font-bold px-2.5 py-1 rounded-full border ${o.id===VSEL?'text-white':'text-stone-500 border-stone-200'}" style="${o.id===VSEL?`background:${main};border-color:${main}`:''}">${esc(o.label)}</button>`).join("")}</div>` : "";
@@ -615,6 +631,7 @@ function paneVideo(p, accent, main){
           ${CHMODE?"":`<button id="vc-add" class="text-[12px] font-bold text-white px-3 py-1.5 rounded-lg shadow" style="background:${accent}">＋ ここにコメント</button>`}
         </div>
         ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>`}
+        ${(UP_TOKEN && !CHMODE)?`<div class="mt-3">${videoUploadBox(accent, main, true)}</div>`:""}
       </div>
       ${CHMODE?"":`<div class="lg:flex-1 lg:max-w-[440px] lg:border-l lg:border-stone-200 lg:pl-4">
         <div class="text-[12px] font-bold text-stone-500 mb-2">修正コメント</div>
@@ -662,6 +679,30 @@ function mountVideo(p, accent, main){
     b.classList.add("bg-stone-100");
   }));
   if(!CHMODE){ const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main)); renderVideoList(accent, main); }
+  if(UP_TOKEN && !CHMODE) wireVideoUpload(p, accent, main);
+}
+/* 完成動画アップ枠の配線（ドロップ＋選択）。role:review で上げ、成功後はその動画を選択して再描画 */
+function wireVideoUpload(p, accent, main){
+  const inp=document.getElementById("vu-input"), drop=document.getElementById("vu-drop");
+  const go=(file)=>{ if(file) videoUpload(file, p, accent, main); };
+  if(inp) inp.addEventListener("change", ()=>{ const f=(inp.files||[])[0]; go(f); });
+  if(drop){
+    drop.addEventListener("dragover",(e)=>{ e.preventDefault(); drop.style.background="#f5f3ff"; drop.style.borderColor=accent; });
+    drop.addEventListener("dragleave",(e)=>{ if(e.target===drop){ drop.style.background=""; drop.style.borderColor=""; } });
+    drop.addEventListener("drop",(e)=>{ e.preventDefault(); drop.style.background=""; drop.style.borderColor=""; const f=((e.dataTransfer&&e.dataTransfer.files)||[])[0]; go(f); });
+  }
+}
+async function videoUpload(file, p, accent, main){
+  const prog=document.getElementById("vu-prog"), bar=document.getElementById("vu-bar"), pct=document.getElementById("vu-pct");
+  if(prog) prog.classList.remove("hidden");
+  try{
+    const selEl=document.getElementById("fl-target"); const target=selEl?selEl.value:"project";
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target, role:"review" }, (v)=>{ if(bar){ bar.style.width=v+"%"; pct.textContent=v+"%"; } });
+    UPLOADS.push(meta);
+    VSEL = "up:"+meta.key;   // 上げたばかりの動画を選択
+    if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null;
+    render();
+  }catch(e){ if(prog) prog.classList.add("hidden"); alert("動画アップに失敗しました："+e.message); }
 }
 function setRate(r){ if(videoEl){ videoEl.playbackRate=r; } else if(ytPlayer&&ytPlayer.setPlaybackRate){ ytPlayer.setPlaybackRate(r); } }
 function curTime(){ if(videoEl) return videoEl.currentTime||0; if(ytPlayer&&ytPlayer.getCurrentTime) return ytPlayer.getCurrentTime()||0; return 0; }
@@ -784,7 +825,7 @@ function paneFiles(p, accent, main){
       <div id="fl-list"></div>
       ${CHMODE?"":`<div id="fl-drop" class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3 transition-colors">
         <div class="text-[12px] font-bold text-stone-600 mb-1">ファイルを送る</div>
-        <div class="text-[11px] text-stone-400 mb-2">ここに<span class="font-bold">ドラッグ＆ドロップ</span>、または下から選択（1ファイル2GBまで・複数可）。</div>
+        <div class="text-[11px] text-stone-400 mb-2">ここに<span class="font-bold">ドラッグ＆ドロップ</span>、または下から選択（${UP_TOKEN?"大容量OK":"1ファイル2GBまで"}・複数可）。</div>
         ${targetSel}
         <input id="fl-input" type="file" multiple class="text-[12px] block">
         <div id="fl-prog" class="hidden mt-2"><div class="h-1.5 bg-stone-200 rounded overflow-hidden"><div id="fl-bar" class="h-full" style="width:0%;background:${accent}"></div></div><div id="fl-pct" class="text-[10px] text-stone-400 mt-1">0%</div></div>
@@ -824,7 +865,7 @@ function renderFileList(p, accent, main){
 async function mpuUpload(file, extra, onProg){
   const CHUNK = Math.min(90*1024*1024, Math.max(48*1024*1024, Math.ceil(file.size/9000)));
   const cr = await fetch(API+"/api/file/mpu/create", { method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream" }, extra||{})) });
+    body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
   const cd = await cr.json(); if(!cd.uploadId) throw new Error(cd.error||"開始に失敗");
   const total = Math.max(1, Math.ceil(file.size/CHUNK));
   const parts = [];
@@ -845,7 +886,7 @@ async function mpuUpload(file, extra, onProg){
     parts.push({ partNumber:i+1, etag });
   }
   const fr = await fetch(API+"/api/file/mpu/complete", { method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(Object.assign({ snap:ID, key:cd.key, uploadId:cd.uploadId, parts, name:file.name, size:file.size, mime:file.type||"application/octet-stream" }, extra||{})) });
+    body:JSON.stringify(Object.assign({ snap:ID, key:cd.key, uploadId:cd.uploadId, parts, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
   const fd = await fr.json(); if(!fd.file) throw new Error(fd.error||"確定に失敗");
   return fd.file;
 }

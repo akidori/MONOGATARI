@@ -142,8 +142,8 @@ const DEFAULT_CHANNEL = "未分類";
    msg の {url} はリンクに、{name} は案件名に置換される。mg:handoff に保存され、UIから自由に編集できる。 */
 const HANDOFF_KEY = "mg:handoff";
 const HANDOFF_DEFAULTS = [
-  { id: "editor", emoji: "✂️", label: "編集へ", tabs: ["script", "kouban", "assets"], start: "script",
-    msg: "{name}、構成・香盤・素材まとめました！編集よろしくお願いします🙏\n{url}" },
+  { id: "editor", emoji: "✂️", label: "編集へ", tabs: ["script", "kouban", "assets", "review"], start: "script", upload: true,
+    msg: "{name}、構成・香盤・素材まとめました！編集よろしくお願いします🙏\n完成動画は「動画」タブから直接アップできます（大容量OK）。\n{url}" },
   { id: "client", emoji: "🎬", label: "先方へ", tabs: ["review"], start: "review",
     msg: "{name} の動画が上がりました。ご確認お願いします（再生しながら時間指定でコメント頂けます）\n{url}" },
   { id: "talent", emoji: "🎤", label: "演者へ", tabs: ["review", "script"], start: "review",
@@ -1429,6 +1429,7 @@ export default function App() {
   const [mediaBusy, setMediaBusy] = useState("");            // アップロード中の表示メッセージ
   const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
+  const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("case");    // global | channel | case
@@ -2691,7 +2692,8 @@ export default function App() {
       });
       const data = await res.json();
       if (!data.id) throw new Error(data.error || "発行失敗");
-      const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken };
+      if (data.uptok) shareUpTokRef.current = data.uptok;   // 編集者URL用：&up= に乗せる
+      const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken, shareUpToken: data.uptok || project.shareUpToken };
       setProject(next);
       try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
       if (!silent) {
@@ -2722,16 +2724,18 @@ export default function App() {
   };
   /* ===== 受け渡し（ラリー）：相手別に「見せるタブ＋着地タブ＋文面」をまとめてコピー ===== */
   /* アプリのタブキー配列 → share.html?id=..&tabs=ペイン,..&start=ペイン を組み立て */
-  const buildHandoffUrl = (id, appTabs, startTab) => {
+  const buildHandoffUrl = (id, appTabs, startTab, allowUpload) => {
     const panes = (appTabs || []).map((t) => TAB_SHARE_PANE[t]).filter(Boolean);
     const startPane = TAB_SHARE_PANE[startTab] || panes[0] || "";
-    return shareUrl(id) + (panes.length ? "&tabs=" + panes.join(",") : "") + (startPane ? "&start=" + startPane : "");
+    // 編集者向け（upload）だけ &up= を付ける。先方・演者には付けない（大容量アップ権を渡さない）
+    const up = allowUpload ? (shareUpTokRef.current || project.shareUpToken || "") : "";
+    return shareUrl(id) + (panes.length ? "&tabs=" + panes.join(",") : "") + (startPane ? "&start=" + startPane : "") + (up ? "&up=" + up : "");
   };
   /* 受け渡しボタン押下：最新スナップを発行 → スコープ付きリンク＋文面をクリップボードへ */
   const doHandoff = async (h) => {
     const id = await publishShare(true); // 最新状態を共有スナップに反映してから渡す
     if (!id) return;
-    const url = buildHandoffUrl(id, h.tabs, h.start);
+    const url = buildHandoffUrl(id, h.tabs, h.start, h.id === "editor" || h.upload === true);
     const text = (h.msg || "{url}").replace(/\{url\}/g, url).replace(/\{name\}/g, project.name || "この案件");
     setShareModal({ id, url, updated: !!project.shareId, handoff: h, text });
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
@@ -2947,14 +2951,29 @@ export default function App() {
     try { const r = await fetch(SHARE_API + "/api/snap/" + project.shareId + "/uploads"); const d = await r.json(); ups = (d && d.uploads) || []; }
     catch (e) { if (!silent) showToast("取り込み失敗：" + (e.message || e)); return; }
     const have0 = new Set((project.assets || []).map((a) => a.key).filter(Boolean));
-    const fresh = ups.filter((u) => u && u.key && !have0.has(u.key));
+    const haveVer = new Set(reviewVersions().map((v) => v.key).filter(Boolean));
+    const fresh = ups.filter((u) => u && u.key && !have0.has(u.key) && !haveVer.has(u.key));
     if (!fresh.length) { if (!silent) showToast("新しい編集者アップはありません"); return; }
+    // 完成動画(role:review)は「動画確認」のバージョンへ、それ以外は素材へ
+    const reviewUps = fresh.filter((u) => u.role === "review");
+    const assetUps = fresh.filter((u) => u.role !== "review");
     const mk = (u) => { const isVid = /^video\//.test(u.mime || "") || /\.(mp4|mov|m4v|webm)$/i.test(u.name || ""); return newAsset("撮影素材", { type: isVid ? "mp4" : "file", key: u.key, name: u.name || "ファイル", size: u.size || 0, mime: u.mime || "", planId: u.planId || "", by: "guest" }); };
-    setAssets((arr) => { const have = new Set(arr.map((a) => a.key).filter(Boolean)); const add = fresh.filter((u) => !have.has(u.key)).map(mk); return add.length ? [...add, ...arr] : arr; });
-    if (!silent) showToast("編集者アップを" + fresh.length + "件 素材管理に取り込んだよ");
+    if (assetUps.length) setAssets((arr) => { const have = new Set(arr.map((a) => a.key).filter(Boolean)); const add = assetUps.filter((u) => !have.has(u.key)).map(mk); return add.length ? [...add, ...arr] : arr; });
+    for (const u of reviewUps) {
+      // R2直再生で即追加し、Stream（軽量化）が使えるなら変換して差し替え
+      let v = { type: "mp4", key: u.key };
+      try {
+        const r = await fetch(SHARE_API + "/api/stream/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: project.shareId, token: project.shareToken, key: u.key, name: u.name || "編集者アップ" }) });
+        const d = await r.json();
+        if (d.uid) v = { type: "stream", uid: d.uid, key: u.key, ready: false };
+      } catch (e) {}
+      await addVersionFromVideo(v, (u.name || "編集者アップ"));
+      if (v.type === "stream") pollStreamReady(v.uid);
+    }
+    if (!silent) showToast("編集者アップを取り込んだよ（動画" + reviewUps.length + "・素材" + assetUps.length + "件）");
   };
   // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）
-  React.useEffect(() => { if (tab === "assets" && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
+  React.useEffect(() => { if ((tab === "assets" || tab === "review") && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
 
   /* 動画アップ＆ギガファイルの本体（モーダルと「動画・ファイル」タブで共用） */
   const renderMediaBody = (inModal = false) => {
@@ -3033,7 +3052,7 @@ export default function App() {
             <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadFile(f, mediaTarget); e.target.value = ""; }} />
             ⬆ ファイルを追加（最大500GB）
           </label>
-          <p className="text-[10px] text-stone-400 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。</p>
+          <p className="text-[10px] text-stone-400 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。<span className="font-bold">「編集へ」リンクで渡した編集者は大容量＆「動画」タブから完成動画を直接アップ</span>できる。</p>
         </div>
 
         {mediaBusy && (
