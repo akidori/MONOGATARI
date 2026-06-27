@@ -110,6 +110,21 @@ export default {
         return json(out);
       }
 
+      // POST /api/help { message, history?, channel?, caseName? } → 編集者向け使い方サポート＋要望検知でDiscord/KVへ
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "help") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const message = (b && b.message ? b.message : "").toString();
+        const history = Array.isArray(b && b.history) ? b.history : [];
+        if (!message.trim()) return json({ error: "メッセージが空です" }, 400);
+        if (message.length > 8000) return json({ error: "メッセージが長すぎます（8千字まで）" }, 413);
+        const out = await helpWithClaude(history, message, env, {
+          channel: (b.channel || "").toString().slice(0, 60),
+          caseName: (b.caseName || "").toString().slice(0, 80),
+        });
+        return json(out);
+      }
+
       // GET /api/yt?v=<videoId>  → YouTube動画＋チャンネル統計を返す（APIキーはサーバ側に秘匿）
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "yt") {
         if (!env.YT_API_KEY) return json({ error: "YT_API_KEY 未設定", needKey: true }, 200);
@@ -1349,6 +1364,70 @@ async function chatWithClaude(project, history, message, env) {
     }
   }
   return { reply: reply || (proposal ? (proposal.summary || "変更案を用意しました。") : "（応答がありませんでした）"), proposal };
+}
+
+/* ===== 編集者向けヘルプAIチャット（使い方サポート＋意見収集→Discord/KV） ===== */
+const HELP_SYSTEM = `あなたは動画制作ツール「ものがたりっち！」の編集者向けサポート担当です。相手はこのツールで構成台本を読んだり、完成動画をアップする編集者・ディレクター。丁寧で短く、すぐ動ける答えを返してください（敬語・1〜3文・必要なら箇条書き）。
+
+# このツールでできること（編集者がよく使う所）
+- 上部タブ：概要／企画・サムネ／ヒアリング／構成台本／香盤表／素材管理／動画確認。クリックで切替。
+- 完成動画のアップ：「動画（動画確認）」タブを開き、ドラッグ＆ドロップ or ファイル選択でアップ（大容量OK）。上げると即この画面で再生・確認できる。
+- 撮影素材・参考ファイル：「素材管理／ファイル」タブからアップ・ダウンロード。
+- 修正コメント：動画確認タブで再生を止めて「＋ここにコメント」で、その時間に修正依頼を残せる。▶で頭出し。
+- 編集は自動保存・即反映。ログインは不要。左サイドバーで同じクライアントの他案件に移動できる。
+
+# 方針
+- 使い方の質問には上記をもとに具体的に答える。分からない事は無理に断定しない。
+- 相手が「ここが使いにくい」「こうしてほしい」「不具合っぽい」「困った」等の要望・意見・不具合を述べたら、必ず report_feedback ツールを呼んで運営に届ける（そのうえで「運営に伝えました」と一言添える）。ただの使い方質問だけなら呼ばない。`;
+const HELP_TOOL = {
+  name: "report_feedback",
+  description: "編集者が機能要望・改善要望・不具合報告・使いにくさ・意見を述べたときに呼ぶ。単なる使い方の質問だけのときは呼ばない。",
+  input_schema: {
+    type: "object",
+    properties: {
+      category: { type: "string", enum: ["要望", "不具合", "使い方が不明", "その他"] },
+      summary: { type: "string", description: "一言要約（運営が一覧で見る用）" },
+      detail: { type: "string", description: "編集者の発言の要点・具体内容" },
+    },
+    required: ["category", "summary"],
+  },
+};
+async function logFeedback(env, fb, meta) {
+  const entry = {
+    category: (fb.category || "その他").toString().slice(0, 12),
+    summary: (fb.summary || "").toString().slice(0, 300),
+    detail: (fb.detail || "").toString().slice(0, 1500),
+    channel: meta.channel || "", caseName: meta.caseName || "", at: now(),
+  };
+  try { const arr = (await env.SNAPS.get("feedback:log", "json")) || []; arr.unshift(entry); await env.SNAPS.put("feedback:log", JSON.stringify(arr.slice(0, 500))); } catch (e) {}
+  if (env.DISCORD_FEEDBACK_WEBHOOK) {
+    try {
+      const head = "🗣️ **編集者フィードバック**" + (entry.channel ? "（" + entry.channel + "）" : "");
+      const body = "**[" + entry.category + "]** " + entry.summary + (entry.detail ? "\n" + entry.detail : "") + (entry.caseName ? "\n案件: " + entry.caseName : "");
+      await fetch(env.DISCORD_FEEDBACK_WEBHOOK, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ content: (head + "\n" + body).slice(0, 1900) }) });
+    } catch (e) {}
+  }
+}
+async function helpWithClaude(history, message, env, meta) {
+  const model = env.HELP_MODEL || "claude-haiku-4-5-20251001";
+  const msgs = history
+    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+    .slice(-16)
+    .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+  msgs.push({ role: "user", content: message.slice(0, 8000) });
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ model, max_tokens: 1200, system: HELP_SYSTEM, tools: [HELP_TOOL], messages: msgs }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
+  const data = await res.json();
+  const blocks = data.content || [];
+  const reply = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  const tu = blocks.find((b) => b.type === "tool_use" && b.name === "report_feedback");
+  let logged = false;
+  if (tu && tu.input) { await logFeedback(env, tu.input, meta); logged = true; }
+  return { reply: reply || (logged ? "ご意見ありがとうございます。運営に伝えました。" : "うまく聞き取れませんでした。もう一度お願いします。"), logged };
 }
 
 /* ===== リアルタイム共同編集 Durable Object（1 liveId = 1 インスタンス） =====

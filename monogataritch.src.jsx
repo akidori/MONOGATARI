@@ -1391,6 +1391,11 @@ export default function App() {
   // チャンネル単位の編集者ライブモード（index.html?ch=… ＝ログイン不要で当該クライアントの案件だけ・全タブ直接編集）
   const [chanLive, setChanLive] = useState(null);          // {id,name,channelInfo,cases:[{id,name,format,edit:{liveId,editToken}}]}
   const [chanActiveCase, setChanActiveCase] = useState(null); // chanLive中に開いている案件id（サイドバー強調用）
+  // 編集者向けヘルプAIチャット（使い方サポート＋意見収集→Discord）
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [helpMsgs, setHelpMsgs] = useState([]);            // [{role:"user"|"assistant", content, logged?}]
+  const [helpInput, setHelpInput] = useState("");
+  const [helpBusy, setHelpBusy] = useState(false);
   const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -3530,6 +3535,67 @@ export default function App() {
     } catch { showToast("コピーに失敗しました"); }
   };
 
+  /* 編集者向けヘルプAIチャット送信（/api/help）。要望は worker 側で Discord へ */
+  const sendHelp = async () => {
+    const text = helpInput.trim();
+    if (!text || helpBusy) return;
+    const hist = helpMsgs.map((m) => ({ role: m.role, content: m.content }));
+    setHelpMsgs((m) => [...m, { role: "user", content: text }]);
+    setHelpInput(""); setHelpBusy(true);
+    try {
+      const r = await fetch(SHARE_API + "/api/help", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, history: hist.slice(-16), channel: chanLive ? chanLive.name : (project ? project.channel : ""), caseName: project ? project.name : "" }),
+      });
+      const d = await r.json();
+      setHelpMsgs((m) => [...m, d.reply ? { role: "assistant", content: d.reply, logged: !!d.logged } : { role: "assistant", content: "エラー：" + (d.error || "応答がありませんでした") }]);
+    } catch (e) { setHelpMsgs((m) => [...m, { role: "assistant", content: "通信エラー：" + (e.message || e) }]); }
+    setHelpBusy(false);
+  };
+  /* ヘルプチャットのフローティングUI。編集者文脈（chanLive or ライブ編集中）のみ表示。テーマ非依存(DEFAULT_THEME) */
+  const renderHelpChat = () => {
+    if (!(chanLive || (project && project.live))) return null;
+    if (!helpOpen) return (
+      <button onClick={() => setHelpOpen(true)} title="使い方・ご意見"
+        className="fixed bottom-4 right-4 z-[60] inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full shadow-lg text-[12px] font-bold text-white hover:opacity-90"
+        style={{ background: DEFAULT_THEME.main }}>
+        <span>💬</span> 使い方・ご意見
+      </button>
+    );
+    return (
+      <div className="fixed bottom-4 right-4 z-[60] flex flex-col rounded-2xl bg-white shadow-2xl border border-stone-200 overflow-hidden" style={{ width: "min(92vw, 360px)", height: "min(72vh, 540px)" }}>
+        <div className="flex items-center gap-2 px-3 py-2.5 shrink-0" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
+          <span className="text-[13px] font-bold">💬 ヘルプ・ご意見</span>
+          <button onClick={() => setHelpOpen(false)} className="ml-auto w-7 h-7 grid place-items-center rounded-lg hover:bg-white/15 text-white/80">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-stone-50">
+          {helpMsgs.length === 0 && (
+            <div className="text-[12px] text-stone-500 leading-relaxed bg-white border border-stone-200 rounded-xl px-3 py-2.5">
+              使い方で迷ったら聞いてください（例：「完成動画はどこから上げる？」）。<br />「ここ使いにくい」「こうしてほしい」もそのまま書いてOK。運営に届きます。
+            </div>
+          )}
+          {helpMsgs.map((m, i) => (
+            <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
+              <div className={"max-w-[85%] text-[12.5px] leading-relaxed px-3 py-2 rounded-2xl whitespace-pre-wrap break-words " + (m.role === "user" ? "text-white rounded-br-sm" : "bg-white border border-stone-200 text-stone-800 rounded-bl-sm")}
+                style={m.role === "user" ? { background: DEFAULT_THEME.accent } : {}}>
+                {m.content}
+                {m.logged && <span className="block mt-1 text-[10px] font-bold" style={{ color: DEFAULT_THEME.accent }}>✓ 運営に届けました</span>}
+              </div>
+            </div>
+          ))}
+          {helpBusy && <div className="text-[11px] text-stone-400 px-1">考え中…</div>}
+        </div>
+        <div className="shrink-0 p-2 border-t border-stone-200 flex items-end gap-2">
+          <textarea value={helpInput} onChange={(e) => setHelpInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendHelp(); } }}
+            rows={1} placeholder="質問やご意見を入力（⌘+Enterで送信）"
+            className="flex-1 min-w-0 text-[12.5px] border border-stone-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:border-stone-400" style={{ maxHeight: 96 }} />
+          <button onClick={sendHelp} disabled={helpBusy || !helpInput.trim()}
+            className="shrink-0 px-3 py-2 rounded-xl text-[12px] font-bold text-white disabled:opacity-40" style={{ background: DEFAULT_THEME.main }}>送信</button>
+        </div>
+      </div>
+    );
+  };
   // チャンネル編集モードのホーム（編集者用・project未選択でも案件一覧を出す＝Image3）。テーマはproject依存のためDEFAULT_THEMEで描く
   if (loaded && chanLive && view === "home") return (
     <div className="fixed inset-0 overflow-y-auto" style={{ background: "#E9E8E3" }}>
@@ -3566,6 +3632,7 @@ export default function App() {
         ))}
         <div className="text-center text-[10px] text-stone-300 mt-8">制作：ものがたりっち！</div>
       </main>
+      {renderHelpChat()}
     </div>
   );
   if (!loaded || !project) return <div className="min-h-screen flex items-center justify-center text-stone-400 text-sm">読み込み中…</div>;
@@ -6007,6 +6074,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 編集者向けヘルプAIチャット（chanLive or ライブ編集中に表示・自己ゲート） */}
+      {renderHelpChat()}
 
       {/* ===== 先方コメント パネル（右ドロワー） ===== */}
       {showComments && (
