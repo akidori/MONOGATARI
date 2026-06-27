@@ -340,7 +340,8 @@ function render(){
   if(manualCount) tabs.push(["manual","マニュアル"]);
   // 複数タブ束ね共有：許可タブだけに絞る（タブバーは出す＝相手は許可タブ内で切替できる）
   if(ALLOW_TABS.length){
-    const allowed = tabs.filter(t=>ALLOW_TABS.includes(t[0]));
+    // 編集者URL(UP_TOKEN)なら、旧プリセットでtabsにvideoが無くても動画タブは必ず通す（アップ入口を消さない）
+    const allowed = tabs.filter(t=>ALLOW_TABS.includes(t[0]) || (UP_TOKEN && t[0]==="video"));
     if(allowed.length){ tabs.length=0; tabs.push(...allowed); }
   }
   // 単一タブ共有：指定ペインだけ表示。タブバーは隠す
