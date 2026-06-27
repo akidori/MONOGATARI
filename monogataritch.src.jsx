@@ -1150,9 +1150,12 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
     if (vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); }
   };
   const isMp4 = sel && sel.type !== "youtube";
-  const [forceRaw, setForceRaw] = React.useState(false);
-  React.useEffect(() => { setForceRaw(false); }, [sel && sel.id]);
-  const streamPending = sel && sel.type === "stream" && !sel.ready && !forceRaw;
+  // 再生方針：keyかurl(生データ)があれば常に観られる。HLS(軽量版)はreadyになったら昇格。
+  const rawSrc = sel ? (sel.key ? (SHARE_API + "/api/file/" + sel.key) : (sel.url || "")) : "";
+  const streamReadyHls = !!(sel && sel.type === "stream" && sel.ready && sel.hls);
+  const streamBusy = !!(sel && sel.type === "stream" && !sel.ready);   // 変換中 or 変換失敗
+  // 「本当に何も再生できない」＝HLS未完 かつ 生データも無い時だけ
+  const streamPending = streamBusy && !rawSrc;
   // Cloudflare Stream(HLS) を hls.js で attach（Safariはネイティブ）
   React.useEffect(() => {
     if (!sel || sel.type !== "stream" || !sel.ready || !sel.hls || !vref.current) return;
@@ -1258,14 +1261,20 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
                   {/* 透明レイヤーでYouTubeのhover検知を遮断＝タイトル/関連動画などの情報を非表示に。クリックで再生/停止 */}
                   <div className="absolute inset-0 cursor-pointer" onClick={togglePlay} title="クリックで再生/停止" /></>
               : streamPending
-                ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 軽量版に変換中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">完了すると回線が細くてもサクサク再生できます（数分）。このまま待つか、後で開いてOK。</div>
-                    <div className="mt-3 flex items-center justify-center gap-2">
-                      {onRefreshStream && <button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 変換状況を更新</button>}
-                      {sel.key && <button onClick={() => setForceRaw(true)} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25" title="軽量版を待たず元データで再生（重い場合あり）">▶ そのまま再生</button>}
-                    </div></div>
-                : (sel.type === "stream" && sel.ready)
+                ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
+                    {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
+                : streamReadyHls
                   ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />
-                  : <video ref={vref} src={sel.key ? (SHARE_API + "/api/file/" + sel.key) : sel.url} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
+                  : <video ref={vref} src={rawSrc} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
+            {/* 変換中/失敗でも生データで再生できている時の非ブロッキング・バッジ */}
+            {!isYT && streamBusy && rawSrc && (
+              <div className="absolute top-2 left-2 right-2 flex items-center gap-2 pointer-events-none">
+                <span className="text-[10px] font-bold px-2 py-1 rounded bg-black/55 text-white/90 pointer-events-none">
+                  {sel.streamFailed ? "⚠️ 軽量化できず元データで再生中" : "⚙️ 軽量版を準備中…" + (sel.pct ? Math.round(sel.pct) + "%" : "") + "（できたら自動で軽くなります）"}
+                </span>
+                {onRefreshStream && !sel.streamFailed && <button onClick={onRefreshStream} className="text-[10px] font-bold px-2 py-1 rounded bg-black/55 text-white/90 hover:bg-black/75 pointer-events-auto">🔄</button>}
+              </div>
+            )}
           </div>
           {!streamPending && isYT && dur > 0 && (
             <input type="range" min={0} max={dur} step="0.1" value={cur} onChange={(e) => seek(+e.target.value)}
@@ -3017,7 +3026,9 @@ export default function App() {
   const streamResumeRef = React.useRef({});
   const resumeStreamPolls = (force) => {
     for (const v of reviewVersions()) {
-      if (v && v.type === "stream" && !v.ready && v.uid && (force || !streamResumeRef.current[v.uid])) {
+      // 変換失敗(streamFailed)は生データ再生で確定済み＝自動では再開しない。手動(force)のみ再試行
+      if (v && v.type === "stream" && !v.ready && v.uid && (force || (!streamResumeRef.current[v.uid] && !v.streamFailed))) {
+        if (force) { streamResumeRef.current[v.uid] = 0; setVersions((arr) => arr.map((x) => (x.uid === v.uid ? { ...x, streamFailed: false } : x))); }
         streamResumeRef.current[v.uid] = 1;
         pollStreamReady(v.uid);
       }
@@ -3224,11 +3235,14 @@ export default function App() {
   };
   /* Stream変換状況をポーリングして hls を埋める */
   const pollStreamReady = async (sid, tries = 0) => {
-    if (tries > 80) return; // 約7分で打ち切り
+    // 打ち切り条件でも生データ再生は生きてるので「観られない」事故にはならない
+    if (tries > 80) { setVersions((arr) => arr.map((x) => (x.uid === sid && !x.ready ? { ...x, streamFailed: true } : x))); return; }
     try {
       const r = await fetch(SHARE_API + "/api/stream/" + sid);
       const d = await r.json();
-      if (d.ready && d.hls) { setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, ready: true, hls: d.hls, pct: 100 } : x))); return; }
+      if (d.ready && d.hls) { setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, ready: true, hls: d.hls, pct: 100, streamFailed: false } : x))); return; }
+      // Stream変換が失敗(error)→軽量化を諦めて生データ再生に確定。永遠「変換中」を撲滅
+      if (d.state === "error") { streamResumeRef.current[sid] = 1; setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, streamFailed: true } : x))); return; }
       setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, pct: d.pct || x.pct } : x)));
     } catch (e) {}
     setTimeout(() => pollStreamReady(sid, tries + 1), 5000);

@@ -656,13 +656,15 @@ function mountVideo(p, accent, main){
     if(window.YT && window.YT.Player){ make(); }
     else { window.onYouTubeIframeAPIReady = make; if(!document.getElementById("yt-api")){ const s=document.createElement("script"); s.id="yt-api"; s.src="https://www.youtube.com/iframe_api"; document.head.appendChild(s); } }
   } else if(v.type==="stream" && v.ready && v.hls){
-    // Stream変換済み：軽量HLSを再生
+    // Stream変換済み：軽量HLSを再生。再生不能(HLS非対応/CDN落ち/配信エラー)なら生mp4へ自動フォールバック
     videoEl = document.createElement("video");
     videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
     stage.replaceWith(videoEl); videoEl.id = "vc-player";
     videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
+    const rawFallback = ()=>{ if((v.key||v.url) && videoEl.dataset.raw!=="1"){ videoEl.dataset.raw="1"; const t=videoEl.currentTime||0; videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||""); if(t) try{ videoEl.currentTime=t; }catch(e){} } };
+    videoEl.addEventListener("error", rawFallback);
     if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src = v.hls; }
-    else { loadHlsShare().then((Hls)=>{ if(Hls && Hls.isSupported()){ const h=new Hls(); h.loadSource(v.hls); h.attachMedia(videoEl); } else { videoEl.src = v.hls; } }); }
+    else { loadHlsShare().then((Hls)=>{ if(Hls && Hls.isSupported()){ const h=new Hls(); h.on(Hls.Events.ERROR,(_e,data)=>{ if(data&&data.fatal) rawFallback(); }); h.loadSource(v.hls); h.attachMedia(videoEl); } else { rawFallback(); if(videoEl.dataset.raw!=="1") videoEl.src = v.hls; } }); }
   } else if(v.type==="stream" && !v.key && !v.url){
     // 変換未完で元ファイルも無い場合のみ待機表示（Stream変換が走らない＝STREAM_API_TOKEN未設定だと永久にここなので、元ファイルがあれば下でフォールバック）
     stage.innerHTML = '<div class="w-full h-full grid place-items-center text-white/80 text-[12px] px-4 text-center">⚙️ 軽量版に変換中です。少し待ってから開いてください。</div>'; return;
@@ -673,6 +675,23 @@ function mountVideo(p, accent, main){
     videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
     stage.replaceWith(videoEl); videoEl.id = "vc-player";
     videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
+    // 変換中の生再生中も、軽量版(HLS)が完成したら静かに昇格（AKの再発行に依存しない・先方が開いたまま軽くなる）
+    if(v.type==="stream" && v.uid && !v.ready){
+      const tag = v.uid; let n=0;
+      const poll = async ()=>{
+        if(n++>20 || document.getElementById("vc-player")!==videoEl) return;   // 約3分で打ち切り or 別動画に切替で停止
+        try{ const d = await fetch(API+"/api/stream/"+tag).then(r=>r.json());
+          if(d && d.ready && d.hls){
+            const t=videoEl.currentTime||0, was=!videoEl.paused;
+            const swap=()=>{ if(document.getElementById("vc-player")!==videoEl) return; if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src=d.hls; } else { loadHlsShare().then((Hls)=>{ if(Hls&&Hls.isSupported()){ const h=new Hls(); h.loadSource(d.hls); h.attachMedia(videoEl); } else { videoEl.src=d.hls; } }); } if(t) try{ videoEl.currentTime=t; }catch(e){} if(was){ const pr=videoEl.play(); if(pr&&pr.catch) pr.catch(()=>{}); } };
+            swap(); return;
+          }
+          if(d && d.state==="error") return;   // 変換失敗＝生再生のまま確定
+        }catch(e){}
+        setTimeout(poll, 8000);
+      };
+      setTimeout(poll, 8000);
+    }
   }
   document.querySelectorAll(".vc-rate").forEach(b=>b.addEventListener("click", ()=>{
     setRate(+b.dataset.rate);

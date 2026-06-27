@@ -730,7 +730,8 @@ export default {
         const d = await r.json();
         if (!d.success) return json({ error: "not found" }, 404);
         const v = d.result;
-        return json({ ready: !!v.readyToStream, pct: (v.status && v.status.pctComplete) || null, hls: v.playback && v.playback.hls, thumbnail: v.thumbnail, duration: v.duration });
+        const st = v.status || {};
+        return json({ ready: !!v.readyToStream, pct: st.pctComplete || null, state: st.state || null, err: st.errorReasonText || st.errorReasonCode || null, hls: v.playback && v.playback.hls, thumbnail: v.thumbnail, duration: v.duration });
       }
 
       // DELETE /api/stream/{uid}?snap=&token=  → オーナーのみ
@@ -908,7 +909,7 @@ function slim(p) {
         ready: !!v.ready,
         createdAt: v.createdAt || "",
       })),
-    } : undefined,
+    } : { versions: [] },
     files: Array.isArray(p.files) ? p.files.slice(0, 200).map((f) => ({
       key: (f.key || "").slice(0, 120),
       name: (f.name || "").slice(0, 255),
