@@ -1388,6 +1388,9 @@ export default function App() {
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
   const [chShareMenu, setChShareMenu] = useState(null);    // チャンネル共有の種類選択（読取専用/編集つき）{channel,x,y}
   const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集)
+  // チャンネル単位の編集者ライブモード（index.html?ch=… ＝ログイン不要で当該クライアントの案件だけ・全タブ直接編集）
+  const [chanLive, setChanLive] = useState(null);          // {id,name,channelInfo,cases:[{id,name,format,edit:{liveId,editToken}}]}
+  const [chanActiveCase, setChanActiveCase] = useState(null); // chanLive中に開いている案件id（サイドバー強調用）
   const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -1555,6 +1558,9 @@ export default function App() {
         startLiveSession(liveId, hp.get("k") || "");
         return;
       }
+      // チャンネル編集リンク（?ch=）：ログイン不要・当該クライアントの案件一覧モード
+      const chId = sp.get("ch");
+      if (chId) { await startChannelLive(chId); return; }
       await loadAll();
     })();
   }, []);
@@ -1744,7 +1750,9 @@ export default function App() {
       const d = await res.json();
       if (!d.id) throw new Error(d.error || "発行に失敗しました");
       setChannelInfo((c) => ({ ...c, [channel]: { ...emptyChannelInfo(), name: channel, ...(c[channel] || {}), shareId: d.id, shareToken: d.token || (c[channel] && c[channel].shareToken), shareEditable: editable } }));
-      const url = location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?ch=" + d.id;
+      // 編集つき＝本体アプリのチャンネル編集モード(index.html?ch=・案件一覧＋全タブ直接編集)、閲覧専用＝従来の共有ページ
+      const base = location.origin + location.pathname.replace(/[^/]*$/, "");
+      const url = base + (editable ? "index.html?ch=" : "share.html?ch=") + d.id;
       setShareModal({ id: d.id, url, updated: !!ci.shareId, channel: true, caseCount: projects.length, editable });
       try { await navigator.clipboard.writeText(url); } catch (e) {}
     } catch (e) { showToast("チャンネル共有の発行に失敗：" + (e.message || e)); }
@@ -1780,6 +1788,8 @@ export default function App() {
 
   /* ---- 案件操作 ---- */
   const switchProject = async (id) => {
+    // チャンネル編集モード：storageでなく該当案件のライブセッションを開く
+    if (chanLive) { const c = chanLive.cases.find((x) => x.id === id); if (c) { openChanCase(c); return; } }
     setView("editor");
     pushRecent(id);
     if (id === activeId) return;
@@ -2639,6 +2649,23 @@ export default function App() {
     const { live, liveId, liveToken, collab, collabRole, members, ownerEmail, role, aiChat, ...rest } = p;
     return rest;
   };
+  /* チャンネル編集リンク（index.html?ch=…）：ログイン不要で当該クライアントの案件一覧を出し、クリックで該当案件のライブ編集へ直行 */
+  const startChannelLive = async (chId) => {
+    try {
+      const r = await fetch(SHARE_API + "/api/chan/" + encodeURIComponent(chId));
+      if (!r.ok) { setView("home"); setLoaded(true); showToast("チャンネル共有リンクが見つかりませんでした"); return; }
+      const doc = await r.json();
+      if (!doc.editable) { location.replace("share.html?ch=" + encodeURIComponent(chId)); return; }  // 閲覧専用は従来の共有ページへ
+      const cases = (doc.cases || []).filter((c) => c && c.edit && c.edit.liveId && c.edit.editToken)
+        .map((c) => ({ id: c.id || c.edit.liveId, name: c.name || "案件", format: c.format || "documentary", edit: c.edit }));
+      const chName = doc.name || "チャンネル";
+      setChannelInfo({ [chName]: { ...emptyChannelInfo(), ...(doc.channelInfo || {}), name: chName } });
+      setChanLive({ id: chId, name: chName, channelInfo: doc.channelInfo || {}, cases });
+      setView("home"); setLoaded(true);
+    } catch (e) { setView("home"); setLoaded(true); showToast("読み込みに失敗しました：" + (e.message || e)); }
+  };
+  /* chanLive中：案件クリック→該当案件のライブセッションへ（編集ボタンを挟まず全タブ直接編集） */
+  const openChanCase = (c) => { if (!c || !c.edit) return; setChanActiveCase(c.id); startLiveSession(c.edit.liveId, c.edit.editToken); };
   const startLiveSession = (liveId, token) => {
     setView("editor"); setLoaded(false);
     try { if (liveWS.current) liveWS.current.close(); } catch (e) {}
@@ -3503,6 +3530,44 @@ export default function App() {
     } catch { showToast("コピーに失敗しました"); }
   };
 
+  // チャンネル編集モードのホーム（編集者用・project未選択でも案件一覧を出す＝Image3）。テーマはproject依存のためDEFAULT_THEMEで描く
+  if (loaded && chanLive && view === "home") return (
+    <div className="fixed inset-0 overflow-y-auto" style={{ background: "#E9E8E3" }}>
+      <header className="sticky top-0 z-10 shadow-sm" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
+          <img src="icon-192.png" alt="" className="w-8 h-8 rounded-lg" />
+          <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+        </div>
+      </header>
+      <main className="max-w-3xl mx-auto px-4 py-7">
+        <div className="text-[11px] font-bold text-stone-400 tracking-widest mb-1">CHANNEL</div>
+        <div className="rounded-2xl px-5 py-4 mb-4" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
+          <div className="text-[20px] font-black">{chanLive.name}</div>
+        </div>
+        <div className="mb-5 text-[12px] text-stone-700 bg-white border-l-4 rounded-xl px-4 py-3" style={{ borderColor: DEFAULT_THEME.accent }}>
+          ✏️ <span className="font-bold">編集できる共有です。</span>案件をクリックすると、企画・サムネ／構成台本／香盤表／素材／動画まで全タブをそのまま編集できます（ログイン不要・直したらすぐ反映）。
+        </div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[12px] font-bold text-stone-500">案件一覧（{chanLive.cases.length}）</div>
+          <div className="text-[10px] text-stone-400">クリックで開く</div>
+        </div>
+        {chanLive.cases.length === 0 ? (
+          <div className="text-[12px] text-stone-400 bg-white border border-stone-200 rounded-xl px-4 py-6 text-center">編集できる案件がまだありません。</div>
+        ) : chanLive.cases.map((c, i) => (
+          <button key={c.id} onClick={() => openChanCase(c)}
+            className="w-full text-left rounded-xl border border-stone-200 bg-white px-4 py-3 mb-2 hover:shadow-md hover:border-stone-300 transition-all flex items-center gap-3">
+            <span className="text-[11px] font-bold text-stone-400 tabular-nums shrink-0">#{i + 1}</span>
+            <span className="flex-1 min-w-0">
+              <span className="block text-[14px] font-bold text-stone-800 truncate">{c.name}</span>
+              <span className="block text-[10px] text-stone-400">{c.format === "talk" ? "トーク系" : "一日密着"}</span>
+            </span>
+            <span className="text-[12px] font-bold shrink-0" style={{ color: DEFAULT_THEME.accent }}>開く →</span>
+          </button>
+        ))}
+        <div className="text-center text-[10px] text-stone-300 mt-8">制作：ものがたりっち！</div>
+      </main>
+    </div>
+  );
   if (!loaded || !project) return <div className="min-h-screen flex items-center justify-center text-stone-400 text-sm">読み込み中…</div>;
 
   /* ---------- Claude連携 ---------- */
@@ -3637,6 +3702,7 @@ export default function App() {
             <svg className="w-4 h-4 ml-auto text-white/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
+        {!chanLive && (<>
         <div className="px-3 py-2 flex gap-1.5 relative">
           <button onClick={() => setNewMenu((v) => !v)}
             className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-lg"
@@ -3672,6 +3738,7 @@ export default function App() {
             <Icon name="download" className="w-4 h-4" /> 構成台本を取り込み
           </button>
         </div>
+        </>)}
 
         {/* チャンネル名サジェスト用 */}
         <datalist id="mg-channels">
@@ -3680,7 +3747,25 @@ export default function App() {
 
         {/* ===== チャンネル → 案件 ネスト ===== */}
         <div className="flex-1 overflow-y-auto px-2 pb-3">
-          {channelGroups.map(({ channel, items }) => {
+          {chanLive ? (
+            <div className="pt-1">
+              <div className="px-2 py-1.5 text-[11px] font-bold text-white/50 truncate flex items-center gap-1">
+                {channelIconOf(chanLive.name) || "📁"}<span className="truncate">{chanLive.name}</span>
+                <span className="ml-auto text-[10px] text-white/30 tabular-nums">{chanLive.cases.length}</span>
+              </div>
+              {chanLive.cases.map((c) => {
+                const active = chanActiveCase === c.id;
+                return (
+                  <button key={c.id} onClick={() => openChanCase(c)}
+                    className={"w-full text-left rounded-lg mb-0.5 px-3 py-2 flex items-center gap-2 transition-colors " + (active ? "" : "hover:bg-white/5")}
+                    style={active ? { background: "rgba(255,255,255,0.12)" } : {}}>
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? theme.accent : "rgba(255,255,255,0.3)" }} />
+                    <span className="flex-1 min-w-0 truncate text-[12.5px] font-medium">{c.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : channelGroups.map(({ channel, items }) => {
             const hasActive = items.some((x) => x.id === activeId);
             // 既定はすべて畳む（開いている案件のチャンネルだけ自動展開）。タップで開閉（アコーディオン＝1つだけ開く）
             const isCollapsed = collapsed[channel] !== undefined ? !!collapsed[channel] : !hasActive;
