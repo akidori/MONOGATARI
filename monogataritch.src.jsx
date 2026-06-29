@@ -1478,6 +1478,15 @@ export default function App() {
     document.head.appendChild(link);
   }, []);
 
+  /* 開いている案件＋タブを記憶（次回ロードで復元）。ホームに居る時は消す＝ホームでの⌘Rはホーム維持 */
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      if (view === "editor" && activeId) localStorage.setItem("mg:lastView", JSON.stringify({ id: activeId, tab }));
+      else if (view === "home") localStorage.removeItem("mg:lastView");
+    } catch (e) {}
+  }, [view, activeId, tab, loaded]);
+
   /* index取得 → なければ旧データ移行 or 新規作成。ログイン/ログアウト後にも再実行する */
   const loadAll = async () => {
     try {
@@ -1510,10 +1519,14 @@ export default function App() {
       // 既存indexにchannelが無ければ補完
       idx = idx.map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL }));
       setIndex(idx);
-      const firstId = idx[0].id;
-      const r = await window.storage.get(STORE_PROJ(firstId));
-      const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(idx[0].name);
-      setActiveId(firstId); setProject(data);
+      // 直前に開いていた案件＋タブを復元（⌘R/リロードでホームに戻さない）
+      let lastView = null;
+      try { lastView = JSON.parse(localStorage.getItem("mg:lastView") || "null"); } catch (e) {}
+      const wantId = (lastView && lastView.id && idx.some((x) => x.id === lastView.id)) ? lastView.id : idx[0].id;
+      const r = await window.storage.get(STORE_PROJ(wantId));
+      const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData((idx.find((x) => x.id === wantId) || idx[0]).name);
+      setActiveId(wantId); setProject(data);
+      if (lastView && lastView.id === wantId) { if (lastView.tab) setTab(lastView.tab); setView("editor"); }
     } catch (e) {
       if (e && e.code === 401) { doLogoutLocal(); return loadAll(); } // セッション切れ→ローカルに戻す
       console.error(e);
