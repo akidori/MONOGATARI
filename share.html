@@ -332,8 +332,10 @@ function render(){
   const hasScript = isTalk ? !!(p.talk && ((p.talk.body||[]).some(b=>b.script||b.heading) || p.talk.intro || p.talk.highlight)) : (p.rows||[]).length > 0;
   if(hasScript) tabs.push(["script","構成台本"]);
   if(!isTalk && (p.rows||[]).length) tabs.push(["kouban","香盤表"]);
-  // 動画タブ：動画があれば「確認」、編集者URL(UP_TOKEN)なら動画ゼロでも常時表示してアップ枠を出す
-  if(videoOptions(p).length || UP_TOKEN) tabs.push(["video", UP_TOKEN && !videoOptions(p).length ? "動画アップ" : "動画確認"]);
+  // 動画タブ：動画があれば「確認」、編集者URL(UP_TOKEN)なら動画ゼロでも常時表示してアップ枠を出す。
+  // 案件まるごと共有（タブ絞り無し）でも常に出す＝「全タブ」を欠けさせない
+  const fullCase = !ALLOW_TABS.length && !LOCK_TAB;
+  if(videoOptions(p).length || UP_TOKEN || fullCase) tabs.push(["video", videoOptions(p).length ? "動画確認" : "動画アップ"]);
   const hasFilesAny = (p.files||[]).length || (p.plans||[]).some(pl=>(pl.files||[]).length) || (UPLOADS||[]).length || (p.assets||[]).some(a=>a&&a.key&&a.type!=="youtube");
   if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
   const manualCount = ((p.manuals||[]).length) + (((p.channelInfo&&p.channelInfo.manuals)||[]).length) + ((p.manualsGlobal||[]).length);
@@ -349,7 +351,7 @@ function render(){
   if(lockedTab) TAB = lockedTab;
   if(!tabs.some(t=>t[0]===TAB)) TAB = (tabs[0] && tabs[0][0]) || "script";
 
-  const tabBar = lockedTab ? "" : `<div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto">${tabs.map(([k,label])=>
+  const tabBar = lockedTab ? "" : `<div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto sticky top-0 z-30 pt-2" style="background:#E9E8E3">${tabs.map(([k,label])=>
     `<button data-tab="${k}" class="tabbtn text-[12px] font-bold px-3 py-2 whitespace-nowrap ${TAB===k?'border-b-2':''}" style="${TAB===k?`color:${main};border-color:${accent}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
 
   const pane = TAB==="concept" ? paneConcept(p)
@@ -614,8 +616,13 @@ function videoUploadBox(accent, main, compact){
 }
 function paneVideo(p, accent, main){
   const opts = videoOptions(p);
-  // 動画ゼロ＆編集者URL：確認対象がまだ無いのでアップ枠だけ出す
-  if(!opts.length && UP_TOKEN) return `<div class="max-w-[560px] mx-auto py-2">${videoUploadBox(accent, main, false)}</div>`;
+  // 動画ゼロ：編集者URLならアップ枠、それ以外（まるごと共有など）は案内を出す（空の黒プレーヤーを出さない）
+  if(!opts.length){
+    const box = (UP_TOKEN && !CHMODE)
+      ? videoUploadBox(accent, main, false)
+      : `<div class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-6 text-center text-[12px] text-stone-400 leading-relaxed">まだ動画はありません。<br>編集者用リンクから完成動画を上げると、ここで確認できます。</div>`;
+    return `<div class="max-w-[560px] mx-auto py-2">${box}</div>`;
+  }
   const cur = curVideo(p); if(cur) VSEL = cur.id;
   const v = (cur&&cur.video)||{};
   const selector = opts.length>1 ? `<div class="flex gap-1 flex-wrap mb-2">${opts.map(o=>`<button data-vsel="${esc(o.id)}" class="vc-sel text-[11px] font-bold px-2.5 py-1 rounded-full border ${o.id===VSEL?'text-white':'text-stone-500 border-stone-200'}" style="${o.id===VSEL?`background:${main};border-color:${main}`:''}">${esc(o.label)}</button>`).join("")}</div>` : "";
@@ -715,14 +722,15 @@ function wireVideoUpload(p, accent, main){
 async function videoUpload(file, p, accent, main){
   const prog=document.getElementById("vu-prog"), bar=document.getElementById("vu-bar"), pct=document.getElementById("vu-pct");
   if(prog) prog.classList.remove("hidden");
+  if(bar) bar.style.background=accent; if(pct){ pct.style.color="#9ca3af"; pct.textContent="アップロード準備中…（大きい動画は時間がかかります）"; }
   try{
     const selEl=document.getElementById("fl-target"); const target=selEl?selEl.value:"project";
-    const meta = await mpuUpload(file, { planId: target==="project"?"":target, role:"review" }, (v)=>{ if(bar){ bar.style.width=v+"%"; pct.textContent=v+"%"; } });
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target, role:"review" }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
     UPLOADS.push(meta);
     VSEL = "up:"+meta.key;   // 上げたばかりの動画を選択
     if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null;
     render();
-  }catch(e){ if(prog) prog.classList.add("hidden"); alert("動画アップに失敗しました："+e.message); }
+  }catch(e){ if(pct){ pct.style.color="#DC2645"; pct.textContent="⚠ 送信できませんでした："+(e.message||e); } if(bar){ bar.style.background="#DC2645"; } alert("動画アップに失敗しました："+e.message); }
 }
 function setRate(r){ if(videoEl){ videoEl.playbackRate=r; } else if(ytPlayer&&ytPlayer.setPlaybackRate){ ytPlayer.setPlaybackRate(r); } }
 function curTime(){ if(videoEl) return videoEl.currentTime||0; if(ytPlayer&&ytPlayer.getCurrentTime) return ytPlayer.getCurrentTime()||0; return 0; }
@@ -883,7 +891,7 @@ function renderFileList(p, accent, main){
 }
 /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要）。onProg(0-100) */
 async function mpuUpload(file, extra, onProg){
-  const CHUNK = Math.min(90*1024*1024, Math.max(48*1024*1024, Math.ceil(file.size/9000)));
+  const CHUNK = Math.min(90*1024*1024, Math.max(16*1024*1024, Math.ceil(file.size/9000)));
   const cr = await fetch(API+"/api/file/mpu/create", { method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
   const cd = await cr.json(); if(!cd.uploadId) throw new Error(cd.error||"開始に失敗");
@@ -914,13 +922,15 @@ async function guestUpload(file, p, accent, main){
   const prog=document.getElementById("fl-prog"), bar=document.getElementById("fl-bar"), pct=document.getElementById("fl-pct");
   const selEl=document.getElementById("fl-target"); const target=selEl?selEl.value:"project";
   if(prog) prog.classList.remove("hidden");
+  if(bar) bar.style.background=accent; if(pct){ pct.style.color="#9ca3af"; pct.textContent="アップロード準備中…"; }
   try{
-    const meta = await mpuUpload(file, { planId: target==="project"?"":target }, (v)=>{ if(bar){ bar.style.width=v+"%"; pct.textContent=v+"%"; } });
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
     UPLOADS.push(meta);
-    if(prog) prog.classList.add("hidden"); if(bar){ bar.style.width="0%"; pct.textContent="0%"; }
+    if(bar){ bar.style.width="100%"; } if(pct){ pct.style.color="#15803D"; pct.textContent="✓ 「"+(file.name||"ファイル")+"」を送信しました"; }
     const inp=document.getElementById("fl-input"); if(inp) inp.value="";
     renderFileList(p, accent, main);
-  }catch(e){ if(prog) prog.classList.add("hidden"); alert("アップロードに失敗しました："+e.message); }
+    setTimeout(()=>{ if(prog) prog.classList.add("hidden"); if(bar){ bar.style.width="0%"; } if(pct){ pct.style.color="#9ca3af"; pct.textContent="0%"; } }, 4000);
+  }catch(e){ if(bar){ bar.style.background="#DC2645"; } if(pct){ pct.style.color="#DC2645"; pct.textContent="⚠ 送信できませんでした："+(e.message||e); } alert("アップロードに失敗しました："+e.message); }
 }
 
 load();
