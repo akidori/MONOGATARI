@@ -1187,21 +1187,27 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
     if (isYT) { const p = ytPlayerRef.current; if (!p || !p.getPlayerState) return; if (p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo(); }
     else if (vref.current) { if (vref.current.paused) { const pr = vref.current.play(); if (pr && pr.catch) pr.catch(() => {}); } else vref.current.pause(); }
   };
-  // Enterで再生/停止（入力欄にフォーカス中は無効）
+  // キーボード操作：Enter/Space=再生停止、←→=5秒シーク(Shiftで1秒)。テキスト入力欄のみ無効（シークバー=range は対象にする）
   React.useEffect(() => {
+    const seekBy = (d) => {
+      if (isYT) { const p = ytPlayerRef.current; if (p && p.getCurrentTime && p.seekTo) { const nt = Math.max(0, (p.getCurrentTime() || 0) + d); p.seekTo(nt, true); setCur(nt); } }
+      else if (vref.current) { const v = vref.current; const nt = Math.max(0, Math.min(v.duration || 1e9, (v.currentTime || 0) + d)); v.currentTime = nt; setCur(nt); }
+    };
     const onKey = (e) => {
-      if (e.key !== "Enter") return;
-      const t = e.target, tag = (t && t.tagName || "").toLowerCase();
-      if (tag === "input" || tag === "textarea" || tag === "select" || (t && t.isContentEditable)) return;
-      if (streamPending) return;
-      e.preventDefault(); togglePlay();
+      const t = e.target, tag = (t && t.tagName || "").toLowerCase(), typ = (t && t.type || "").toLowerCase();
+      const typing = tag === "textarea" || tag === "select" || (t && t.isContentEditable) || (tag === "input" && typ !== "range");
+      if (typing || streamPending) return;
+      const onRange = tag === "input" && typ === "range";
+      if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") { e.preventDefault(); togglePlay(); }
+      else if (!onRange && e.key === "ArrowRight") { e.preventDefault(); seekBy(e.shiftKey ? 1 : 5); }
+      else if (!onRange && e.key === "ArrowLeft") { e.preventDefault(); seekBy(e.shiftKey ? -1 : -5); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [sel && sel.id, isYT, streamPending]);
   const filtered = verComments.filter((c) => filter === "全部" ? true : filter === "高優先度" ? c.priority === "高" : CMT_STATUSES.includes(filter) ? cstat(c) === filter : CMT_CATEGORIES.includes(filter) ? (c.category || "その他") === filter : true)
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
-  const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); };
+  const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} };
 
   if (!versions.length) {
     return (
@@ -1296,7 +1302,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
                   className={"text-[11px] px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")} style={rate === r ? { background: main, borderColor: main, fontFamily: mono } : { fontFamily: mono }}>{r}x</button>
               ))}
               {isYT && <span className="text-[10px] text-stone-400">（YouTubeは2倍まで）</span>}
-              <span className="text-[10px] text-stone-400 ml-auto">Enterで再生/停止</span>
+              <span className="text-[10px] text-stone-400 ml-auto">Enter/Space=再生停止　←→=5秒（Shiftで1秒）</span>
             </div>
           )}
           {/* 新規修正コメント */}
