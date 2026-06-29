@@ -1264,8 +1264,8 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black" />
-                  : <video ref={vref} src={rawSrc} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black" />}
+                  ? <video ref={vref} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
+                  : <video ref={vref} src={rawSrc} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
             {/* 変換中/失敗でも生データで再生できている時の非ブロッキング・バッジ */}
             {!isYT && streamBusy && rawSrc && (
               <div className="absolute top-2 left-2 right-2 flex items-center gap-2 pointer-events-none">
@@ -1289,6 +1289,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
             <div className="flex items-center gap-1 mt-2 flex-wrap">
               <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}{isYT && dur ? " / " + fmtTC(dur) : ""}</span>
               <button onClick={togglePlay} title="再生/停止（Enter）" className="text-[11px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⏯</button>
+              <button onClick={() => { const el = isYT ? (ytDivRef.current && ytDivRef.current.querySelector("iframe")) || ytDivRef.current : vref.current; if (el && el.requestFullscreen) el.requestFullscreen(); }} title="全画面" className="text-[11px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⛶</button>
               <span className="text-[10px] text-stone-400 ml-1 mr-0.5">速度</span>
               {rates.map((r) => (
                 <button key={r} onClick={() => applyRate(r)}
