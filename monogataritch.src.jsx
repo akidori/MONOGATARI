@@ -2817,8 +2817,9 @@ export default function App() {
   };
   /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要・GB級対応）。meta を返す */
   const uploadToR2 = async (file, planId = "", onProgress = null) => {
-    // R2マルチパートは最大1万パート。500GB級でも収まるようチャンクを動的に（48〜90MB、Worker body上限内）
-    const CHUNK = Math.min(90 * 1024 * 1024, Math.max(48 * 1024 * 1024, Math.ceil(file.size / 9000)));
+    // R2マルチパートは最大1万パート。500GB級でも収まるようチャンクを動的に（16〜90MB、Worker body上限内）
+    // 細い/不安定な回線で1パートが小さいほど瞬断からの再試行が軽い＝下限を16MBに
+    const CHUNK = Math.min(90 * 1024 * 1024, Math.max(16 * 1024 * 1024, Math.ceil(file.size / 9000)));
     const extra = { token: project.shareToken, retention, planId };
     const cr = await fetch(SHARE_API + "/api/file/mpu/create", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -2831,18 +2832,22 @@ export default function App() {
     for (let i = 0; i < total; i++) {
       const start = i * CHUNK, blob = file.slice(start, Math.min(file.size, start + CHUNK));
       let etag = null, lastErr;
-      for (let attempt = 0; attempt < 3; attempt++) {
+      // 回線が不安定でも粘る：1パート最大6回まで再試行（指数バックオフ最大30秒）＋3分ストールで打ち切り再試行。
+      // 上がり切ったパートは parts に残るので瞬断しても最初からにはならない。
+      for (let attempt = 0; attempt < 6; attempt++) {
         try {
           etag = await new Promise((res, rej) => {
             const xhr = new XMLHttpRequest();
             xhr.open("PUT", SHARE_API + "/api/file/mpu/part?key=" + encodeURIComponent(cd.key) + "&uploadId=" + encodeURIComponent(cd.uploadId) + "&part=" + (i + 1));
+            xhr.timeout = 180000;
             xhr.upload.onprogress = (e) => { if (e.lengthComputable) (onProgress || setMediaProg)(Math.min(100, Math.round((start + e.loaded) / file.size * 100))); };
             xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) { try { res(JSON.parse(xhr.responseText).etag); } catch (_) { rej(new Error("part応答不正")); } } else rej(new Error("part失敗(" + xhr.status + ")")); };
             xhr.onerror = () => rej(new Error("通信エラー"));
+            xhr.ontimeout = () => rej(new Error("通信が止まりました（タイムアウト）"));
             xhr.send(blob);
           });
           break;
-        } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); }
+        } catch (e) { lastErr = e; if (attempt < 5) await new Promise((r) => setTimeout(r, Math.min(30000, 2000 * Math.pow(2, attempt)))); }
       }
       if (etag == null) throw lastErr || new Error("part失敗");
       parts.push({ partNumber: i + 1, etag });

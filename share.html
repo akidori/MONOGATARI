@@ -900,15 +900,18 @@ async function mpuUpload(file, extra, onProg){
   for(let i=0;i<total;i++){
     const start=i*CHUNK, blob=file.slice(start, Math.min(file.size, start+CHUNK));
     let etag=null, lastErr;
-    for(let attempt=0; attempt<3; attempt++){
+    // 回線が不安定でも粘る：1パートを最大6回まで再試行（指数バックオフ最大30秒）。
+    // 途中まで上がったパートは parts に保持されるので、瞬断しても最初からやり直しにはならない。
+    for(let attempt=0; attempt<6; attempt++){
       try{
         etag = await new Promise((res,rej)=>{ const xhr=new XMLHttpRequest();
           xhr.open("PUT", API+"/api/file/mpu/part?key="+encodeURIComponent(cd.key)+"&uploadId="+encodeURIComponent(cd.uploadId)+"&part="+(i+1));
+          xhr.timeout = 180000; // 3分まったく進まなければストールとみなして再試行
           xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg) onProg(Math.min(100, Math.round((start+e.loaded)/file.size*100))); };
           xhr.onload=()=>{ if(xhr.status>=200&&xhr.status<300){ try{ res(JSON.parse(xhr.responseText).etag); }catch(_){ rej(new Error("part応答不正")); } } else rej(new Error("part失敗("+xhr.status+")")); };
-          xhr.onerror=()=>rej(new Error("通信エラー")); xhr.send(blob); });
+          xhr.onerror=()=>rej(new Error("通信エラー")); xhr.ontimeout=()=>rej(new Error("通信が止まりました（タイムアウト）")); xhr.send(blob); });
         break;
-      }catch(e){ lastErr=e; await new Promise(r=>setTimeout(r, 1500*(attempt+1))); }
+      }catch(e){ lastErr=e; if(attempt<5) await new Promise(r=>setTimeout(r, Math.min(30000, 2000*Math.pow(2,attempt)))); }
     }
     if(etag==null) throw lastErr||new Error("part失敗");
     parts.push({ partNumber:i+1, etag });
