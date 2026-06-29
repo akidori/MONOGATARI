@@ -1390,6 +1390,7 @@ export default function App() {
   const [editHeaderChannel, setEditHeaderChannel] = useState(false); // ヘッダーからカテゴリ変更中
   const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
   const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
+  const [shareMore, setShareMore] = useState(false);       // 共有メニュー「その他」の折りたたみ
   const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
   const [thumbTest, setThumbTest] = useState(null);        // サムネ目立ちテスト {pid, keyword, myImage, items[], myPos, busy, reveal}
   const [thumbPick, setThumbPick] = useState({});          // {pid: idx} 目立ちテストの対象サムネ（既定=最初の非空）
@@ -1616,6 +1617,25 @@ export default function App() {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { saveProjectData(project); }, 700);
     return () => clearTimeout(saveTimer.current);
+  }, [project, loaded]);
+
+  /* 共有スナップの自動再発行：素材/動画/構成などを変えたら、既存の共有リンクを裏で最新化する。
+     ＝「押し直し忘れで共有URLに出てこない」を構造的に撲滅（URLもトークンも不変・副作用なし）。 */
+  const republishTimer = useRef(null);
+  const lastPubSig = useRef(null);
+  useEffect(() => {
+    if (!loaded || !project) return;
+    if (!project.shareId || !project.shareToken || project.collab) return; // 未共有/権限なしは対象外
+    // 共有に出る"中身"だけを指紋化（共有/ライブ系フィールドは除外＝再発行で自分が再発火するループを防ぐ）。
+    // 台本テキストの編集も含めて常に最新を反映する。4秒デバウンスでKVレート(1書込/秒)も安全。
+    const { shareId, shareToken, shareUpToken, live, liveId, liveToken, collab, collabRole, members, ownerEmail, ...contentSig } = project;
+    const sig = JSON.stringify(contentSig);
+    if (lastPubSig.current === null) { lastPubSig.current = sig; return; } // 初回ロード/リンク発行直後は送らない
+    if (sig === lastPubSig.current) return;
+    lastPubSig.current = sig;
+    clearTimeout(republishTimer.current);
+    republishTimer.current = setTimeout(() => { publishShare(true).catch(() => {}); }, 4000); // サイレント＝AKは意識しない
+    return () => clearTimeout(republishTimer.current);
   }, [project, loaded]);
 
   /* チャンネルコンセプトの自動保存 */
@@ -4090,48 +4110,56 @@ export default function App() {
             {shareMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
               <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 max-h-[80vh] overflow-y-auto">
-                <div className="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wider text-stone-400">受け渡し（リンク＋文面をコピー）</div>
-                {handoffs.map((h) => (
-                  <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                    <span className="text-[14px] leading-none">{h.emoji || "📨"}</span>
-                    {h.label}
-                    <span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
-                  </button>
-                ))}
-                <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2 border-b border-stone-100">
-                  <span className="text-[12px] leading-none">⚙️</span> 受け渡しをカスタマイズ
+                {/* ===== AKの2択を最上段に（思考ストレス0）：全部 / 今のタブだけ ===== */}
+                <div className="px-3 pt-2.5 pb-1 text-[10px] font-bold tracking-wider text-stone-400">見せるリンクをコピー（読み取り専用）</div>
+                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
+                  <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
+                  全部見せる<span className="text-[10px] text-stone-400 font-normal ml-auto">全タブ</span>
                 </button>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wider text-stone-400">確認用URLをコピー（読み取り専用）</div>
                 {TAB_SHARE_PANE[tab] && (
-                  <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                  <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-b border-stone-100">
                     <Icon name="folder" className="w-4 h-4 shrink-0 text-stone-500" />
-                    このタブだけ共有<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[80px]">{TAB_LABEL[tab]}</span>
+                    今のタブだけ見せる<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
                   </button>
                 )}
-                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
-                  <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
-                  案件まるごと共有<span className="text-[10px] text-stone-400 font-normal ml-auto">全タブ見れる</span>
+                {/* ===== 編集者に渡す（大容量アップに必要な唯一のリンク） ===== */}
+                <div className="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wider text-stone-400">編集者に渡す</div>
+                {handoffs.filter((h) => h.id === "editor" || h.upload === true).map((h) => (
+                  <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
+                    <span className="text-[14px] leading-none">{h.emoji || "✂️"}</span>
+                    {h.label}<span className="text-[10px] text-stone-400 font-normal ml-auto">大容量アップOK＋文面</span>
+                  </button>
+                ))}
+                {/* ===== その他（折りたたみ）：先方/演者・同時編集・AI・書き出し ===== */}
+                <button onClick={() => setShareMore((v) => !v)} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2">
+                  <span className="text-[10px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他のリンク・書き出し
                 </button>
-                <button onClick={() => { setShareMenu(false); publishShare(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
-                  {project.shareId ? "確認用リンクを最新に更新" : "確認用リンクを発行"}<span className="text-[10px] text-stone-400 font-normal ml-auto">読み取り専用</span>
-                </button>
-                <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-                  {project.liveId ? "編集用リンクを更新" : "編集用リンクを発行"}<span className="text-[10px] text-stone-400 font-normal ml-auto">同時編集</span>
-                </button>
-                <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
-                  <span className="text-[14px] leading-none">🤖</span>
-                  AIに読ませる用リンク<span className="text-[10px] text-stone-400 font-normal ml-auto">Claude/GPT</span>
-                </button>
-                <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m22 8-6 4 6 4V8Z" /><rect x="2" y="6" width="14" height="12" rx="2" /></svg>
-                  動画確認・ファイル転送
-                </button>
-                <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptTSV)(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" /></svg>
-                  台本コピー{project.format === "talk" ? "（テキスト）" : "（TSV）"}
-                </button>
+                {shareMore && (<>
+                  {handoffs.filter((h) => !(h.id === "editor" || h.upload === true)).map((h) => (
+                    <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                      <span className="text-[13px] leading-none">{h.emoji || "📨"}</span>
+                      {h.label}<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
+                    </button>
+                  ))}
+                  <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left pl-7 pr-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2 border-b border-stone-100">
+                    <span className="text-[12px] leading-none">⚙️</span> 受け渡しをカスタマイズ
+                  </button>
+                  <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                    <span className="text-[13px] leading-none">✏️</span>
+                    {project.liveId ? "編集用リンクを更新" : "編集用リンクを発行"}<span className="text-[10px] text-stone-400 font-normal ml-auto">同時編集</span>
+                  </button>
+                  <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                    <span className="text-[13px] leading-none">🤖</span>
+                    AIに読ませる用<span className="text-[10px] text-stone-400 font-normal ml-auto">Claude/GPT</span>
+                  </button>
+                  <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                    <span className="text-[13px] leading-none">🎬</span> 動画確認・ファイル転送
+                  </button>
+                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptTSV)(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                    <span className="text-[13px] leading-none">📄</span> 台本コピー{project.format === "talk" ? "（テキスト）" : "（TSV）"}
+                  </button>
+                </>)}
+                <div className="px-3 py-2 text-[10px] text-stone-400 bg-stone-50 border-t border-stone-100 leading-relaxed">🔄 一度配ったリンクは、中身を直すと<span className="font-bold text-stone-500">自動で最新</span>になるよ（押し直し不要）。</div>
               </div>
             </>)}
           </div>
