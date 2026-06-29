@@ -351,7 +351,7 @@ function render(){
   if(lockedTab) TAB = lockedTab;
   if(!tabs.some(t=>t[0]===TAB)) TAB = (tabs[0] && tabs[0][0]) || "script";
 
-  const tabBar = lockedTab ? "" : `<div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto sticky top-0 z-30 pt-2" style="background:#E9E8E3">${tabs.map(([k,label])=>
+  const tabBar = lockedTab ? "" : `<div class="flex gap-1 mb-4 border-b border-stone-200 overflow-x-auto sticky top-0 z-30" style="background:#E9E8E3">${tabs.map(([k,label])=>
     `<button data-tab="${k}" class="tabbtn text-[12px] font-bold px-3 py-2 whitespace-nowrap ${TAB===k?'border-b-2':''}" style="${TAB===k?`color:${main};border-color:${accent}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
 
   const pane = TAB==="concept" ? paneConcept(p)
