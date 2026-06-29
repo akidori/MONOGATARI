@@ -371,6 +371,7 @@ function render(){
       <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">ものがたりっち！</div>
       <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
     </div>
+    ${tabBar}
     <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
       <div class="px-5 py-4" style="background:${main};color:#fff">
         <div class="text-[18px] font-black leading-snug">${esc(titles[0]||p.name||"構成台本")}</div>
@@ -383,7 +384,6 @@ function render(){
         <div class="text-[10px] font-bold text-stone-400 mb-1">冒頭フック</div>
         <div class="script">${renderScript(accent, m.highlight)}</div></div>`:""}
     </div>
-    ${tabBar}
     <div>${pane}</div>
     <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">制作：ものがたりっち！</p>
   `;
