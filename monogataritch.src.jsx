@@ -1264,8 +1264,8 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />
-                  : <video ref={vref} src={rawSrc} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} className="w-full h-full bg-black" />}
+                  ? <video ref={vref} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black" />
+                  : <video ref={vref} src={rawSrc} controls playsInline preload="auto" onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black" />}
             {/* 変換中/失敗でも生データで再生できている時の非ブロッキング・バッジ */}
             {!isYT && streamBusy && rawSrc && (
               <div className="absolute top-2 left-2 right-2 flex items-center gap-2 pointer-events-none">
@@ -1276,9 +1276,14 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
               </div>
             )}
           </div>
-          {!streamPending && isYT && dur > 0 && (
-            <input type="range" min={0} max={dur} step="0.1" value={cur} onChange={(e) => seek(+e.target.value)}
-              className="w-full mt-2 accent-current" style={{ color: accent }} />
+          {/* 映像のすぐ下に常時見える太いシークバー（mp4もYouTubeも）。スクラブしても勝手に再生しない */}
+          {!streamPending && dur > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <input type="range" min={0} max={dur} step="0.1" value={cur}
+                onChange={(e) => { const t = +e.target.value; setCur(t); if (isYT) { const p = ytPlayerRef.current; if (p && p.seekTo) p.seekTo(t, true); } else if (vref.current) vref.current.currentTime = t; }}
+                className="flex-1 h-2 cursor-pointer accent-current" style={{ color: accent }} />
+              <span className="text-[10px] tabular-nums text-stone-400 shrink-0" style={{ fontFamily: mono }}>{fmtTC(cur)} / {fmtTC(dur)}</span>
+            </div>
           )}
           {!streamPending && (
             <div className="flex items-center gap-1 mt-2 flex-wrap">
