@@ -918,6 +918,18 @@ function slim(p) {
       uploadedAt: f.uploadedAt || "",
       expiresAt: f.expiresAt || null,
     })) : [],
+    // 素材管理（assets単一正本）も共有スナップに載せる＝編集者URLのファイルタブで素材をDLできる。
+    // これが無いと owner が素材管理に入れた撮影素材が共有ページに一切出ない（key有り＝R2実体のみ）。
+    assets: Array.isArray(p.assets) ? p.assets.filter((a) => a && a.key && a.type !== "youtube").slice(0, 300).map((a) => ({
+      key: (a.key || "").slice(0, 120),
+      name: (a.name || "").slice(0, 255),
+      size: +a.size || 0,
+      mime: (a.mime || "").slice(0, 120),
+      type: (a.type || "").slice(0, 40),
+      planId: (a.planId || "").slice(0, 40),
+      uploadedAt: a.uploadedAt || "",
+      expiresAt: a.expiresAt || null,
+    })) : [],
   };
 }
 
