@@ -148,6 +148,8 @@ const HANDOFF_DEFAULTS = [
     msg: "{name} の動画が上がりました。ご確認お願いします（再生しながら時間指定でコメント頂けます）\n{url}" },
   { id: "talent", emoji: "🎤", label: "演者へ", tabs: ["review", "script"], start: "review",
     msg: "{name} の確認用ページです。動画と構成こちらからご覧いただけます\n{url}" },
+  { id: "upload", emoji: "⬆️", label: "アップだけ", tabs: ["review"], start: "review", upload: true,
+    msg: "{name} の完成動画、こちらから直接アップしてください（大容量OK・ログイン不要）。\n{url}" },
 ];
 const STATUSES = ["未着手", "企画中", "撮影前", "編集中", "確認中", "完了"];
 const STATUS_COLOR = {
@@ -1115,6 +1117,34 @@ function ManualPanel({ entries, onChange, main, accent, readOnly }) {
           {MANUAL_CATS.map((c) => (<button key={c} onClick={() => add(c)} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600">＋{c}</button>))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ===== Flip-LAB のチャンネル編集ルール（読み取り専用・自動表示） =====
+   確認コメントから蒸留した「このチャンネルの流儀」を mg-share 経由でLABから取得し、
+   編集者が作業中に見れるように出す。未生成なら何も出さない。 */
+function LabChannelRules({ channel, main }) {
+  const [md, setMd] = React.useState(null);     // null=読込中, ""=なし
+  const [updated, setUpdated] = React.useState(null);
+  const [open, setOpen] = React.useState(true);
+  React.useEffect(() => {
+    let on = true; setMd(null);
+    fetch(SHARE_API + "/api/lab-manual?channel=" + encodeURIComponent(channel || ""))
+      .then((r) => r.json()).then((d) => { if (!on) return; setMd(d.manual || ""); setUpdated(d.updated || null); })
+      .catch(() => { if (on) setMd(""); });
+    return () => { on = false; };
+  }, [channel]);
+  if (md === null) return <div className="text-[12px] text-stone-400 py-2">🧪 Flip-LABの編集ルールを読み込み中…</div>;
+  if (!md) return null;
+  return (
+    <div className="rounded-xl border mb-3 overflow-hidden" style={{ borderColor: main + "55", background: main + "0c" }}>
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
+        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: main }}>🧪 Flip-LAB</span>
+        <span className="text-[12.5px] font-bold text-stone-800">{channel} 編集ルール<span className="font-normal text-stone-400">（確認コメントから自動蒸留）</span></span>
+        <span className="ml-auto text-[10px] text-stone-400 shrink-0">{updated ? updated.slice(0, 10) : ""} {open ? "▲" : "▼"}</span>
+      </button>
+      {open && <div className="px-3 pb-3 text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed border-t border-stone-200/60 pt-2 max-h-[42vh] overflow-y-auto">{md}</div>}
     </div>
   );
 }
@@ -5543,6 +5573,7 @@ export default function App() {
             <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件で共通のスタジオの決め事（テロップ・書き出し・命名規則など）。" : manualScope === "channel" ? "このクライアント（チャンネル）固有のルール。同じチャンネルの全案件で共有。" : "この案件だけの指示書・メモ。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
             <div className="p-5 overflow-y-auto">
               {manualScope === "global" && <ManualPanel entries={globalManuals} onChange={saveGlobalManuals} main={theme.main} accent={theme.accent} />}
+              {manualScope === "channel" && curChannel !== DEFAULT_CHANNEL && <LabChannelRules channel={curChannel} main={theme.main} />}
               {manualScope === "channel" && <ManualPanel entries={curChannelInfo.manuals || []} onChange={setChannelManuals} main={theme.main} accent={theme.accent} />}
               {manualScope === "case" && <ManualPanel entries={project.manuals || []} onChange={setCaseManuals} main={theme.main} accent={theme.accent} />}
             </div>

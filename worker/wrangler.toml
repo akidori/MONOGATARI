@@ -26,6 +26,13 @@ bucket_name = "mg-files"
 [triggers]
 crons = ["0 18 * * *"]
 
+# Flip-LAB（第二の脳）への直結。編集ルールをチャンネル別に取得して編集者に表示。
+# worker間fetchはworkers.dev公開URLだと1042で弾かれるためService Bindingで直結。
+# 認証トークンは秘密： wrangler secret put FLIP_LAB_TOKEN
+[[services]]
+binding = "LAB"
+service = "flip-lens"
+
 # リアルタイム共同編集（共有リンクの編集モード）。SQLite-backed=無料プラン枠
 [[durable_objects.bindings]]
 name = "LIVEDOC"

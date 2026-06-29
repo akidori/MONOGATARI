@@ -45,6 +45,28 @@ export default {
     }
 
     try {
+      // GET /api/lab-manual?channel=オリックス → Flip-LABの保存済み編集ルールを中継して返す。
+      // 編集者がものがたりっちで作業中に、そのチャンネルの蒸留済みルールを見れる。
+      // トークン(FLIP_LAB_TOKEN)はサーバ側に秘匿。LABへはservice binding(env.LAB)で直結＝1042回避。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "lab-manual") {
+        const channel = url.searchParams.get("channel") || "";
+        if (!channel) return json({ ok: false, error: "channel必須", manual: "" }, 400);
+        if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続", manual: "" });
+        const labReq = new Request(
+          "https://flip-lens/api/channel_manual?channel=" + encodeURIComponent(channel),
+          { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } }
+        );
+        try {
+          const r = env.LAB ? await env.LAB.fetch(labReq)
+            : await fetch("https://flip-lens.aki-surf89315.workers.dev/api/channel_manual?channel=" + encodeURIComponent(channel),
+                { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } });
+          const d = await r.json();
+          return json({ ok: true, channel: d.channel, manual: d.manual || "", updated: d.updated || null });
+        } catch (e) {
+          return json({ ok: false, error: "LAB取得失敗: " + e.message, manual: "" });
+        }
+      }
+
       // POST /api/parse  { raw }  → 生原稿をClaudeで構成台本(project JSON)に整形して返す
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "parse") {
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
