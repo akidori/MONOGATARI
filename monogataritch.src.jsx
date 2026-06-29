@@ -1496,6 +1496,7 @@ export default function App() {
   const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
   const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
+  const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("case");    // global | channel | case
@@ -2816,6 +2817,7 @@ export default function App() {
       if (!data.id) throw new Error(data.error || "発行失敗");
       if (data.uptok) shareUpTokRef.current = data.uptok;   // 編集者URL用：&up= に乗せる
       const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken, shareUpToken: data.uptok || project.shareUpToken };
+      shareTokenRef.current = next.shareToken || "";   // setProjectは非同期。直後のアップが最新tokenを引けるよう保持
       setProject(next);
       try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
       if (!silent) {
@@ -2828,6 +2830,14 @@ export default function App() {
     } catch (e) { showToast("共有リンクの発行に失敗：" + (e.message || e)); }
     setSharing(false);
     return null;
+  };
+  /* 動画/ファイルを上げる前に確認用URLが無ければその場で自動発行（ユーザーに先に発行させない）。{id,token} を返す。
+     setProjectは非同期で、この実行コンテキストの project.shareId/Token はまだ古いので、発行で確定した値を返して呼び出し側で直に使う。 */
+  const ensureShare = async () => {
+    if (project.shareId) return { id: project.shareId, token: project.shareToken || shareTokenRef.current || "" };
+    const id = await publishShare(true);   // サイレント発行（モーダルは出さない）
+    if (!id) return null;                  // 失敗時は publishShare がトースト済
+    return { id, token: project.shareToken || shareTokenRef.current || "" };
   };
   /* ===== 共有URL：タブ別／案件まるごと ===== */
   /* アプリのタブ → share.html のペイン名 */
@@ -2891,14 +2901,17 @@ export default function App() {
     try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
   };
   /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要・GB級対応）。meta を返す */
-  const uploadToR2 = async (file, planId = "", onProgress = null) => {
+  const uploadToR2 = async (file, planId = "", onProgress = null, snapOverride = null, tokenOverride = null) => {
+    // 発行直後は setProject 未反映で project.shareId/Token が古い。ensureShare の戻り値を直に使えるよう上書き引数を受ける。
+    const sid = snapOverride || project.shareId;
+    const stok = tokenOverride != null ? tokenOverride : project.shareToken;
     // R2マルチパートは最大1万パート。500GB級でも収まるようチャンクを動的に（16〜90MB、Worker body上限内）
     // 細い/不安定な回線で1パートが小さいほど瞬断からの再試行が軽い＝下限を16MBに
     const CHUNK = Math.min(90 * 1024 * 1024, Math.max(16 * 1024 * 1024, Math.ceil(file.size / 9000)));
-    const extra = { token: project.shareToken, retention, planId };
+    const extra = { token: stok, retention, planId };
     const cr = await fetch(SHARE_API + "/api/file/mpu/create", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snap: project.shareId, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
+      body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
     });
     const cd = await cr.json();
     if (!cd.uploadId) throw new Error(cd.error || "開始に失敗");
@@ -2929,7 +2942,7 @@ export default function App() {
     }
     const fr = await fetch(SHARE_API + "/api/file/mpu/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snap: project.shareId, key: cd.key, uploadId: cd.uploadId, parts, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
+      body: JSON.stringify({ snap: sid, key: cd.key, uploadId: cd.uploadId, parts, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
     });
     const fd = await fr.json();
     if (!fd.file) throw new Error(fd.error || "確定に失敗");
@@ -2983,11 +2996,11 @@ export default function App() {
   };
   /* mp4 を動画として登録（onProgress指定時はカード内バー、未指定はモーダルの共通バー） */
   const uploadVideo = async (file, target = "project", onProgress = null) => {
-    if (!project.shareId) { showToast("先に共有リンクを発行してね"); return; }
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
+    const sh = await ensureShare(); if (!sh) return;   // 未発行ならその場で自動発行
     if (!onProgress) { setMediaBusy("動画をアップロード中…"); setMediaProg(0); }
     try {
-      const meta = await uploadToR2(file, target === "project" ? "" : target, onProgress);
+      const meta = await uploadToR2(file, target === "project" ? "" : target, onProgress, sh.id, sh.token);
       const prev = getTargetVideo(target);
       await putVideo(target, { type: "mp4", key: meta.key, name: meta.name, title: (prev && prev.title) || file.name });
       showToast("動画を登録したよ");
@@ -3012,10 +3025,10 @@ export default function App() {
   };
   /* 転送ファイルを追加 */
   const uploadFile = async (file, target = "project", onProgress = null) => {
-    if (!project.shareId) { showToast("先に共有リンクを発行してね"); return; }
+    const sh = await ensureShare(); if (!sh) return;   // 未発行ならその場で自動発行
     if (!onProgress) { setMediaBusy("アップロード中…"); setMediaProg(0); }
     try {
-      const meta = await uploadToR2(file, target === "project" ? "" : target, onProgress);
+      const meta = await uploadToR2(file, target === "project" ? "" : target, onProgress, sh.id, sh.token);
       await putFiles(target, [...getTargetFiles(target), meta]);
       showToast("ファイルを追加したよ");
     } catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
@@ -3030,10 +3043,10 @@ export default function App() {
   const setAssets = (updater) => setProject((p) => ({ ...p, assets: typeof updater === "function" ? updater(Array.isArray(p.assets) ? p.assets : []) : updater }));
   /* ファイル/動画を素材として登録（カテゴリ指定）。R2へ上げて asset を1件追加 */
   const uploadAsset = async (file, category = "撮影素材") => {
-    if (!project.shareId) { showToast("先に確認用URLを発行してね（ヘッダーの共有）"); return; }
+    const sh = await ensureShare(); if (!sh) return;   // 未発行ならその場で自動発行
     setAssetUp({ cat: category, name: file.name, pct: 0 });
     try {
-      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: file.name, pct: p }));
+      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: file.name, pct: p }), sh.id, sh.token);
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
       setAssets((arr) => [newAsset(category, { type: isVideo ? "mp4" : "file", key: meta.key, name: meta.name, size: meta.size || file.size, mime: meta.mime || file.type }), ...arr]);
       showToast(category + "に追加したよ");
@@ -3328,15 +3341,15 @@ export default function App() {
     setTimeout(() => pollStreamReady(sid, tries + 1), 5000);
   };
   const uploadVersionVideo = async (file, onProgress = null) => {
-    if (!project.shareId) { showToast("先に確認用URLを発行してね"); return; }
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
+    const sh = await ensureShare(); if (!sh) return;   // 確認用URLは動画アップの副産物として自動発行（先に手で発行させない）
     setMediaBusy("動画をアップロード中…"); setMediaProg(0);
     try {
-      const meta = await uploadToR2(file, "", onProgress);
+      const meta = await uploadToR2(file, "", onProgress, sh.id, sh.token);
       // Streamへ取り込み（自動で軽量化）。無効/失敗ならR2直再生にフォールバック
       let v = null;
       try {
-        const r = await fetch(SHARE_API + "/api/stream/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: project.shareId, token: project.shareToken, key: meta.key, name: file.name }) });
+        const r = await fetch(SHARE_API + "/api/stream/copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: sh.id, token: sh.token, key: meta.key, name: file.name }) });
         const d = await r.json();
         if (d.uid) v = { type: "stream", uid: d.uid, key: meta.key, ready: false };
       } catch (e) {}
@@ -3350,6 +3363,7 @@ export default function App() {
   };
   const addVersionYouTube = async (rawUrl) => {
     const vid = ytIdFromUrl(rawUrl); if (!vid) { showToast("YouTubeのURLが正しくないみたい"); return; }
+    const sh = await ensureShare(); if (!sh) return;   // 共有URLが無ければ自動発行（追加した版がそのまま確認URLに出るように）
     await addVersionFromVideo({ type: "youtube", url: "https://www.youtube.com/watch?v=" + vid }, "YouTube版");
     showToast("バージョンを追加したよ");
   };
@@ -5305,12 +5319,6 @@ export default function App() {
                 </>)}
               </div>
             )}
-            {!project.shareId && (
-              <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-[12px] text-amber-800 mb-3">
-                ファイルを上げるには先に<span className="font-bold">確認用URLの発行</span>が必要です（保存先R2の確保のため）。
-                <button onClick={() => publishShare()} className="ml-2 text-[11px] font-bold px-3 py-1 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>確認用URLを発行</button>
-              </div>
-            )}
             <div className="space-y-4">
               {ASSET_CATEGORIES.map((cat) => {
                 const items = (project.assets || []).filter((a) => a.category === cat);
@@ -5319,7 +5327,7 @@ export default function App() {
                   <section key={cat}
                     onDragOver={(e) => { e.preventDefault(); if (project.shareId) setDragCat(cat); }}
                     onDragLeave={(e) => { if (e.currentTarget === e.target) setDragCat(null); }}
-                    onDrop={(e) => { e.preventDefault(); setDragCat(null); if (!project.shareId) { showToast("先に確認用URLを発行してね（ヘッダーの共有）"); return; } const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) fs.forEach((f) => uploadAsset(f, cat)); }}
+                    onDrop={(e) => { e.preventDefault(); setDragCat(null); const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) fs.forEach((f) => uploadAsset(f, cat)); }}
                     className={"rounded-2xl bg-white p-4 transition-colors " + (dragCat === cat ? "border-2 border-dashed" : "border border-stone-200")}
                     style={dragCat === cat ? { borderColor: theme.accent, background: "#fafaf8" } : {}}>
                     <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
