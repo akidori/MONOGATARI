@@ -3139,13 +3139,27 @@ export default function App() {
     let live = true;
     (async () => {
       try {
-        const r = await fetch(SHARE_API + "/api/schedule?id=" + encodeURIComponent(id));
+        const r = await fetch(SHARE_API + "/api/schedule?id=" + encodeURIComponent(id),
+          MG_SESSION ? { headers: { Authorization: "Bearer " + MG_SESSION } } : undefined); // ログイン中はemailを渡しcanReportUp判定
         const d = await r.json();
         if (live) setSched(d && d.found ? d : null);
       } catch (_) { if (live) setSched(null); }
     })();
     return () => { live = false; };
   }, [project && project.shareId]);
+
+  // あがり報告：担当編集者のワンタップで ball→AK（Flip Board書き戻し）。phaseは触らずAKが確認して進める。
+  const [reportingUp, setReportingUp] = useState(false);
+  const reportUp = async () => {
+    if (!sched || !project || !project.shareId || reportingUp) return;
+    setReportingUp(true);
+    try {
+      const d = await authFetch("/api/report-up", { id: project.shareId });
+      if (d && d.ok) { setSched((s) => (s ? { ...s, ballHolder: "ak", canReportUp: false } : s)); showToast("AKにあがり報告したよ ✅"); }
+      else showToast("報告できなかった：" + ((d && d.error) || "不明"));
+    } catch (e) { showToast("報告失敗：" + (e.message || e)); }
+    finally { setReportingUp(false); }
+  };
 
   // 変換中(stream)のまま戻ってきた版のポーリングを再開＝リロードで「変換中%」が固まる問題の根治
   const streamResumeRef = React.useRef({});
@@ -4360,7 +4374,15 @@ export default function App() {
               </span>
             )}
             {sched.nextAction && <span className="text-stone-600 truncate max-w-[42ch]">次の一手：{sched.nextAction}</span>}
-            <span className="ml-auto text-[10px] text-stone-400 shrink-0">日程 = Flip Board連動</span>
+            {sched.canReportUp && (
+              <button onClick={reportUp} disabled={reportingUp}
+                title="この案件のあがりをAKに報告（ボールをAKに渡す）。phaseは動かさず、AKが確認して次へ進めます。"
+                className="ml-auto shrink-0 text-[11px] font-bold px-3 py-1 rounded-lg text-white shadow disabled:opacity-50"
+                style={{ background: theme.accent, color: accentText }}>
+                {reportingUp ? "報告中…" : "✅ あがり報告"}
+              </button>
+            )}
+            <span className={(sched.canReportUp ? "" : "ml-auto ") + "text-[10px] text-stone-400 shrink-0"}>日程 = Flip Board連動</span>
           </div>
         )}
 

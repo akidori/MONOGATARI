@@ -75,13 +75,34 @@ export default {
         const id = (url.searchParams.get("id") || "").trim();
         if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ found: false, error: "id不正" }, 400);
         if (!env.MG_LIST_KEY) return json({ found: false, error: "未接続" });
-        const cronPath = "/api/case-schedule?id=" + encodeURIComponent(id) + "&key=" + encodeURIComponent(env.MG_LIST_KEY);
+        // ログイン中なら email を添えて「あがり報告ボタンを出してよいか(canReportUp)」をserver判定させる。未ログインでもOK（窓表示）。
+        const su = await requireUser(request, env);
+        const semail = su && su.email ? "&email=" + encodeURIComponent(su.email) : "";
+        const cronPath = "/api/case-schedule?id=" + encodeURIComponent(id) + "&key=" + encodeURIComponent(env.MG_LIST_KEY) + semail;
         try {
           const r = env.CRON ? await env.CRON.fetch(new Request("https://birdflip-cron" + cronPath))
             : await fetch("https://birdflip-cron.aki-surf89315.workers.dev" + cronPath);
           return json(await r.json());
         } catch (e) {
           return json({ found: false, error: "日程取得失敗: " + e.message });
+        }
+      }
+
+      // POST /api/report-up { id } → 担当編集者のあがり報告。要ログイン。cronで members 照合し ball→ak に書き戻し＋AK通知。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "report-up") {
+        const ru = await requireUser(request, env);
+        if (!ru || !ru.email) return json({ ok: false, error: "ログインが必要です" }, 401);
+        if (!env.MG_LIST_KEY) return json({ ok: false, error: "未接続" });
+        const b = await request.json().catch(() => ({}));
+        const id = (b && b.id ? String(b.id) : "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ ok: false, error: "id不正" }, 400);
+        const cronPath = "/api/report-up?id=" + encodeURIComponent(id) + "&email=" + encodeURIComponent(ru.email) + "&key=" + encodeURIComponent(env.MG_LIST_KEY);
+        try {
+          const r = env.CRON ? await env.CRON.fetch(new Request("https://birdflip-cron" + cronPath, { method: "POST" }))
+            : await fetch("https://birdflip-cron.aki-surf89315.workers.dev" + cronPath, { method: "POST" });
+          return json(await r.json());
+        } catch (e) {
+          return json({ ok: false, error: "報告失敗: " + e.message });
         }
       }
 
