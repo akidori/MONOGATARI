@@ -85,6 +85,19 @@ export default {
         }
       }
 
+      // GET /api/board → Flip Board(D1正本)の全案件を担当・工程・次の締切で一望（進行ボード・読み取り）。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "board") {
+        if (!env.MG_LIST_KEY) return json({ count: 0, rows: [], error: "未接続" });
+        const cronPath = "/api/board?key=" + encodeURIComponent(env.MG_LIST_KEY);
+        try {
+          const r = env.CRON ? await env.CRON.fetch(new Request("https://birdflip-cron" + cronPath))
+            : await fetch("https://birdflip-cron.aki-surf89315.workers.dev" + cronPath);
+          return json(await r.json());
+        } catch (e) {
+          return json({ count: 0, rows: [], error: "ボード取得失敗: " + e.message });
+        }
+      }
+
       // POST /api/parse  { raw }  → 生原稿をClaudeで構成台本(project JSON)に整形して返す
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "parse") {
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);

@@ -1499,6 +1499,8 @@ export default function App() {
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
   const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
+  const [board, setBoard] = useState(null);                  // Flip Board(D1)全案件の進行ボード＝ホームの可視化。読み取り専用
+  const [boardAll, setBoardAll] = useState(false);           // 進行ボード：全件 ⇔ このチャンネルだけ
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("case");    // global | channel | case
 
@@ -3115,6 +3117,20 @@ export default function App() {
   };
   // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）
   React.useEffect(() => { if ((tab === "assets" || tab === "review") && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
+
+  // 進行ボード：ホーム表示時にFlip Board(D1)の全案件をまとめて引く（担当・工程・次の締切の可視化）
+  React.useEffect(() => {
+    if (view !== "home") return;
+    let live = true;
+    (async () => {
+      try {
+        const r = await fetch(SHARE_API + "/api/board");
+        const d = await r.json();
+        if (live) setBoard(d && Array.isArray(d.rows) ? d.rows : null);
+      } catch (_) { /* 取れなければ静かに非表示 */ }
+    })();
+    return () => { live = false; };
+  }, [view]);
 
   // 進行ストリップ：Flip Board(D1正本)から担当案件の日程スライスを引く。未公開(shareId無し)/未リンクは出さない（窓表示・読み取り専用）
   React.useEffect(() => {
@@ -5845,6 +5861,46 @@ export default function App() {
                 <Icon name="folder" className="w-4 h-4" /> チャンネルを追加
               </button>
             </div>
+
+            {/* ===== 進行ボード（Flip Board D1の窓）：誰がどの案件のどの工程か・次の締切を一望。読み取り専用 ===== */}
+            {board && board.length > 0 && (() => {
+              const BALL = { editor: "編集", ak: "AK", client: "先方", talent: "演者" };
+              const rows = boardAll ? board : board.filter((r) => (r.client || "") === (curChannel || "") || (r.title || "").includes(curChannel || "＿＿"));
+              const shown = (boardAll || rows.length) ? rows : board; // チャンネル絞りで0件なら全件にフォールバック
+              const overdue = board.filter((r) => r.next && r.next.days != null && r.next.days < 0).length;
+              return (
+                <div className="mb-7">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="text-[12px] font-bold flex items-center gap-2 text-stone-600">🗂 進行ボード<span className="text-stone-300 font-normal">{shown.length}</span>
+                      {overdue > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">超過 {overdue}</span>}
+                    </div>
+                    <button onClick={() => setBoardAll((v) => !v)} className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-stone-300 bg-white text-stone-500 hover:bg-stone-50">
+                      {boardAll ? "全部" : "このチャンネル"}
+                    </button>
+                    <span className="ml-auto text-[10px] text-stone-400">Flip Board連動・読み取り</span>
+                  </div>
+                  <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 max-h-[46vh] overflow-y-auto">
+                    {shown.map((r) => {
+                      const dl = r.next && r.next.days != null ? r.next.days : null;
+                      const dc = dl == null ? "text-stone-300" : dl < 0 ? "text-rose-600" : dl <= 3 ? "text-amber-600" : "text-stone-400";
+                      const dt = dl == null ? "—" : dl < 0 ? "超過" + (-dl) + "日" : dl === 0 ? "今日" : "あと" + dl + "日";
+                      const row = (
+                        <div className="flex items-center gap-2 px-3 py-2 text-[12px]">
+                          <span className={"shrink-0 w-[60px] text-right font-bold " + dc}>{dt}</span>
+                          <span className="shrink-0 inline-flex items-center gap-1 text-stone-600"><span className="w-1.5 h-1.5 rounded-full" style={{ background: theme.accent }} />{r.phase || "—"}</span>
+                          <span className="shrink-0 text-stone-400">{r.editor || "未割当"}</span>
+                          <span className="min-w-0 flex-1 truncate font-semibold text-stone-800">{r.title}</span>
+                          <span className={"shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded " + (r.ballHolder === "editor" ? "bg-amber-50 text-amber-700" : "bg-stone-100 text-stone-500")}>{BALL[r.ballHolder] || "—"}</span>
+                        </div>
+                      );
+                      return r.mgId
+                        ? <a key={r.caseId} href={shareUrl(r.mgId)} target="_blank" rel="noreferrer" className="block hover:bg-stone-50">{row}</a>
+                        : <div key={r.caseId} className="opacity-90">{row}</div>;
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ===== 最近触った（クイックアクセス）。タスク管理(今日やること/確認待ち/期限)はFlip Boardに集約 ===== */}
             {(() => {
