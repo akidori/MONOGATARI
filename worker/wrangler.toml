@@ -33,6 +33,12 @@ crons = ["0 18 * * *"]
 binding = "LAB"
 service = "flip-lens"
 
+# Flip Board(案件台帳D1)の日程を読むための直結。birdflip-cron が D1 を持ち /api/case-schedule を返す。
+# worker間fetchは公開URLだと1042で弾かれるためService Bindingで直結。認証は MG_LIST_KEY(secret)。
+[[services]]
+binding = "CRON"
+service = "birdflip-cron"
+
 # リアルタイム共同編集（共有リンクの編集モード）。SQLite-backed=無料プラン枠
 [[durable_objects.bindings]]
 name = "LIVEDOC"

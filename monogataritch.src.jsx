@@ -1498,6 +1498,7 @@ export default function App() {
   const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
+  const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("case");    // global | channel | case
 
@@ -3115,6 +3116,21 @@ export default function App() {
   // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）
   React.useEffect(() => { if ((tab === "assets" || tab === "review") && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
 
+  // 進行ストリップ：Flip Board(D1正本)から担当案件の日程スライスを引く。未公開(shareId無し)/未リンクは出さない（窓表示・読み取り専用）
+  React.useEffect(() => {
+    const id = project && project.shareId;
+    if (!id) { setSched(null); return; }
+    let live = true;
+    (async () => {
+      try {
+        const r = await fetch(SHARE_API + "/api/schedule?id=" + encodeURIComponent(id));
+        const d = await r.json();
+        if (live) setSched(d && d.found ? d : null);
+      } catch (_) { if (live) setSched(null); }
+    })();
+    return () => { live = false; };
+  }, [project && project.shareId]);
+
   // 変換中(stream)のまま戻ってきた版のポーリングを再開＝リロードで「変換中%」が固まる問題の根治
   const streamResumeRef = React.useRef({});
   const resumeStreamPolls = (force) => {
@@ -4310,6 +4326,27 @@ export default function App() {
       </header>
 
       <main className="max-w-[1500px] mx-auto px-3 sm:px-5 pt-5">
+
+        {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
+        {sched && (
+          <div className="max-w-[1500px] mx-auto mb-4 rounded-xl border border-stone-200 bg-white px-3 sm:px-4 py-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-[12px]">
+            <span className="inline-flex items-center gap-1.5 font-bold text-stone-700">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: theme.accent }} />
+              {sched.phase || "進行中"}
+            </span>
+            {sched.shootDate && (
+              <span className="text-stone-500">撮影 {sched.shootDate.slice(5).replace("-", "/")}{sched.shootTime ? " " + sched.shootTime : ""}</span>
+            )}
+            {sched.next && sched.next.date && (
+              <span className={"font-bold " + (sched.next.days < 0 ? "text-rose-600" : sched.next.days <= 3 ? "text-amber-600" : "text-stone-600")}>
+                {sched.next.phase}締切 {sched.next.date.slice(5).replace("-", "/")}
+                <span className="ml-1 font-normal">{sched.next.days < 0 ? "（期限超過）" : sched.next.days === 0 ? "（今日）" : "（あと" + sched.next.days + "日）"}</span>
+              </span>
+            )}
+            {sched.nextAction && <span className="text-stone-600 truncate max-w-[42ch]">次の一手：{sched.nextAction}</span>}
+            <span className="ml-auto text-[10px] text-stone-400 shrink-0">日程 = Flip Board連動</span>
+          </div>
+        )}
 
         {/* ================= チャンネルコンセプトタブ ================= */}
         {/* チャンネル（コンセプト）は概要タブに統合 */}

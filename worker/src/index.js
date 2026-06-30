@@ -67,6 +67,24 @@ export default {
         }
       }
 
+      // GET /api/schedule?id=<snapId> → Flip Board(D1正本)から担当案件の日程スライスを中継。
+      // 編集者がものがたりっちの中だけで「撮影日・次の締切・次の一手」を見れる（窓表示・読み取り専用）。
+      // MG_LIST_KEY はサーバ側に秘匿し、cron(birdflip-cron)へService Binding(env.CRON)で直結＝1042回避。
+      // ログイン不要（共有台本と同等の見せ方＝チャンネル編集ライブモードでも見える）。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "schedule") {
+        const id = (url.searchParams.get("id") || "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ found: false, error: "id不正" }, 400);
+        if (!env.MG_LIST_KEY) return json({ found: false, error: "未接続" });
+        const cronPath = "/api/case-schedule?id=" + encodeURIComponent(id) + "&key=" + encodeURIComponent(env.MG_LIST_KEY);
+        try {
+          const r = env.CRON ? await env.CRON.fetch(new Request("https://birdflip-cron" + cronPath))
+            : await fetch("https://birdflip-cron.aki-surf89315.workers.dev" + cronPath);
+          return json(await r.json());
+        } catch (e) {
+          return json({ found: false, error: "日程取得失敗: " + e.message });
+        }
+      }
+
       // POST /api/parse  { raw }  → 生原稿をClaudeで構成台本(project JSON)に整形して返す
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "parse") {
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
