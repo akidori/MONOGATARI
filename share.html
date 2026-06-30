@@ -765,7 +765,7 @@ function renderVideoList(accent, main){
     </div>`;}).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだコメントはありません。</div>';
   el.querySelectorAll(".vc-seek").forEach(b=>b.addEventListener("click", ()=>seekTo(+b.dataset.seek)));
   el.querySelectorAll(".vc-repbtn").forEach(b=>b.addEventListener("click", ()=>postReply(b.dataset.repbtn, accent, main)));
-  el.querySelectorAll(".vc-rep").forEach(i=>i.addEventListener("keydown", e=>{ if(e.key==="Enter") postReply(i.dataset.rep, accent, main); }));
+  el.querySelectorAll(".vc-rep").forEach(i=>i.addEventListener("keydown", e=>{ if(e.key!=="Enter"||e.shiftKey||e.isComposing||e.keyCode===229) return; e.preventDefault(); postReply(i.dataset.rep, accent, main); }));
   el.querySelectorAll(".vc-del").forEach(b=>b.addEventListener("click", ()=>deleteOwn(b.dataset.del, accent, main)));
 }
 async function deleteOwn(cid, accent, main){

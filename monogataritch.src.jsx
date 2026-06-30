@@ -1375,7 +1375,7 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 mt-1.5">
-                    <input value={replyText[c.id] || ""} onChange={(e) => setReplyText((m) => ({ ...m, [c.id]: e.target.value }))} onKeyDown={(e) => { if (e.key === "Enter") { onReply(c.id, replyText[c.id]); setReplyText((m) => ({ ...m, [c.id]: "" })); } }} placeholder="返信…" className="flex-1 min-w-0 text-[11px] border border-stone-200 rounded-lg px-2 py-1 focus:outline-none" />
+                    <input value={replyText[c.id] || ""} onChange={(e) => setReplyText((m) => ({ ...m, [c.id]: e.target.value }))} onKeyDown={(e) => { if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return; e.preventDefault(); if (!(replyText[c.id] || "").trim()) return; onReply(c.id, replyText[c.id]); setReplyText((m) => ({ ...m, [c.id]: "" })); }} placeholder="返信…" className="flex-1 min-w-0 text-[11px] border border-stone-200 rounded-lg px-2 py-1 focus:outline-none" />
                     <button onClick={() => { onReply(c.id, replyText[c.id]); setReplyText((m) => ({ ...m, [c.id]: "" })); }} className="text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 shrink-0">返信</button>
                   </div>
                 </div>
