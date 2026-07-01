@@ -130,6 +130,7 @@ let ytPlayer = null;       // YouTube IFrame Player
 let videoEl = null;        // HTML5 video 要素
 let ytTimer = null;        // YouTube の再生位置ポーリング
 let VSEL = null;           // 動画確認タブで選択中の動画ID（案件全体 or 企画）
+let VLIST_OPEN = false;    // 過去の版・別動画のリストを開いているか（既定は畳んで最新版だけ＝旧版誤確認の防止）
 function setTab(t){
   if(TAB==="video" && t!=="video"){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; }
   TAB = t; render();
@@ -625,7 +626,13 @@ function paneVideo(p, accent, main){
   }
   const cur = curVideo(p); if(cur) VSEL = cur.id;
   const v = (cur&&cur.video)||{};
-  const selector = opts.length>1 ? `<div class="flex gap-1 flex-wrap mb-2">${opts.map(o=>`<button data-vsel="${esc(o.id)}" class="vc-sel text-[11px] font-bold px-2.5 py-1 rounded-full border ${o.id===VSEL?'text-white':'text-stone-500 border-stone-200'}" style="${o.id===VSEL?`background:${main};border-color:${main}`:''}">${esc(o.label)}</button>`).join("")}</div>` : "";
+  const selector = opts.length>1 ? (()=>{
+    // 既定は「今表示中の版」だけ見せて、過去の版・別動画はトグルの奥へ。ワンタップで旧版に切り替わって先祖返りするのを防ぐ。
+    const pill = (o)=>`<button data-vsel="${esc(o.id)}" class="vc-sel text-[11px] font-bold px-2.5 py-1 rounded-full border ${o.id===VSEL?'text-white':'text-stone-500 border-stone-200'}" style="${o.id===VSEL?`background:${main};border-color:${main}`:''}">${esc(o.label)}</button>`;
+    const curOpt = opts.find(o=>o.id===VSEL) || opts[opts.length-1];
+    const others = opts.filter(o=>o!==curOpt);
+    return `<div class="flex gap-1 flex-wrap items-center mb-1">${pill(curOpt)}<button id="vc-vmore" class="text-[11px] font-bold px-2.5 py-1 rounded-full border border-dashed border-stone-300 text-stone-400 hover:bg-stone-50">${VLIST_OPEN?'× 閉じる':'他のバージョン '+others.length+' ▾'}</button>${VLIST_OPEN?others.map(pill).join(""):""}</div>${VLIST_OPEN?"":`<div class="text-[10px] text-stone-400 mb-2">最新版を表示中。過去の版や別の動画は「他のバージョン」から選べます。</div>`}`;
+  })() : "";
   return `
     <div class="lg:flex lg:gap-4 lg:items-start">
       <div class="lg:flex-[1.7] min-w-0">
@@ -652,6 +659,7 @@ function mountVideo(p, accent, main){
   const cur = curVideo(p);
   const v = (cur&&cur.video)||{};
   document.querySelectorAll(".vc-sel").forEach(b=>b.addEventListener("click", ()=>selectVideo(b.dataset.vsel)));
+  const vmore=document.getElementById("vc-vmore"); if(vmore) vmore.addEventListener("click", ()=>{ VLIST_OPEN=!VLIST_OPEN; CHMODE?renderChannel():render(); });
   const stage = document.getElementById("vc-player");
   if(!stage) return;
   if(v.type==="youtube"){
