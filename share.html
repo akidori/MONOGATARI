@@ -727,7 +727,24 @@ function wireVideoUpload(p, accent, main){
     drop.addEventListener("drop",(e)=>{ e.preventDefault(); drop.style.background=""; drop.style.borderColor=""; const f=((e.dataTransfer&&e.dataTransfer.files)||[])[0]; go(f); });
   }
 }
+// 先祖返り検知：いまボードにある最新版がアップされた時刻。新ファイルがこれより古ければ「古い書き出し」の疑い。
+function latestBoardTs(p){
+  let mx=0;
+  const push=(s)=>{ const t=s?Date.parse(s):NaN; if(!isNaN(t)&&t>mx) mx=t; };
+  const vers=(p&&p.review&&Array.isArray(p.review.versions))?p.review.versions:[];
+  vers.forEach(v=>push(v.createdAt));
+  (UPLOADS||[]).forEach(u=>push(u.uploadedAt));
+  return mx;
+}
 async function videoUpload(file, p, accent, main){
+  // ファイル更新日時がボード最新版より前＝古い書き出しを上げようとしている可能性（先祖返り）。上げる前に一声かける。
+  const lm = file && file.lastModified ? file.lastModified : 0;
+  const latest = latestBoardTs(p);
+  if(lm && latest && lm < latest - 60000){
+    const f=(ms)=>{ try{ return new Date(ms).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}); }catch(_){ return ""; } };
+    const ok = window.confirm("⚠️ このファイルの更新日時（"+f(lm)+"）は、いまボードにある最新版がアップされた時刻（"+f(latest)+"）より前です。\n\n古い書き出しを上げようとしていないか（先祖返り）確認してください。\n\nこのままアップしますか？");
+    if(!ok) return;
+  }
   const prog=document.getElementById("vu-prog"), bar=document.getElementById("vu-bar"), pct=document.getElementById("vu-pct");
   if(prog) prog.classList.remove("hidden");
   if(bar) bar.style.background=accent; if(pct){ pct.style.color="#9ca3af"; pct.textContent="アップロード準備中…（大きい動画は時間がかかります）"; }
