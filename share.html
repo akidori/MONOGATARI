@@ -646,6 +646,11 @@ function paneVideo(p, accent, main){
         ${selector}
         ${v.title?`<div class="text-[14px] font-bold mb-2" style="color:${main}">${esc(v.title)}</div>`:""}
         <div class="rounded-xl overflow-hidden bg-black mb-2" style="aspect-ratio:16/9"><div id="vc-player" class="w-full h-full"></div></div>
+        <div id="vc-bar" class="flex items-center gap-2 mb-2" style="display:none">
+          <button id="vc-pp" class="text-[13px] font-bold px-2.5 py-1 rounded-lg text-white shrink-0" style="background:${main}" title="再生/停止（スペース）">▶</button>
+          <input id="vc-seek" type="range" min="0" max="100" value="0" step="0.1" class="flex-1 h-2 cursor-pointer" style="accent-color:${main}" title="シーク" />
+          <span id="vc-cur" class="mono text-[11px] text-stone-500 shrink-0 tabular-nums">0:00 / 0:00</span>
+        </div>
         <div class="flex items-center gap-2 flex-wrap mb-3">
           <span class="text-[11px] text-stone-400">再生速度</span>
           <div class="flex gap-1">${rateButtons(v.type)}</div>
@@ -662,6 +667,31 @@ function paneVideo(p, accent, main){
       </div>`}
     </div>`;
 }
+let _vcKeyBound=false;
+function vcTogglePlay(){
+  if(videoEl){ if(videoEl.paused){ const p=videoEl.play(); if(p&&p.catch)p.catch(()=>{}); } else videoEl.pause(); }
+  else if(ytPlayer){ const st=ytPlayer.getPlayerState&&ytPlayer.getPlayerState(); if(st===1){ ytPlayer.pauseVideo&&ytPlayer.pauseVideo(); } else { ytPlayer.playVideo&&ytPlayer.playVideo(); } }
+}
+function vcFmt(s){ s=Math.max(0,s||0); if(!isFinite(s))s=0; const m=Math.floor(s/60), ss=Math.floor(s%60); return m+":"+String(ss).padStart(2,"0"); }
+/* 共有ビューアの自前プレーヤー制御：映像に被るネイティブバーを撤去し、外部シークバー＋スペース=再生停止＋←→シーク */
+function wireVideoControls(){
+  const bar=document.getElementById("vc-bar"), seek=document.getElementById("vc-seek"), pp=document.getElementById("vc-pp"), cur=document.getElementById("vc-cur");
+  if(!videoEl){ if(bar) bar.style.display="none"; return; }
+  if(bar) bar.style.display="flex";
+  videoEl.style.cursor="pointer";
+  videoEl.addEventListener("click", vcTogglePlay);
+  videoEl.addEventListener("play", ()=>{ if(pp) pp.textContent="⏸"; });
+  videoEl.addEventListener("pause", ()=>{ if(pp) pp.textContent="▶"; });
+  videoEl.addEventListener("loadedmetadata", ()=>{ if(seek&&isFinite(videoEl.duration)) seek.max=videoEl.duration; });
+  videoEl.addEventListener("timeupdate", ()=>{ if(seek&&!seek._drag&&isFinite(videoEl.duration)){ seek.max=videoEl.duration; seek.value=videoEl.currentTime; } if(cur) cur.textContent=vcFmt(videoEl.currentTime)+" / "+vcFmt(videoEl.duration); });
+  if(seek){ seek.addEventListener("input", ()=>{ seek._drag=true; if(videoEl) videoEl.currentTime=+seek.value; }); seek.addEventListener("change", ()=>{ seek._drag=false; }); }
+  if(pp) pp.addEventListener("click", vcTogglePlay);
+  if(!_vcKeyBound){ _vcKeyBound=true; document.addEventListener("keydown", (e)=>{
+    const t=e.target; if(t && (t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.isContentEditable)) return;
+    if(e.key===" "||e.key==="Spacebar"||e.key==="Enter"){ if(!videoEl&&!ytPlayer) return; e.preventDefault(); vcTogglePlay(); }
+    else if((e.key==="ArrowLeft"||e.key==="ArrowRight")&&videoEl){ e.preventDefault(); const d=(e.key==="ArrowRight"?1:-1)*(e.shiftKey?1:5); videoEl.currentTime=Math.max(0,Math.min(videoEl.duration||1e9,(videoEl.currentTime||0)+d)); }
+  }); }
+}
 function mountVideo(p, accent, main){
   const cur = curVideo(p);
   const v = (cur&&cur.video)||{};
@@ -670,6 +700,7 @@ function mountVideo(p, accent, main){
   const stage = document.getElementById("vc-player");
   if(!stage) return;
   if(v.type==="youtube"){
+    videoEl=null; { const _b=document.getElementById("vc-bar"); if(_b) _b.style.display="none"; }  // YouTubeはYT側UIを使う（自前バー非表示）
     const id = ytId(v.url);
     const make = ()=>{
       ytPlayer = new YT.Player("vc-player", { videoId:id, playerVars:{rel:0, modestbranding:1, playsinline:1},
@@ -680,9 +711,10 @@ function mountVideo(p, accent, main){
   } else if(v.type==="stream" && v.ready && v.hls){
     // Stream変換済み：軽量HLSを再生。再生不能(HLS非対応/CDN落ち/配信エラー)なら生mp4へ自動フォールバック
     videoEl = document.createElement("video");
-    videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
+    videoEl.controls = false; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
     stage.replaceWith(videoEl); videoEl.id = "vc-player";
     videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
+    wireVideoControls();
     const rawFallback = ()=>{ if((v.key||v.url) && videoEl.dataset.raw!=="1"){ videoEl.dataset.raw="1"; const t=videoEl.currentTime||0; videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||""); if(t) try{ videoEl.currentTime=t; }catch(e){} } };
     videoEl.addEventListener("error", rawFallback);
     if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src = v.hls; }
@@ -694,9 +726,10 @@ function mountVideo(p, accent, main){
     // 生mp4（R2/外部URL）を直接再生。stream指定でも変換が未完なら元ファイルで再生し、永久「変換中」を防ぐ
     videoEl = document.createElement("video");
     videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||"");
-    videoEl.controls = true; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
+    videoEl.controls = false; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
     stage.replaceWith(videoEl); videoEl.id = "vc-player";
     videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
+    wireVideoControls();
     // 変換中の生再生中も、軽量版(HLS)が完成したら静かに昇格（AKの再発行に依存しない・先方が開いたまま軽くなる）
     if(v.type==="stream" && v.uid && !v.ready){
       const tag = v.uid; let n=0;
