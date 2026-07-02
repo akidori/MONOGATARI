@@ -35,6 +35,8 @@ const SECTION_TYPES = {
 const params = new URLSearchParams(location.search);
 const ID = params.get("id");
 const CHID = params.get("ch");
+const R = params.get("r") || "";  // 閲覧トークン（新方式snap）。無い旧snapはサーバ側graceで従来通り読める
+const RQ = R ? ("?r=" + encodeURIComponent(R)) : "";
 const LOCK_TAB = params.get("tab");  // 単一タブ共有（&tab=script等）。指定時はそのペインだけ表示しタブバー非表示
 const ALLOW_TABS = (params.get("tabs")||"").split(",").map(s=>s.trim()).filter(Boolean);  // 複数タブ束ね共有（&tabs=video,script）。指定タブだけ見せる（その中での切替は可）
 const START_TAB = params.get("start");  // 着地タブ（&start=video）。最初に開くタブ
@@ -96,10 +98,15 @@ async function load(){
   if(!ID){ document.getElementById("loading").textContent = "リンクが正しくありません（idがありません）。"; return; }
   try{
     const [sR, cR] = await Promise.all([
-      fetch(API+"/api/snap/"+ID),
+      fetch(API+"/api/snap/"+ID+RQ),
       fetch(API+"/api/snap/"+ID+"/comments"),
     ]);
-    if(!sR.ok){ document.getElementById("loading").innerHTML = "この共有リンクは見つかりませんでした。<br>発行者にURLを確認してください。"; return; }
+    if(!sR.ok){
+      document.getElementById("loading").innerHTML = sR.status===401
+        ? "このリンクは無効か、権限が必要です。<br>共有元に最新の共有リンクを依頼してください。"
+        : "この共有リンクは見つかりませんでした。<br>発行者にURLを確認してください。";
+      return;
+    }
     SNAP = await sR.json();
     COMMENTS = (await cR.json()).comments || [];
     try{ const uR = await fetch(API+"/api/snap/"+ID+"/uploads"); if(uR.ok) UPLOADS = (await uR.json()).uploads || []; }catch(e){}

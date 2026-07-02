@@ -97,7 +97,7 @@ const SHARE_API = (() => {
   try { const o = localStorage.getItem("mg:shareApi"); if (o) return o.replace(/\/$/, ""); } catch (e) {}
   return "https://mg-share.aki-surf89315.workers.dev";
 })();
-const shareUrl = (id) => location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id;
+const shareUrl = (id, r) => location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id + (r ? "&r=" + encodeURIComponent(r) : "");
 
 /* ===== Googleログイン＋クラウド同期 =====
    未ログイン: window.storage = localStorage（index.htmlのshim）
@@ -1053,7 +1053,7 @@ function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onR
         <span className="text-[11px] font-bold text-stone-500">🔗 この企画の試写リンク</span>
         <div className="mt-1.5 flex items-center gap-2 flex-wrap">
           <button onClick={onShare} disabled={sharing} className="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg disabled:opacity-50" style={{ background: main }}>{sharing ? "発行中…" : (plan.shareId ? "試写リンクを更新" : "試写リンクを発行")}</button>
-          {plan.shareId && <a href={shareUrl(plan.shareId)} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: main }}>リンクを開く ↗</a>}
+          {plan.shareId && <a href={shareUrl(plan.shareId, plan.shareReadToken)} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: main }}>リンクを開く ↗</a>}
         </div>
         <p className="text-[10px] text-stone-400 mt-1">この企画の動画・素材・コメントだけを先方に見せる専用リンク（案件丸ごとは右上「共有」）。</p>
       </div>
@@ -1506,6 +1506,7 @@ export default function App() {
   const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
   const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
+  const shareReadTokRef = useRef("");                        // 閲覧用トークン（&r=）。新方式snapの共有URLに必須。publish応答から取得
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
   const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
@@ -2841,12 +2842,13 @@ export default function App() {
       const data = await res.json();
       if (!data.id) throw new Error(data.error || "発行失敗");
       if (data.uptok) shareUpTokRef.current = data.uptok;   // 編集者URL用：&up= に乗せる
-      const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken, shareUpToken: data.uptok || project.shareUpToken };
+      if (data.rtok) shareReadTokRef.current = data.rtok;   // 閲覧URL用：&r= に乗せる（新方式snap）
+      const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken, shareUpToken: data.uptok || project.shareUpToken, shareReadToken: data.rtok || project.shareReadToken };
       shareTokenRef.current = next.shareToken || "";   // setProjectは非同期。直後のアップが最新tokenを引けるよう保持
       setProject(next);
       try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
       if (!silent) {
-        const url = shareUrl(data.id);
+        const url = shareUrl(data.id, data.rtok || project.shareReadToken);
         setShareModal({ id: data.id, url, updated: !!project.shareId });
         try { await navigator.clipboard.writeText(url); } catch (e) {}
       }
@@ -2867,7 +2869,7 @@ export default function App() {
   /* ===== 共有URL：タブ別／案件まるごと ===== */
   /* アプリのタブ → share.html のペイン名 */
   const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files" };
-  const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id) + (pane ? "&tab=" + pane : ""); };
+  const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (pane ? "&tab=" + pane : ""); };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
   const copyShareUrl = async (t) => {
     const had = !!project.shareId;
@@ -2886,7 +2888,7 @@ export default function App() {
     const startPane = TAB_SHARE_PANE[startTab] || panes[0] || "";
     // 編集者向け（upload）だけ &up= を付ける。先方・演者には付けない（大容量アップ権を渡さない）
     const up = allowUpload ? (shareUpTokRef.current || project.shareUpToken || "") : "";
-    return shareUrl(id) + (panes.length ? "&tabs=" + panes.join(",") : "") + (startPane ? "&start=" + startPane : "") + (up ? "&up=" + up : "");
+    return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (panes.length ? "&tabs=" + panes.join(",") : "") + (startPane ? "&start=" + startPane : "") + (up ? "&up=" + up : "");
   };
   /* 受け渡しボタン押下：最新スナップを発行 → スコープ付きリンク＋文面をクリップボードへ */
   const doHandoff = async (h) => {
@@ -3013,9 +3015,9 @@ export default function App() {
       const res = await fetch(SHARE_API + "/api/publish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: mini, prevId: pl.shareId || null, token: pl.shareToken || null }) });
       const data = await res.json();
       if (!data.id) throw new Error(data.error || "発行失敗");
-      const next = { ...project, plans: project.plans.map((p) => (p.id === planId ? { ...p, shareId: data.id, shareToken: data.token || p.shareToken } : p)) };
+      const next = { ...project, plans: project.plans.map((p) => (p.id === planId ? { ...p, shareId: data.id, shareToken: data.token || p.shareToken, shareReadToken: data.rtok || p.shareReadToken } : p)) };
       await saveProject(next);
-      const url = shareUrl(data.id);
+      const url = shareUrl(data.id, data.rtok || pl.shareReadToken);
       setShareModal({ id: data.id, url, updated: !!pl.shareId, planShare: true });
       try { await navigator.clipboard.writeText(url); } catch (e) {}
     } catch (e) { showToast("企画の試写リンク発行に失敗：" + (e.message || e)); }

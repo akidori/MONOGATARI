@@ -343,7 +343,7 @@ export default {
         if (!project || !Array.isArray(project.rows)) return json({ error: "invalid project" }, 400);
 
         let id = (body.prevId || "").toString().slice(0, 16);
-        let token;
+        let token, isNew = false;
         const now = new Date().toISOString();
         let createdAt = now;
 
@@ -357,14 +357,17 @@ export default {
             if (prev && prev.createdAt) createdAt = prev.createdAt;
           }
         }
-        if (!id) { id = rid(8); token = rid(20); }
+        if (!id) { id = rid(8); token = rid(20); isNew = true; }
 
         await env.SNAPS.put("snap:" + id, JSON.stringify({ project: slim(project), createdAt, updatedAt: now }));
         await env.SNAPS.put("tok:" + id, token);
         // 編集者用アップロードトークン：大容量アップだけ許可（コメント削除等の管理権限は持たせない）。無ければ発行。
         let uptok = await env.SNAPS.get("uptok:" + id);
         if (!uptok) { uptok = rid(20); await env.SNAPS.put("uptok:" + id, uptok); }
-        return json({ id, token, uptok });
+        // 読取トークン(共有URLの ?r=)。新規snapは発行し閲覧に必須化。既存の旧snap(rtok無し)はgraceで従来通り読める＝配布済みリンク不破壊。
+        let rtok = await env.SNAPS.get("rtok:" + id);
+        if (!rtok && isNew) { rtok = rid(20); await env.SNAPS.put("rtok:" + id, rtok); }
+        return json({ id, token, uptok, rtok: rtok || null });
       }
 
       // POST /api/publish-channel { name, channelInfo, projects:[...], prevId?, token? } → チャンネル丸ごと公開
@@ -373,13 +376,13 @@ export default {
         if (!b || !b.name) return json({ error: "channel name required" }, 400);
         const projects = Array.isArray(b.projects) ? b.projects : [];
         let id = (b.prevId || "").toString().slice(0, 16);
-        let token; const nowt = now(); let createdAt = nowt;
+        let token, isNew = false; const nowt = now(); let createdAt = nowt;
         if (id) {
           const et = await env.SNAPS.get("chtok:" + id);
           if (!et || et !== (b.token || "")) { id = ""; }
           else { token = et; const prev = await env.SNAPS.get("chan:" + id, "json"); if (prev && prev.createdAt) createdAt = prev.createdAt; }
         }
-        if (!id) { id = rid(8); token = rid(20); }
+        if (!id) { id = rid(8); token = rid(20); isNew = true; }
         // edit:true のときは案件ごとに live 編集リンク（liveId/editToken）を埋めて「URLで全部編集」を可能にする
         const cases = projects.map((p) => {
           const c = slim(p);
@@ -395,7 +398,7 @@ export default {
         return json({ id, token });
       }
 
-      // GET /api/chan/{id}
+      // GET /api/chan/{id}  ※チャンネルgatingはPhase2（編集可チャンネルの編集フローと両立確認後）
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "chan" && parts[2] && !parts[3]) {
         const doc = await env.SNAPS.get("chan:" + parts[2], "json");
         if (!doc) return json({ error: "not found" }, 404);
@@ -415,8 +418,14 @@ export default {
         return json({ snaps });
       }
 
-      // GET /api/snap/{id}
+      // GET /api/snap/{id}?r=<rtok>
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "snap" && parts[2] && !parts[3]) {
+        const rtok = await env.SNAPS.get("rtok:" + parts[2]);
+        if (rtok) { // rtok有り=新方式snap→ ?r= 必須（管理token所持のAK本人も可）。rtok無し=旧snapはgraceで従来通り読める。
+          const r = url.searchParams.get("r") || "", t = url.searchParams.get("token") || "";
+          const admin = t ? await env.SNAPS.get("tok:" + parts[2]) : null;
+          if (r !== rtok && !(admin && t === admin)) return json({ error: "unauthorized", auth_required: true }, 401);
+        }
         const snap = await env.SNAPS.get("snap:" + parts[2], "json");
         if (!snap) return json({ error: "not found" }, 404);
         return json(snap);
