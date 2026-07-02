@@ -1,5 +1,5 @@
 // ものがたりっち Service Worker — オフライン動作 & デスクトップアプリ化用
-const CACHE = "monogatari-v51";
+const CACHE = "monogatari-v52";
 const ASSETS = [
   "./",
   "./index.html",
@@ -14,7 +14,12 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(CACHE)
+      // cache:"reload" — ブラウザHTTPキャッシュを経由せず、必ずサーバから最新を取ってプリキャッシュする
+      .then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -29,7 +34,6 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
-  // no-cache: ブラウザHTTPキャッシュを毎回サーバ検証（古いapp.jsを掴む問題の対策）
   e.respondWith(
     fetch(e.request, { cache: "no-cache" })
       .then((res) => {
@@ -37,6 +41,19 @@ self.addEventListener("fetch", (e) => {
         caches.open(CACHE).then((c) => c.put(e.request, copy));
         return res;
       })
-      .catch(() => caches.match(e.request).then((m) => m || caches.match("./index.html")))
+      .catch(async () => {
+        // ignoreSearch:true — app.js?v=xxxx のようなバージョン付きURLでも
+        // プリキャッシュ済みの app.js にヒットさせる（旧実装はここでミスして
+        // オフライン時に index.html を app.js として返し、アプリが起動不能になっていた）
+        const m = await caches.match(e.request, { ignoreSearch: true });
+        if (m) return m;
+        // index.html へのフォールバックは「ページ遷移」のときだけ。
+        // JS/CSS/画像の失敗にHTMLを返すと壊れるため。
+        if (e.request.mode === "navigate") {
+          const page = await caches.match("./index.html");
+          if (page) return page;
+        }
+        return Response.error();
+      })
   );
 });

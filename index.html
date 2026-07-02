@@ -4,7 +4,22 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ものがたりっち！</title>
+<meta name="description" content="一日密着ドキュメンタリーの構成脚本を作るツール — Bird Flip">
 <meta name="theme-color" content="#E9E8E3">
+
+<!-- OGP：クライアント・編集者にリンクを送ったときの見た目 -->
+<meta property="og:title" content="ものがたりっち！">
+<meta property="og:description" content="一日密着ドキュメンタリーの構成脚本を作るツール">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://akidori.github.io/MONOGATARI/">
+<meta property="og:image" content="https://akidori.github.io/MONOGATARI/icon-512.png">
+<meta name="twitter:card" content="summary">
+
+<!-- iOSでPWAをフルスクリーン起動するための指定 -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ものがたりっち！">
+
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
@@ -25,10 +40,22 @@ if (typeof window.storage === "undefined") {
 }
 </script>
 <!-- スクロール時に上部へ白い隙間が出る問題の対策：地色を本体背景に合わせ、オーバースクロールを抑制 -->
-<style>html,body{margin:0;padding:0;background:#E9E8E3;overscroll-behavior:none}</style>
+<style>
+html,body{margin:0;padding:0;background:#E9E8E3;overscroll-behavior:none}
+/* app.js（約450KB）読込中のローディング表示。Reactがマウントすると自動で消える */
+#root:empty::after{
+  content:"";
+  position:fixed;inset:0;margin:auto;
+  width:34px;height:34px;
+  border:3px solid #d6d4cc;border-top-color:#4f46e5;border-radius:50%;
+  animation:mg-spin .8s linear infinite;
+}
+@keyframes mg-spin{to{transform:rotate(360deg)}}
+</style>
 </head>
 <body>
 <div id="root"></div>
+<noscript><p style="text-align:center;font-family:sans-serif;padding:2rem">ものがたりっち！の利用には JavaScript を有効にしてください。</p></noscript>
 <script src="app.js?v=20260630d" defer></script>
 
 <script>
