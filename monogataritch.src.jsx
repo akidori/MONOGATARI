@@ -1125,17 +1125,24 @@ function ManualPanel({ entries, onChange, main, accent, readOnly }) {
 /* ===== Flip-LAB のチャンネル編集ルール（読み取り専用・自動表示） =====
    確認コメントから蒸留した「このチャンネルの流儀」を mg-share 経由でLABから取得し、
    編集者が作業中に見れるように出す。未生成なら何も出さない。 */
-function LabChannelRules({ channel, main }) {
+function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveToken }) {
   const [md, setMd] = React.useState(null);     // null=読込中, ""=なし
   const [updated, setUpdated] = React.useState(null);
   const [open, setOpen] = React.useState(true);
   React.useEffect(() => {
     let on = true; setMd(null);
-    fetch(SHARE_API + "/api/lab-manual?channel=" + encodeURIComponent(channel || ""))
+    // 認証：クライアント固有の機密ルールのため、今この画面が持っている共有トークンを一緒に送る
+    // （所有者token / 編集者upトークン / ライブ編集token+liveId / ログイン中セッション）。無ければ401で何も出さない。
+    const qs = new URLSearchParams({ channel: channel || "" });
+    if (snapId && token) { qs.set("id", snapId); qs.set("token", token); }
+    else if (snapId && upToken) { qs.set("id", snapId); qs.set("up", upToken); }
+    if (liveId && liveToken) { qs.set("live", liveId); qs.set("k", liveToken); }
+    const headers = MG_SESSION ? { Authorization: "Bearer " + MG_SESSION } : {};
+    fetch(SHARE_API + "/api/lab-manual?" + qs.toString(), { headers })
       .then((r) => r.json()).then((d) => { if (!on) return; setMd(d.manual || ""); setUpdated(d.updated || null); })
       .catch(() => { if (on) setMd(""); });
     return () => { on = false; };
-  }, [channel]);
+  }, [channel, snapId, token, upToken, liveId, liveToken]);
   if (md === null) return <div className="text-[12px] text-stone-400 py-2">🧪 Flip-LABの編集ルールを読み込み中…</div>;
   if (!md) return null;
   return (
@@ -5681,7 +5688,9 @@ export default function App() {
             <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件で共通のスタジオの決め事（テロップ・書き出し・命名規則など）。" : manualScope === "channel" ? "このクライアント（チャンネル）固有のルール。同じチャンネルの全案件で共有。" : "この案件だけの指示書・メモ。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
             <div className="p-5 overflow-y-auto">
               {manualScope === "global" && <ManualPanel entries={globalManuals} onChange={saveGlobalManuals} main={theme.main} accent={theme.accent} />}
-              {manualScope === "channel" && curChannel !== DEFAULT_CHANNEL && <LabChannelRules channel={curChannel} main={theme.main} />}
+              {manualScope === "channel" && curChannel !== DEFAULT_CHANNEL && <LabChannelRules channel={curChannel} main={theme.main}
+                snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken}
+                liveId={project.liveId} liveToken={project.liveToken} />}
               {manualScope === "channel" && <ManualPanel entries={curChannelInfo.manuals || []} onChange={setChannelManuals} main={theme.main} accent={theme.accent} />}
               {manualScope === "case" && <ManualPanel entries={project.manuals || []} onChange={setCaseManuals} main={theme.main} accent={theme.accent} />}
             </div>

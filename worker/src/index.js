@@ -48,9 +48,32 @@ export default {
       // GET /api/lab-manual?channel=オリックス → Flip-LABの保存済み編集ルールを中継して返す。
       // 編集者がものがたりっちで作業中に、そのチャンネルの蒸留済みルールを見れる。
       // トークン(FLIP_LAB_TOKEN)はサーバ側に秘匿。LABへはservice binding(env.LAB)で直結＝1042回避。
+      // 認証：NGワード等クライアント固有の機密が乗るため無認証公開はNG。新規の認証方式は作らず既存の
+      // 共有トークンに相乗り＝ ①ログインセッション(Authorization) ②snap所有者/編集者トークン(id+token|up)
+      // ③ライブ編集トークン(live+k、LiveDoc DOへ委譲して照合)。いずれも無ければ401。
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "lab-manual") {
         const channel = url.searchParams.get("channel") || "";
         if (!channel) return json({ ok: false, error: "channel必須", manual: "" }, 400);
+        let authed = !!(await requireUser(request, env));
+        if (!authed) {
+          const snapId = (url.searchParams.get("id") || "").slice(0, 16);
+          const tokenParam = url.searchParams.get("token") || "";
+          const upParam = url.searchParams.get("up") || "";
+          if (snapId && tokenParam) { const tok = await env.SNAPS.get("tok:" + snapId); authed = !!tok && tok === tokenParam; }
+          if (!authed && snapId && upParam) { const uptok = await env.SNAPS.get("uptok:" + snapId); authed = !!uptok && uptok === upParam; }
+        }
+        if (!authed) {
+          const liveId = (url.searchParams.get("live") || "").slice(0, 16);
+          const kParam = url.searchParams.get("k") || "";
+          if (liveId && kParam && env.LIVEDOC) {
+            try {
+              const stub = env.LIVEDOC.get(env.LIVEDOC.idFromName(liveId));
+              const r = await stub.fetch("https://do/snapshot?k=" + encodeURIComponent(kParam));
+              authed = r.ok;
+            } catch (e) {}
+          }
+        }
+        if (!authed) return json({ ok: false, error: "unauthorized", manual: "" }, 401);
         if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続", manual: "" });
         const labReq = new Request(
           "https://flip-lens/api/channel_manual?channel=" + encodeURIComponent(channel),
