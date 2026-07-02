@@ -656,6 +656,7 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     case "folder": return (<svg {...c}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /></svg>);
     case "share": return (<svg {...c}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 13.2l7.6 4.6M15.8 6.2L8.2 10.8" /></svg>);
+    case "grip": return (<svg {...c} strokeWidth="0" fill="currentColor"><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>);
     default: return null;
   }
 }
@@ -1464,6 +1465,8 @@ export default function App() {
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [dragIds, setDragIds] = useState(null);             // 複数行ドラッグ中のid配列
+  const [dragCaseId, setDragCaseId] = useState(null);        // サイドバー：ドラッグ中の案件id
+  const [dragOverCaseId, setDragOverCaseId] = useState(null); // サイドバー：ドラッグ先の案件id
   const [selectedIds, setSelectedIds] = useState([]);       // 複数選択中の行id
   const [painting, setPainting] = useState(false);          // チェック欄ドラッグ選択中
   const [isNarrow, setIsNarrow] = useState(false);          // スマホ幅（操作列を隠す等）
@@ -2680,6 +2683,18 @@ export default function App() {
     setIndex(ni); persistIndex(ni);
   };
 
+  /* サイドバーの案件をドラッグ＆ドロップで並び替え（同じチャンネル内のみ＝事故防止） */
+  const reorderCaseByDrag = (id, overId) => {
+    if (!id || !overId || id === overId) return;
+    const item = index.find((x) => x.id === id); if (!item) return;
+    const overItem = index.find((x) => x.id === overId); if (!overItem) return;
+    if ((item.channel || DEFAULT_CHANNEL) !== (overItem.channel || DEFAULT_CHANNEL)) return;
+    const rest = index.filter((x) => x.id !== id);
+    const pos = rest.findIndex((x) => x.id === overId);
+    const ni = [...rest.slice(0, pos), item, ...rest.slice(pos)];
+    setIndex(ni); persistIndex(ni);
+  };
+
   /* チャンネル（フォルダ）の順番を入れ替え（未分類は常に末尾） */
   const moveChannel = (name, dir) => {
     const named = channelGroups.map((g) => g.channel).filter((c) => c !== DEFAULT_CHANNEL);
@@ -2844,7 +2859,7 @@ export default function App() {
   };
   /* ===== 共有URL：タブ別／案件まるごと ===== */
   /* アプリのタブ → share.html のペイン名 */
-  const TAB_SHARE_PANE = { plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files" };
+  const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files" };
   const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id) + (pane ? "&tab=" + pane : ""); };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
   const copyShareUrl = async (t) => {
@@ -2876,6 +2891,8 @@ export default function App() {
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
   };
   const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", concept: "チャンネル" };
+  /* タブ共有バー（全タブ共通・右上に固定表示）のボタン文言 */
+  const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー" };
   const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept"]; // 受け渡しで選べるタブ
   /* AI（Claude/GPT）に読ませる用リンク。share.html ではなくサーバー読み取り可能な JSON エンドポイントを渡す。
      #フラグメントは外部fetchで読めないので live URL は不可。/api/snap/{id} はトークン不要の読み取り専用JSON。 */
@@ -3926,10 +3943,10 @@ export default function App() {
       <aside
         className="fixed top-0 left-0 h-full z-40 flex flex-col"
         style={{
-          width: 248,
+          width: 292,
           background: "#15181D",
           color: "#fff",
-          transform: sidebarOpen ? "translateX(0)" : "translateX(-248px)",
+          transform: sidebarOpen ? "translateX(0)" : "translateX(-292px)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
           willChange: "transform",
         }}>
@@ -4054,10 +4071,20 @@ export default function App() {
                   const active = p.id === activeId;
                   return (
                     <div key={p.id}
+                      draggable
+                      onDragStart={(e) => { e.stopPropagation(); setDragCaseId(p.id); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", p.id); } catch (_) {} }}
+                      onDragOver={(e) => { if (dragCaseId && dragCaseId !== p.id) { e.preventDefault(); e.stopPropagation(); setDragOverCaseId(p.id); } }}
+                      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderCaseByDrag(dragCaseId, p.id); setDragCaseId(null); setDragOverCaseId(null); }}
+                      onDragEnd={() => { setDragCaseId(null); setDragOverCaseId(null); }}
                       className={"group/p rounded-lg mb-0.5 ml-3 pl-2.5 pr-2 py-1.5 cursor-pointer transition-colors border-l border-white/10 " + (active ? "" : "hover:bg-white/5")}
-                      style={active ? { background: "rgba(255,255,255,0.12)" } : {}}
+                      style={{
+                        ...(active ? { background: "rgba(255,255,255,0.12)" } : {}),
+                        ...(dragCaseId === p.id ? { opacity: 0.4 } : {}),
+                        ...(dragOverCaseId === p.id && dragCaseId !== p.id ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}),
+                      }}
                       onClick={() => switchProject(p.id)}>
                       <div className="flex items-center gap-2">
+                        <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-white/60 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? theme.accent : "rgba(255,255,255,0.3)" }} />
                         {renamingId === p.id ? (
                           <input
@@ -4090,8 +4117,6 @@ export default function App() {
                           <button title="チャンネル（フォルダ）を移動" onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setChanMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: r.left, y: r.bottom + 4 }); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">
                             <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
                           </button>
-                          <button title="この案件を上へ（同じフォルダ内）" onClick={(e) => { e.stopPropagation(); moveCaseInChannel(p.id, -1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="up" className="w-3 h-3" /></button>
-                          <button title="この案件を下へ（同じフォルダ内）" onClick={(e) => { e.stopPropagation(); moveCaseInChannel(p.id, 1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="down" className="w-3 h-3" /></button>
                           <button title="名前変更" onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
                           <button title="複製" onClick={(e) => { e.stopPropagation(); duplicateProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">⎘</button>
                           <button title="削除" onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-red-500/40"><Icon name="trash" className="w-3 h-3" /></button>
@@ -4131,7 +4156,7 @@ export default function App() {
         onClick={() => setSidebarOpen(false)} />
 
       {/* ===== コンテンツ（サイドバー分シフト） ===== */}
-      <div className="pb-28" style={{ marginLeft: sidebarOpen && !isNarrow ? 248 : 0, transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
+      <div className="pb-28" style={{ marginLeft: sidebarOpen && !isNarrow ? 292 : 0, transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
 
       {/* ===== ツールバー ===== */}
       <header className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
@@ -4383,6 +4408,16 @@ export default function App() {
               </button>
             )}
             <span className={(sched.canReportUp ? "" : "ml-auto ") + "text-[10px] text-stone-400 shrink-0"}>日程 = Flip Board連動</span>
+          </div>
+        )}
+
+        {/* ===== タブ共有ボタン（全タブ共通・常に右上の同じ位置）：今のタブの共有URLをコピー ===== */}
+        {TAB_SHARE_PANE[tab] && (
+          <div className="max-w-[1500px] mx-auto mb-4 flex justify-end">
+            <button onClick={() => copyShareUrl(tab)} disabled={sharing} title="このタブの共有URLをコピー"
+              className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: theme.accent, color: accentText }}>
+              <Icon name="share" className="w-3.5 h-3.5" />{sharing ? "発行中…" : TAB_SHARE_LABEL[tab]}
+            </button>
           </div>
         )}
 
@@ -5371,10 +5406,6 @@ export default function App() {
             <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-400">ファイルは各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でもアップできます。</span></p>
             {project.shareId && (
               <div className="flex items-center gap-2 mb-3 flex-wrap">
-                <button onClick={() => copyShareUrl("files")} title="編集者に渡すリンク。素材のDLと、編集者からのアップロードができる（ファイルタブだけ表示）"
-                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
-                  <Icon name="share" className="w-3.5 h-3.5" /> 編集者用リンク（DL+アップ）
-                </button>
                 <button onClick={() => importGuestUploads(false)} title="編集者が共有リンクから上げた素材をここに取り込む"
                   className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
                   <Icon name="refresh" className="w-3.5 h-3.5" /> 編集者アップを取り込み
@@ -5456,15 +5487,9 @@ export default function App() {
             : (project.assets || []).filter((a) => a.category === "確認用動画").map((a, i) => ({ id: a.id, label: "v" + (i + 1), name: a.name, type: a.type, key: a.key, url: a.url, createdAt: a.createdAt }));
           return (
           <div className="max-w-5xl mx-auto px-1 sm:px-0 py-2">
-            <div className="mb-3 flex items-end justify-between gap-2 flex-wrap">
-              <div>
-                <h2 className="text-[15px] font-bold text-stone-800">動画確認（試写・修正管理）</h2>
-                <p className="text-[12px] text-stone-500 mt-0.5">初稿/修正版をバージョン管理。止めた位置に修正コメント（カテゴリ・優先度・ステータス・返信）。OKが出たらそれが納品。</p>
-              </div>
-              <button onClick={() => copyShareUrl("review")} disabled={sharing}
-                className="text-[11px] font-bold px-3 py-2 rounded-lg shadow shrink-0 inline-flex items-center gap-1.5 text-white disabled:opacity-50" style={{ background: theme.accent, color: accentText }}>
-                <Icon name="share" className="w-3.5 h-3.5" />{project.shareId ? "クライアント確認URLをコピー" : "確認用URLを発行してコピー"}
-              </button>
+            <div className="mb-3">
+              <h2 className="text-[15px] font-bold text-stone-800">動画確認（試写・修正管理）</h2>
+              <p className="text-[12px] text-stone-500 mt-0.5">初稿/修正版をバージョン管理。止めた位置に修正コメント（カテゴリ・優先度・ステータス・返信）。OKが出たらそれが納品。</p>
             </div>
             <ReviewBoard
               versions={evs} comments={comments} main={theme.main} accent={theme.accent} accentText={accentText}
