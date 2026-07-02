@@ -1158,7 +1158,7 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
 }
 
 /* ===== 動画確認：Frame.io型 修正管理ボード（バージョン＋ステータス/カテゴリ/優先度/返信/フィルタ） ===== */
-function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream }) {
+function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
   const [dropOver, setDropOver] = React.useState(false);
@@ -1170,6 +1170,9 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
   const [text, setText] = React.useState("");
   const [yt, setYt] = React.useState("");
   const [replyText, setReplyText] = React.useState({});
+  const [shortsBusy, setShortsBusy] = React.useState(false);
+  const [shortsJobs, setShortsJobs] = React.useState([]);
+  const [shortsItems, setShortsItems] = React.useState([]);
   const vref = React.useRef(null);
   const [rate, setRate] = React.useState(1);
   const [cur, setCur] = React.useState(0);
@@ -1250,6 +1253,44 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
   const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} };
 
+  // たてがた君（縦ショート自動生成）結果ポーリング。pollStreamReadyと同じ「再帰setTimeout・triesで打ち切り」スタイル。
+  const pollShortsList = async (snap, token, tries = 0) => {
+    if (tries > 80) return;
+    try {
+      const r = await fetch(SHARE_API + "/api/shorts/list/" + snap + "?token=" + encodeURIComponent(token || ""));
+      const d = await r.json();
+      if (d && !d.error) {
+        setShortsItems(d.shorts || []);
+        setShortsJobs(d.jobs || []);
+        const running = (d.jobs || []).some((j) => j.status === "pending" || j.status === "processing");
+        if (!running) return;
+      }
+    } catch (e) {}
+    setTimeout(() => pollShortsList(snap, token, tries + 1), 5000);
+  };
+  React.useEffect(() => {
+    if (shareId) pollShortsList(shareId, shareToken, 0);
+  }, [shareId]);
+  const shortsRunning = shortsJobs.some((j) => j.status === "pending" || j.status === "processing");
+  const enqueueShorts = async () => {
+    if (!sel || !sel.key || shortsBusy || shortsRunning) return;
+    setShortsBusy(true);
+    try {
+      const sh = await onEnsureShare();
+      if (!sh) { setShortsBusy(false); return; }
+      const r = await fetch(SHARE_API + "/api/shorts/enqueue", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snap: sh.id, token: sh.token, videoKey: sel.key }),
+      });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "登録に失敗しました");
+      pollShortsList(sh.id, sh.token, 0);
+    } catch (e) {
+      setShortsJobs((js) => [{ id: "err_" + Date.now(), status: "error", error: String((e && e.message) || e) }, ...js]);
+    }
+    setShortsBusy(false);
+  };
+
   if (!versions.length) {
     return (
       <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-6 text-center transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "2px" } : {}}
@@ -1299,8 +1340,38 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
           <span key={s} className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: CMT_STATUS_COLOR[s].bg, color: CMT_STATUS_COLOR[s].fg }}>{s} {counts[s]}</span>
         ))}
         <div className="flex-1" />
+        {sel.key && (
+          <button onClick={enqueueShorts} disabled={shortsBusy || shortsRunning}
+            title={shortsRunning ? "既に生成中です" : "この版から縦型ショートを自動生成"}
+            className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
+            {shortsBusy || shortsRunning ? "生成中…" : "🎬 ショート生成"}
+          </button>
+        )}
         <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
       </div>
+      {(shortsJobs.length > 0 || shortsItems.length > 0) && (
+        <div className="mb-3 rounded-xl border border-stone-200 bg-white p-3">
+          <div className="text-[11px] font-bold text-stone-500 mb-1.5">たてがた君（縦ショート自動生成）</div>
+          {shortsJobs.some((j) => j.status === "pending" || j.status === "processing") && (
+            <div className="text-[11px] text-stone-500">⏳ 生成中…（Macでの処理待ち／実行中。数分かかることがあります）</div>
+          )}
+          {shortsJobs.filter((j) => j.status === "error").map((j) => (
+            <div key={j.id} className="text-[11px] text-rose-500">⚠️ {j.error || "生成に失敗しました"}</div>
+          ))}
+          {shortsItems.length > 0 && (
+            <ul className="flex flex-wrap gap-2 mt-1.5">
+              {shortsItems.map((f) => (
+                <li key={f.key}>
+                  <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer"
+                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
+                    🎬 {f.name}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
         {/* 左：プレイヤー */}
         <div>
@@ -5511,6 +5582,7 @@ export default function App() {
             <ReviewBoard
               versions={evs} comments={comments} main={theme.main} accent={theme.accent} accentText={accentText}
               busy={mediaBusy} prog={mediaProg} userName={(user && user.name) || "ディレクター"}
+              shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare}
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
               onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)}
               onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />

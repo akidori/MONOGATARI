@@ -659,6 +659,7 @@ function paneVideo(p, accent, main){
         </div>
         ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>`}
         ${(UP_TOKEN && !CHMODE)?`<div class="mt-3">${videoUploadBox(accent, main, true)}</div>`:""}
+        ${CHMODE?"":'<div id="vc-shorts"></div>'}
       </div>
       ${CHMODE?"":`<div class="lg:flex-1 lg:max-w-[440px] lg:border-l lg:border-stone-200 lg:pl-4">
         <div class="text-[12px] font-bold text-stone-500 mb-2">修正コメント</div>
@@ -755,6 +756,7 @@ function mountVideo(p, accent, main){
   }));
   if(!CHMODE){ const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main)); renderVideoList(accent, main); }
   if(UP_TOKEN && !CHMODE) wireVideoUpload(p, accent, main);
+  mountShorts(p, accent, main);
 }
 /* 完成動画アップ枠の配線（ドロップ＋選択）。role:review で上げ、成功後はその動画を選択して再描画 */
 function wireVideoUpload(p, accent, main){
@@ -953,6 +955,38 @@ function renderFileList(p, accent, main){
         <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shrink-0" style="background:${main}">⬇ DL</a>
       </div>`).join("")}
     </div>`).join("");
+}
+/* たてがた君（縦ショート自動生成）結果表示。存在しなければ何も出さない（新規UI面積を増やさない） */
+function renderShorts(d){
+  const el=document.getElementById("vc-shorts"); if(!el) return;
+  const shorts=(d&&d.shorts)||[], jobs=(d&&d.jobs)||[];
+  const running = jobs.some(j=>j.status==="pending"||j.status==="processing");
+  const errored = jobs.some(j=>j.status==="error");
+  if(!shorts.length && !running && !errored){ el.innerHTML=""; return; }
+  el.innerHTML = `<div class="mt-4 rounded-xl border border-stone-200 bg-white p-3">
+    <div class="text-[12px] font-bold text-stone-500 mb-2">縦ショート（たてがた君 自動生成）</div>
+    ${running?'<div class="text-[11px] text-stone-400 mb-1.5">⏳ 生成中…（数分かかることがあります）</div>':''}
+    ${errored?'<div class="text-[11px] text-rose-500 mb-1.5">⚠️ 生成に失敗した回があります</div>':''}
+    ${shorts.length?`<div class="flex flex-wrap gap-2">${shorts.map(f=>`
+      <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">🎬 ${esc(f.name||"short.mp4")}</a>
+    `).join("")}</div>`:''}
+  </div>`;
+}
+function mountShorts(p, accent, main){
+  const host=document.getElementById("vc-shorts");
+  if(!host || CHMODE || !ID) return;
+  let n=0;
+  const poll = async ()=>{
+    if(document.getElementById("vc-shorts")!==host) return;
+    try{
+      const d = await fetch(API+"/api/shorts/list/"+ID+RQ).then(r=>r.json());
+      renderShorts(d);
+      const running = d && Array.isArray(d.jobs) && d.jobs.some(j=>j.status==="pending"||j.status==="processing");
+      if(!running || n++>20) return;
+    }catch(e){ return; }
+    setTimeout(poll, 8000);
+  };
+  poll();
 }
 /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要）。onProg(0-100) */
 async function mpuUpload(file, extra, onProg){

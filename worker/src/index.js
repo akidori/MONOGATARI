@@ -864,6 +864,22 @@ export default {
         await env.SNAPS.put("file:" + rkey, JSON.stringify({ name, mime: "video/mp4" }));
         return json({ ok: true, key: rkey });
       }
+      // GET /api/shorts/stale?key=<MG_LIST_KEY>&thresholdMin=N → 放置ジョブ検知（cron-worker日次まとめ用）
+      // SHORTS_KEYではなくMG_LIST_KEYでゲート＝Mac用ではなくcron専用の口
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "stale") {
+        if (!env.MG_LIST_KEY || url.searchParams.get("key") !== env.MG_LIST_KEY) return json({ error: "forbidden" }, 403);
+        const thresholdMin = Math.max(5, Math.min(1440, parseInt(url.searchParams.get("thresholdMin"), 10) || 90));
+        const cutoffMs = thresholdMin * 60000;
+        const listed = await env.SNAPS.list({ prefix: "sjob:", limit: 200 });
+        const stale = [];
+        for (const k of listed.keys) {
+          const j = await env.SNAPS.get(k.name, "json");
+          if (!j || (j.status !== "pending" && j.status !== "processing")) continue;
+          const ageMs = Date.now() - new Date(j.updatedAt || j.createdAt).getTime();
+          if (ageMs > cutoffMs) stale.push({ id: j.id, snap: j.snap, status: j.status, minutesStuck: Math.round(ageMs / 60000) });
+        }
+        return json({ stale });
+      }
 
       // GET /api/file/{key...}?dl=1  → R2 から原本ストリーム配信（Range対応・元ファイル名復元）
       if (request.method === "GET" && parts[1] === "file" && parts[2] && parts[2] !== "mpu") {
