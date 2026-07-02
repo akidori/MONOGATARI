@@ -1738,8 +1738,16 @@ export default function App() {
     if (!loaded) return;
     (async () => { try { const r = await window.storage.get(STORE_MANUALS_GLOBAL); if (r && r.value) setGlobalManuals(JSON.parse(r.value)); } catch (e) {} })();
   }, [loaded, user]);
-  const saveGlobalManuals = (next) => { setGlobalManuals(next); try { window.storage.set(STORE_MANUALS_GLOBAL, JSON.stringify(next)); } catch (e) {} };
-  const setChannelManuals = (next) => updateChannelInfo({ manuals: next });
+  /* 決め事(確定ルール)をFlip-LABへ同期（会話AI・共有ビューが引ける固定事実に）。案件スコープは一時的なので送らない。 */
+  const syncRulesToLab = (channel, entries) => {
+    try {
+      if (!project.shareId || !project.shareToken || !channel) return; // 未発行なら送れない（発行後の編集で反映）
+      const text = (entries || []).map((m) => `【${m.cat || ""}】${(m.title || "").trim()}\n${(m.body || "").trim()}`.trim()).filter(Boolean).join("\n\n");
+      fetch(SHARE_API + "/api/lab-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: project.shareId, token: project.shareToken, channel, text }) }).catch(() => {});
+    } catch (e) {}
+  };
+  const saveGlobalManuals = (next) => { setGlobalManuals(next); try { window.storage.set(STORE_MANUALS_GLOBAL, JSON.stringify(next)); } catch (e) {} syncRulesToLab("編集マニュアル", next); };
+  const setChannelManuals = (next) => { updateChannelInfo({ manuals: next }); syncRulesToLab(project.channel || DEFAULT_CHANNEL, next); };
   const setCaseManuals = (next) => setProject((p) => ({ ...p, manuals: next }));
 
   /* 現在の案件のチャンネルのコンセプト情報を取得／更新 */
@@ -5690,6 +5698,7 @@ export default function App() {
             </div>
             <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件で共通のスタジオの決め事（テロップ・書き出し・命名規則など）。" : manualScope === "channel" ? "このクライアント（チャンネル）固有のルール。同じチャンネルの全案件で共有。" : "この案件だけの指示書・メモ。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
             <div className="p-5 overflow-y-auto">
+              {manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken} />}
               {manualScope === "global" && <ManualPanel entries={globalManuals} onChange={saveGlobalManuals} main={theme.main} accent={theme.accent} />}
               {manualScope === "channel" && curChannel !== DEFAULT_CHANNEL && <LabChannelRules channel={curChannel} main={theme.main}
                 snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken}

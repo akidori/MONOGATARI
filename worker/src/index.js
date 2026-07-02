@@ -31,6 +31,19 @@ const rid = (n = 8) => {
   return s;
 };
 
+// IPベースの簡易レート制限（KVカウンタ）。無認証で叩けるAI系のコスト焼却DoSを抑止。
+// KVは結果整合なのでバースト時に多少すり抜けるが、持続的な濫用は確実に頭打ちにできる。
+async function rateLimit(env, ip, bucket, limit, windowSec) {
+  try {
+    const win = Math.floor(Date.now() / 1000 / windowSec);
+    const key = `rl:${bucket}:${ip}:${win}`;
+    const cur = parseInt((await env.SNAPS.get(key)) || "0", 10);
+    if (cur >= limit) return false;
+    await env.SNAPS.put(key, String(cur + 1), { expirationTtl: windowSec * 2 });
+    return true;
+  } catch { return true; } // KV障害時はブロックしない（可用性優先／DoS抑止はベストエフォート）
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -45,6 +58,11 @@ export default {
     }
 
     try {
+      // AI系エンドポイントのIPレート制限（無認証で叩けるためANTHROPIC/YT予算の焼却DoSを防ぐ）
+      if (parts[0] === "api" && ["parse", "assist", "review", "hearing", "chat", "help", "yt", "ytsearch"].includes(parts[1])) {
+        const ip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
+        if (!(await rateLimit(env, ip, "ai", 40, 60))) return json({ error: "リクエストが多すぎます。1分ほど待って再度お試しください。" }, 429);
+      }
       // GET /api/lab-manual?channel=オリックス → Flip-LABの保存済み編集ルールを中継して返す。
       // 編集者がものがたりっちで作業中に、そのチャンネルの蒸留済みルールを見れる。
       // トークン(FLIP_LAB_TOKEN)はサーバ側に秘匿。LABへはservice binding(env.LAB)で直結＝1042回避。
@@ -87,6 +105,26 @@ export default {
           return json({ ok: true, channel: d.channel, manual: d.manual || "", updated: d.updated || null });
         } catch (e) {
           return json({ ok: false, error: "LAB取得失敗: " + e.message, manual: "" });
+        }
+      }
+
+      // POST /api/lab-rules { snap, token, channel, text } → 決め事(確定ルール)をFlip-LABへ保存（snap所有者のみ）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "lab-rules") {
+        const b = await request.json().catch(() => ({}));
+        const snap = (b.snap || "").toString().slice(0, 16);
+        const tok = snap ? await env.SNAPS.get("tok:" + snap) : null;
+        if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
+        if (!b.channel) return json({ error: "channel必須" }, 400);
+        if (!env.FLIP_LAB_TOKEN) return json({ error: "LAB未接続" }, 502);
+        const body = JSON.stringify({ channel: b.channel, text: b.text || "" });
+        const labReq = new Request("https://flip-lens/api/fixed-rules", { method: "POST", headers: { "content-type": "application/json", "Authorization": "Bearer " + env.FLIP_LAB_TOKEN }, body });
+        try {
+          const r = env.LAB ? await env.LAB.fetch(labReq)
+            : await fetch("https://flip-lens.aki-surf89315.workers.dev/api/fixed-rules", { method: "POST", headers: { "content-type": "application/json", "Authorization": "Bearer " + env.FLIP_LAB_TOKEN }, body });
+          const d = await r.json().catch(() => ({}));
+          return json(d, r.ok ? 200 : 502);
+        } catch (e) {
+          return json({ error: "LAB送信失敗: " + e.message }, 502);
         }
       }
 
@@ -759,6 +797,72 @@ export default {
       if (request.method === "GET" && parts[1] === "snap" && parts[3] === "uploads" && !parts[4]) {
         const ups = (await env.SNAPS.get("file_up:" + parts[2], "json")) || [];
         return json({ uploads: ups });
+      }
+
+      // ===== 縦型ショート生成ジョブ（ものがたりっち→Macエンジン のポーリング連携）=====
+      // POST /api/shorts/enqueue { snap, token, videoKey, sheetUrl?, notes?, nMax? } → ジョブ登録（snap所有者のみ）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "enqueue") {
+        const b = await request.json().catch(() => ({}));
+        const snap = (b.snap || "").toString().slice(0, 16);
+        if (!snap) return json({ error: "snap必須" }, 400);
+        const tok = await env.SNAPS.get("tok:" + snap);
+        if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
+        if (!b.videoKey) return json({ error: "videoKey必須" }, 400);
+        const jobId = rid(12);
+        const job = { id: jobId, snap, videoKey: ("" + b.videoKey).slice(0, 200), sheetUrl: ("" + (b.sheetUrl || "")).slice(0, 300), notes: ("" + (b.notes || "")).slice(0, 1000), nMax: Math.max(1, Math.min(12, parseInt(b.nMax, 10) || 8)), status: "pending", createdAt: now(), updatedAt: now(), shorts: [], error: "" };
+        await env.SNAPS.put("sjob:" + jobId, JSON.stringify(job));
+        return json({ ok: true, jobId, status: "pending" });
+      }
+      // GET /api/shorts/poll?key=<MG_LIST_KEY> → Macが未処理ジョブを1件取得しprocessingに
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "poll") {
+        if (!env.SHORTS_KEY || url.searchParams.get("key") !== env.SHORTS_KEY) return json({ error: "forbidden" }, 403);
+        const listed = await env.SNAPS.list({ prefix: "sjob:", limit: 200 });
+        let picked = null;
+        for (const k of listed.keys) { const j = await env.SNAPS.get(k.name, "json"); if (j && j.status === "pending" && (!picked || j.createdAt < picked.createdAt)) picked = j; }
+        if (!picked) return json({ job: null });
+        picked.status = "processing"; picked.updatedAt = now();
+        await env.SNAPS.put("sjob:" + picked.id, JSON.stringify(picked));
+        return json({ job: picked });
+      }
+      // POST /api/shorts/result { key, jobId, status:"done"|"error", shorts?:[{key,name,size}], error? } → Macが結果を返す
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "result") {
+        const b = await request.json().catch(() => ({}));
+        if (!env.SHORTS_KEY || b.key !== env.SHORTS_KEY) return json({ error: "forbidden" }, 403);
+        const job = await env.SNAPS.get("sjob:" + (b.jobId || ""), "json");
+        if (!job) return json({ error: "job not found" }, 404);
+        job.status = b.status === "error" ? "error" : "done";
+        job.error = ("" + (b.error || "")).slice(0, 500);
+        job.shorts = Array.isArray(b.shorts) ? b.shorts.slice(0, 20).map((s) => ({ key: ("" + (s.key || "")).slice(0, 200), name: ("" + (s.name || "")).slice(0, 120), size: parseInt(s.size, 10) || 0 })) : [];
+        job.updatedAt = now();
+        await env.SNAPS.put("sjob:" + job.id, JSON.stringify(job));
+        if (job.status === "done" && job.shorts.length) await env.SNAPS.put("shorts:" + job.snap, JSON.stringify({ items: job.shorts, updatedAt: now() }));
+        return json({ ok: true });
+      }
+      // GET /api/shorts/list/{snap}?r=<rtok> → 生成済みショート＋ジョブ状況（ビューア＆アプリ用・snap閲覧と同じgrace）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "list" && parts[3]) {
+        const snap = parts[3];
+        const rtok = await env.SNAPS.get("rtok:" + snap);
+        if (rtok) {
+          const r = url.searchParams.get("r") || "", t = url.searchParams.get("token") || "";
+          const admin = t ? await env.SNAPS.get("tok:" + snap) : null;
+          if (r !== rtok && !(admin && t === admin)) return json({ error: "unauthorized", auth_required: true }, 401);
+        }
+        const res = await env.SNAPS.get("shorts:" + snap, "json");
+        const listed = await env.SNAPS.list({ prefix: "sjob:", limit: 200 });
+        const jobs = [];
+        for (const k of listed.keys) { const j = await env.SNAPS.get(k.name, "json"); if (j && j.snap === snap) jobs.push({ id: j.id, status: j.status, createdAt: j.createdAt, error: j.error }); }
+        return json({ shorts: (res && res.items) || [], jobs });
+      }
+      // PUT /api/shorts/upload?key=<MG_LIST_KEY>&snap=&name= → Macが生成ショートmp4をR2に上げる。keyを返す
+      if (request.method === "PUT" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "upload") {
+        if (!env.SHORTS_KEY || url.searchParams.get("key") !== env.SHORTS_KEY) return json({ error: "forbidden" }, 403);
+        const snap = (url.searchParams.get("snap") || "").slice(0, 16);
+        const name = (url.searchParams.get("name") || "short.mp4").replace(/[\/\\]/g, "_").slice(0, 120);
+        if (!snap) return json({ error: "snap必須" }, 400);
+        const rkey = `f/${snap}/shorts/${rid(8)}_${name}`;
+        await env.FILES.put(rkey, request.body, { httpMetadata: { contentType: "video/mp4" } });
+        await env.SNAPS.put("file:" + rkey, JSON.stringify({ name, mime: "video/mp4" }));
+        return json({ ok: true, key: rkey });
       }
 
       // GET /api/file/{key...}?dl=1  → R2 から原本ストリーム配信（Range対応・元ファイル名復元）
