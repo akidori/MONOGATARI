@@ -666,7 +666,28 @@ function paneVideo(p, accent, main){
         <div id="vc-list" class="lg:max-h-[70vh] lg:overflow-y-auto lg:pr-1"></div>
         <p class="text-[11px] text-stone-400 mt-3 leading-relaxed">動画を止めて「＋ ここにコメント」で、その時間に修正依頼を残せます。▶ で頭出し。送信は ⌘+Enter。</p>
       </div>`}
-    </div>`;
+    </div>
+    <div id="vc-shorts" class="mt-6"></div>`;
+}
+let _shMain="#E63946";
+/* 縦型ショート（Macが生成→R2）の表示。生成中はポーリング。先方はDLボタンだけ。 */
+async function mountShorts(){
+  const box=document.getElementById("vc-shorts"); if(!box||!ID) return;
+  try{
+    const d=await fetch(API+"/api/shorts/list/"+ID+(R?("?r="+encodeURIComponent(R)):"")).then(r=>r.json());
+    const items=(d&&d.shorts)||[], jobs=(d&&d.jobs)||[];
+    const gen=jobs.some(j=>j.status==="pending"||j.status==="processing");
+    if(!items.length && !gen){ box.innerHTML=""; return; }
+    let h='<div class="text-[13px] font-bold text-stone-600 mb-2">縦型ショート'+(gen?' <span class="text-[10px] font-normal text-stone-400">（生成中…）</span>':"")+'</div>';
+    if(items.length){
+      h+='<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">'+items.map(s=>
+        '<div class="rounded-xl border border-stone-200 overflow-hidden bg-black">'+
+        '<video src="'+API+'/api/file/'+encodeURIComponent(s.key)+'" class="w-full bg-black" style="aspect-ratio:9/16;object-fit:cover" preload="metadata" muted playsinline controls></video>'+
+        '<a href="'+API+'/api/file/'+encodeURIComponent(s.key)+'?dl=1" class="block text-center text-[11px] font-bold text-white py-1.5" style="background:'+_shMain+'">⬇ DL</a></div>').join("")+'</div>';
+    } else if(gen){ h+='<div class="text-[12px] text-stone-400">Macで生成中です。少し待つと切り抜きが並びます。</div>'; }
+    box.innerHTML=h;
+    if(gen) setTimeout(mountShorts, 12000);
+  }catch(e){}
 }
 let _vcKeyBound=false;
 function vcTogglePlay(){
@@ -694,6 +715,7 @@ function wireVideoControls(){
   }); }
 }
 function mountVideo(p, accent, main){
+  _shMain = main; mountShorts();
   const cur = curVideo(p);
   const v = (cur&&cur.video)||{};
   document.querySelectorAll(".vc-sel").forEach(b=>b.addEventListener("click", ()=>selectVideo(b.dataset.vsel)));
