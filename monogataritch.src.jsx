@@ -1161,6 +1161,9 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
 function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream }) {
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
+  const [dropOver, setDropOver] = React.useState(false);
+  const onDropVideo = (e) => { e.preventDefault(); setDropOver(false); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f && (f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm)$/i.test(f.name || ""))) onUploadVideo(f); };
+  const onDragOverVideo = (e) => { e.preventDefault(); if (!dropOver) setDropOver(true); };
   const [filter, setFilter] = React.useState("全部");
   const [cat, setCat] = React.useState("編集");
   const [prio, setPrio] = React.useState("中");
@@ -1249,9 +1252,10 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
 
   if (!versions.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-6 text-center">
+      <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-6 text-center transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "2px" } : {}}
+        onDragOver={onDragOverVideo} onDragLeave={() => setDropOver(false)} onDrop={onDropVideo}>
         <div className="text-[13px] font-bold text-stone-600 mb-1">確認用の動画を追加</div>
-        <p className="text-[11px] text-stone-400 mb-4">初稿・修正版をアップすると、0.5〜4倍速で試写しながら修正コメントを管理できます。</p>
+        <p className="text-[11px] text-stone-400 mb-4">mp4をここにドラッグ&ドロップ、または下のボタンから。0.5〜4倍速で試写しながら修正コメントを管理できます。</p>
         <div className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
           <label className="flex-1 text-[12px] font-bold px-4 py-2.5 rounded-lg shadow cursor-pointer text-white" style={{ background: main }}>
             ⬆ mp4をアップロード
@@ -1269,8 +1273,9 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
   const rates = isYT ? [0.5, 1, 1.5, 2] : [0.5, 1, 1.5, 2, 3, 4];
   return (
     <div>
-      {/* バージョンタブ */}
-      <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1">
+      {/* バージョンタブ（ドラッグ&ドロップで動画追加OK） */}
+      <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 rounded-lg transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "3px" } : {}}
+        onDragOver={onDragOverVideo} onDragLeave={() => setDropOver(false)} onDrop={onDropVideo}>
         {versions.map((v) => {
           const on = v.id === sel.id;
           const open = comments.filter((c) => (c.versionId === v.id || (c.videoKey || "") === (v.key || v.url || "")) && cstat(c) !== "完了").length;
@@ -1283,8 +1288,8 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
             </button>
           );
         })}
-        <label className="shrink-0 px-2.5 py-1.5 rounded-lg text-[12px] font-bold border border-dashed border-stone-300 text-stone-500 hover:bg-stone-50 cursor-pointer">
-          ＋版
+        <label className="shrink-0 px-3.5 py-1.5 rounded-lg text-[12px] font-bold text-white cursor-pointer flex items-center gap-1 shadow-sm hover:opacity-90" style={{ background: main }} title="動画をアップ（ここにドラッグ&ドロップでも追加できます）">
+          <span className="text-[13px] leading-none">⬆</span>動画を追加
           <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
         </label>
       </div>
@@ -1468,6 +1473,7 @@ export default function App() {
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
   const [chanMenu, setChanMenu] = useState(null);          // 案件のチャンネル移動ドロップダウン {id, channel, x, y}
+  const [caseMenu, setCaseMenu] = useState(null);          // 案件行の右クリックメニュー {id, channel, x, y}
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -4091,7 +4097,9 @@ export default function App() {
                         ...(dragCaseId === p.id ? { opacity: 0.4 } : {}),
                         ...(dragOverCaseId === p.id && dragCaseId !== p.id ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}),
                       }}
-                      onClick={() => switchProject(p.id)}>
+                      onClick={() => switchProject(p.id)}
+                      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCaseMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); }}
+                      title="右クリックで操作（名前変更・複製・移動・削除）">
                       <div className="flex items-center gap-2">
                         <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-white/60 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? theme.accent : "rgba(255,255,255,0.3)" }} />
@@ -4122,14 +4130,7 @@ export default function App() {
                             <span className="truncate">{p.name}</span>
                           </span>
                         )}
-                        <div className="flex gap-0.5 opacity-0 group-hover/p:opacity-100 transition-opacity shrink-0">
-                          <button title="チャンネル（フォルダ）を移動" onClick={(e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setChanMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: r.left, y: r.bottom + 4 }); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">
-                            <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
-                          </button>
-                          <button title="名前変更" onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
-                          <button title="複製" onClick={(e) => { e.stopPropagation(); duplicateProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">⎘</button>
-                          <button title="削除" onClick={(e) => { e.stopPropagation(); deleteProject(p.id); }} className="w-5 h-5 grid place-items-center rounded hover:bg-red-500/40"><Icon name="trash" className="w-3 h-3" /></button>
-                        </div>
+                        {/* 操作(名前変更・複製・移動・削除)は行の右クリック → caseMenu に集約 */}
                       </div>
                     </div>
                   );
@@ -6115,6 +6116,20 @@ export default function App() {
               className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
               <Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />新規フォルダに移動…
             </button>
+          </div>
+        </>
+      )}
+
+      {/* ===== 案件行 右クリックメニュー ===== */}
+      {caseMenu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setCaseMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCaseMenu(null); }} />
+          <div className="fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+            style={{ left: Math.min(caseMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(caseMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 220) }}>
+            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); setChannelEditId(null); setRenamingId(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">✎</span>名前変更</button>
+            <button onClick={() => { const c = caseMenu; setCaseMenu(null); setChanMenu({ id: c.id, channel: c.channel, x: c.x, y: c.y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">📁</span>チャンネル移動</button>
+            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); duplicateProject(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">⎘</span>複製</button>
+            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); deleteProject(id); }} className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 text-[12px] flex items-center gap-2 border-t border-stone-100"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
           </div>
         </>
       )}
