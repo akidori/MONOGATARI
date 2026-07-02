@@ -17,3 +17,8 @@ worker/.wrangler/
 worker/keys.json
 worker/snap_*.json
 worker/err.log
+
+# 旧ソースの日本語名jsx（Pagesビルドを壊す）
+ものがたりっち.jsx
+ものがだりっち.jsx
+*りっち.jsx
