@@ -4010,13 +4010,6 @@ export default function App() {
             </>
           )}
         </div>
-        <div className="px-3 pb-2">
-          <button onClick={() => { setImportTarget("new"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
-            title="JSON / 構成台本コピー / TXT・CSV・Excel から取り込み（新規 or 現案件更新）"
-            className="w-full inline-flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-lg bg-white/10 hover:bg-white/20">
-            <Icon name="download" className="w-4 h-4" /> 構成台本を取り込み
-          </button>
-        </div>
         </>)}
 
         {/* チャンネル名サジェスト用 */}
@@ -4239,6 +4232,12 @@ export default function App() {
               style={{ fontFamily: mono, color: mainText }} />
             <span className="hidden sm:inline">字/秒</span>
           </label>
+          {/* 構成台本を取り込み：このタブ（構成台本）専用の操作なのでここに置く（旧: サイドバーの常時表示ボタン） */}
+          <button onClick={() => { setImportTarget("current"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
+            title="JSON / 構成台本コピー / TXT・CSV・Excel から取り込み（この案件を更新）"
+            className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
+            <Icon name="download" className="w-3.5 h-3.5" /><span className="hidden sm:inline">取り込み</span>
+          </button>
           </>)}
           {/* 先方コメント */}
           {project.shareId && (
