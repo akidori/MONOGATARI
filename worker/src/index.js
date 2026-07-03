@@ -67,7 +67,7 @@ export default {
 
     try {
       // AI系エンドポイントのIPレート制限（無認証で叩けるためANTHROPIC/YT予算の焼却DoSを防ぐ）
-      if (parts[0] === "api" && ["parse", "assist", "review", "hearing", "chat", "help", "yt", "ytsearch"].includes(parts[1])) {
+      if (parts[0] === "api" && ["parse", "assist", "review", "deliver", "hearing", "chat", "help", "yt", "ytsearch"].includes(parts[1])) {
         const ip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
         if (!(await rateLimit(env, ip, "ai", 40, 60))) return json({ error: "リクエストが多すぎます。1分ほど待って再度お試しください。" }, 429);
       }
@@ -225,6 +225,16 @@ export default {
         if (!project || !Array.isArray(project.rows)) return json({ error: "現在の案件が必要です" }, 400);
         const out = await reviewWithClaude(project, env);
         return json({ issues: Array.isArray(out.issues) ? out.issues : [], summary: (out.summary || "").toString() });
+      }
+
+      // POST /api/deliver  { project }  → 台本からYouTube投稿用（タイトル・サムネ文言・概要欄・ハッシュタグ）を生成
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "deliver") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const project = b && b.project;
+        if (!project || !Array.isArray(project.rows)) return json({ error: "現在の案件が必要です" }, 400);
+        const out = await deliverWithClaude(project, env);
+        return json(out);
       }
 
       // POST /api/hearing  { raw, hearing }  → 文字起こしからヒアリング項目を埋める
@@ -1410,6 +1420,56 @@ async function reviewWithClaude(project, env) {
   if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
   const data = await res.json();
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
+  if (!block || !block.input) throw new Error("tool_use が返りませんでした");
+  return block.input;
+}
+
+/* ===== 納品完了：台本からYouTube投稿用の項目を生成（タイトル・サムネ文言・概要欄・ハッシュタグ） ===== */
+const DELIVER_SYSTEM = `あなたは動画プロダクション「Bird Flip」のYouTube投稿・SNS運用担当です。渡された構成台本（原稿・ハイライト・企画メモ）から、投稿に使うタイトル・サムネ文言・概要欄・ハッシュタグを作ります。
+
+# ルール
+- 台本の中身（本人の発言・事実）だけを根拠にする。台本に無い情報は創作しない
+- タイトルは30〜40字程度。結論を全部言い切らず、続きが気になる言い回しにする
+- サムネ文言は8〜14字程度。太字1〜2行で画面に収まる短く強い言葉
+- 概要欄は3〜5行。1行目に動画の核心を要約し、そのあと見どころを箇条書き（・）で数点
+- ハッシュタグは5〜8個。#固有名詞・ジャンル・感情ワードを混ぜて半角スペース区切りの1行にする
+- 既に企画・サムネタブにタイトル/サムネ文言の案があれば、それを踏まえつつ最終版として磨く（無視して作り直してもよい）
+- report_deliver ツールで返す`;
+
+const DELIVER_TOOL = {
+  name: "report_deliver",
+  description: "YouTube投稿用のタイトル・サムネ文言・概要欄・ハッシュタグを返す",
+  input_schema: {
+    type: "object",
+    properties: {
+      title: { type: "string", description: "投稿用タイトル（30〜40字程度）" },
+      thumbText: { type: "string", description: "サムネ文言（8〜14字程度）" },
+      description: { type: "string", description: "概要欄テキスト（3〜5行）" },
+      hashtags: { type: "string", description: "#区切りのハッシュタグ（5〜8個、半角スペース区切り1行）" },
+    },
+    required: ["title", "thumbText", "description", "hashtags"],
+  },
+};
+
+async function deliverWithClaude(project, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const ctx = "----- 台本(JSON) -----\n" + JSON.stringify(slim(project)) +
+    "\n----- ここまで -----\n\n上の台本からYouTube投稿用の項目を作って report_deliver で返してください。";
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model,
+      max_tokens: 2000,
+      system: DELIVER_SYSTEM,
+      tools: [DELIVER_TOOL],
+      tool_choice: { type: "tool", name: "report_deliver" },
+      messages: [{ role: "user", content: ctx }],
+    }),
+  });
+  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
+  const data = await res.json();
+  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_deliver");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
 }

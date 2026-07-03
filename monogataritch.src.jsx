@@ -1383,9 +1383,12 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
         )}
         <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
       </div>
-      {(shortsJobs.length > 0 || shortsItems.length > 0) && (
+      {(shortsBusy || shortsJobs.length > 0 || shortsItems.length > 0) && (
         <div className="mb-3 rounded-xl border border-stone-200 bg-white p-3">
           <div className="text-[11px] font-bold text-stone-500 mb-1.5">たてがた君（縦ショート自動生成）</div>
+          {shortsBusy && (
+            <div className="text-[11px] text-stone-500">📤 リクエストを送信中…</div>
+          )}
           {shortsJobs.some((j) => j.status === "pending" || j.status === "processing") && (
             <div className="text-[11px] text-stone-500">⏳ 生成中…（Macでの処理待ち／実行中。数分かかることがあります）</div>
           )}
@@ -1517,6 +1520,7 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [hoverId, setHoverId] = useState(null);
   const [highlightCollapsed, setHighlightCollapsed] = useState(false);
+  const [deliverBusy, setDeliverBusy] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
   const [tab, setTab] = useState("overview"); // overview | plan | script | kouban | assets | review | deliver | concept
   const [showImport, setShowImport] = useState(false);
@@ -2171,6 +2175,34 @@ export default function App() {
       showToast("校正チェック失敗：" + (e.message || e));
       setReviewResult({ issues: [], summary: "", error: e.message || String(e) });
     } finally { setReviewBusy(false); }
+  };
+
+  /* 納品完了タブ：既存の構成台本からタイトル・サムネ文言・概要欄・ハッシュタグ・目次を自動生成
+     目次は台本の構造（ロケの実尺／トーク台本のtoc）からその場で作れるのでAIを介さず即時生成。
+     タイトル/サムネ文言/概要欄/ハッシュタグは原稿の中身を読む必要があるのでAIに依頼する。
+     動画・切り抜きショートのURLは実ファイルが要るため自動生成の対象外（誤った/私的なリンクを誤爆させないため）。 */
+  const generateDeliverAll = async () => {
+    if (!project) return;
+    const chapters = project.format === "talk"
+      ? (project.talk && project.talk.toc || []).filter((t) => t && t.trim()).map((t, i) => (i + 1) + ". " + t).join("\n")
+      : locations.filter((l) => l.scenes.length).map((l) => fmt(tcs[l.id] || 0) + " " + (l.label || "（無題のロケ）")).join("\n");
+    setMeta("deliverChapters", chapters);
+    setDeliverBusy(true);
+    try {
+      const res = await fetch(SHARE_API + "/api/deliver", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "生成に失敗しました");
+      setMeta("deliverTitle", d.title || "");
+      setMeta("deliverThumbText", d.thumbText || "");
+      setMeta("deliverDescription", d.description || "");
+      setMeta("deliverHashtags", d.hashtags || "");
+      showToast("タイトル・サムネ文言・概要欄・ハッシュタグ・目次を自動生成しました（動画・ショートのURLだけ手動で貼ってね）");
+    } catch (e) {
+      showToast("自動生成に失敗：" + (e.message || e));
+    } finally { setDeliverBusy(false); }
   };
 
   /* 指摘の対象シーンへスクロール＋一時ハイライト */
@@ -4920,7 +4952,7 @@ export default function App() {
                             <button
                               onClick={(e) => { e.stopPropagation(); updateRow(r.id, { done: !r.done }); }}
                               title={r.done ? "撮影完了を取り消す" : "このシーンを撮影完了にする"}
-                              className={"shrink-0 w-6 h-6 grid place-items-center rounded-md transition-colors " + (r.done ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-400 hover:bg-stone-200")}>
+                              className={"shrink-0 w-6 h-6 grid place-items-center rounded-md border transition-colors " + (r.done ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-300 text-stone-400 hover:bg-stone-100 hover:border-stone-400")}>
                               <Icon name="check" className="w-3.5 h-3.5" />
                             </button>
                             <span className="cursor-grab active:cursor-grabbing text-stone-300 text-[10px] leading-none select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">⋮⋮</span>
@@ -5066,7 +5098,7 @@ export default function App() {
                       <button
                         onClick={() => updateRow(r.id, { done: !r.done })}
                         title={r.done ? "撮影完了を取り消す" : "このシーンを撮影完了にする"}
-                        className={"shrink-0 w-6 h-6 grid place-items-center rounded-md transition-colors " + (r.done ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-400")}>
+                        className={"shrink-0 w-6 h-6 grid place-items-center rounded-md border transition-colors " + (r.done ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-300 text-stone-400")}>
                         <Icon name="check" className="w-3.5 h-3.5" />
                       </button>
                       <span className="text-[10px] text-stone-300 tabular-nums shrink-0" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
@@ -5635,26 +5667,33 @@ export default function App() {
         {/* ================= 納品完了タブ ================= */}
         {tab === "deliver" && (() => {
           const dv = [
-            ["deliverVideoUrl", "納品完了動画", "動画のURL（Drive／YouTube限定公開など）", false],
-            ["deliverShorts", "切り抜きショート", "ショートのURLを1行に1本", true],
-            ["deliverTitle", "タイトル", "投稿用の最終タイトル", false],
-            ["deliverThumbUrl", "サムネ", "サムネ画像のURL", false],
-            ["deliverDescription", "概要欄", "投稿用の概要欄テキスト", true],
-            ["deliverHashtags", "ハッシュタグ", "#例1 #例2 #例3", false],
-            ["deliverChapters", "目次", "00:00 導入\n01:30 本編\n…", true],
+            ["deliverVideoUrl", "納品完了動画", "動画のURL（Drive／YouTube限定公開など）※手動", false, false],
+            ["deliverShorts", "切り抜きショート", "ショートのURLを1行に1本 ※手動", true, false],
+            ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）", false, true],
+            ["deliverThumbText", "サムネ文言", "自動生成で埋まります（手直しOK）", false, true],
+            ["deliverDescription", "概要欄", "自動生成で埋まります（手直しOK）", true, true],
+            ["deliverHashtags", "ハッシュタグ", "自動生成で埋まります（手直しOK）", false, true],
+            ["deliverChapters", "目次", "自動生成で埋まります（手直しOK）", true, true],
           ];
           const doneCount = dv.filter(([key]) => (m[key] || "").trim()).length;
           return (
           <div className="max-w-3xl mx-auto px-1 sm:px-0 py-2">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <h2 className="text-[15px] font-bold text-stone-800">納品完了</h2>
-                <p className="text-[12px] text-stone-500 mt-0.5">投稿に必要な素材・文言をここに集約。埋まった項目からチェックが付く（編集者も入力OK）。</p>
+                <p className="text-[12px] text-stone-500 mt-0.5">タイトル・サムネ文言・概要欄・ハッシュタグ・目次は台本から自動生成（動画・ショートのURLだけ手動）。編集者も入力OK。</p>
               </div>
-              <span className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-500 tabular-nums">{doneCount}/{dv.length}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <button onClick={generateDeliverAll} disabled={deliverBusy}
+                  className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50"
+                  style={{ background: theme.accent, color: accentText }}>
+                  <Icon name="sparkle" className="w-3.5 h-3.5" />{deliverBusy ? "生成中…" : "自動生成"}
+                </button>
+                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-500 tabular-nums">{doneCount}/{dv.length}</span>
+              </div>
             </div>
             <section className={cardCls}>
-              {dv.map(([key, label, placeholder, multiline], i) => {
+              {dv.map(([key, label, placeholder, multiline, auto], i) => {
                 const filled = !!(m[key] || "").trim();
                 return (
                   <div key={key} className={"flex items-start gap-2 px-3 sm:px-4 py-2.5 " + (i === 0 ? "" : "border-t border-stone-100")}>
@@ -5662,7 +5701,10 @@ export default function App() {
                       <Icon name="check" className="w-3 h-3" />
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold text-stone-400 mb-0.5">{label}</div>
+                      <div className="text-[11px] font-bold text-stone-400 mb-0.5 flex items-center gap-1.5">
+                        {label}
+                        {auto && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">自動</span>}
+                      </div>
                       {multiline ? (
                         <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
                           className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" minHeight={60} />
