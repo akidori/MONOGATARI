@@ -1125,12 +1125,20 @@ function ManualPanel({ entries, onChange, main, accent, readOnly }) {
 /* ===== Flip-LAB のチャンネル編集ルール（読み取り専用・自動表示） =====
    確認コメントから蒸留した「このチャンネルの流儀」を mg-share 経由でLABから取得し、
    編集者が作業中に見れるように出す。未生成なら何も出さない。 */
-function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveToken }) {
-  const [md, setMd] = React.useState(null);     // null=読込中, ""=なし
-  const [updated, setUpdated] = React.useState(null);
+// 学習した傾向(自動蒸留のmarkdown)を「採用」可能な個別行に割る。見出し(【..】/#)や空行は除外。
+function splitTendencies(distilled) {
+  if (!distilled) return [];
+  return distilled.split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-*・••\d.)\]]+\s*/, "").trim()) // 先頭の箇条書き記号/番号を除去
+    .filter((l) => l.length >= 4 && !/^[【#]/.test(l) && !/^学習した傾向|^確定ルール/.test(l));
+}
+
+function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveToken, onAdopt }) {
+  const [data, setData] = React.useState(null);     // null=読込中, {fixed,distilled,updated}
   const [open, setOpen] = React.useState(true);
+  const [adopted, setAdopted] = React.useState({}); // このセッションで採用済みの傾向テキスト→true（ボタン隠す）
   React.useEffect(() => {
-    let on = true; setMd(null);
+    let on = true; setData(null);
     // 認証：クライアント固有の機密ルールのため、今この画面が持っている共有トークンを一緒に送る
     // （所有者token / 編集者upトークン / ライブ編集token+liveId / ログイン中セッション）。無ければ401で何も出さない。
     const qs = new URLSearchParams({ channel: channel || "" });
@@ -1139,20 +1147,46 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
     if (liveId && liveToken) { qs.set("live", liveId); qs.set("k", liveToken); }
     const headers = MG_SESSION ? { Authorization: "Bearer " + MG_SESSION } : {};
     fetch(SHARE_API + "/api/lab-manual?" + qs.toString(), { headers })
-      .then((r) => r.json()).then((d) => { if (!on) return; setMd(d.manual || ""); setUpdated(d.updated || null); })
-      .catch(() => { if (on) setMd(""); });
+      .then((r) => r.json()).then((d) => { if (!on) return; setData({ fixed: d.fixed || "", distilled: d.distilled || "", updated: d.updated || null }); })
+      .catch(() => { if (on) setData({ fixed: "", distilled: "", updated: null }); });
     return () => { on = false; };
   }, [channel, snapId, token, upToken, liveId, liveToken]);
-  if (md === null) return <div className="text-[12px] text-stone-400 py-2">🧪 Flip-LABの編集ルールを読み込み中…</div>;
-  if (!md) return null;
+  if (data === null) return <div className="text-[12px] text-stone-400 py-2">🧪 Flip-LABの編集ルールを読み込み中…</div>;
+  const tendencies = splitTendencies(data.distilled);
+  if (!data.fixed && !tendencies.length) return null;
+  const adopt = (t) => { if (!onAdopt) return; onAdopt(t); setAdopted((a) => ({ ...a, [t]: true })); };
   return (
     <div className="rounded-xl border mb-3 overflow-hidden" style={{ borderColor: main + "55", background: main + "0c" }}>
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
         <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: main }}>🧪 Flip-LAB</span>
-        <span className="text-[12.5px] font-bold text-stone-800">{channel} 編集ルール<span className="font-normal text-stone-400">（確認コメントから自動蒸留）</span></span>
-        <span className="ml-auto text-[10px] text-stone-400 shrink-0">{updated ? updated.slice(0, 10) : ""} {open ? "▲" : "▼"}</span>
+        <span className="text-[12.5px] font-bold text-stone-800">{channel} 編集ルール</span>
+        <span className="ml-auto text-[10px] text-stone-400 shrink-0">{data.updated ? data.updated.slice(0, 10) : ""} {open ? "▲" : "▼"}</span>
       </button>
-      {open && <div className="px-3 pb-3 text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed border-t border-stone-200/60 pt-2 max-h-[42vh] overflow-y-auto">{md}</div>}
+      {open && (
+        <div className="px-3 pb-3 border-t border-stone-200/60 pt-2 max-h-[46vh] overflow-y-auto">
+          {data.fixed && (
+            <div className="mb-3">
+              <div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">確定ルール（人が設定・厳守）</div>
+              <div className="text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">{data.fixed}</div>
+            </div>
+          )}
+          {tendencies.length > 0 && (
+            <div>
+              <div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">学習した傾向（確認コメントから自動蒸留）{onAdopt && <span className="font-normal text-stone-400">— 「採用」で確定ルールに昇格</span>}</div>
+              <div className="space-y-1">
+                {tendencies.map((t, i) => (
+                  <div key={i} className="flex items-start gap-2 group">
+                    <span className="text-[12.5px] text-stone-700 leading-relaxed flex-1">{t}</span>
+                    {onAdopt && (adopted[t]
+                      ? <span className="shrink-0 text-[10px] font-bold text-emerald-600 mt-0.5">✓採用</span>
+                      : <button onClick={() => adopt(t)} title="この傾向を確定ルールに昇格" className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border text-white mt-0.5" style={{ background: main, borderColor: main }}>採用</button>)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -5769,11 +5803,13 @@ export default function App() {
             </div>
             <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件で共通のスタジオの決め事（テロップ・書き出し・命名規則など）。" : manualScope === "channel" ? "このクライアント（チャンネル）固有のルール。同じチャンネルの全案件で共有。" : "この案件だけの指示書・メモ。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
             <div className="p-5 overflow-y-auto">
-              {manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken} />}
+              {manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken}
+                onAdopt={(t) => saveGlobalManuals([...globalManuals, { ...newManual("その他"), body: t }])} />}
               {manualScope === "global" && <ManualPanel entries={globalManuals} onChange={saveGlobalManuals} main={theme.main} accent={theme.accent} />}
               {manualScope === "channel" && curChannel !== DEFAULT_CHANNEL && <LabChannelRules channel={curChannel} main={theme.main}
                 snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken}
-                liveId={project.liveId} liveToken={project.liveToken} />}
+                liveId={project.liveId} liveToken={project.liveToken}
+                onAdopt={(t) => setChannelManuals([...(curChannelInfo.manuals || []), { ...newManual("その他"), body: t }])} />}
               {manualScope === "channel" && <ManualPanel entries={curChannelInfo.manuals || []} onChange={setChannelManuals} main={theme.main} accent={theme.accent} />}
               {manualScope === "case" && <ManualPanel entries={project.manuals || []} onChange={setCaseManuals} main={theme.main} accent={theme.accent} />}
             </div>

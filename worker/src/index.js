@@ -16,7 +16,15 @@ const CORS = {
   "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type,Authorization",
   "Access-Control-Max-Age": "86400",
+  // 全応答に付与するセキュリティ土台（MIMEスニッフ抑止＝アップロード物のストアドXSS面を潰す最重要項目）
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
 };
+
+// /api/file でインライン表示(=ブラウザ実行)を許してよいMIMEだけの許可リスト。
+// これ以外（text/html, image/svg+xml, application/xml 等）は attachment 強制でスクリプト実行を封じる。
+const INLINE_OK = /^(video\/|audio\/|image\/(?!svg)|application\/pdf$)/i;
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...CORS } });
@@ -102,7 +110,8 @@ export default {
             : await fetch("https://flip-lens.aki-surf89315.workers.dev/api/channel_manual?channel=" + encodeURIComponent(channel),
                 { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } });
           const d = await r.json();
-          return json({ ok: true, channel: d.channel, manual: d.manual || "", updated: d.updated || null });
+          // fixed(確定ルール逐語)/distilled(学習した傾向)も転送＝アプリ側で「採用」ボタンに使う。
+          return json({ ok: true, channel: d.channel, manual: d.manual || "", fixed: d.fixed || "", distilled: d.distilled || "", updated: d.updated || null });
         } catch (e) {
           return json({ ok: false, error: "LAB取得失敗: " + e.message, manual: "" });
         }
@@ -897,7 +906,10 @@ export default {
         h.set("Access-Control-Expose-Headers", "Content-Length,Content-Range,Content-Disposition,ETag,Accept-Ranges");
         const fname = meta.name || key.split("/").pop() || "download";
         const dl = url.searchParams.get("dl");
-        h.set("Content-Disposition", `${dl ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(fname)}`);
+        // 動画/音声/画像(svg除く)/pdf 以外は ?dl 有無に関わらず attachment 強制＝HTML/SVGのインライン実行を封じる。
+        const ctype = h.get("Content-Type") || "application/octet-stream";
+        const inline = !dl && INLINE_OK.test(ctype);
+        h.set("Content-Disposition", `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fname)}`);
         if (!("body" in obj) || !obj.body) return new Response(null, { status: 304, headers: h }); // onlyIf 不一致
         if (obj.range) {
           let start = 0, end = (obj.size || 1) - 1;
