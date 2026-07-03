@@ -3190,16 +3190,33 @@ export default function App() {
   /* ===== 素材管理（assets単一正本）のCRUD ===== */
   const setAssets = (updater) => setProject((p) => ({ ...p, assets: typeof updater === "function" ? updater(Array.isArray(p.assets) ? p.assets : []) : updater }));
   /* ファイル/動画を素材として登録（カテゴリ指定）。R2へ上げて asset を1件追加 */
-  const uploadAsset = async (file, category = "撮影素材") => {
-    const sh = await ensureShare(); if (!sh) return;   // 未発行ならその場で自動発行
+  const uploadAsset = async (file, category = "撮影素材", batch = null) => {
+    let sh;
+    try { sh = await ensureShare(); } catch (e) { sh = null; }   // 未発行ならその場で自動発行
+    if (!sh) { showToast("共有の発行に失敗してアップできなかった。回線を確認してもう一度試して"); return false; }
+    const lbl = batch ? `${category}（${batch.i}/${batch.n}）` : category;
     setAssetUp({ cat: category, name: file.name, pct: 0 });
     try {
-      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: file.name, pct: p }), sh.id, sh.token);
+      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token);
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
       setAssets((arr) => [newAsset(category, { type: isVideo ? "mp4" : "file", key: meta.key, name: meta.name, size: meta.size || file.size, mime: meta.mime || file.type }), ...arr]);
-      showToast(category + "に追加したよ");
-    } catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
+      if (!batch) showToast(category + "に追加したよ");
+      return true;
+    } catch (e) { showToast(file.name + " のアップロードに失敗：" + (e.message || e)); return false; }
+    finally { if (!batch) setAssetUp(null); }
+  };
+  /* 複数ファイルは1本ずつ順番にアップ（同時多発だと回線レース＋進捗が壊れる。大容量の撮影素材で特に）。 */
+  const uploadAssets = async (files, category = "撮影素材") => {
+    const list = Array.from(files || []);
+    if (!list.length) return;
+    let ok = 0;
+    for (let i = 0; i < list.length; i++) {
+      const done = await uploadAsset(list[i], category, { i: i + 1, n: list.length });
+      if (done) ok++;
+    }
     setAssetUp(null);
+    if (list.length > 1) showToast(`${category}：${ok}/${list.length}件アップ完了`);
+    else if (ok) showToast(category + "に追加したよ");
   };
   /* YouTube/参考URLを素材として登録 */
   const addAssetUrl = (category, rawUrl, name = "") => {
@@ -5555,14 +5572,14 @@ export default function App() {
                   <section key={cat}
                     onDragOver={(e) => { e.preventDefault(); if (project.shareId) setDragCat(cat); }}
                     onDragLeave={(e) => { if (e.currentTarget === e.target) setDragCat(null); }}
-                    onDrop={(e) => { e.preventDefault(); setDragCat(null); const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) fs.forEach((f) => uploadAsset(f, cat)); }}
+                    onDrop={(e) => { e.preventDefault(); setDragCat(null); const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) uploadAssets(fs, cat); }}
                     className={"rounded-2xl bg-white p-4 transition-colors " + (dragCat === cat ? "border-2 border-dashed" : "border border-stone-200")}
                     style={dragCat === cat ? { borderColor: theme.accent, background: "#fafaf8" } : {}}>
                     <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
                       <h3 className="text-[13px] font-bold text-stone-800">{ASSET_CAT_ICON[cat]} {cat} <span className="text-stone-400 font-normal">{items.length}</span></h3>
                       <label className={"text-[11px] font-bold px-2.5 py-1.5 rounded-lg shadow cursor-pointer " + (project.shareId ? "" : "opacity-40 pointer-events-none")} style={{ background: theme.main, color: "#fff" }}>
                         ＋ファイル
-                        <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); fs.forEach((f) => uploadAsset(f, cat)); e.target.value = ""; }} />
+                        <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); uploadAssets(fs, cat); e.target.value = ""; }} />
                       </label>
                     </div>
                     <p className="text-[10px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#a8a29e" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}</p>
