@@ -212,6 +212,18 @@
     </div>
   </section>
 
+  <!-- 招待者確認（host限定） -->
+  <section id="inviteSection" class="card p-5 mb-5" style="display:none">
+    <div class="flex items-start gap-3">
+      <span class="text-indigo-600"><svg class="ico ico-lg" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19a6.5 6.5 0 0113 0"/></svg></span>
+      <div class="flex-1 min-w-0">
+        <h2 class="font-bold">招待者確認</h2>
+        <p class="text-sm text-slate-500 mt-1">自分がオーナーの案件で、誰を共同編集に招待しているかの一覧です（host限定表示）。</p>
+        <div id="inviteList" class="mt-4 space-y-2 text-sm text-slate-500">読み込み中…</div>
+      </div>
+    </div>
+  </section>
+
   <!-- 関連リンク -->
   <section class="card p-5 mb-5">
     <div class="flex items-start gap-3">
@@ -415,6 +427,57 @@ if (copyGas) copyGas.addEventListener("click", async () => {
 
 // SW登録
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+
+// --- 招待者確認（host限定）：本体アプリのログインセッション（localStorage）を再利用 ---
+(async () => {
+  const HOST_EMAIL = "aki.surf89315@gmail.com";
+  const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+  let shareApi = "https://mg-share.aki-surf89315.workers.dev";
+  try { const o = localStorage.getItem("mg:shareApi"); if (o) shareApi = o.replace(/\/$/, ""); } catch (e) {}
+
+  const token = localStorage.getItem("mg:auth:token");
+  const userRaw = localStorage.getItem("mg:auth:user");
+  if (!token || !userRaw) return; // 未ログイン＝本体アプリでログインが必要
+  let authUser;
+  try { authUser = JSON.parse(userRaw); } catch (e) { return; }
+  if ((authUser.email || "").toLowerCase() !== HOST_EMAIL) return; // host以外には出さない
+
+  const sec = document.getElementById("inviteSection");
+  const listEl = document.getElementById("inviteList");
+  sec.style.display = "";
+
+  try {
+    const r = await fetch(shareApi + "/api/collab/list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+      body: JSON.stringify({}),
+    });
+    if (!r.ok) throw new Error("http " + r.status);
+    const data = await r.json();
+    const projects = (data.projects || []).filter((p) => p.role === "owner" && (p.members || []).length > 1);
+    if (!projects.length) { listEl.textContent = "招待中の案件はまだありません。"; return; }
+    listEl.innerHTML = "";
+    projects.forEach((p) => {
+      const ownerEmail = (p.ownerEmail || "").toLowerCase();
+      const invitees = (p.members || []).filter((m) => m !== ownerEmail);
+      const wrap = document.createElement("div");
+      wrap.className = "border border-slate-200 rounded-lg px-3 py-2.5";
+      wrap.innerHTML =
+        '<div class="flex items-center justify-between gap-2">' +
+          '<span class="font-semibold text-slate-800 text-sm truncate">' + escapeHtml(p.name || "(無題)") + '</span>' +
+          '<span class="text-xs text-slate-400 shrink-0">' + escapeHtml(p.channel || "") + '</span>' +
+        '</div>' +
+        '<div class="mt-1.5 flex flex-wrap gap-1">' +
+          (invitees.length
+            ? invitees.map((m) => '<span class="inline-block bg-slate-100 text-slate-600 rounded-full px-2 py-0.5 text-xs">' + escapeHtml(m) + '</span>').join("")
+            : '<span class="text-xs text-slate-400">招待メンバーなし</span>') +
+        '</div>';
+      listEl.appendChild(wrap);
+    });
+  } catch (e) {
+    listEl.textContent = "読み込みに失敗しました。本体アプリでログインし直してから開き直してください。";
+  }
+})();
 </script>
 </body>
 </html>
