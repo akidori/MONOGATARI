@@ -3020,7 +3020,7 @@ export default function App() {
     setShareModal({ id, url, updated: !!project.shareId, handoff: h, text });
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
   };
-  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", concept: "チャンネル" };
+  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル" };
   /* タブ共有バー（全タブ共通・右上に固定表示）のボタン文言 */
   const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー" };
   const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept"]; // 受け渡しで選べるタブ
@@ -4456,7 +4456,7 @@ export default function App() {
         </div>
         {/* タブ（アイコン＋短ラベルで1行に収める） */}
         <div className="max-w-[1500px] mx-auto px-2 sm:px-4 flex gap-1">
-          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"]].map(([k, ic, label, short]) => (
+          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]].map(([k, ic, label, short]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap px-1 sm:px-4 py-2 sm:py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -5628,6 +5628,53 @@ export default function App() {
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
               onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)}
               onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />
+          </div>
+          );
+        })()}
+
+        {/* ================= 納品完了タブ ================= */}
+        {tab === "deliver" && (() => {
+          const dv = [
+            ["deliverVideoUrl", "納品完了動画", "動画のURL（Drive／YouTube限定公開など）", false],
+            ["deliverShorts", "切り抜きショート", "ショートのURLを1行に1本", true],
+            ["deliverTitle", "タイトル", "投稿用の最終タイトル", false],
+            ["deliverThumbUrl", "サムネ", "サムネ画像のURL", false],
+            ["deliverDescription", "概要欄", "投稿用の概要欄テキスト", true],
+            ["deliverHashtags", "ハッシュタグ", "#例1 #例2 #例3", false],
+            ["deliverChapters", "目次", "00:00 導入\n01:30 本編\n…", true],
+          ];
+          const doneCount = dv.filter(([key]) => (m[key] || "").trim()).length;
+          return (
+          <div className="max-w-3xl mx-auto px-1 sm:px-0 py-2">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-[15px] font-bold text-stone-800">納品完了</h2>
+                <p className="text-[12px] text-stone-500 mt-0.5">投稿に必要な素材・文言をここに集約。埋まった項目からチェックが付く（編集者も入力OK）。</p>
+              </div>
+              <span className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-500 tabular-nums">{doneCount}/{dv.length}</span>
+            </div>
+            <section className={cardCls}>
+              {dv.map(([key, label, placeholder, multiline], i) => {
+                const filled = !!(m[key] || "").trim();
+                return (
+                  <div key={key} className={"flex items-start gap-2 px-3 sm:px-4 py-2.5 " + (i === 0 ? "" : "border-t border-stone-100")}>
+                    <span className={"shrink-0 w-5 h-5 mt-1 grid place-items-center rounded-md " + (filled ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-300")}>
+                      <Icon name="check" className="w-3 h-3" />
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-bold text-stone-400 mb-0.5">{label}</div>
+                      {multiline ? (
+                        <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
+                          className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" minHeight={60} />
+                      ) : (
+                        <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
+                          className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
           </div>
           );
         })()}
