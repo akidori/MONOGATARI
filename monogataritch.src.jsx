@@ -1516,6 +1516,7 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState("");
   const [hoverId, setHoverId] = useState(null);
+  const [highlightCollapsed, setHighlightCollapsed] = useState(false);
   const [showTheme, setShowTheme] = useState(false);
   const [tab, setTab] = useState("overview"); // overview | plan | script | kouban | assets | review | deliver | concept
   const [showImport, setShowImport] = useState(false);
@@ -4070,10 +4071,11 @@ export default function App() {
   const metaInput = "block w-full bg-transparent text-[13px] px-3 py-2 focus:outline-none placeholder:text-stone-300";
   const opBtn = "w-6 h-6 grid place-items-center rounded-md text-stone-400 hover:bg-stone-200 hover:text-stone-700 text-[11px] leading-none transition-colors";
   const cardCls = "bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden";
-  const cardHead = (label) => (
+  const cardHead = (label, right) => (
     <div className="px-4 py-2 flex items-center gap-2 border-b border-stone-100">
       <span className="w-1.5 h-4 rounded-full" style={{ background: theme.accent }} />
-      <h2 className="text-[12px] font-bold tracking-wider text-stone-600">{label}</h2>
+      <h2 className="text-[12px] font-bold tracking-wider text-stone-600 flex-1">{label}</h2>
+      {right}
     </div>
   );
 
@@ -4335,28 +4337,6 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
           </span>
           <div className="flex-1" />
-          {/* 構成台本の指標（TOTAL尺・字数・字/秒）は構成台本タブの時だけ表示 */}
-          {tab === "script" && (<>
-          <div className="flex items-baseline gap-1.5 px-2.5 sm:px-3 py-1 rounded-lg" style={{ background: "rgba(0,0,0,0.25)", fontFamily: mono }}>
-            <span className="text-[9px] tracking-widest opacity-60">TOTAL</span>
-            <span className="text-base sm:text-xl font-bold tabular-nums leading-none">{fmt(totalEst)}</span>
-            <span className="hidden sm:inline text-[10px] opacity-50">{totalChars.toLocaleString()}字</span>
-            <span className="hidden sm:inline text-[10px] tabular-nums opacity-50 ml-1 pl-1.5 border-l border-white/20" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
-          </div>
-          <label className="flex items-center gap-1 text-[11px] opacity-80">
-            <input type="number" min="3" max="8" step="0.5" value={project.rate}
-              onChange={(e) => setProject((p) => ({ ...p, rate: Number(e.target.value) || 5 }))}
-              className="w-11 sm:w-12 bg-black/25 border border-white/20 rounded-md px-1 sm:px-1.5 py-1 text-center focus:outline-none focus:border-white/60"
-              style={{ fontFamily: mono, color: mainText }} />
-            <span className="hidden sm:inline">字/秒</span>
-          </label>
-          {/* 構成台本を取り込み：このタブ（構成台本）専用の操作なのでここに置く（旧: サイドバーの常時表示ボタン） */}
-          <button onClick={() => { setImportTarget("current"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
-            title="JSON / 構成台本コピー / TXT・CSV・Excel から取り込み（この案件を更新）"
-            className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
-            <Icon name="download" className="w-3.5 h-3.5" /><span className="hidden sm:inline">取り込み</span>
-          </button>
-          </>)}
           {/* 先方コメント */}
           {project.shareId && (
             <button onClick={() => { setShowComments(true); fetchComments(); }} title="先方コメント"
@@ -4552,6 +4532,30 @@ export default function App() {
             <button onClick={() => copyShareUrl(tab)} disabled={sharing} title="このタブの共有URLをコピー"
               className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: theme.accent, color: accentText }}>
               <Icon name="share" className="w-3.5 h-3.5" />{sharing ? "発行中…" : TAB_SHARE_LABEL[tab]}
+            </button>
+          </div>
+        )}
+
+        {/* ===== 構成台本の指標（TOTAL尺・字数・字/秒・取り込み）：構成台本タブの中に内包 ===== */}
+        {tab === "script" && (
+          <div className="max-w-[1500px] mx-auto mb-4 rounded-xl border border-stone-200 bg-white px-3 sm:px-4 py-2 flex items-center gap-3 flex-wrap text-[12px]">
+            <div className="flex items-baseline gap-1.5" style={{ fontFamily: mono }}>
+              <span className="text-[9px] tracking-widest text-stone-400">TOTAL</span>
+              <span className="text-base sm:text-xl font-bold tabular-nums leading-none text-stone-800">{fmt(totalEst)}</span>
+              <span className="text-[10px] text-stone-400">{totalChars.toLocaleString()}字</span>
+              <span className="text-[10px] tabular-nums text-stone-400 ml-1 pl-1.5 border-l border-stone-200" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
+            </div>
+            <label className="flex items-center gap-1 text-[11px] text-stone-500">
+              <input type="number" min="3" max="8" step="0.5" value={project.rate}
+                onChange={(e) => setProject((p) => ({ ...p, rate: Number(e.target.value) || 5 }))}
+                className="w-11 sm:w-12 bg-stone-50 border border-stone-200 rounded-md px-1 sm:px-1.5 py-1 text-center focus:outline-none focus:border-stone-400"
+                style={{ fontFamily: mono }} />
+              字/秒
+            </label>
+            <button onClick={() => { setImportTarget("current"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
+              title="JSON / 構成台本コピー / TXT・CSV・Excel から取り込み（この案件を更新）"
+              className="ml-auto h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-stone-200 hover:bg-stone-50 text-stone-600">
+              <Icon name="download" className="w-3.5 h-3.5" />取り込み
             </button>
           </div>
         )}
@@ -4803,8 +4807,15 @@ export default function App() {
 
             {/* ハイライト（独立カード） */}
             <section className={cardCls + " mb-4"}>
-              {cardHead("ハイライト（冒頭フック）")}
-              <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（空行でEnter → ◼︎ 自動挿入）" />
+              {cardHead("ハイライト（冒頭フック）", (
+                <button onClick={() => setHighlightCollapsed((v) => !v)} title={highlightCollapsed ? "ハイライトを開く" : "ハイライトを畳む"}
+                  className="w-6 h-6 shrink-0 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors">
+                  <span className="text-[10px] transition-transform inline-block" style={{ transform: highlightCollapsed ? "rotate(-90deg)" : "none" }}>▾</span>
+                </button>
+              ))}
+              {!highlightCollapsed && (
+                <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（空行でEnter → ◼︎ 自動挿入）" />
+              )}
             </section>
 
             {/* 構成テーブル（PC：横並びテーブル） */}
