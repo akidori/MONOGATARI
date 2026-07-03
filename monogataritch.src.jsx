@@ -1579,6 +1579,7 @@ export default function App() {
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
   const [chanMenu, setChanMenu] = useState(null);          // 案件のチャンネル移動ドロップダウン {id, channel, x, y}
   const [caseMenu, setCaseMenu] = useState(null);          // 案件行の右クリックメニュー {id, channel, x, y}
+  const [rowMenu, setRowMenu] = useState(null);             // 構成テーブル行の右クリックメニュー {id, idx, kind, sceneType, x, y}
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -4195,11 +4196,6 @@ export default function App() {
                   </span>
                   <span className="text-[10px] text-white/30 tabular-nums">{items.length}</span>
                   <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
-                    {channel !== DEFAULT_CHANNEL && (<>
-                      <button title="フォルダを上へ" onClick={(e) => { e.stopPropagation(); moveChannel(channel, -1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="up" className="w-3 h-3" /></button>
-                      <button title="フォルダを下へ" onClick={(e) => { e.stopPropagation(); moveChannel(channel, 1); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20"><Icon name="down" className="w-3 h-3" /></button>
-                    </>)}
-                    <button title="このチャンネルに案件を追加（タイプ選択）" onClick={(e) => { e.stopPropagation(); setAddMenu({ channel, x: e.clientX, y: e.clientY }); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20">{<Icon name="plus" className="w-3.5 h-3.5" />}</button>
                     <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
                   </div>
                 </div>
@@ -4839,6 +4835,7 @@ export default function App() {
                         <tr key={r.id} id={"row-" + r.id} {...dropZoneProps(idx)}
                           onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
                           onPointerEnter={() => paintSelectTo(idx)}
+                          onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "location", x: e.clientX, y: e.clientY }); }}
                           style={{
                             ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
                             ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}),
@@ -4883,16 +4880,7 @@ export default function App() {
                               <span className="self-center pr-3 text-[9px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
                             </div>
                           </td>
-                          {!isNarrow && (
-                          <td className="pt-2 align-middle">
-                            <div className={"flex items-center justify-end gap-0.5 pr-2 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
-                              <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
-                              <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
-                              <button className={opBtn} title="下にシーンを追加" onClick={() => insertBelow(idx, newScene("解説系"))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
-                              <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
-                            </div>
-                          </td>
-                          )}
+                          {!isNarrow && <td className="pt-2 align-middle" />}
                         </tr>
                       );
                     }
@@ -4909,6 +4897,7 @@ export default function App() {
                       <tr key={r.id} id={"row-" + r.id}
                         {...dropZoneProps(idx)}
                         onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
+                        onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: e.clientX, y: e.clientY }); }}
                         className="border-b border-stone-100 transition-colors hover:bg-stone-50/70"
                         style={{
                           ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : {}),
@@ -4987,16 +4976,7 @@ export default function App() {
                         <td className="align-top p-0 border-l border-stone-100">
                           <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} />
                         </td>
-                        {!isNarrow && (
-                        <td className="align-top py-1.5 pr-2">
-                          <div className={"flex items-center justify-end gap-0.5 transition-opacity " + (hoverId === r.id ? "opacity-100" : "opacity-0")}>
-                            <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
-                            <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
-                            <button className={opBtn} title="下に行を追加" onClick={() => insertBelow(idx, newScene(r.type))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
-                            <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
-                          </div>
-                        </td>
-                        )}
+                        {!isNarrow && <td className="align-top py-1.5 pr-2" />}
                       </tr>
                     );
                   })}
@@ -6263,6 +6243,22 @@ export default function App() {
             <button onClick={() => { const c = caseMenu; setCaseMenu(null); setChanMenu({ id: c.id, channel: c.channel, x: c.x, y: c.y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">📁</span>チャンネル移動</button>
             <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); duplicateProject(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">⎘</span>複製</button>
             <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); deleteProject(id); }} className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 text-[12px] flex items-center gap-2 border-t border-stone-100"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
+          </div>
+        </>
+      )}
+
+      {/* ===== 構成テーブル 行の右クリックメニュー（上へ/下へ/追加/削除） ===== */}
+      {rowMenu && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={() => setRowMenu(null)} onContextMenu={(e) => { e.preventDefault(); setRowMenu(null); }} />
+          <div className="fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+            style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 200) }}>
+            <div className="flex border-b border-stone-100">
+              <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
+              <button onClick={() => { moveRow(rowMenu.idx, 1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
+            </div>
+            <button onClick={() => { const idx = rowMenu.idx, kind = rowMenu.kind, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(kind === "location" ? "解説系" : sceneType)); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />{rowMenu.kind === "location" ? "下にシーンを追加" : "下に行を追加"}</button>
+            <button onClick={() => { const id = rowMenu.id; setRowMenu(null); deleteRow(id); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[12px] font-bold text-red-500 flex items-center gap-2"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
           </div>
         </>
       )}
