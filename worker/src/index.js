@@ -79,10 +79,11 @@ export default {
       // ③ライブ編集トークン(live+k、LiveDoc DOへ委譲して照合)。いずれも無ければ401。
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "lab-manual") {
         const channel = url.searchParams.get("channel") || "";
+        const projectId = (url.searchParams.get("id") || "").slice(0, 16);
         if (!channel) return json({ ok: false, error: "channel必須", manual: "" }, 400);
         let authed = !!(await requireUser(request, env));
         if (!authed) {
-          const snapId = (url.searchParams.get("id") || "").slice(0, 16);
+          const snapId = projectId;
           const tokenParam = url.searchParams.get("token") || "";
           const upParam = url.searchParams.get("up") || "";
           if (snapId && tokenParam) { const tok = await env.SNAPS.get("tok:" + snapId); authed = !!tok && tok === tokenParam; }
@@ -101,17 +102,20 @@ export default {
         }
         if (!authed) return json({ ok: false, error: "unauthorized", manual: "" }, 401);
         if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続", manual: "" });
+        // idを渡すとFlip-LAB側でFlip Board台帳のクライアント名解決を使う（書き込み側=refreshChannelsと同じロジック）。
+        // これが無いと、Flip Boardでチャンネル名が変わった案件だけ表示が古い名前のまま固まる。
+        const qs = "channel=" + encodeURIComponent(channel) + (projectId ? "&id=" + encodeURIComponent(projectId) : "");
         const labReq = new Request(
-          "https://flip-lens/api/channel_manual?channel=" + encodeURIComponent(channel),
+          "https://flip-lens/api/channel_manual?" + qs,
           { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } }
         );
         try {
           const r = env.LAB ? await env.LAB.fetch(labReq)
-            : await fetch("https://flip-lens.aki-surf89315.workers.dev/api/channel_manual?channel=" + encodeURIComponent(channel),
+            : await fetch("https://flip-lens.aki-surf89315.workers.dev/api/channel_manual?" + qs,
                 { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } });
           const d = await r.json();
-          // fixed(確定ルール逐語)/distilled(学習した傾向)も転送＝アプリ側で「採用」ボタンに使う。
-          return json({ ok: true, channel: d.channel, manual: d.manual || "", fixed: d.fixed || "", distilled: d.distilled || "", updated: d.updated || null });
+          // fixed(確定ルール逐語)/distilled(学習した傾向)/settings(案件設定=テロップカラー等)も転送。
+          return json({ ok: true, channel: d.channel, manual: d.manual || "", fixed: d.fixed || "", distilled: d.distilled || "", settings: d.settings || {}, updated: d.updated || null });
         } catch (e) {
           return json({ ok: false, error: "LAB取得失敗: " + e.message, manual: "" });
         }
@@ -125,7 +129,9 @@ export default {
         if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
         if (!b.channel) return json({ error: "channel必須" }, 400);
         if (!env.FLIP_LAB_TOKEN) return json({ error: "LAB未接続" }, 502);
-        const body = JSON.stringify({ channel: b.channel, text: b.text || "" });
+        // idを渡すとFlip-LAB側でFlip Board台帳のクライアント名解決を使う。読み取り側(lab-manual)と揃えないと
+        // 「採用」で確定ルールが読んでいたのと別のチャンネル箱に保存されるズレが起きる。
+        const body = JSON.stringify({ channel: b.channel, text: b.text || "", id: snap });
         const labReq = new Request("https://flip-lens/api/fixed-rules", { method: "POST", headers: { "content-type": "application/json", "Authorization": "Bearer " + env.FLIP_LAB_TOKEN }, body });
         try {
           const r = env.LAB ? await env.LAB.fetch(labReq)
@@ -531,6 +537,7 @@ export default {
       // POST /api/snap/{id}/comments/{cid}
       //  返信: { reply:{author,text} } はトークン不要（先方も編集者も返信可）
       //  状態/属性変更: { status?, category?, priority?, assignee?, resolved?, token } は要トークン（編集者）
+      //  対応済みのみ: { resolved, up } はアップロードトークン(uptok)でも可（先方の編集者が自分で直したら自分でチェックできるように）
       if (request.method === "POST" && parts[1] === "snap" && parts[3] === "comments" && parts[4]) {
         const id = parts[2], cid = parts[4];
         const b = await request.json();
@@ -548,12 +555,25 @@ export default {
         }
         // 状態・属性の変更は要トークン
         const tok = await env.SNAPS.get("tok:" + id);
-        if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
-        if (typeof b.resolved === "boolean") { c.resolved = b.resolved; if (b.resolved && !b.status) c.status = "完了"; }
-        if (typeof b.status === "string") { c.status = b.status.slice(0, 8); c.resolved = (c.status === "完了"); }
-        if (typeof b.category === "string") c.category = b.category.slice(0, 20);
-        if (typeof b.priority === "string") c.priority = b.priority.slice(0, 4);
-        if (typeof b.assignee === "string") c.assignee = b.assignee.slice(0, 60);
+        const isAdmin = !!tok && tok === (b.token || "");
+        let isUploader = false;
+        if (!isAdmin && b.up) {
+          const uptok = await env.SNAPS.get("uptok:" + id);
+          isUploader = !!uptok && uptok === b.up;
+        }
+        if (!isAdmin && !isUploader) return json({ error: "forbidden" }, 403);
+        if (typeof b.resolved === "boolean") {
+          c.resolved = b.resolved;
+          if (b.resolved) { if (!b.status) c.status = "完了"; }
+          else if (c.status === "完了") { c.status = "未対応"; }
+        }
+        // アップロードトークンは対応済みフラグのみ。属性変更は編集者(管理トークン)限定。
+        if (isAdmin) {
+          if (typeof b.status === "string") { c.status = b.status.slice(0, 8); c.resolved = (c.status === "完了"); }
+          if (typeof b.category === "string") c.category = b.category.slice(0, 20);
+          if (typeof b.priority === "string") c.priority = b.priority.slice(0, 4);
+          if (typeof b.assignee === "string") c.assignee = b.assignee.slice(0, 60);
+        }
         await env.SNAPS.put("cmt:" + id, JSON.stringify(list));
         return json({ comment: c });
       }
