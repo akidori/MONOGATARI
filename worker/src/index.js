@@ -966,6 +966,35 @@ export default {
         return json({ ok: true });
       }
 
+      // POST /api/file/{key...}/trash?snap=&token=  → 即削除せず7日間の猶予期間を設定（誤削除の復元窓）
+      // R2/KV本体はまだ消さず、cleanupExpiredのexpiresAtチェックに乗せて後日まとめて消す
+      if (request.method === "POST" && parts[1] === "file" && parts[parts.length - 1] === "trash" && parts.length > 3) {
+        const key = parts.slice(2, -1).join("/");
+        const snap = url.searchParams.get("snap") || "";
+        const tok = await env.SNAPS.get("tok:" + snap);
+        if (!tok || tok !== (url.searchParams.get("token") || "")) return json({ error: "forbidden" }, 403);
+        const meta = (await env.SNAPS.get("file:" + key, "json")) || {};
+        const b = await request.json().catch(() => ({}));
+        const trashedAt = now();
+        const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+        await env.SNAPS.put("file:" + key, JSON.stringify({ ...meta, trashedAt, expiresAt, streamUid: (b.streamUid || "").toString().slice(0, 60) || null }));
+        return json({ ok: true, expiresAt });
+      }
+
+      // POST /api/file/{key...}/restore?snap=&token=  → 猶予期間内なら削除予約を取り消し
+      if (request.method === "POST" && parts[1] === "file" && parts[parts.length - 1] === "restore" && parts.length > 3) {
+        const key = parts.slice(2, -1).join("/");
+        const snap = url.searchParams.get("snap") || "";
+        const tok = await env.SNAPS.get("tok:" + snap);
+        if (!tok || tok !== (url.searchParams.get("token") || "")) return json({ error: "forbidden" }, 403);
+        const meta = (await env.SNAPS.get("file:" + key, "json")) || {};
+        const obj = await env.FILES.head(key);
+        if (!obj) return json({ error: "既に完全削除済みで復元できません" }, 410);
+        const { trashedAt, expiresAt, streamUid, ...rest } = meta;
+        await env.SNAPS.put("file:" + key, JSON.stringify(rest));
+        return json({ ok: true });
+      }
+
       // ===== Cloudflare Stream（確認用動画の自動トランスコード＝Frame.io方式） =====
       // 設定: wrangler.toml [vars] STREAM_ACCOUNT_ID ＋ secret STREAM_API_TOKEN（Stream:Edit）
       const streamCfg = () => env.STREAM_ACCOUNT_ID && env.STREAM_API_TOKEN
@@ -1077,6 +1106,14 @@ async function cleanupExpired(env) {
         const key = k.name.slice("file:".length);
         await env.FILES.delete(key);
         await env.SNAPS.delete(k.name);
+        // ゴミ箱の猶予期限切れ：R2本体と一緒にStream変換版も本削除（trash時に streamUid を退避してある）
+        if (meta.streamUid && env.STREAM_ACCOUNT_ID && env.STREAM_API_TOKEN) {
+          try {
+            await fetch("https://api.cloudflare.com/client/v4/accounts/" + env.STREAM_ACCOUNT_ID + "/stream/" + meta.streamUid, {
+              method: "DELETE", headers: { Authorization: "Bearer " + env.STREAM_API_TOKEN },
+            });
+          } catch (e) {}
+        }
         // 案件アップ一覧からも除去（file_up:{snap}）
         const m = key.match(/^f\/([^/]+)\//);
         if (m) {

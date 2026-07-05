@@ -1192,7 +1192,30 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
 }
 
 /* ===== 動画確認：Frame.io型 修正管理ボード（バージョン＋ステータス/カテゴリ/優先度/返信/フィルタ） ===== */
-function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
+function VersionTrashPanel({ items, onRestore }) {
+  const [open, setOpen] = React.useState(false);
+  if (!items.length) return null;
+  const daysLeft = (v) => Math.max(0, 7 - Math.floor((Date.now() - v.trashedAt) / 86400000));
+  return (
+    <div className="mb-3">
+      <button onClick={() => setOpen((o) => !o)} className="text-[11px] font-bold text-stone-400 hover:text-stone-600">🗑 ゴミ箱（{items.length}）{open ? " ▴" : " ▾"}</button>
+      {open && (
+        <div className="mt-1.5 rounded-xl border border-dashed border-stone-300 bg-white p-2.5 space-y-1.5">
+          {items.map((v) => (
+            <div key={v.id} className="flex items-center gap-2 text-[11px]">
+              <span className="font-bold text-stone-500">{v.label}</span>
+              <span className="text-stone-400 truncate flex-1">{v.name && v.name !== v.label ? v.name : ""}</span>
+              <span className="text-stone-400">残り{daysLeft(v)}日で完全削除</span>
+              <button onClick={() => onRestore(v.id)} className="font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 shrink-0">復元</button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
+  trashedVersions = trashedVersions || [];
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
   const [dropOver, setDropOver] = React.useState(false);
@@ -1327,21 +1350,24 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
 
   if (!versions.length) {
     return (
-      <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-6 text-center transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "2px" } : {}}
-        onDragOver={onDragOverVideo} onDragLeave={() => setDropOver(false)} onDrop={onDropVideo}>
-        <div className="text-[13px] font-bold text-stone-600 mb-1">確認用の動画を追加</div>
-        <p className="text-[11px] text-stone-400 mb-4">mp4をここにドラッグ&ドロップ、または下のボタンから。0.5〜4倍速で試写しながら修正コメントを管理できます。</p>
-        <div className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
-          <label className="flex-1 text-[12px] font-bold px-4 py-2.5 rounded-lg shadow cursor-pointer text-white" style={{ background: main }}>
-            ⬆ mp4をアップロード
-            <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
-          </label>
+      <div>
+        <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
+        <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-6 text-center transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "2px" } : {}}
+          onDragOver={onDragOverVideo} onDragLeave={() => setDropOver(false)} onDrop={onDropVideo}>
+          <div className="text-[13px] font-bold text-stone-600 mb-1">確認用の動画を追加</div>
+          <p className="text-[11px] text-stone-400 mb-4">mp4をここにドラッグ&ドロップ、または下のボタンから。0.5〜4倍速で試写しながら修正コメントを管理できます。</p>
+          <div className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
+            <label className="flex-1 text-[12px] font-bold px-4 py-2.5 rounded-lg shadow cursor-pointer text-white" style={{ background: main }}>
+              ⬆ mp4をアップロード
+              <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
+            </label>
+          </div>
+          <div className="flex items-center gap-2 max-w-md mx-auto mt-2">
+            <input value={yt} onChange={(e) => setYt(e.target.value)} placeholder="または YouTube限定公開URL" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-2 text-[12px] focus:outline-none" />
+            <button onClick={() => { onAddYouTube(yt); setYt(""); }} className="text-[11px] font-bold px-3 py-2 rounded-lg shrink-0 text-white" style={{ background: main }}>登録</button>
+          </div>
+          {busy && <div className="mt-3 text-[12px] text-stone-500">{busy} {prog ? prog + "%" : ""}</div>}
         </div>
-        <div className="flex items-center gap-2 max-w-md mx-auto mt-2">
-          <input value={yt} onChange={(e) => setYt(e.target.value)} placeholder="または YouTube限定公開URL" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-2 text-[12px] focus:outline-none" />
-          <button onClick={() => { onAddYouTube(yt); setYt(""); }} className="text-[11px] font-bold px-3 py-2 rounded-lg shrink-0 text-white" style={{ background: main }}>登録</button>
-        </div>
-        {busy && <div className="mt-3 text-[12px] text-stone-500">{busy} {prog ? prog + "%" : ""}</div>}
       </div>
     );
   }
@@ -1381,8 +1407,9 @@ function ReviewBoard({ versions, comments, main, accent, accentText, busy, prog,
             {shortsBusy || shortsRunning ? "生成中…" : "🎬 ショート生成"}
           </button>
         )}
-        <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
+        <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（7日間はゴミ箱から復元できます。コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
       </div>
+      <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
       {(shortsBusy || shortsJobs.length > 0 || shortsItems.length > 0) && (
         <div className="mb-3 rounded-xl border border-stone-200 bg-white p-3">
           <div className="text-[11px] font-bold text-stone-500 mb-1.5">たてがた君（縦ショート自動生成）</div>
@@ -3558,6 +3585,8 @@ export default function App() {
 
   /* ===== 確認動画バージョン（v1/v2/v3…） ===== */
   const reviewVersions = () => (project && project.review && Array.isArray(project.review.versions)) ? project.review.versions : [];
+  const activeReviewVersions = () => reviewVersions().filter((v) => !v.trashedAt);
+  const trashedReviewVersions = () => reviewVersions().filter((v) => v.trashedAt);
   const setVersions = (updater) => setProject((p) => { const rv = (p.review && p.review.versions) || []; const next = typeof updater === "function" ? updater(rv) : updater; return { ...p, review: { versions: next, comments: (p.review && p.review.comments) || [] } }; });
   const addVersionFromVideo = async (vobj, name) => {
     setVersions((arr) => {
@@ -3609,12 +3638,26 @@ export default function App() {
     await addVersionFromVideo({ type: "youtube", url: "https://www.youtube.com/watch?v=" + vid }, "YouTube版");
     showToast("バージョンを追加したよ");
   };
+  // 即消しではなくゴミ箱送り＝7日間は復元可能（誤削除対策）。R2/Stream本体はcleanupExpired cronが猶予後に消す
   const removeVersion = async (vid) => {
     const v = reviewVersions().find((x) => x.id === vid);
-    setVersions((arr) => arr.filter((x) => x.id !== vid));
+    setVersions((arr) => arr.map((x) => (x.id === vid ? { ...x, trashedAt: Date.now() } : x)));
     setAssets((as) => as.filter((a) => a.versionId !== vid));
-    if (v && v.key) { try { await fetch(SHARE_API + "/api/file/" + v.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
-    if (v && v.uid) { try { await fetch(SHARE_API + "/api/stream/" + v.uid + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
+    if (v && v.key) {
+      try { await fetch(SHARE_API + "/api/file/" + v.key + "/trash?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ streamUid: v.uid || "" }) }); } catch (e) {}
+    }
+  };
+  const restoreVersion = async (vid) => {
+    const v = reviewVersions().find((x) => x.id === vid);
+    if (v && v.key) {
+      try {
+        const r = await fetch(SHARE_API + "/api/file/" + v.key + "/restore?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "POST" });
+        const d = await r.json();
+        if (!r.ok) { showToast(d.error || "復元期限が切れています"); return; }
+      } catch (e) { showToast("復元に失敗しました"); return; }
+    }
+    setVersions((arr) => arr.map((x) => (x.id === vid ? { ...x, trashedAt: null } : x)));
+    showToast(v && v.label ? v.label + " を復元したよ" : "復元したよ");
   };
   const renameVersion = (vid, name) => setVersions((arr) => arr.map((x) => (x.id === vid ? { ...x, name } : x)));
 
@@ -5645,7 +5688,7 @@ export default function App() {
 
         {/* ================= 動画確認タブ（Frame.io型 修正管理＋バージョン） ================= */}
         {tab === "review" && (() => {
-          const evs = reviewVersions().length ? reviewVersions()
+          const evs = activeReviewVersions().length ? activeReviewVersions()
             : (project.assets || []).filter((a) => a.category === "確認用動画").map((a, i) => ({ id: a.id, label: "v" + (i + 1), name: a.name, type: a.type, key: a.key, url: a.url, createdAt: a.createdAt }));
           return (
           <div className="max-w-5xl mx-auto px-1 sm:px-0 py-2">
@@ -5654,11 +5697,11 @@ export default function App() {
               <p className="text-[12px] text-stone-500 mt-0.5">初稿/修正版をバージョン管理。止めた位置に修正コメント（カテゴリ・優先度・ステータス・返信）。OKが出たらそれが納品。</p>
             </div>
             <ReviewBoard
-              versions={evs} comments={comments} main={theme.main} accent={theme.accent} accentText={accentText}
+              versions={evs} trashedVersions={trashedReviewVersions()} comments={comments} main={theme.main} accent={theme.accent} accentText={accentText}
               busy={mediaBusy} prog={mediaProg} userName={(user && user.name) || "ディレクター"}
               shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare}
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
-              onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)}
+              onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)} onRestoreVersion={(id) => restoreVersion(id)}
               onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />
           </div>
           );
