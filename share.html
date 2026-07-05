@@ -748,12 +748,43 @@ function wireVideoControls(){
   videoEl.addEventListener("timeupdate", ()=>{ if(seek&&!seek._drag&&isFinite(videoEl.duration)){ seek.max=videoEl.duration; seek.value=videoEl.currentTime; } if(cur) cur.textContent=vcFmt(videoEl.currentTime)+" / "+vcFmt(videoEl.duration); });
   if(seek){ seek.addEventListener("input", ()=>{ seek._drag=true; if(videoEl) videoEl.currentTime=+seek.value; }); seek.addEventListener("change", ()=>{ seek._drag=false; }); }
   if(pp) pp.addEventListener("click", vcTogglePlay);
+  wireSeekPreview();
   if(!_vcKeyBound){ _vcKeyBound=true; document.addEventListener("keydown", (e)=>{
     const t=e.target; if(t && (t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.isContentEditable)) return;
     if(e.key===" "||e.key==="Spacebar"||e.key==="Enter"){ if(!videoEl&&!ytPlayer) return; e.preventDefault(); vcTogglePlay(); }
     else if((e.key==="ArrowLeft"||e.key==="ArrowRight")&&videoEl){ e.preventDefault(); const d=(e.key==="ArrowRight"?1:-1)*(e.shiftKey?1:5); videoEl.currentTime=Math.max(0,Math.min(videoEl.duration||1e9,(videoEl.currentTime||0)+d)); }
   }); }
 }
+/* シークバーのホバープレビュー（YouTube風）。Stream変換済みは公式サムネAPI（?time=Ns）で
+   カーソル位置のシーンを出す。それ以外（生mp4/変換中）はタイムコードだけの吹き出し。 */
+function wireSeekPreview(){
+  const sk=document.getElementById("vc-seek"); if(!sk || sk._pvWired) return; sk._pvWired=true;
+  const wrap=sk.parentElement; if(!wrap) return; wrap.style.position="relative";
+  const cv=curVideo(SNAP.project||{}); const v=(cv&&cv.video)||{};
+  const thumbBase=(v.type==="stream"&&v.ready&&v.hls)?v.hls.replace(/manifest\/video\.m3u8.*$/,"thumbnails/thumbnail.jpg"):"";
+  const tip=document.createElement("div");
+  tip.style.cssText="position:absolute;bottom:20px;transform:translateX(-50%);z-index:30;pointer-events:none;display:none;border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.35);background:#000;border:1px solid rgba(0,0,0,.25)";
+  tip.innerHTML=(thumbBase?`<img style="display:block;width:160px;height:90px;object-fit:cover" alt="">`:"")
+    +`<div class="pv-t" style="text-align:center;font-size:10px;font-weight:bold;color:rgba(255,255,255,.92);padding:2px 8px;background:rgba(0,0,0,.85);font-family:ui-monospace,monospace"></div>`;
+  wrap.appendChild(tip);
+  const img=tip.querySelector("img"), tt=tip.querySelector(".pv-t");
+  let lastSec=-1;
+  sk.addEventListener("mousemove",(e)=>{
+    const d=(videoEl&&isFinite(videoEl.duration)&&videoEl.duration)||0;
+    if(!d){ tip.style.display="none"; return; }
+    const r=sk.getBoundingClientRect();
+    const frac=Math.min(1,Math.max(0,(e.clientX-r.left)/r.width)), t=frac*d;
+    tip.style.left=Math.min(r.width-84,Math.max(84,e.clientX-r.left))+"px";
+    tip.style.display="block";
+    tt.textContent=fmtTC(t);
+    if(img){ const s=Math.max(0,Math.floor(t)); if(s!==lastSec){ lastSec=s;
+      const u=thumbBase+"?time="+s+"s&height=90";
+      const im=new Image(); im.onload=()=>{ img.src=u; }; im.src=u;  // 読み込み完了後に差し替え＝チラつき防止
+    } }
+  });
+  sk.addEventListener("mouseleave",()=>{ tip.style.display="none"; });
+}
+
 function mountVideo(p, accent, main){
   _shMain = main; mountShorts();
   const cur = curVideo(p);

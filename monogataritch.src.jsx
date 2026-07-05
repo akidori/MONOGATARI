@@ -1234,6 +1234,13 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const [rate, setRate] = React.useState(1);
   const [cur, setCur] = React.useState(0);
   const [dur, setDur] = React.useState(0);
+  /* シークバーのホバープレビュー（YouTube風）。pv={x,t}、pvImgは読み込み完了済みサムネURL（src直差し替えのチラつき防止） */
+  const [pv, setPv] = React.useState(null);
+  const [pvImg, setPvImg] = React.useState("");
+  const pvCanvasRef = React.useRef(null);
+  const pvVidRef = React.useRef(null);
+  const pvTimer = React.useRef(null);
+  const pvSeekT = React.useRef(0);
   const prevVerLen = React.useRef(versions.length);
   React.useEffect(() => {
     if (versions.length > prevVerLen.current) { setSelId(versions[versions.length - 1].id); } // 新ver追加→最新を自動表示（旧版誤確認の防止）
@@ -1257,6 +1264,35 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const streamBusy = !!(sel && sel.type === "stream" && !sel.ready);   // 変換中 or 変換失敗
   // 「本当に何も再生できない」＝HLS未完 かつ 生データも無い時だけ
   const streamPending = streamBusy && !rawSrc;
+  // ホバープレビューの絵の出どころ：Stream変換済みは公式サムネAPI（?time=Ns）、生mp4は隠しvideoからフレーム描画、YouTubeはタイムコードのみ
+  const pvThumbBase = (sel && sel.type === "stream" && sel.ready && sel.hls) ? sel.hls.replace(/manifest\/video\.m3u8.*$/, "thumbnails/thumbnail.jpg") : "";
+  const pvThumbUrl = (pvThumbBase && pv) ? pvThumbBase + "?time=" + Math.max(0, Math.floor(pv.t)) + "s&height=90" : "";
+  React.useEffect(() => { if (!pvThumbUrl) return; const im = new Image(); im.onload = () => setPvImg(pvThumbUrl); im.src = pvThumbUrl; }, [pvThumbUrl]);
+  React.useEffect(() => { setPv(null); setPvImg(""); }, [sel && sel.id]);
+  const pvNeedsVideo = !!(sel && sel.type !== "youtube" && !pvThumbBase && rawSrc);
+  const queuePvSeek = (t) => {
+    pvSeekT.current = t;
+    if (pvTimer.current) return; // 連続ホバーは120msに間引く（2GB級mp4のシーク連打防止）
+    pvTimer.current = setTimeout(() => { pvTimer.current = null; const v = pvVidRef.current; if (v && v.readyState >= 1) { try { v.currentTime = pvSeekT.current; } catch (e) {} } }, 120);
+  };
+  const pvMove = (e) => {
+    if (!dur) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    setPv({ x: Math.min(r.width - 84, Math.max(84, e.clientX - r.left)), t: frac * dur });
+    if (pvNeedsVideo) queuePvSeek(frac * dur);
+  };
+  const pvDraw = () => {
+    const v = pvVidRef.current, c = pvCanvasRef.current;
+    if (!v || !c) return;
+    try {
+      const ctx = c.getContext("2d");
+      const vw = v.videoWidth || 16, vh = v.videoHeight || 9;
+      const s = Math.min(c.width / vw, c.height / vh), w = vw * s, h = vh * s;
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(v, (c.width - w) / 2, (c.height - h) / 2, w, h);
+    } catch (e) {}
+  };
   // Cloudflare Stream(HLS) を hls.js で attach（Safariはネイティブ）
   React.useEffect(() => {
     if (!sel || sel.type !== "stream" || !sel.ready || !sel.hls || !vref.current) return;
@@ -1463,10 +1499,20 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           {/* 映像のすぐ下に常時見える太いシークバー（mp4もYouTubeも）。スクラブしても勝手に再生しない */}
           {!streamPending && dur > 0 && (
             <div className="mt-2 flex items-center gap-2">
-              <input type="range" min={0} max={dur} step="0.1" value={cur}
-                onChange={(e) => { const t = +e.target.value; setCur(t); if (isYT) { const p = ytPlayerRef.current; if (p && p.seekTo) p.seekTo(t, true); } else if (vref.current) vref.current.currentTime = t; }}
-                className="flex-1 h-2 cursor-pointer accent-current" style={{ color: accent }} />
+              <div className="relative flex-1 min-w-0" onMouseMove={pvMove} onMouseLeave={() => setPv(null)}>
+                {pv && (
+                  <div className="absolute bottom-4 z-30 pointer-events-none -translate-x-1/2 rounded-lg overflow-hidden shadow-lg border border-black/20 bg-black" style={{ left: pv.x }}>
+                    {pvThumbUrl ? <img src={pvImg || pvThumbUrl} alt="" draggable={false} className="block w-40 h-[90px] object-cover" />
+                      : pvNeedsVideo ? <canvas ref={pvCanvasRef} width={160} height={90} className="block w-40 h-[90px]" /> : null}
+                    <div className="text-center text-[10px] font-bold text-white/90 py-0.5 bg-black/80" style={{ fontFamily: mono }}>{fmtTC(pv.t)}</div>
+                  </div>
+                )}
+                <input type="range" min={0} max={dur} step="0.1" value={cur}
+                  onChange={(e) => { const t = +e.target.value; setCur(t); if (isYT) { const p = ytPlayerRef.current; if (p && p.seekTo) p.seekTo(t, true); } else if (vref.current) vref.current.currentTime = t; }}
+                  className="w-full h-2 cursor-pointer accent-current" style={{ color: accent }} />
+              </div>
               <span className="text-[10px] tabular-nums text-stone-400 shrink-0" style={{ fontFamily: mono }}>{fmtTC(cur)} / {fmtTC(dur)}</span>
+              {pvNeedsVideo && <video ref={pvVidRef} src={rawSrc} preload="metadata" muted playsInline className="hidden" onSeeked={pvDraw} />}
             </div>
           )}
           {!streamPending && (
@@ -3340,6 +3386,15 @@ export default function App() {
   };
   // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）
   React.useEffect(() => { if ((tab === "assets" || tab === "review") && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
+  // タブ切替時だけだと「動画確認に居っぱなし」で編集者の新版に永遠に気づけない（2026-07-05 喜多さん0704）。
+  // 案件を開いている間は45秒ごとに拾う。refで毎レンダー最新のクロージャを持たせる＝古いproject stateで重複取り込みしない
+  const importGuestRef = React.useRef(null);
+  importGuestRef.current = importGuestUploads;
+  React.useEffect(() => {
+    if (!project || !project.shareId) return;
+    const t = setInterval(() => { try { importGuestRef.current && importGuestRef.current(true); } catch (e) {} }, 45000);
+    return () => clearInterval(t);
+  }, [project && project.shareId]);
 
   // 進行ボード：ホーム表示時にFlip Board(D1)の全案件をまとめて引く（担当・工程・次の締切の可視化）
   React.useEffect(() => {
