@@ -410,19 +410,33 @@ export default {
         const now = new Date().toISOString();
         let createdAt = now;
 
+        let prevSnap = null;
         if (id) {
           const existingTok = await env.SNAPS.get("tok:" + id);
           // 既存の更新はトークン一致が必要
           if (!existingTok || existingTok !== (body.token || "")) { id = ""; }
           else {
             token = existingTok;
-            const prev = await env.SNAPS.get("snap:" + id, "json");
-            if (prev && prev.createdAt) createdAt = prev.createdAt;
+            prevSnap = await env.SNAPS.get("snap:" + id, "json");
+            if (prevSnap && prevSnap.createdAt) createdAt = prevSnap.createdAt;
           }
         }
         if (!id) { id = rid(8); token = rid(20); isNew = true; }
 
-        await env.SNAPS.put("snap:" + id, JSON.stringify({ project: slim(project), createdAt, updatedAt: now }));
+        const slimmed = slim(project);
+        // マージガード：同じ共有IDへ複数の端末/コピーが発行しても、発行側が知らない既存の動画版を黙って消さない
+        // （2026-07-05 喜多さん事故：編集者が上げた版を、古い状態の別コピーの再発行が上書きで消した）。
+        // 発行側でゴミ箱入り(trashedAt)の版は引き継がない＝意図した削除は尊重。
+        if (prevSnap && prevSnap.project && prevSnap.project.review && Array.isArray(prevSnap.project.review.versions)) {
+          const ids = (v) => ["key", "uid", "url", "id"].map((f) => v && v[f]).filter(Boolean);
+          const incoming = new Set(((project.review && project.review.versions) || []).flatMap(ids));
+          const keep = prevSnap.project.review.versions.filter((v) => v && !v.trashedAt && ids(v).length && !ids(v).some((x) => incoming.has(x)));
+          if (keep.length) {
+            slimmed.review.versions = slimmed.review.versions.concat(keep)
+              .sort((a, b) => (+a.createdAt || 0) - (+b.createdAt || 0)).slice(-50);
+          }
+        }
+        await env.SNAPS.put("snap:" + id, JSON.stringify({ project: slimmed, createdAt, updatedAt: now }));
         await env.SNAPS.put("tok:" + id, token);
         // 編集者用アップロードトークン：大容量アップだけ許可（コメント削除等の管理権限は持たせない）。無ければ発行。
         let uptok = await env.SNAPS.get("uptok:" + id);
@@ -1213,6 +1227,8 @@ function slim(p) {
         hls: (v.hls || "").slice(0, 500),
         ready: !!v.ready,
         createdAt: v.createdAt || "",
+        // ゴミ箱状態も共有側へ通す：share.htmlが非表示にでき、マージガードが「削除済み」を判定できる
+        trashedAt: v.trashedAt || null,
       })),
     } : { versions: [] },
     files: Array.isArray(p.files) ? p.files.slice(0, 200).map((f) => ({

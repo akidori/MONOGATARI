@@ -375,7 +375,16 @@ function render(){
 
   const appEl = document.getElementById("app");
   if(appEl) appEl.style.maxWidth = (TAB==="video") ? "1280px" : "820px";
+  // 編集者URL専用：どのタブにいても右上から「動画を上げる」「確認URLをコピー」に届く固定バー
+  const editorBar = (UP_TOKEN && !CHMODE) ? `
+    <div class="fixed top-2 right-2 z-40 flex gap-1.5">
+      <button id="eb-up" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md text-white flex items-center gap-1.5" style="background:${accent}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M12 17V4"/><path d="M6 10l6-6 6 6"/><path d="M4 20h16"/></svg>動画を上げる</button>
+      <button id="eb-link" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md bg-white border border-stone-200 text-stone-600 flex items-center gap-1.5">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>確認URLをコピー</button>
+    </div>` : "";
   appEl.innerHTML = `
+    ${editorBar}
     <div class="flex items-center justify-between mb-3">
       <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">ものがたりっち！</div>
       <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
@@ -401,6 +410,18 @@ function render(){
   document.querySelectorAll(".cbtn").forEach(b => b.addEventListener("click", () => toggleComments(b.dataset.c, b.dataset.l)));
   if(TAB==="video") mountVideo(p, accent, main);
   if(TAB==="files") mountFiles(p, accent, main);
+  // 編集者バー配線：どのタブからでも動画タブへ飛んでアップ枠を目立たせる／upトークン抜きの閲覧URLを渡す
+  const ebUp = document.getElementById("eb-up");
+  if(ebUp) ebUp.addEventListener("click", () => {
+    if(TAB!=="video") setTab("video");
+    setTimeout(() => { const d = document.getElementById("vu-drop"); if(d){ d.scrollIntoView({behavior:"smooth", block:"center"}); d.style.boxShadow = "0 0 0 3px " + accent; setTimeout(() => { d.style.boxShadow = ""; }, 1600); } }, 150);
+  });
+  const ebLink = document.getElementById("eb-link");
+  if(ebLink) ebLink.addEventListener("click", async () => {
+    const u = new URL(location.href); u.searchParams.delete("up"); u.searchParams.delete("start");
+    try { await navigator.clipboard.writeText(u.toString()); ebLink.lastChild.textContent = ""; ebLink.insertAdjacentText("beforeend", "コピーした"); setTimeout(() => render(), 1400); }
+    catch(e) { prompt("このURLをコピーしてね", u.toString()); }
+  });
 }
 
 function renderChannel(){
@@ -620,7 +641,7 @@ function videoOptions(p){
   const out=[];
   // 確認用バージョン（v1/v2/v3）。Stream変換済み(hls)を優先表示
   const vers = (p.review && Array.isArray(p.review.versions)) ? p.review.versions : [];
-  vers.forEach((v)=>{ if(v.uid || v.url || v.key) out.push({ id: v.uid || v.key || v.url, label: v.label + (v.name && v.name!==v.label ? " "+v.name : ""), video: { type: v.type, key: v.key, url: v.url, uid: v.uid, hls: v.hls, ready: v.ready } }); });
+  vers.forEach((v)=>{ if(v.trashedAt) return; /* ゴミ箱入りの版は先方に見せない */ if(v.uid || v.url || v.key) out.push({ id: v.uid || v.key || v.url, label: v.label + (v.name && v.name!==v.label ? " "+v.name : ""), video: { type: v.type, key: v.key, url: v.url, uid: v.uid, hls: v.hls, ready: v.ready } }); });
   if(p.video && (p.video.url||p.video.key)) out.push({ id: vidKey(p.video), label:"案件全体", video:p.video });
   (p.plans||[]).forEach((pl,i)=>{ if(pl.video && (pl.video.url||pl.video.key)) out.push({ id: vidKey(pl.video), label:(pl.title||("企画"+(i+1))).slice(0,24), video:pl.video }); });
   // 編集者が共有リンクから上げた動画（role:review もしくは動画mime/拡張子）も確認対象に合流。AKの取り込み待ちなく即見える。
