@@ -3401,6 +3401,20 @@ export default function App() {
     setMeta("deliverThumbImages", deliverThumbs().filter((_, i) => i !== idx));
     if (old && old.key) { try { await fetch(SHARE_API + "/api/file/" + old.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
   };
+  // 既存タイルをクリック→その場で差し替え（位置はそのまま・古い方はhard delete）
+  const replaceDeliverThumb = async (idx, file) => {
+    if (!file || !/^image\//.test(file.type)) { showToast("画像ファイルを選んでね"); return; }
+    const old = deliverThumbs()[idx];
+    setThumbUp({ i: 1, n: 1, pct: 0 });
+    try {
+      const sh = await ensureShare();
+      if (!sh) { showToast("共有の発行に失敗してアップできなかった"); return; }
+      const meta = await uploadToR2(file, "", (p) => setThumbUp({ i: 1, n: 1, pct: p }), sh.id, sh.token);
+      setMeta("deliverThumbImages", deliverThumbs().map((t, i) => (i === idx ? { key: meta.key, name: meta.name, mime: meta.mime || file.type } : t)));
+      if (old && old.key) { try { await fetch(SHARE_API + "/api/file/" + old.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
+    } catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
+    finally { setThumbUp(null); }
+  };
   const moveAsset = (id, category) => setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, category } : x)));
   const renameAsset = (id, name) => { const n = (name || "").trim(); if (n) setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, name: n } : x))); };
   const assetUrl = (a) => a.type === "youtube" ? a.url : (a.key ? (SHARE_API + "/api/file/" + a.key) : a.url);
@@ -5889,11 +5903,12 @@ export default function App() {
                         <div className="mt-1">
                           <div className="flex flex-wrap gap-1.5">
                             {thumbs.map((t, ti) => (
-                              <div key={t.key} className="relative w-16 aspect-video shrink-0 group">
+                              <label key={t.key} className="relative w-16 aspect-video shrink-0 group cursor-pointer" title="クリックで差し替え">
                                 <img src={SHARE_API + "/api/file/" + t.key} alt="" className="w-full h-full object-cover rounded-md border border-stone-200" />
-                                <button onClick={() => removeDeliverThumb(ti)} title="削除"
+                                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
+                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
                                   className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-stone-700 text-white text-[9px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
-                              </div>
+                              </label>
                             ))}
                             {thumbs.length < DELIVER_THUMB_MAX && (
                               <label className="w-16 aspect-video shrink-0 rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-base leading-none">
