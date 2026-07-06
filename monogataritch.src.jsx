@@ -1729,6 +1729,7 @@ export default function App() {
   const [mediaBusy, setMediaBusy] = useState("");            // アップロード中の表示メッセージ
   const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
+  const [thumbUp, setThumbUp] = useState(null);               // 納品完了タブのサムネ画像アップ進捗 {pct}
   const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
   const shareReadTokRef = useRef("");                        // 閲覧用トークン（&r=）。新方式snapの共有URLに必須。publish応答から取得
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
@@ -3371,6 +3372,26 @@ export default function App() {
     const a = (project.assets || []).find((x) => x.id === id);
     setAssets((arr) => arr.filter((x) => x.id !== id));
     if (a && a.key) { try { await fetch(SHARE_API + "/api/file/" + a.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
+  };
+  // 納品完了タブ：サムネ画像アップロード（1枚のみ・差し替えは古い方をhard delete）
+  const uploadDeliverThumb = async (file) => {
+    if (!file || !/^image\//.test(file.type)) { showToast("画像ファイルを選んでね"); return; }
+    const old = m.deliverThumbImage;
+    setThumbUp({ pct: 0 });
+    try {
+      const sh = await ensureShare();
+      if (!sh) { showToast("共有の発行に失敗してアップできなかった"); return; }
+      const meta = await uploadToR2(file, "", (p) => setThumbUp({ pct: p }), sh.id, sh.token);
+      setMeta("deliverThumbImage", { key: meta.key, name: meta.name, mime: meta.mime || file.type });
+      if (old && old.key) { try { await fetch(SHARE_API + "/api/file/" + old.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
+      showToast("サムネ画像をアップしたよ");
+    } catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
+    finally { setThumbUp(null); }
+  };
+  const removeDeliverThumb = async () => {
+    const old = m.deliverThumbImage;
+    setMeta("deliverThumbImage", null);
+    if (old && old.key) { try { await fetch(SHARE_API + "/api/file/" + old.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
   };
   const moveAsset = (id, category) => setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, category } : x)));
   const renameAsset = (id, name) => { const n = (name || "").trim(); if (n) setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, name: n } : x))); };
@@ -5816,13 +5837,15 @@ export default function App() {
           const dv = [
             ["deliverVideoUrl", "納品完了動画", "動画のURL（Drive／YouTube限定公開など）※手動", false, false],
             ["deliverShorts", "切り抜きショート", "ショートのURLを1行に1本 ※手動", true, false],
+            ["deliverThumbImage", "サムネ画像", "", false, false, "image"],
             ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）", false, true],
             ["deliverThumbText", "サムネ文言", "自動生成で埋まります（手直しOK）", false, true],
             ["deliverDescription", "概要欄", "自動生成で埋まります（手直しOK）", true, true],
             ["deliverHashtags", "ハッシュタグ", "自動生成で埋まります（手直しOK）", false, true],
             ["deliverChapters", "目次", "自動生成で埋まります（手直しOK）", true, true],
           ];
-          const doneCount = dv.filter(([key]) => (m[key] || "").trim()).length;
+          const isFilled = ([key, , , , , kind]) => kind === "image" ? !!(m[key] && m[key].key) : !!(m[key] || "").trim();
+          const doneCount = dv.filter(isFilled).length;
           return (
           <div className="max-w-3xl mx-auto px-1 sm:px-0 py-2">
             <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
@@ -5840,8 +5863,10 @@ export default function App() {
               </div>
             </div>
             <section className={cardCls}>
-              {dv.map(([key, label, placeholder, multiline, auto], i) => {
-                const filled = !!(m[key] || "").trim();
+              {dv.map((row, i) => {
+                const [key, label, placeholder, multiline, auto, kind] = row;
+                const filled = isFilled(row);
+                const thumb = kind === "image" ? m[key] : null;
                 return (
                   <div key={key} className={"flex items-start gap-2 px-3 sm:px-4 py-2.5 " + (i === 0 ? "" : "border-t border-stone-100")}>
                     <span className={"shrink-0 w-5 h-5 mt-1 grid place-items-center rounded-md " + (filled ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-300")}>
@@ -5852,7 +5877,25 @@ export default function App() {
                         {label}
                         {auto && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">自動</span>}
                       </div>
-                      {multiline ? (
+                      {kind === "image" ? (
+                        <div className="flex items-center gap-3 mt-1">
+                          {thumb && thumb.key ? (
+                            <img src={SHARE_API + "/api/file/" + thumb.key} alt="" className="w-32 aspect-video object-cover rounded-lg border border-stone-200" />
+                          ) : (
+                            <div className="w-32 aspect-video rounded-lg border border-dashed border-stone-300 grid place-items-center text-[10px] text-stone-400">未設定</div>
+                          )}
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[11px] font-bold px-3 py-1.5 rounded-lg cursor-pointer text-white shadow-sm w-fit" style={{ background: theme.main }}>
+                              {thumb && thumb.key ? "差し替え" : "🖼 画像をアップロード"}
+                              <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadDeliverThumb(f); e.target.value = ""; }} />
+                            </label>
+                            {thumb && thumb.key && (
+                              <button onClick={() => { if (window.confirm("サムネ画像を削除しますか？")) removeDeliverThumb(); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold w-fit">削除</button>
+                            )}
+                            {thumbUp && <div className="text-[11px] text-stone-500">アップ中… {thumbUp.pct}%</div>}
+                          </div>
+                        </div>
+                      ) : multiline ? (
                         <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
                           className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" minHeight={60} />
                       ) : (
