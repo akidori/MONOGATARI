@@ -5905,17 +5905,17 @@ export default function App() {
                           onDragOver={(e) => { e.preventDefault(); if (!thumbDropOver) setThumbDropOver(true); }}
                           onDragLeave={() => setThumbDropOver(false)}
                           onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
-                          <div className="flex flex-wrap gap-1.5">
+                          <div className="grid grid-cols-3 gap-2 max-w-md">
                             {thumbs.map((t, ti) => (
-                              <label key={t.key} className="relative w-16 aspect-video shrink-0 group cursor-pointer" title="クリックで差し替え">
+                              <label key={t.key} className="relative aspect-video group cursor-pointer" title="クリックで差し替え">
                                 <img src={SHARE_API + "/api/file/" + t.key} alt="" className="w-full h-full object-cover rounded-md border border-stone-200" />
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
                                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
-                                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-stone-700 text-white text-[9px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
+                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
                               </label>
                             ))}
                             {thumbs.length < DELIVER_THUMB_MAX && (
-                              <label className="w-16 aspect-video shrink-0 rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-base leading-none">
+                              <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-xl leading-none">
                                 +
                                 <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files); e.target.value = ""; }} />
                               </label>
