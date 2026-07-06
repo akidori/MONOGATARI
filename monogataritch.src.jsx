@@ -1730,6 +1730,7 @@ export default function App() {
   const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
   const [thumbUp, setThumbUp] = useState(null);               // 納品完了タブのサムネ画像アップ進捗 {pct}
+  const [thumbDropOver, setThumbDropOver] = useState(false);   // 納品完了タブのサムネ画像D&D中フラグ
   const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
   const shareReadTokRef = useRef("");                        // 閲覧用トークン（&r=）。新方式snapの共有URLに必須。publish応答から取得
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
@@ -5900,7 +5901,10 @@ export default function App() {
                         {auto && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">自動</span>}
                       </div>
                       {kind === "image" ? (
-                        <div className="mt-1">
+                        <div className="mt-1 rounded-lg transition-all p-1 -m-1" style={thumbDropOver ? { outline: "2px dashed " + theme.main, outlineOffset: "2px" } : {}}
+                          onDragOver={(e) => { e.preventDefault(); if (!thumbDropOver) setThumbDropOver(true); }}
+                          onDragLeave={() => setThumbDropOver(false)}
+                          onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
                           <div className="flex flex-wrap gap-1.5">
                             {thumbs.map((t, ti) => (
                               <label key={t.key} className="relative w-16 aspect-video shrink-0 group cursor-pointer" title="クリックで差し替え">
