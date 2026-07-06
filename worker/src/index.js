@@ -948,7 +948,8 @@ export default {
         h.set("etag", obj.httpEtag);
         h.set("Accept-Ranges", "bytes");
         h.set("Access-Control-Expose-Headers", "Content-Length,Content-Range,Content-Disposition,ETag,Accept-Ranges");
-        const fname = meta.name || key.split("/").pop() || "download";
+        // ?name= はアプリ内リネームの反映（Content-Dispositionのファイル名だけ・encodeURIComponent経由でヘッダ注入不可）
+        const fname = url.searchParams.get("name") || meta.name || key.split("/").pop() || "download";
         const dl = url.searchParams.get("dl");
         // 動画/音声/画像(svg除く)/pdf 以外は ?dl 有無に関わらず attachment 強制＝HTML/SVGのインライン実行を封じる。
         const ctype = h.get("Content-Type") || "application/octet-stream";

@@ -180,6 +180,29 @@ const ASSET_CAT_ICON = { "撮影素材": "🎥", "テンプレ素材": "🧩", "
 const ASSET_CAT_DESC = { "撮影素材": "元動画・音声・写真・Bロール・インタビュー音声・文字起こしなど", "テンプレ素材": "OP/ED・テロップ・BGM・ロゴなど使い回す素材" };
 /* asset: { id, category, type:"mp4"|"youtube"|"file", key?, url?, name, size?, mime?, planId?, sceneId?, createdAt } */
 const newAsset = (category = "撮影素材", patch = {}) => ({ id: uid(), category, type: "file", key: "", url: "", name: "", size: 0, mime: "", planId: "", sceneId: "", createdAt: Date.now(), ...patch });
+/* Finderからのドロップを再帰展開してFile[]にする。フォルダごとドロップOK（.DS_Store等の不可視ファイルは除外）。
+   注意: webkitGetAsEntry はdropイベント同期中に呼ぶ必要がある＝この関数はawaitを挟む前に呼び出すこと。 */
+const collectDroppedFiles = async (dt) => {
+  const entries = Array.from((dt && dt.items) || [])
+    .map((it) => (it.kind === "file" && it.webkitGetAsEntry) ? it.webkitGetAsEntry() : null).filter(Boolean);
+  if (!entries.length) return Array.from((dt && dt.files) || []);
+  const out = [];
+  const walk = async (ent) => {
+    if (ent.isFile) {
+      const f = await new Promise((res) => ent.file(res, () => res(null)));
+      if (f && !f.name.startsWith(".")) out.push(f);
+    } else if (ent.isDirectory) {
+      const rd = ent.createReader();
+      for (;;) {   // readEntriesは最大100件ずつ＝空になるまで繰り返す
+        const batch = await new Promise((res) => rd.readEntries(res, () => res([])));
+        if (!batch.length) break;
+        for (const e2 of batch) await walk(e2);
+      }
+    }
+  };
+  for (const ent of entries) await walk(ent);
+  return out;
+};
 
 /* ===== マニュアル／決め事（全体・チャンネル・案件の3スコープ、分類付き） ===== */
 const MANUAL_CATS = ["撮影", "編集", "サムネ", "テロップ", "構成", "音", "納品", "その他"];
@@ -657,6 +680,7 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
     case "folder": return (<svg {...c}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /></svg>);
     case "share": return (<svg {...c}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 13.2l7.6 4.6M15.8 6.2L8.2 10.8" /></svg>);
     case "grip": return (<svg {...c} strokeWidth="0" fill="currentColor"><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>);
+    case "pencil": return (<svg {...c}><path d="M4 20l1-4L16.5 4.5a2.12 2.12 0 0 1 3 3L8 19l-4 1z" /><path d="M14.5 6.5l3 3" /></svg>);
     default: return null;
   }
 }
@@ -1636,6 +1660,16 @@ export default function App() {
   const [searchHits, setSearchHits] = useState(null);      // null=閉, []=ヒットなし, [...]=結果
   const [selAssets, setSelAssets] = useState([]);          // 素材管理: 複数選択DL用の選択id配列
   const [dragCat, setDragCat] = useState(null);            // 素材管理: ドラッグ＆ドロップ中のカテゴリ
+  const [renamingAsset, setRenamingAsset] = useState(null); // 素材管理: 名前変更中の素材id
+
+  /* Finderからのドロップがドロップ枠を外れた時にブラウザがファイルを開いて画面ごと飛ぶ事故を防ぐ。
+     枠内のonDropはターゲット側が先に処理するのでこのガードと共存できる。 */
+  useEffect(() => {
+    const guard = (e) => { if (Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes("Files")) e.preventDefault(); };
+    window.addEventListener("dragover", guard);
+    window.addEventListener("drop", guard);
+    return () => { window.removeEventListener("dragover", guard); window.removeEventListener("drop", guard); };
+  }, []);
   const searchIndexRef = useRef({});                       // {id: 検索インデックス}（前計算キャッシュ）
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
@@ -3339,13 +3373,14 @@ export default function App() {
     if (a && a.key) { try { await fetch(SHARE_API + "/api/file/" + a.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
   };
   const moveAsset = (id, category) => setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, category } : x)));
+  const renameAsset = (id, name) => { const n = (name || "").trim(); if (n) setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, name: n } : x))); };
   const assetUrl = (a) => a.type === "youtube" ? a.url : (a.key ? (SHARE_API + "/api/file/" + a.key) : a.url);
   const fmtSize = (n) => { n = Number(n) || 0; if (n >= 1e9) return (n / 1e9).toFixed(1) + "GB"; if (n >= 1e6) return (n / 1e6).toFixed(1) + "MB"; if (n >= 1e3) return Math.round(n / 1e3) + "KB"; return n + "B"; };
-  // 素材ダウンロード（?dl=1 で worker が Content-Disposition を付け元ファイル名で保存）
+  // 素材ダウンロード（?dl=1 で worker が Content-Disposition を付け元ファイル名で保存。?name= でアプリ内リネームを反映）
   const downloadAsset = (a) => {
     if (!a || a.type === "youtube" || !a.key) return false;
     const link = document.createElement("a");
-    link.href = SHARE_API + "/api/file/" + a.key + "?dl=1";
+    link.href = SHARE_API + "/api/file/" + a.key + "?dl=1" + (a.name ? "&name=" + encodeURIComponent(a.name) : "");
     link.download = a.name || ""; link.rel = "noreferrer";
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
     return true;
@@ -5663,7 +5698,7 @@ export default function App() {
         {/* ================= 素材管理タブ（assets単一正本） ================= */}
         {tab === "assets" && (
           <div className="max-w-[920px] mx-auto px-1 sm:px-0 py-1">
-            <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-400">ファイルは各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でもアップできます。</span></p>
+            <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-400">ファイルやフォルダはFinderから各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でアップできます（フォルダは中身をまとめてアップ）。名前は鉛筆アイコンで変更できます。</span></p>
             {project.shareId && (
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <button onClick={() => importGuestUploads(false)} title="編集者が共有リンクから上げた素材をここに取り込む"
@@ -5691,9 +5726,9 @@ export default function App() {
                 const uping = assetUp && assetUp.cat === cat;
                 return (
                   <section key={cat}
-                    onDragOver={(e) => { e.preventDefault(); if (project.shareId) setDragCat(cat); }}
+                    onDragOver={(e) => { e.preventDefault(); setDragCat(cat); }}
                     onDragLeave={(e) => { if (e.currentTarget === e.target) setDragCat(null); }}
-                    onDrop={(e) => { e.preventDefault(); setDragCat(null); const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []); if (fs.length) uploadAssets(fs, cat); }}
+                    onDrop={(e) => { e.preventDefault(); setDragCat(null); const p = collectDroppedFiles(e.dataTransfer); p.then((fs) => { if (fs.length) uploadAssets(fs, cat); else showToast("ファイルが読み取れなかった。もう一度ドロップしてみて"); }); }}
                     className={"rounded-2xl bg-white p-4 transition-colors " + (dragCat === cat ? "border-2 border-dashed" : "border border-stone-200")}
                     style={dragCat === cat ? { borderColor: theme.accent, background: "#fafaf8" } : {}}>
                     <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
@@ -5720,7 +5755,21 @@ export default function App() {
                               ? <input type="checkbox" checked={selAssets.includes(a.id)} onChange={() => toggleSelAsset(a.id)} title="まとめてDL用に選択" className="shrink-0 w-3.5 h-3.5 accent-stone-600 cursor-pointer" />
                               : <span className="shrink-0 w-3.5" />}
                             <span className="shrink-0">{a.type === "youtube" ? "▶️" : a.type === "mp4" ? "🎬" : "📄"}</span>
-                            <a href={assetUrl(a)} target="_blank" rel="noreferrer" className="flex-1 min-w-0 truncate text-stone-700 hover:underline">{a.name || "(無題)"}</a>
+                            {renamingAsset === a.id ? (
+                              <input autoFocus defaultValue={a.name} placeholder="素材の名前"
+                                className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1 text-[12px] outline-none"
+                                style={{ borderColor: theme.accent }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") { renameAsset(a.id, e.currentTarget.value); setRenamingAsset(null); }
+                                  if (e.key === "Escape") setRenamingAsset(null);
+                                }}
+                                onBlur={(e) => { renameAsset(a.id, e.target.value); setRenamingAsset(null); }} />
+                            ) : (
+                              <a href={assetUrl(a)} target="_blank" rel="noreferrer" className="flex-1 min-w-0 truncate text-stone-700 hover:underline">{a.name || "(無題)"}</a>
+                            )}
+                            {renamingAsset !== a.id && (
+                              <button onClick={() => setRenamingAsset(a.id)} title="名前を変更" className="shrink-0 text-stone-300 hover:text-stone-600"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
+                            )}
                             {a.size ? <span className="shrink-0 text-stone-400">{fmtSize(a.size)}</span> : null}
                             <select value={a.category} onChange={(e) => moveAsset(a.id, e.target.value)} className="shrink-0 border border-stone-200 rounded px-1 py-0.5 text-[10px] text-stone-500">
                               {ASSET_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
