@@ -650,7 +650,7 @@ function videoOptions(p){
   return out;
 }
 // 最新の確認用バージョンID（vers配列の末尾＝一番新しい修正版）。旧版を誤って確認するミス防止。
-function newestVerId(p){ const vers=(p.review&&Array.isArray(p.review.versions))?p.review.versions:[]; for(let i=vers.length-1;i>=0;i--){ const v=vers[i]; const id=v.uid||v.key||v.url; if(id) return id; } return null; }
+function newestVerId(p){ const vers=(p.review&&Array.isArray(p.review.versions))?p.review.versions:[]; for(let i=vers.length-1;i>=0;i--){ const v=vers[i]; if(v.trashedAt) continue; const id=v.uid||v.key||v.url; if(id) return id; } return null; }
 function curVideo(p){ const opts=videoOptions(p); if(!opts.length) return null; if(VSEL){ const f=opts.find(o=>o.id===VSEL); if(f) return f; } const nv=newestVerId(p); return (nv&&opts.find(o=>o.id===nv)) || opts[0]; }
 function selectVideo(id){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; VSEL=id; CHMODE?renderChannel():render(); }
 /* 編集者URL用：完成動画アップ枠（mpuUpload を role:review で叩く） */
