@@ -1,5 +1,5 @@
 // ものがたりっち Service Worker — オフライン動作 & デスクトップアプリ化用
-const CACHE = "monogatari-v82";
+const CACHE = "monogatari-v83";
 const ASSETS = [
   "./",
   "./index.html",
