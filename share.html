@@ -837,8 +837,13 @@ function mountVideo(p, accent, main){
     wireVideoControls();
     const rawFallback = ()=>{ if((v.key||v.url) && videoEl.dataset.raw!=="1"){ videoEl.dataset.raw="1"; const t=videoEl.currentTime||0; videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||""); if(t) try{ videoEl.currentTime=t; }catch(e){} } };
     videoEl.addEventListener("error", rawFallback);
-    if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src = v.hls; }
-    else { loadHlsShare().then((Hls)=>{ if(Hls && Hls.isSupported()){ const h=new Hls(HLS_TUNE); h.on(Hls.Events.ERROR,(_e,data)=>{ if(data&&data.fatal) rawFallback(); }); h.loadSource(v.hls); h.attachMedia(videoEl); } else { rawFallback(); if(videoEl.dataset.raw!=="1") videoEl.src = v.hls; } }); }
+    // hls.js優先。Chrome 149+はcanPlayTypeが"maybe"を返すのに実際はHLSを再生できず永久0:00になるため、
+    // ネイティブ再生はhls.jsが使えない環境(iOS Safari=MSEなし)だけに限定する
+    loadHlsShare().then((Hls)=>{
+      if(Hls && Hls.isSupported()){ const h=new Hls(HLS_TUNE); h.on(Hls.Events.ERROR,(_e,data)=>{ if(data&&data.fatal) rawFallback(); }); h.loadSource(v.hls); h.attachMedia(videoEl); }
+      else if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src = v.hls; }
+      else { rawFallback(); if(videoEl.dataset.raw!=="1") videoEl.src = v.hls; }
+    });
   } else if(v.type==="stream" && !v.key && !v.url){
     // 変換未完で元ファイルも無い場合のみ待機表示（Stream変換が走らない＝STREAM_API_TOKEN未設定だと永久にここなので、元ファイルがあれば下でフォールバック）
     stage.innerHTML = '<div class="w-full h-full grid place-items-center text-white/80 text-[12px] px-4 text-center">⚙️ 軽量版に変換中です。少し待ってから開いてください。</div>'; return;
@@ -858,7 +863,7 @@ function mountVideo(p, accent, main){
         try{ const d = await fetch(API+"/api/stream/"+tag).then(r=>r.json());
           if(d && d.ready && d.hls){
             const t=videoEl.currentTime||0, was=!videoEl.paused;
-            const swap=()=>{ if(document.getElementById("vc-player")!==videoEl) return; if(videoEl.canPlayType("application/vnd.apple.mpegurl")){ videoEl.src=d.hls; } else { loadHlsShare().then((Hls)=>{ if(Hls&&Hls.isSupported()){ const h=new Hls(HLS_TUNE); h.loadSource(d.hls); h.attachMedia(videoEl); } else { videoEl.src=d.hls; } }); } if(t) try{ videoEl.currentTime=t; }catch(e){} if(was){ const pr=videoEl.play(); if(pr&&pr.catch) pr.catch(()=>{}); } };
+            const swap=()=>{ if(document.getElementById("vc-player")!==videoEl) return; loadHlsShare().then((Hls)=>{ if(Hls&&Hls.isSupported()){ const h=new Hls(HLS_TUNE); h.loadSource(d.hls); h.attachMedia(videoEl); } else { videoEl.src=d.hls; } if(t) try{ videoEl.currentTime=t; }catch(e){} if(was){ const pr=videoEl.play(); if(pr&&pr.catch) pr.catch(()=>{}); } }); };
             swap(); return;
           }
           if(d && d.state==="error") return;   // 変換失敗＝生再生のまま確定

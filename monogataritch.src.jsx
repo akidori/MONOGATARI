@@ -1335,8 +1335,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   React.useEffect(() => {
     if (!sel || sel.type !== "stream" || !sel.ready || !sel.hls || !vref.current) return;
     const video = vref.current; let hls;
-    if (video.canPlayType("application/vnd.apple.mpegurl")) { video.src = sel.hls; }
-    else { loadHls().then((Hls) => { if (Hls && Hls.isSupported()) { hls = new Hls(HLS_TUNING); hls.loadSource(sel.hls); hls.attachMedia(video); } else { video.src = sel.hls; } }); }
+    // hls.js優先。Chrome 149+はcanPlayTypeが"maybe"を返すのに実際はHLSを再生できないため、ネイティブはhls.js不可環境(iOS Safari)のみ
+    loadHls().then((Hls) => { if (Hls && Hls.isSupported()) { hls = new Hls(HLS_TUNING); hls.loadSource(sel.hls); hls.attachMedia(video); } else { video.src = sel.hls; } });
     return () => { if (hls) hls.destroy(); };
   }, [sel && sel.id, sel && sel.ready, sel && sel.hls]);
   const isYT = sel && sel.type === "youtube";
