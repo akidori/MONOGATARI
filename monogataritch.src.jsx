@@ -2331,24 +2331,35 @@ export default function App() {
 
   /* 納品完了動画・切り抜きショート：動画確認の完成データから自動補完。
      動画=最新版のオリジナルmp4のURL、ショート=たてがた君の生成結果。
-     手入力済み（Drive/YouTubeのURL等）があれば一切触らない。差し替えは自由。 */
+     手入力（Drive/YouTubeのURL等）は一切触らない。自動で入れたURL（/api/file/…）は
+     新しい版がアップされたら最新に追従して差し替える（古い版のURLを納品し続ける事故防止）。 */
+  const isAutoFileUrl = (s) => (s || "").trim().startsWith(SHARE_API + "/api/file/");
   useEffect(() => {
     if (tab !== "deliver" || !project) return;
     const m0 = project.meta || {};
-    if (!(m0.deliverVideoUrl || "").trim()) {
-      const vers = ((project.review && project.review.versions) || []).filter((v) => !v.trashedAt && v.key);
-      if (vers.length) setMeta("deliverVideoUrl", SHARE_API + "/api/file/" + vers[vers.length - 1].key);
-    }
-    if (!(m0.deliverShorts || "").trim() && project.shareId) {
+    const vers = ((project.review && project.review.versions) || []).filter((v) => !v.trashedAt && v.key);
+    const latest = vers.length ? SHARE_API + "/api/file/" + vers[vers.length - 1].key : "";
+    const curUrl = (m0.deliverVideoUrl || "").trim();
+    if (latest && (!curUrl || (isAutoFileUrl(curUrl) && curUrl !== latest))) setMeta("deliverVideoUrl", latest);
+    const curShorts = (m0.deliverShorts || "").trim();
+    const shortsIsAuto = !curShorts || curShorts.split("\n").every((l) => !l.trim() || isAutoFileUrl(l));
+    if (shortsIsAuto && project.shareId) {
       fetch(SHARE_API + "/api/shorts/list/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || ""))
         .then((r) => r.json())
         .then((d) => {
           const urls = ((d && d.shorts) || []).map((f) => SHARE_API + "/api/file/" + f.key);
-          // fetch中に手入力された可能性があるので反映直前にもう一度空チェック
-          if (urls.length) setProject((p) => (p && !(((p.meta || {}).deliverShorts) || "").trim() ? { ...p, meta: { ...p.meta, deliverShorts: urls.join("\n") } } : p));
+          if (!urls.length) return;
+          const next = urls.join("\n");
+          // fetch中に手入力された可能性があるので反映直前にもう一度自動判定してから差し替え
+          setProject((p) => {
+            if (!p) return p;
+            const cs = (((p.meta || {}).deliverShorts) || "").trim();
+            const stillAuto = !cs || cs.split("\n").every((l) => !l.trim() || isAutoFileUrl(l));
+            return stillAuto && cs !== next ? { ...p, meta: { ...p.meta, deliverShorts: next } } : p;
+          });
         }).catch(() => {});
     }
-  }, [tab, activeId]);
+  }, [tab, activeId, project && project.review && (project.review.versions || []).length]);
 
   /* 指摘の対象シーンへスクロール＋一時ハイライト */
   const jumpToRow = (rowId) => {
