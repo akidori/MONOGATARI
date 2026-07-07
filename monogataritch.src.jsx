@@ -1097,6 +1097,18 @@ function loadYT() {
   });
   return _ytP;
 }
+/* YouTube流の起動チューニング：最低画質で即スタート→回線実測で数秒内に自動昇格。
+   startLevel:0=初手を軽くして「押した瞬間に絵が出る」体感を作る（YouTubeの初動と同じ考え方）。
+   abrEwmaFastVoD/SlowVoD を短めにして昇格判断を速く、maxBufferLength で先読みを厚めに。 */
+const HLS_TUNING = {
+  startLevel: 0,
+  capLevelToPlayerSize: true,
+  abrEwmaFastVoD: 2,
+  abrEwmaSlowVoD: 6,
+  maxBufferLength: 40,
+  backBufferLength: 30,
+  startFragPrefetch: true,
+};
 /* hls.js を必要時だけCDNから読み込む（Cloudflare Stream のHLS再生用） */
 let _hlsP = null;
 function loadHls() {
@@ -1324,7 +1336,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
     if (!sel || sel.type !== "stream" || !sel.ready || !sel.hls || !vref.current) return;
     const video = vref.current; let hls;
     if (video.canPlayType("application/vnd.apple.mpegurl")) { video.src = sel.hls; }
-    else { loadHls().then((Hls) => { if (Hls && Hls.isSupported()) { hls = new Hls(); hls.loadSource(sel.hls); hls.attachMedia(video); } else { video.src = sel.hls; } }); }
+    else { loadHls().then((Hls) => { if (Hls && Hls.isSupported()) { hls = new Hls(HLS_TUNING); hls.loadSource(sel.hls); hls.attachMedia(video); } else { video.src = sel.hls; } }); }
     return () => { if (hls) hls.destroy(); };
   }, [sel && sel.id, sel && sel.ready, sel && sel.hls]);
   const isYT = sel && sel.type === "youtube";
@@ -1517,7 +1529,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video ref={vref} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
+                  ? <video ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
                   : <video ref={vref} src={rawSrc} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
             {/* シーク/バッファ待ちの間の「移動中」表示（生mp4は数秒かかる＝固まったと誤解されるのを防ぐ） */}
             {!isYT && !streamPending && seeking && (

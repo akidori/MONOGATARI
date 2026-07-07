@@ -6,6 +6,9 @@
 <title>ものがたりっち！</title>
 <meta name="description" content="一日密着ドキュメンタリーの構成脚本を作るツール — Bird Flip">
 <meta name="theme-color" content="#E9E8E3">
+<!-- 動画CDNへ事前接続（DNS+TLSを先に済ませ再生初動を速く。YouTubeと同じ手） -->
+<link rel="preconnect" href="https://customer-clbb6903mpf6390m.cloudflarestream.com" crossorigin>
+<link rel="preconnect" href="https://mg-share.aki-surf89315.workers.dev" crossorigin>
 
 <!-- OGP：クライアント・編集者にリンクを送ったときの見た目 -->
 <meta property="og:title" content="ものがたりっち！">
@@ -56,7 +59,7 @@ html,body{margin:0;padding:0;background:#E9E8E3;overscroll-behavior:none}
 <body>
 <div id="root"></div>
 <noscript><p style="text-align:center;font-family:sans-serif;padding:2rem">ものがたりっち！の利用には JavaScript を有効にしてください。</p></noscript>
-<script src="app.js?v=20260707d" defer></script>
+<script src="app.js?v=20260707e" defer></script>
 
 <script>
 if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{})); }
