@@ -885,7 +885,8 @@ async function videoUpload(file, p, accent, main){
   if(bar) bar.style.background=accent; if(pct){ pct.style.color="#9ca3af"; pct.textContent="アップロード準備中…（大きい動画は時間がかかります）"; }
   try{
     const selEl=document.getElementById("fl-target"); const target=selEl?selEl.value:"project";
-    const meta = await mpuUpload(file, { planId: target==="project"?"":target, role:"review" }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
+    /* retention:0＝無期限。完成動画は納品URLにもなるため保存期限で消さない */
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target, role:"review", retention: 0 }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
     UPLOADS.push(meta);
     VSEL = "up:"+meta.key;   // 上げたばかりの動画を選択
     if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null;

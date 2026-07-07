@@ -3251,14 +3251,14 @@ export default function App() {
     try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
   };
   /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要・GB級対応）。meta を返す */
-  const uploadToR2 = async (file, planId = "", onProgress = null, snapOverride = null, tokenOverride = null) => {
+  const uploadToR2 = async (file, planId = "", onProgress = null, snapOverride = null, tokenOverride = null, extraOverride = null) => {
     // 発行直後は setProject 未反映で project.shareId/Token が古い。ensureShare の戻り値を直に使えるよう上書き引数を受ける。
     const sid = snapOverride || project.shareId;
     const stok = tokenOverride != null ? tokenOverride : project.shareToken;
     // R2マルチパートは最大1万パート。500GB級でも収まるようチャンクを動的に（16〜90MB、Worker body上限内）
     // 細い/不安定な回線で1パートが小さいほど瞬断からの再試行が軽い＝下限を16MBに
     const CHUNK = Math.min(90 * 1024 * 1024, Math.max(16 * 1024 * 1024, Math.ceil(file.size / 9000)));
-    const extra = { token: stok, retention, planId };
+    const extra = { token: stok, retention, planId, ...(extraOverride || {}) };
     const cr = await fetch(SHARE_API + "/api/file/mpu/create", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
@@ -3502,7 +3502,10 @@ export default function App() {
     catch (e) { if (!silent) showToast("取り込み失敗：" + (e.message || e)); return; }
     const have0 = new Set((project.assets || []).map((a) => a.key).filter(Boolean));
     const haveVer = new Set(reviewVersions().map((v) => v.key).filter(Boolean));
-    const fresh = ups.filter((u) => u && u.key && !have0.has(u.key) && !haveVer.has(u.key));
+    // 重複判定は役割ごとに分ける：完成動画(role:review)の再取り込みをブロックしていいのは
+    // 「動画確認のバージョン一覧（ゴミ箱含む＝意図的削除の尊重）」だけ。
+    // 素材管理のミラー(have0)まで見ると、バージョン側だけ消えた時に編集者の新版が永久に入らなくなる（2026-07-07 近川さん）
+    const fresh = ups.filter((u) => u && u.key && (u.role === "review" ? !haveVer.has(u.key) : (!have0.has(u.key) && !haveVer.has(u.key))));
     if (!fresh.length) { if (!silent) showToast("新しい編集者アップはありません"); return; }
     // 完成動画(role:review)は「動画確認」のバージョンへ、それ以外は素材へ
     const reviewUps = fresh.filter((u) => u.role === "review");
@@ -3522,15 +3525,35 @@ export default function App() {
     }
     if (!silent) showToast("編集者アップを取り込んだよ（動画" + reviewUps.length + "・素材" + assetUps.length + "件）");
   };
-  // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）
-  React.useEffect(() => { if ((tab === "assets" || tab === "review") && project && project.shareId) importGuestUploads(true); }, [tab, project && project.shareId]);
+  /* 自己修復：共有snap側にだけ残っている版をローカルへ回収。
+     クラウド同期の巻き戻りや別端末の上書きでローカルの版が消えると、編集者の新版が「無かったこと」になる事故の防止網。
+     ローカルに同じ key/uid があれば（ゴミ箱含む＝意図的削除の尊重）触らない。 */
+  const reconcileVersionsFromSnap = async () => {
+    if (!project || !project.shareId) return;
+    try {
+      const sn = await fetch(SHARE_API + "/api/snap/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || "")).then((r) => r.json());
+      const sv = (((sn && sn.project) || {}).review || {}).versions || [];
+      const cand = sv.filter((v) => v && !v.trashedAt && (v.key || v.uid));
+      if (!cand.length) return;
+      setVersions((arr) => {
+        const has = (v) => arr.some((x) => (v.uid && x.uid === v.uid) || (v.key && x.key === v.key));
+        const add = cand.filter((v) => !has(v));
+        if (add.length) console.log("[mg] snapから版を回収:", add.map((v) => v.label).join(","));
+        return add.length ? [...arr, ...add.map((v) => ({ ...v }))] : arr;
+      });
+    } catch (e) {}
+  };
+  const reconcileRef = React.useRef(null);
+  reconcileRef.current = reconcileVersionsFromSnap;
+  // 素材管理タブを開いたら編集者アップを自動取り込み（サイレント）＋snap側との版の自己修復
+  React.useEffect(() => { if ((tab === "assets" || tab === "review") && project && project.shareId) { importGuestUploads(true); reconcileVersionsFromSnap(); } }, [tab, project && project.shareId]);
   // タブ切替時だけだと「動画確認に居っぱなし」で編集者の新版に永遠に気づけない（2026-07-05 喜多さん0704）。
   // 案件を開いている間は45秒ごとに拾う。refで毎レンダー最新のクロージャを持たせる＝古いproject stateで重複取り込みしない
   const importGuestRef = React.useRef(null);
   importGuestRef.current = importGuestUploads;
   React.useEffect(() => {
     if (!project || !project.shareId) return;
-    const t = setInterval(() => { try { importGuestRef.current && importGuestRef.current(true); } catch (e) {} }, 45000);
+    const t = setInterval(() => { try { importGuestRef.current && importGuestRef.current(true); reconcileRef.current && reconcileRef.current(); } catch (e) {} }, 45000);
     return () => clearInterval(t);
   }, [project && project.shareId]);
 
@@ -3783,7 +3806,9 @@ export default function App() {
   const setVersions = (updater) => setProject((p) => { const rv = (p.review && p.review.versions) || []; const next = typeof updater === "function" ? updater(rv) : updater; return { ...p, review: { versions: next, comments: (p.review && p.review.comments) || [] } }; });
   const addVersionFromVideo = async (vobj, name) => {
     setVersions((arr) => {
-      const label = "v" + (arr.length + 1);
+      // 採番は「配列長+1」だと削除や競合でv3が2個できる（2026-07-07 近川さんで実発生）→既存最大番号+1
+      const maxN = arr.reduce((mx, v) => { const m = /^v(\d+)$/.exec(v.label || ""); return m ? Math.max(mx, +m[1]) : mx; }, 0);
+      const label = "v" + (maxN + 1);
       const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
       // 素材管理の「確認用動画」にもミラー（DLは元のR2マスター）
       setAssets((as) => [newAsset("確認用動画", { type: vobj.type === "youtube" ? "youtube" : "mp4", key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id }), ...as]);
@@ -3809,7 +3834,8 @@ export default function App() {
     const sh = await ensureShare(); if (!sh) return;   // 確認用URLは動画アップの副産物として自動発行（先に手で発行させない）
     setMediaBusy("動画をアップロード中…"); setMediaProg(0);
     try {
-      const meta = await uploadToR2(file, "", onProgress, sh.id, sh.token);
+      // 確認用バージョン＝納品URLにもなる金看板。保存期限で消えると先方に渡したURLが死ぬため無期限固定
+      const meta = await uploadToR2(file, "", onProgress, sh.id, sh.token, { retention: 0 });
       // Streamへ取り込み（自動で軽量化）。無効/失敗ならR2直再生にフォールバック
       let v = null;
       try {
