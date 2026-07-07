@@ -6031,8 +6031,16 @@ export default function App() {
                       {(key === "deliverVideoUrl" || key === "deliverShorts") && (() => {
                         const urls = (m[key] || "").split("\n").map((s) => s.trim()).filter((s) => /^https?:\/\//.test(s));
                         if (!urls.length) return null;
+                        // ショートはWorkerのギャラリーページ(/shorts/{snap})で全本まとめて再生できる。URLからsnapを逆引き
+                        const gm = key === "deliverShorts" ? urls[0].match(/^(https?:\/\/[^/]+)\/api\/file\/f\/([a-z0-9]+)\//) : null;
                         return (
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {gm && (
+                              <a href={gm[1] + "/shorts/" + gm[2]} target="_blank" rel="noreferrer" title="全ショートを1画面で再生・保存"
+                                className="text-[10px] font-bold px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100 inline-flex items-center gap-1">
+                                ↗ まとめて見る
+                              </a>
+                            )}
                             {urls.map((u, ui) => (
                               <a key={ui} href={u} target="_blank" rel="noreferrer" title={u}
                                 className="text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-700 inline-flex items-center gap-1">

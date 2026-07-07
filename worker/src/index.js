@@ -887,17 +887,25 @@ export default {
         const jobId = rid(12);
         const job = { id: jobId, snap, videoKey: ("" + b.videoKey).slice(0, 200), sheetUrl: ("" + (b.sheetUrl || "")).slice(0, 300), notes: ("" + (b.notes || "")).slice(0, 1000), nMax: Math.max(1, Math.min(12, parseInt(b.nMax, 10) || 8)), status: "pending", createdAt: now(), updatedAt: now(), shorts: [], error: "" };
         await env.SNAPS.put("sjob:" + jobId, JSON.stringify(job));
+        // ジョブ索引 sjobs:idx に積む。poll/list/staleはKV list()禁止（無料枠1000回/日を10秒ポーリングが食い潰す）
+        const idx = (await env.SNAPS.get("sjobs:idx", "json")) || [];
+        idx.push({ id: jobId, snap, status: "pending", createdAt: job.createdAt, updatedAt: job.updatedAt, error: "" });
+        await env.SNAPS.put("sjobs:idx", JSON.stringify(idx.slice(-200)));
         return json({ ok: true, jobId, status: "pending" });
       }
       // GET /api/shorts/poll?key=<MG_LIST_KEY> → Macが未処理ジョブを1件取得しprocessingに
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "poll") {
         if (!env.SHORTS_KEY || url.searchParams.get("key") !== env.SHORTS_KEY) return json({ error: "forbidden" }, 403);
-        const listed = await env.SNAPS.list({ prefix: "sjob:", limit: 200 });
-        let picked = null;
-        for (const k of listed.keys) { const j = await env.SNAPS.get(k.name, "json"); if (j && j.status === "pending" && (!picked || j.createdAt < picked.createdAt)) picked = j; }
-        if (!picked) return json({ job: null });
+        const idx = (await env.SNAPS.get("sjobs:idx", "json")) || [];
+        let ref = null;
+        for (const e of idx) if (e.status === "pending" && (!ref || e.createdAt < ref.createdAt)) ref = e;
+        if (!ref) return json({ job: null });
+        const picked = await env.SNAPS.get("sjob:" + ref.id, "json");
+        if (!picked) { ref.status = "error"; ref.error = "job body missing"; ref.updatedAt = now(); await env.SNAPS.put("sjobs:idx", JSON.stringify(idx)); return json({ job: null }); }
         picked.status = "processing"; picked.updatedAt = now();
+        ref.status = "processing"; ref.updatedAt = picked.updatedAt;
         await env.SNAPS.put("sjob:" + picked.id, JSON.stringify(picked));
+        await env.SNAPS.put("sjobs:idx", JSON.stringify(idx));
         return json({ job: picked });
       }
       // POST /api/shorts/result { key, jobId, status:"done"|"error", shorts?:[{key,name,size}], transcript?:[{start,end,text}], error? } → Macが結果を返す
@@ -911,6 +919,9 @@ export default {
         job.shorts = Array.isArray(b.shorts) ? b.shorts.slice(0, 20).map((s) => ({ key: ("" + (s.key || "")).slice(0, 200), name: ("" + (s.name || "")).slice(0, 120), size: parseInt(s.size, 10) || 0 })) : [];
         job.updatedAt = now();
         await env.SNAPS.put("sjob:" + job.id, JSON.stringify(job));
+        const ridx = (await env.SNAPS.get("sjobs:idx", "json")) || [];
+        const re = ridx.find((x) => x.id === job.id);
+        if (re) { re.status = job.status; re.updatedAt = job.updatedAt; re.error = job.error; await env.SNAPS.put("sjobs:idx", JSON.stringify(ridx)); }
         if (job.status === "done" && job.shorts.length) await env.SNAPS.put("shorts:" + job.snap, JSON.stringify({ items: job.shorts, updatedAt: now() }));
         // 切り抜きで使ったWhisper文字起こしを保存＝納品完了タブの目次生成に流用（実尺ベースの正確なTC）
         if (job.status === "done" && Array.isArray(b.transcript) && b.transcript.length) {
@@ -941,9 +952,8 @@ export default {
           if (r !== rtok && !(admin && t === admin)) return json({ error: "unauthorized", auth_required: true }, 401);
         }
         const res = await env.SNAPS.get("shorts:" + snap, "json");
-        const listed = await env.SNAPS.list({ prefix: "sjob:", limit: 200 });
-        const jobs = [];
-        for (const k of listed.keys) { const j = await env.SNAPS.get(k.name, "json"); if (j && j.snap === snap) jobs.push({ id: j.id, status: j.status, createdAt: j.createdAt, error: j.error }); }
+        const idx = (await env.SNAPS.get("sjobs:idx", "json")) || [];
+        const jobs = idx.filter((j) => j.snap === snap).map((j) => ({ id: j.id, status: j.status, createdAt: j.createdAt, error: j.error || "" }));
         return json({ shorts: (res && res.items) || [], jobs });
       }
       // PUT /api/shorts/upload?key=<MG_LIST_KEY>&snap=&name= → Macが生成ショートmp4をR2に上げる。keyを返す
@@ -963,15 +973,71 @@ export default {
         if (!env.MG_LIST_KEY || url.searchParams.get("key") !== env.MG_LIST_KEY) return json({ error: "forbidden" }, 403);
         const thresholdMin = Math.max(5, Math.min(1440, parseInt(url.searchParams.get("thresholdMin"), 10) || 90));
         const cutoffMs = thresholdMin * 60000;
-        const listed = await env.SNAPS.list({ prefix: "sjob:", limit: 200 });
+        const idx = (await env.SNAPS.get("sjobs:idx", "json")) || [];
         const stale = [];
-        for (const k of listed.keys) {
-          const j = await env.SNAPS.get(k.name, "json");
-          if (!j || (j.status !== "pending" && j.status !== "processing")) continue;
+        for (const j of idx) {
+          if (j.status !== "pending" && j.status !== "processing") continue;
           const ageMs = Date.now() - new Date(j.updatedAt || j.createdAt).getTime();
           if (ageMs > cutoffMs) stale.push({ id: j.id, snap: j.snap, status: j.status, minutesStuck: Math.round(ageMs / 60000) });
         }
         return json({ stale });
+      }
+
+      // GET /shorts/{snap}?r=<rtok> → 切り抜きショートのギャラリーページ（全本を1画面で再生・DL）
+      // 認可はページ自体では掛けず、中身の取得(/api/shorts/list)が rtok を要求する構造に乗る
+      if (request.method === "GET" && parts[0] === "shorts" && parts[1] && !parts[2]) {
+        const snap = parts[1];
+        if (!/^[a-z0-9]{4,16}$/.test(snap)) return json({ error: "not found" }, 404);
+        const page = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>切り抜きショート | ものがたりっち！</title>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box;margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;background:#fafaf9;color:#44403c;padding:24px 16px 64px}
+header{max-width:1040px;margin:0 auto 20px}
+h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+h1 svg{width:18px;height:18px;stroke:#e11d48}
+.sub{font-size:11px;color:#a8a29e;margin-top:4px}
+.grid{max-width:1040px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.card{background:#fff;border:1px solid #e7e5e4;border-radius:14px;overflow:hidden}
+.card video{width:100%;aspect-ratio:9/16;object-fit:contain;background:#1c1917;display:block}
+.meta{padding:8px 10px 10px}
+.name{font-size:11px;font-weight:700;color:#57534e;word-break:break-all}
+.size{font-size:10px;color:#a8a29e;margin-top:2px}
+.acts{display:flex;gap:6px;margin-top:8px}
+.acts a,.acts button{flex:1;font-size:10px;font-weight:700;padding:5px 0;border-radius:8px;border:1px solid #e7e5e4;background:#fff;color:#78716c;text-align:center;text-decoration:none;cursor:pointer;font-family:inherit}
+.acts a:hover,.acts button:hover{background:#f5f5f4;color:#44403c}
+.empty{max-width:1040px;margin:40px auto;text-align:center;font-size:13px;color:#a8a29e}
+.badge{display:inline-block;font-size:10px;font-weight:700;color:#e11d48;border:1px solid #fecdd3;background:#fff1f2;border-radius:999px;padding:2px 10px;margin-left:8px;vertical-align:1px}
+</style></head><body>
+<header><h1><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="m10 9 5 3-5 3z" fill="#e11d48" stroke="none"></path></svg>切り抜きショート<span id="st" class="badge" hidden></span></h1><div class="sub" id="sub"></div></header>
+<div class="grid" id="g"></div><div class="empty" id="e" hidden></div>
+<script>
+const SNAP=${JSON.stringify(snap)};
+const esc=(s)=>String(s).replace(/[&<>"']/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const mb=(n)=>n>0?(n/1048576).toFixed(1)+" MB":"";
+async function load(){
+  const r=await fetch("/api/shorts/list/"+SNAP+location.search);
+  const d=await r.json().catch(()=>({}));
+  const g=document.getElementById("g"),e=document.getElementById("e"),st=document.getElementById("st");
+  if(r.status===401){e.hidden=false;e.textContent="閲覧には共有リンク（?r=…付きURL）が必要です";return}
+  const items=d.shorts||[];
+  const running=(d.jobs||[]).some((j)=>j.status==="pending"||j.status==="processing");
+  if(running){st.hidden=false;st.textContent="生成中";setTimeout(load,20000)}else{st.hidden=true}
+  document.getElementById("sub").textContent=items.length?items.length+"本":"";
+  if(!items.length){e.hidden=false;e.textContent=running?"切り抜きを生成しています。このまま待つと自動で表示されます":"切り抜きショートはまだありません";return}
+  e.hidden=true;
+  g.innerHTML=items.map((s)=>{
+    const u="/api/file/"+encodeURIComponent(s.key).replace(/%2F/g,"/")+location.search;
+    const dl=u+(location.search?"&":"?")+"dl=1";
+    return '<div class="card"><video controls preload="metadata" src="'+esc(u)+'"></video><div class="meta"><div class="name">'+esc(s.name||"short.mp4")+'</div><div class="size">'+mb(s.size)+'</div><div class="acts"><a href="'+esc(dl)+'">保存</a><button data-u="'+esc(u)+'">URLコピー</button></div></div></div>';
+  }).join("");
+  g.querySelectorAll("button[data-u]").forEach((b)=>b.addEventListener("click",async()=>{await navigator.clipboard.writeText(location.origin+b.dataset.u);b.textContent="コピー済";setTimeout(()=>{b.textContent="URLコピー"},1500)}));
+}
+load();
+</script></body></html>`;
+        return new Response(page, { headers: { ...CORS, "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; media-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:" } });
       }
 
       // GET /api/file/{key...}?dl=1  → R2 から原本ストリーム配信（Range対応・元ファイル名復元）
