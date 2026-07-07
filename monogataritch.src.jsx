@@ -2308,22 +2308,34 @@ export default function App() {
      動画・切り抜きショートのURLは下の別effectで動画確認の完成データから自動補完する。 */
   const generateDeliverAll = async () => {
     if (!project) return;
+    // まず台本ベースの目次で即時に埋める（文字起こしがあれば後段で実尺TC版に置き換わる）
     const chapters = project.format === "talk"
       ? (project.talk && project.talk.toc || []).filter((t) => t && t.trim()).map((t, i) => (i + 1) + ". " + t).join("\n")
       : locations.filter((l) => l.scenes.length).map((l) => fmt(tcs[l.id] || 0) + " " + (l.label || "（無題のロケ）")).join("\n");
     setMeta("deliverChapters", chapters);
     setDeliverBusy(true);
     try {
+      // 切り抜き生成時のWhisper文字起こし（完成動画の実尺TC付き）があれば目次の根拠に使う
+      let transcript = null;
+      if (project.shareId) {
+        try {
+          const tr = await fetch(SHARE_API + "/api/transcript/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || "")).then((r) => r.json());
+          if (tr && Array.isArray(tr.segments) && tr.segments.length) transcript = tr.segments;
+        } catch (e) {}
+      }
       const res = await fetch(SHARE_API + "/api/deliver", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ project }),
+        body: JSON.stringify(transcript ? { project, transcript } : { project }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "生成に失敗しました");
       setMeta("deliverTitle", d.title || "");
       setMeta("deliverDescription", d.description || "");
       setMeta("deliverHashtags", d.hashtags || "");
-      showToast("タイトル・概要欄・ハッシュタグ・目次を自動生成しました");
+      if (transcript && (d.chapters || "").trim()) setMeta("deliverChapters", d.chapters.trim());
+      showToast(transcript && (d.chapters || "").trim()
+        ? "自動生成しました（目次は完成動画の文字起こしから実尺で作成）"
+        : "タイトル・概要欄・ハッシュタグ・目次を自動生成しました");
     } catch (e) {
       showToast("自動生成に失敗：" + (e.message || e));
     } finally { setDeliverBusy(false); }
@@ -4193,7 +4205,7 @@ export default function App() {
     <div className="fixed inset-0 overflow-y-auto" style={{ background: "#E9E8E3" }}>
       <header className="sticky top-0 z-10 shadow-sm" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
         <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
-          <img src="icon-192.png" alt="" className="w-8 h-8 rounded-lg" />
+          <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
           <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
         </div>
       </header>
@@ -4357,7 +4369,7 @@ export default function App() {
         <div className="px-3 py-2.5 border-b border-white/10">
           <button onClick={() => setView("home")} title="ホーム（チャンネル一覧）へ"
             className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors">
-            <img src="icon-192.png" alt="" className="w-7 h-7 rounded-lg shrink-0" />
+            <img src="logo-header.png" alt="" className="w-7 h-7 rounded-lg shrink-0" />
             <span className="font-black tracking-[0.08em] text-[14px]">ものがたりっち！</span>
             <svg className="w-4 h-4 ml-auto text-white/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
@@ -6353,7 +6365,7 @@ export default function App() {
         <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
             <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
-              <img src="icon-192.png" alt="" className="w-8 h-8 rounded-lg" />
+              <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
               <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
               <div className="flex-1" />
               <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
