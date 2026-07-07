@@ -1258,6 +1258,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const [rate, setRate] = React.useState(1);
   const [cur, setCur] = React.useState(0);
   const [dur, setDur] = React.useState(0);
+  /* シーク/バッファ待ち中の表示。生mp4（軽量版なし）は移動に数秒かかるので「移動中」を出して固まって見えるのを防ぐ */
+  const [seeking, setSeeking] = React.useState(false);
   /* シークバーのホバープレビュー（YouTube風）。pv={x,t}、pvImgは読み込み完了済みサムネURL（src直差し替えのチラつき防止） */
   const [pv, setPv] = React.useState(null);
   const [pvImg, setPvImg] = React.useState("");
@@ -1292,7 +1294,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const pvThumbBase = (sel && sel.type === "stream" && sel.ready && sel.hls) ? sel.hls.replace(/manifest\/video\.m3u8.*$/, "thumbnails/thumbnail.jpg") : "";
   const pvThumbUrl = (pvThumbBase && pv) ? pvThumbBase + "?time=" + Math.max(0, Math.floor(pv.t)) + "s&height=90" : "";
   React.useEffect(() => { if (!pvThumbUrl) return; const im = new Image(); im.onload = () => setPvImg(pvThumbUrl); im.src = pvThumbUrl; }, [pvThumbUrl]);
-  React.useEffect(() => { setPv(null); setPvImg(""); }, [sel && sel.id]);
+  React.useEffect(() => { setPv(null); setPvImg(""); setSeeking(false); }, [sel && sel.id]);
   const pvNeedsVideo = !!(sel && sel.type !== "youtube" && !pvThumbBase && rawSrc);
   const queuePvSeek = (t) => {
     pvSeekT.current = t;
@@ -1461,6 +1463,13 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
         ))}
         <div className="flex-1" />
         {sel.key && (
+          <a href={SHARE_API + "/api/file/" + sel.key + "?dl=1"} target="_blank" rel="noreferrer"
+            title="この版のオリジナルmp4（アップした元データそのまま）をダウンロード"
+            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
+            ⬇ 元mp4をDL
+          </a>
+        )}
+        {sel.key && (
           <button onClick={enqueueShorts} disabled={shortsBusy || shortsRunning}
             title={shortsRunning ? "既に生成中です" : "この版から縦型ショートを自動生成"}
             className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
@@ -1508,8 +1517,14 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video ref={vref} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
-                  : <video ref={vref} src={rawSrc} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
+                  ? <video ref={vref} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
+                  : <video ref={vref} src={rawSrc} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
+            {/* シーク/バッファ待ちの間の「移動中」表示（生mp4は数秒かかる＝固まったと誤解されるのを防ぐ） */}
+            {!isYT && !streamPending && seeking && (
+              <div className="absolute inset-0 grid place-items-center pointer-events-none">
+                <span className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-black/60 text-white/90">⏳ 移動中…{!streamReadyHls ? "（軽量版ができるとサクサクになります）" : ""}</span>
+              </div>
+            )}
             {/* 変換中/失敗でも生データで再生できている時の非ブロッキング・バッジ */}
             {!isYT && streamBusy && rawSrc && (
               <div className="absolute top-2 left-2 right-2 flex items-center gap-2 pointer-events-none">
@@ -2286,10 +2301,11 @@ export default function App() {
     } finally { setReviewBusy(false); }
   };
 
-  /* 納品完了タブ：既存の構成台本からタイトル・サムネ文言・概要欄・ハッシュタグ・目次を自動生成
+  /* 納品完了タブ：既存の構成台本からタイトル・概要欄・ハッシュタグ・目次を自動生成
      目次は台本の構造（ロケの実尺／トーク台本のtoc）からその場で作れるのでAIを介さず即時生成。
-     タイトル/サムネ文言/概要欄/ハッシュタグは原稿の中身を読む必要があるのでAIに依頼する。
-     動画・切り抜きショートのURLは実ファイルが要るため自動生成の対象外（誤った/私的なリンクを誤爆させないため）。 */
+     タイトル/概要欄/ハッシュタグは原稿の中身を読む必要があるのでAIに依頼する。
+     ※サムネ文言はサムネ画像そのものをアップする運用になったため納品完了からは廃止（2026-07-07）。
+     動画・切り抜きショートのURLは下の別effectで動画確認の完成データから自動補完する。 */
   const generateDeliverAll = async () => {
     if (!project) return;
     const chapters = project.format === "talk"
@@ -2305,14 +2321,34 @@ export default function App() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "生成に失敗しました");
       setMeta("deliverTitle", d.title || "");
-      setMeta("deliverThumbText", d.thumbText || "");
       setMeta("deliverDescription", d.description || "");
       setMeta("deliverHashtags", d.hashtags || "");
-      showToast("タイトル・サムネ文言・概要欄・ハッシュタグ・目次を自動生成しました（動画・ショートのURLだけ手動で貼ってね）");
+      showToast("タイトル・概要欄・ハッシュタグ・目次を自動生成しました");
     } catch (e) {
       showToast("自動生成に失敗：" + (e.message || e));
     } finally { setDeliverBusy(false); }
   };
+
+  /* 納品完了動画・切り抜きショート：動画確認の完成データから自動補完。
+     動画=最新版のオリジナルmp4のURL、ショート=たてがた君の生成結果。
+     手入力済み（Drive/YouTubeのURL等）があれば一切触らない。差し替えは自由。 */
+  useEffect(() => {
+    if (tab !== "deliver" || !project) return;
+    const m0 = project.meta || {};
+    if (!(m0.deliverVideoUrl || "").trim()) {
+      const vers = ((project.review && project.review.versions) || []).filter((v) => !v.trashedAt && v.key);
+      if (vers.length) setMeta("deliverVideoUrl", SHARE_API + "/api/file/" + vers[vers.length - 1].key);
+    }
+    if (!(m0.deliverShorts || "").trim() && project.shareId) {
+      fetch(SHARE_API + "/api/shorts/list/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || ""))
+        .then((r) => r.json())
+        .then((d) => {
+          const urls = ((d && d.shorts) || []).map((f) => SHARE_API + "/api/file/" + f.key);
+          // fetch中に手入力された可能性があるので反映直前にもう一度空チェック
+          if (urls.length) setProject((p) => (p && !(((p.meta || {}).deliverShorts) || "").trim() ? { ...p, meta: { ...p.meta, deliverShorts: urls.join("\n") } } : p));
+        }).catch(() => {});
+    }
+  }, [tab, activeId]);
 
   /* 指摘の対象シーンへスクロール＋一時ハイライト */
   const jumpToRow = (rowId) => {
@@ -5858,11 +5894,10 @@ export default function App() {
         {/* ================= 納品完了タブ ================= */}
         {tab === "deliver" && (() => {
           const dv = [
-            ["deliverVideoUrl", "納品完了動画", "動画のURL（Drive／YouTube限定公開など）※手動", false, false],
-            ["deliverShorts", "切り抜きショート", "ショートのURLを1行に1本 ※手動", true, false],
+            ["deliverVideoUrl", "納品完了動画", "動画確認の最新版から自動で入ります（Drive/YouTubeのURLに差し替えOK）", false, true],
+            ["deliverShorts", "切り抜きショート", "たてがた君のショートから自動で入ります（1行に1本・差し替えOK）", true, true],
             ["deliverThumbImages", "サムネ画像", "", false, false, "image"],
             ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）", false, true],
-            ["deliverThumbText", "サムネ文言", "自動生成で埋まります（手直しOK）", false, true],
             ["deliverDescription", "概要欄", "自動生成で埋まります（手直しOK）", true, true],
             ["deliverHashtags", "ハッシュタグ", "自動生成で埋まります（手直しOK）", false, true],
             ["deliverChapters", "目次", "自動生成で埋まります（手直しOK）", true, true],
@@ -5874,7 +5909,7 @@ export default function App() {
             <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <h2 className="text-[15px] font-bold text-stone-800">納品完了</h2>
-                <p className="text-[12px] text-stone-500 mt-0.5">タイトル・サムネ文言・概要欄・ハッシュタグ・目次は台本から自動生成（動画・ショートのURLだけ手動）。編集者も入力OK。</p>
+                <p className="text-[12px] text-stone-500 mt-0.5">動画・ショートのURLは動画確認の完成データから自動。タイトル・概要欄・ハッシュタグ・目次は台本から自動生成。編集者も入力OK。</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <button onClick={generateDeliverAll} disabled={deliverBusy}
@@ -6969,6 +7004,25 @@ export default function App() {
           {toast}
         </div>
       )}
+
+      {/* アップロード進捗（全画面共通の常時見えるカード）。どのタブに居ても・スクロールしていても見える */}
+      {(mediaBusy || assetUp || thumbUp) && (() => {
+        const label = mediaBusy || (assetUp ? "素材をアップロード中：" + assetUp.name : `サムネ画像をアップロード中（${thumbUp.i}/${thumbUp.n}）`);
+        const pct = mediaBusy ? mediaProg : (assetUp ? assetUp.pct : thumbUp.pct);
+        return (
+          <div className="fixed bottom-6 right-6 z-50 w-[300px] max-w-[calc(100vw-3rem)] bg-white rounded-2xl shadow-2xl border border-stone-200 p-3.5">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: theme.accent }} />
+              <span className="text-[12px] font-bold text-stone-700 truncate flex-1">{label}</span>
+              <span className="text-[13px] font-bold tabular-nums shrink-0" style={{ color: theme.accent }}>{Math.round(pct || 0)}%</span>
+            </div>
+            <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: (pct || 0) + "%", background: theme.accent }} />
+            </div>
+            <div className="text-[10px] text-stone-400 mt-1.5">完了までこの画面を閉じないでね（タブ移動はOK）</div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
