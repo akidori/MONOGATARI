@@ -5954,7 +5954,8 @@ export default function App() {
                           <div className="grid grid-cols-3 gap-2 max-w-md">
                             {thumbs.map((t, ti) => (
                               <label key={t.key} className="relative aspect-video group cursor-pointer" title="クリックで差し替え">
-                                <img src={SHARE_API + "/api/file/" + t.key} alt="" className="w-full h-full object-cover rounded-md border border-stone-200" />
+                                {/* object-contain: 画像の縦横比が16:9でなくても切り取らず全体を見せる（coverだと勝手にクロップされ画角が合わない） */}
+                                <img src={SHARE_API + "/api/file/" + t.key} alt="" className="w-full h-full object-contain bg-stone-100 rounded-md border border-stone-200" />
                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
                                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
                                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
@@ -5976,6 +5977,21 @@ export default function App() {
                         <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
                           className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
                       )}
+                      {/* URL欄はワンクリックで飛べるリンクを添える（入力欄のテキストは編集用に据え置き） */}
+                      {(key === "deliverVideoUrl" || key === "deliverShorts") && (() => {
+                        const urls = (m[key] || "").split("\n").map((s) => s.trim()).filter((s) => /^https?:\/\//.test(s));
+                        if (!urls.length) return null;
+                        return (
+                          <div className="flex flex-wrap gap-1.5 mt-1.5">
+                            {urls.map((u, ui) => (
+                              <a key={ui} href={u} target="_blank" rel="noreferrer" title={u}
+                                className="text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-700 inline-flex items-center gap-1">
+                                ↗ {key === "deliverShorts" ? (urls.length > 1 ? "ショート" + (ui + 1) : "ショート") + "を開く" : "動画を開く"}
+                              </a>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 );
