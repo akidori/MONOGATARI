@@ -1010,6 +1010,7 @@ h1 svg{width:18px;height:18px;stroke:#e11d48}
 .acts a:hover,.acts button:hover{background:#f5f5f4;color:#44403c}
 .empty{max-width:1040px;margin:40px auto;text-align:center;font-size:13px;color:#a8a29e}
 .badge{display:inline-block;font-size:10px;font-weight:700;color:#e11d48;border:1px solid #fecdd3;background:#fff1f2;border-radius:999px;padding:2px 10px;margin-left:8px;vertical-align:1px}
+.badge[hidden]{display:none}
 </style></head><body>
 <header><h1><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"></rect><path d="m10 9 5 3-5 3z" fill="#e11d48" stroke="none"></path></svg>切り抜きショート<span id="st" class="badge" hidden></span></h1><div class="sub" id="sub"></div></header>
 <div class="grid" id="g"></div><div class="empty" id="e" hidden></div>
