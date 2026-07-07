@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://customer-clbb6903mpf6390m.cloudflarestream.com" crossorigin>
 <link rel="preconnect" href="https://mg-share.aki-surf89315.workers.dev" crossorigin>
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="tailwind.css?v=20260624c">
+<link rel="stylesheet" href="tailwind.css?v=20260707a">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
 <style>
   html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
@@ -51,6 +51,25 @@ const CMT_CATS = ["編集","構成","サムネ","BGM","SE","テロップ","色�
 const CMT_STATUS_COL = {"未対応":["#FBE5EA","#DC2645"],"対応中":["#FCF0DC","#D97706"],"確認待ち":["#E3EBFC","#2563EB"],"完了":["#E7F6EC","#15803D"]};
 const CMT_PRIO_COL = {"高":["#DC2645","#fff"],"中":["#E8A33D","#fff"],"低":["#E5E5E5","#57534E"]};
 const cStat = (c) => c.status || (c.resolved ? "完了" : "未対応");
+/* 右上バーと同系のピル型ボタン用SVGピクトグラム（UIに絵文字は使わない） */
+const ICONS = {
+  comment: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  edit: '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  play: '<path d="M6 4l14 8-14 8V4z"/>',
+  pause: '<path d="M8 5v14"/><path d="M16 5v14"/>',
+  plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+  send: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/>',
+  download: '<path d="M12 4v13"/><path d="M6 11l6 6 6-6"/><path d="M4 20h16"/>',
+  film: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="M7 4v16"/><path d="M17 4v16"/><path d="M2 9h5"/><path d="M2 15h5"/><path d="M17 9h5"/><path d="M17 15h5"/>',
+  back: '<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>',
+  reply: '<path d="M9 17l-5-5 5-5"/><path d="M4 12h11a5 5 0 0 1 5 5v2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/>',
+  pin: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/>',
+  note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+};
+const icon = (name, cls="w-3.5 h-3.5") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="${cls} shrink-0">${ICONS[name]||""}</svg>`;
 /* YouTube流の起動チューニング：低画質で即開始→自動昇格（初動体感の要） */
 const HLS_TUNE = {startLevel:0,capLevelToPlayerSize:true,abrEwmaFastVoD:2,abrEwmaSlowVoD:6,maxBufferLength:40,backBufferLength:30,startFragPrefetch:true};
 let _hlsShareP = null;
@@ -161,7 +180,7 @@ function paneScript(p, accent, main){
       </div>`;
       if(r.address || r.note){
         rowsHtml += `<div class="px-3 pb-2 text-[11px] text-stone-500 flex flex-wrap gap-x-4">
-          ${r.address?`<span>📍 ${esc(r.address)}</span>`:""}${r.note?`<span>📝 ${esc(r.note)}</span>`:""}</div>`;
+          ${r.address?`<span class="inline-flex items-center gap-1">${icon("pin","w-3 h-3")}${esc(r.address)}</span>`:""}${r.note?`<span class="inline-flex items-center gap-1">${icon("note","w-3 h-3")}${esc(r.note)}</span>`:""}</div>`;
       }
       return;
     }
@@ -178,8 +197,8 @@ function paneScript(p, accent, main){
         </div>
         <div class="script text-stone-800">${renderScript(accent, r.script)}</div>
         ${CHMODE?'':`<div class="mt-2">
-          <button data-c="${r.id}" data-l="${esc(r.label||t.full)}" class="cbtn text-[11px] font-semibold px-2.5 py-1 rounded-full border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1" style="color:${main}">
-            💬 コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}
+          <button data-c="${r.id}" data-l="${esc(r.label||t.full)}" class="cbtn text-[11px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5" style="color:${main}">
+            ${icon("comment","w-3 h-3")}コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}
           </button>
         </div>
         <div id="cwrap-${r.id}" class="hidden mt-2 space-y-2"></div>`}
@@ -187,7 +206,7 @@ function paneScript(p, accent, main){
     </div>`;
   });
   return `<div>${rowsHtml}</div>
-    <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">各シーンの「💬 コメント」から、気になる点・修正してほしい所を書き込めます。</p>`;
+    <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">各シーンの「コメント」ボタンから、気になる点・修正してほしい所を書き込めます。</p>`;
 }
 
 /* ── 香盤表ペイン ── */
@@ -220,7 +239,7 @@ function paneKouban(p){
           <div class="w-1.5 shrink-0 stripe"></div>
           <div class="px-3 py-2 font-bold text-[13px] flex-1 min-w-0">${esc(loc&&loc.label||"（場所未設定）")}</div>
         </div>
-        ${loc&&(loc.address||loc.note)?`<div class="px-3 py-1.5 text-[11px] text-stone-500 border-b border-stone-100 flex flex-wrap gap-x-4">${loc.address?`<span>📍 ${esc(loc.address)}</span>`:""}${loc.note?`<span>📝 ${esc(loc.note)}</span>`:""}</div>`:""}
+        ${loc&&(loc.address||loc.note)?`<div class="px-3 py-1.5 text-[11px] text-stone-500 border-b border-stone-100 flex flex-wrap gap-x-4">${loc.address?`<span class="inline-flex items-center gap-1">${icon("pin","w-3 h-3")}${esc(loc.address)}</span>`:""}${loc.note?`<span class="inline-flex items-center gap-1">${icon("note","w-3 h-3")}${esc(loc.note)}</span>`:""}</div>`:""}
         <div class="divide-y divide-stone-100">${scenesHtml}</div>
       </div>
     </div>`;
@@ -247,7 +266,7 @@ function paneTalk(p, accent, main){
     return `<div class="mb-2 border border-stone-100 rounded-lg overflow-hidden">
       <div class="px-3 py-1.5 bg-stone-50 text-[12.5px] font-bold flex items-center gap-2"><span class="text-[9px] text-stone-400 mono">本編${i+1}</span>${esc(b.heading||"")}</div>
       <div class="p-3">${txt(b.script)}
-      ${CHMODE?'':`<div class="mt-2"><button data-c="${b.id}" data-l="${esc(b.heading||('本編'+(i+1)))}" class="cbtn text-[11px] font-semibold px-2.5 py-1 rounded-full border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1" style="color:${main}">💬 コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}</button></div>
+      ${CHMODE?'':`<div class="mt-2"><button data-c="${b.id}" data-l="${esc(b.heading||('本編'+(i+1)))}" class="cbtn text-[11px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5" style="color:${main}">${icon("comment","w-3 h-3")}コメント${cs.length?` <span class="mono">${cs.length}</span>`:""}${open?`<span class="ml-1 inline-block w-1.5 h-1.5 rounded-full" style="background:${accent}"></span>`:""}</button></div>
       <div id="cwrap-${b.id}" class="hidden mt-2 space-y-2"></div>`}</div></div>`;
   }).join("") || '<div class="text-stone-300 text-[12px]">（未入力）</div>';
   html += block("⑤", "本編", bodyHtml);
@@ -273,7 +292,7 @@ function panePlans(p){
           ${sc?`<span class="absolute top-1 left-1 text-[10px] font-bold text-white px-1.5 rounded" style="background:${GC[sc.grade]}">${sc.grade}</span>`:""}</div>
           <div class="p-1.5"><div class="text-[10px] font-bold leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(rf.title)}</div>
           <div class="text-[9px] text-stone-400 truncate">${esc(rf.channel)}</div>
-          <div class="text-[9px] text-stone-500 mono flex gap-2 mt-0.5"><span>▶ ${fmtNum(rf.views)}</span><span>👤 ${fmtNum(rf.subs)}</span>${sc?`<span style="color:${GC[sc.grade]};font-weight:700">${sc.ratioStr}</span>`:""}</div></div>
+          <div class="text-[9px] text-stone-500 mono flex gap-2 mt-0.5"><span class="inline-flex items-center gap-0.5">${icon("play","w-2 h-2")}${fmtNum(rf.views)}</span><span class="inline-flex items-center gap-0.5">${icon("user","w-2 h-2")}${fmtNum(rf.subs)}</span>${sc?`<span style="color:${GC[sc.grade]};font-weight:700">${sc.ratioStr}</span>`:""}</div></div>
         </a>`}).join("")}</div>`:""}
       </div>
     </div>`;
@@ -318,7 +337,7 @@ function paneConcept(p){
     <div class="space-y-2">${comps.map(c=>`<div class="flex items-center gap-2 border border-stone-100 rounded-lg p-2">
       ${c.thumb?`<img src="${esc(c.thumb)}" class="w-8 h-8 rounded-full shrink-0">`:`<div class="w-8 h-8 rounded-full bg-stone-100 shrink-0"></div>`}
       <div class="min-w-0 flex-1"><div class="text-[12px] font-bold truncate">${esc(c.name||c.url)}</div>
-      ${c.subs?`<div class="text-[10px] text-stone-500 mono">👤 ${fmtNum(c.subs)}${c.videos?` ・🎬 ${fmtNum(c.videos)}`:""}</div>`:""}
+      ${c.subs?`<div class="text-[10px] text-stone-500 mono inline-flex items-center gap-1">登録 ${fmtNum(c.subs)}${c.videos?` ・${fmtNum(c.videos)}本`:""}</div>`:""}
       ${c.note?`<div class="text-[10px] text-stone-400 truncate">${esc(c.note)}</div>`:""}</div>
       ${c.url?`<a href="${safeUrl(c.url)}" target="_blank" rel="noreferrer" class="text-[10px] text-stone-400 shrink-0">↗</a>`:""}
     </div>`).join("")}</div>
@@ -441,14 +460,14 @@ function renderChannel(){
   const editable = !!ch.editable;
   const canEdit = (c) => !!(editable && c && c.edit && c.edit.liveId && c.edit.editToken);
   const editBtn = (c, title, cls, style) => canEdit(c)
-    ? `<button class="editbtn ${cls||""}" style="${style||""}" data-live="${esc(c.edit.liveId)}" data-token="${esc(c.edit.editToken)}" data-title="${esc(title||"")}" title="この案件をその場で編集">✏️<span class="hidden sm:inline"> 編集</span></button>`
+    ? `<button class="editbtn ${cls||""}" style="${style||""}" data-live="${esc(c.edit.liveId)}" data-token="${esc(c.edit.editToken)}" data-title="${esc(title||"")}" title="この案件をその場で編集">${icon("edit","w-3 h-3")}<span class="hidden sm:inline">編集</span></button>`
     : "";
   const header = `
     <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400 mb-2">CHANNEL / チャンネル資料</div>
     <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
       <div class="px-5 py-4" style="background:${mainC};color:#fff"><div class="text-[18px] font-black">${esc((ci.name)||ch.name||"チャンネル")}</div>${ci.url?`<a href="${safeUrl(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] opacity-80 mono break-all">${esc(ci.url)}</a>`:""}</div>
     </div>`
-    + (editable ? `<div class="rounded-xl border px-4 py-2.5 mb-4 text-[12px] flex items-start gap-2" style="border-color:${accentC};background:#fff;color:#57534e"><span style="color:${accentC}">✏️</span><span><span class="font-bold" style="color:${accentC}">編集できる共有です。</span>各案件を開いて「この案件を編集」から、企画・サムネ・構成台本を直接直せます（ログイン不要・直したらすぐ反映）。</span></div>` : "");
+    + (editable ? `<div class="rounded-xl border px-4 py-2.5 mb-4 text-[12px] flex items-start gap-2" style="border-color:${accentC};background:#fff;color:#57534e"><span style="color:${accentC}">${icon("edit","w-3.5 h-3.5")}</span><span><span class="font-bold" style="color:${accentC}">編集できる共有です。</span>各案件を開いて「この案件を編集」から、企画・サムネ・構成台本を直接直せます（ログイン不要・直したらすぐ反映）。</span></div>` : "");
 
   const appEl = document.getElementById("app");
   if(CASE_SEL === null || !cases[CASE_SEL]){
@@ -469,7 +488,7 @@ function renderChannel(){
           </div>
           <div class="p-1.5"><div class="text-[10px] font-bold leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(rf.title)}</div>
             <div class="text-[9px] text-stone-400 truncate">${esc(rf.channel)}</div>
-            <div class="text-[9px] text-stone-500 mono flex gap-2 mt-0.5"><span>▶ ${fmtNum(rf.views)}</span><span>👤 ${fmtNum(rf.subs)}</span></div></div>
+            <div class="text-[9px] text-stone-500 mono flex gap-2 mt-0.5"><span class="inline-flex items-center gap-0.5">${icon("play","w-2 h-2")}${fmtNum(rf.views)}</span><span class="inline-flex items-center gap-0.5">${icon("user","w-2 h-2")}${fmtNum(rf.subs)}</span></div></div>
         </a>`}).join("") : `<div class="self-center text-[11px] text-stone-300 px-4 py-6">参考サムネは未登録</div>`;
       return `<section class="rounded-xl border border-stone-200 bg-white overflow-hidden flex flex-col lg:flex-row">
         <div class="caseopen lg:w-72 shrink-0 p-3 cursor-pointer hover:bg-stone-50 border-b lg:border-b-0 lg:border-r border-stone-100" data-case="${i}">
@@ -478,7 +497,7 @@ function renderChannel(){
           ${thumbText?`<div class="text-[9px] font-bold tracking-wider text-stone-400">サムネ文言</div><div class="text-[12px] font-bold text-stone-700 mb-2">${esc(thumbText)}</div>`:""}
           ${note?`<div class="text-[11px] text-stone-500 whitespace-pre-wrap mb-2" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(note)}</div>`:""}
           <div class="flex items-center gap-2 mt-1">
-            ${editBtn(c, title, "text-[11px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white", "background:"+accentC)}
+            ${editBtn(c, title, "text-[11px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5 text-white", "background:"+accentC)}
             <span class="text-[11px] font-bold" style="color:${mainC}">開く →</span>
           </div>
         </div>
@@ -513,10 +532,10 @@ function renderChannel(){
   const subBar = `<div class="flex gap-1 mb-3 border-b border-stone-200 overflow-x-auto">${sub.map(([k,label])=>`<button data-ctab="${k}" class="ctabbtn text-[12px] font-bold px-3 py-1.5 whitespace-nowrap ${CTAB===k?'border-b-2':''}" style="${CTAB===k?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
   const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):CTAB==="video"?paneVideo(sel,accentC,mainC):CTAB==="files"?paneFiles(sel,accentC,mainC):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
   document.getElementById("app").innerHTML = header
-    + `<button id="backBtn" class="text-[12px] font-bold mb-3 inline-flex items-center gap-1" style="color:${mainC}">← 企画一覧へ戻る</button>`
+    + `<button id="backBtn" class="text-[12px] font-bold mb-3 pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5" style="color:${mainC}">${icon("back","w-3 h-3")}企画一覧へ戻る</button>`
     + `<div class="flex items-start justify-between gap-3 mb-3">`
       + `<div class="text-[16px] font-black">${esc(caseTitle(sel,CASE_SEL))}</div>`
-      + editBtn(sel, caseTitle(sel,CASE_SEL), "shrink-0 inline-flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-lg text-white shadow", "background:"+accentC)
+      + editBtn(sel, caseTitle(sel,CASE_SEL), "shrink-0 inline-flex items-center gap-1.5 text-[12px] font-bold pl-3 pr-3.5 py-2 rounded-full text-white shadow-md", "background:"+accentC)
     + `</div>`
     + subBar + `<div>${pane}</div>`
     + `<p class="text-center text-[11px] text-stone-400 mt-8">制作：ものがたりっち！</p>`;
@@ -543,9 +562,9 @@ function openEditor(liveId, token, title){
   ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:#E9E8E3;display:flex;flex-direction:column";
   ov.innerHTML =
     `<div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--main);color:#fff">
-      <button id="ed-close" style="font-size:13px;font-weight:700;background:rgba(255,255,255,.18);border:0;color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer">← 一覧へ戻る</button>
+      <button id="ed-close" style="font-size:13px;font-weight:700;background:rgba(255,255,255,.18);border:0;color:#fff;border-radius:999px;padding:6px 14px 6px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;box-shadow:0 2px 6px rgba(0,0,0,.15)">${icon("back","w-3.5 h-3.5")}一覧へ戻る</button>
       <div style="font-size:13px;font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(title||"編集")}</div>
-      <div style="margin-left:auto;font-size:11px;opacity:.85">✏️ 編集中・変更は自動保存</div>
+      <div style="margin-left:auto;font-size:11px;opacity:.85;display:inline-flex;align-items:center;gap:5px">${icon("edit","w-3 h-3")}編集中・変更は自動保存</div>
     </div>
     <iframe src="index.html?live=${encodeURIComponent(liveId)}#k=${encodeURIComponent(token)}" style="flex:1 1 auto;border:0;width:100%;background:#E9E8E3" allow="clipboard-write"></iframe>`;
   document.body.appendChild(ov);
@@ -578,7 +597,7 @@ function renderCommentBox(sid, label){
         <span class="text-[11px] font-bold text-stone-600">${esc(c.author||"ゲスト")}${c.resolved?' <span class="text-emerald-600">✓対応済</span>':''}</span>
         <span class="flex items-center gap-1.5 shrink-0">
           <span class="text-[10px] text-stone-400">${fmtTime(c.createdAt)}</span>
-          ${CAN_RESOLVE?`<button data-resolve="${c.id}" data-next="${c.resolved?0:1}" class="cresolve text-[10px] font-bold px-2 py-0.5 rounded ${c.resolved?'bg-stone-200 text-stone-500':'text-white'}" ${c.resolved?'':'style="background:#10B981"'}>${c.resolved?'未対応に戻す':'対応済みにする'}</button>`:""}
+          ${CAN_RESOLVE?`<button data-resolve="${c.id}" data-next="${c.resolved?0:1}" class="cresolve text-[10px] font-bold pl-2 pr-2.5 py-1 rounded-full shadow-sm inline-flex items-center gap-1 ${c.resolved?'bg-stone-200 text-stone-500':'text-white'}" ${c.resolved?'':'style="background:#10B981"'}>${icon(c.resolved?"undo":"check","w-2.5 h-2.5")}${c.resolved?'未対応に戻す':'対応済みにする'}</button>`:""}
         </span>
       </div>
       <div class="text-[12.5px] text-stone-800 whitespace-pre-wrap break-words mt-0.5">${esc(c.text)}</div>
@@ -590,7 +609,7 @@ function renderCommentBox(sid, label){
       <input id="au-${sid}" value="${esc(AUTHOR)}" placeholder="お名前（任意）" class="w-full text-[12px] px-2 py-1.5 mb-1.5 bg-stone-50 rounded focus:outline-none">
       <textarea id="tx-${sid}" rows="2" placeholder="このシーンへのコメント・修正依頼…" class="w-full text-[13px] px-2 py-1.5 border border-stone-200 rounded focus:outline-none resize-y"></textarea>
       <div class="flex justify-end mt-1.5">
-        <button id="sb-${sid}" class="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg shadow" style="background:var(--main)">送信</button>
+        <button id="sb-${sid}" class="text-[11px] font-bold text-white pl-3 pr-4 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5" style="background:var(--main)">${icon("send","w-3 h-3")}送信</button>
       </div>
     </div>`;
   wrap.querySelector("#sb-"+sid).addEventListener("click", () => postComment(sid, label));
@@ -638,7 +657,7 @@ function fmtTC(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), sec=Math.floor
 function ytId(u){ const m=(u||"").match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/)([A-Za-z0-9_-]{11})/); return m?m[1]:""; }
 function rateButtons(type){
   const rates = type==="youtube" ? [0.5,1,1.5,2] : [0.5,1,1.5,2,3,4];
-  return rates.map(r=>`<button data-rate="${r}" class="vc-rate text-[11px] mono px-2 py-1 rounded border border-stone-200 ${r===1?'bg-stone-100':''}">${r}x</button>`).join("");
+  return rates.map(r=>`<button data-rate="${r}" class="vc-rate text-[11px] mono px-2.5 py-1 rounded-full border border-stone-200 ${r===1?'bg-stone-100':'bg-white'}">${r}x</button>`).join("");
 }
 /* 動画の選択肢（案件全体＋企画ごと） */
 function vidKey(v){ return v ? (v.uid || v.key || v.url || "") : ""; }
@@ -692,7 +711,7 @@ function paneVideo(p, accent, main){
         ${v.title?`<div class="text-[14px] font-bold mb-2" style="color:${main}">${esc(v.title)}</div>`:""}
         <div class="rounded-xl overflow-hidden bg-black mb-2" style="aspect-ratio:16/9"><div id="vc-player" class="w-full h-full"></div></div>
         <div id="vc-bar" class="flex items-center gap-2 mb-2" style="display:none">
-          <button id="vc-pp" class="text-[13px] font-bold px-2.5 py-1 rounded-lg text-white shrink-0" style="background:${main}" title="再生/停止（スペース）">▶</button>
+          <button id="vc-pp" class="w-8 h-8 grid place-items-center rounded-full shadow-md text-white shrink-0" style="background:${main}" title="再生/停止（スペース）">${icon("play","w-3.5 h-3.5")}</button>
           <input id="vc-seek" type="range" min="0" max="100" value="0" step="0.1" class="flex-1 h-2 cursor-pointer" style="accent-color:${main}" title="シーク" />
           <span id="vc-cur" class="mono text-[11px] text-stone-500 shrink-0 tabular-nums">0:00 / 0:00</span>
         </div>
@@ -700,7 +719,7 @@ function paneVideo(p, accent, main){
           <span class="text-[11px] text-stone-400">再生速度</span>
           <div class="flex gap-1">${rateButtons(v.type)}</div>
           <div id="vc-tc" class="ml-auto mono text-[13px] font-bold" style="color:${main}">0:00.00</div>
-          ${CHMODE?"":`<button id="vc-add" class="text-[12px] font-bold text-white px-3 py-1.5 rounded-lg shadow" style="background:${accent}">＋ ここにコメント</button>`}
+          ${CHMODE?"":`<button id="vc-add" class="text-[12px] font-bold text-white pl-2.5 pr-3 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5" style="background:${accent}">${icon("plus","w-3 h-3")}ここにコメント</button>`}
         </div>
         ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>`}
         ${(UP_TOKEN && !CHMODE)?`<div class="mt-3">${videoUploadBox(accent, main, true)}</div>`:""}
@@ -709,7 +728,7 @@ function paneVideo(p, accent, main){
       ${CHMODE?"":`<div class="lg:flex-1 lg:max-w-[440px] lg:border-l lg:border-stone-200 lg:pl-4">
         <div class="text-[12px] font-bold text-stone-500 mb-2">修正コメント</div>
         <div id="vc-list" class="lg:max-h-[70vh] lg:overflow-y-auto lg:pr-1"></div>
-        <p class="text-[11px] text-stone-400 mt-3 leading-relaxed">動画を止めて「＋ ここにコメント」で、その時間に修正依頼を残せます。▶ で頭出し。送信は ⌘+Enter。</p>
+        <p class="text-[11px] text-stone-400 mt-3 leading-relaxed">動画を止めて「ここにコメント」で、その時間に修正依頼を残せます。コメントのタイムコードで頭出し。送信は ⌘+Enter。</p>
       </div>`}
     </div>
     <div id="vc-shorts" class="mt-6"></div>`;
@@ -728,7 +747,7 @@ async function mountShorts(){
       h+='<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">'+items.map(s=>
         '<div class="rounded-xl border border-stone-200 overflow-hidden bg-black">'+
         '<video src="'+API+'/api/file/'+encodeURIComponent(s.key)+'" class="w-full bg-black" style="aspect-ratio:9/16;object-fit:cover" preload="metadata" muted playsinline controls></video>'+
-        '<a href="'+API+'/api/file/'+encodeURIComponent(s.key)+'?dl=1" class="block text-center text-[11px] font-bold text-white py-1.5" style="background:'+_shMain+'">⬇ DL</a></div>').join("")+'</div>';
+        '<a href="'+API+'/api/file/'+encodeURIComponent(s.key)+'?dl=1" class="flex items-center justify-center gap-1 text-[11px] font-bold text-white py-1.5" style="background:'+_shMain+'">'+icon("download","w-3 h-3")+'DL</a></div>').join("")+'</div>';
     } else if(gen){ h+='<div class="text-[12px] text-stone-400">Macで生成中です。少し待つと切り抜きが並びます。</div>'; }
     box.innerHTML=h;
     if(gen) setTimeout(mountShorts, 12000);
@@ -747,8 +766,8 @@ function wireVideoControls(){
   if(bar) bar.style.display="flex";
   videoEl.style.cursor="pointer";
   videoEl.addEventListener("click", vcTogglePlay);
-  videoEl.addEventListener("play", ()=>{ if(pp) pp.textContent="⏸"; });
-  videoEl.addEventListener("pause", ()=>{ if(pp) pp.textContent="▶"; });
+  videoEl.addEventListener("play", ()=>{ if(pp) pp.innerHTML=icon("pause","w-3.5 h-3.5"); });
+  videoEl.addEventListener("pause", ()=>{ if(pp) pp.innerHTML=icon("play","w-3.5 h-3.5"); });
   videoEl.addEventListener("loadedmetadata", ()=>{ if(seek&&isFinite(videoEl.duration)) seek.max=videoEl.duration; });
   videoEl.addEventListener("timeupdate", ()=>{ if(seek&&!seek._drag&&isFinite(videoEl.duration)){ seek.max=videoEl.duration; seek.value=videoEl.currentTime; } if(cur) cur.textContent=vcFmt(videoEl.currentTime)+" / "+vcFmt(videoEl.duration); });
   if(seek){ seek.addEventListener("input", ()=>{ seek._drag=true; if(videoEl) videoEl.currentTime=+seek.value; }); seek.addEventListener("change", ()=>{ seek._drag=false; }); }
@@ -916,12 +935,12 @@ function renderVideoList(accent, main){
     return `
     <div class="rounded-lg border border-stone-200 bg-white px-3 py-2 mb-1.5">
       <div class="flex items-center gap-1.5 flex-wrap">
-        <button data-seek="${c.timecode}" class="vc-seek mono text-[11px] font-bold px-2 py-0.5 rounded text-white" style="background:${accent}">▶ ${fmtTC(c.timecode)}</button>
+        <button data-seek="${c.timecode}" class="vc-seek mono text-[11px] font-bold pl-2 pr-2.5 py-0.5 rounded-full shadow-sm text-white inline-flex items-center gap-1" style="background:${accent}">${icon("play","w-2.5 h-2.5")}${fmtTC(c.timecode)}</button>
         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#F0F0F2;color:#57534E">${esc(c.category||"その他")}</span>
         ${pc?`<span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${pc[0]};color:${pc[1]}">${esc(c.priority)}</span>`:""}
         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${sc[0]};color:${sc[1]}">${st}</span>
         <span class="ml-auto text-[10px] text-stone-400">${fmtTime(c.createdAt)}</span>
-        ${CAN_RESOLVE?`<button data-resolve="${c.id}" data-next="${c.resolved?0:1}" class="vc-resolve text-[10px] font-bold px-2 py-0.5 rounded ${c.resolved?'bg-stone-200 text-stone-500':'text-white'}" ${c.resolved?'':'style="background:#10B981"'}>${c.resolved?'未対応に戻す':'対応済みにする'}</button>`:""}
+        ${CAN_RESOLVE?`<button data-resolve="${c.id}" data-next="${c.resolved?0:1}" class="vc-resolve text-[10px] font-bold pl-2 pr-2.5 py-1 rounded-full shadow-sm inline-flex items-center gap-1 ${c.resolved?'bg-stone-200 text-stone-500':'text-white'}" ${c.resolved?'':'style="background:#10B981"'}>${icon(c.resolved?"undo":"check","w-2.5 h-2.5")}${c.resolved?'未対応に戻す':'対応済みにする'}</button>`:""}
         ${MINE.includes(c.id)?`<button data-del="${c.id}" class="vc-del text-[10px] text-stone-300 hover:text-rose-500 font-bold" title="自分のコメントを削除">削除</button>`:""}
       </div>
       <div class="text-[11px] font-bold text-stone-600 mt-1">${esc(c.author||"ゲスト")}</div>
@@ -929,7 +948,7 @@ function renderVideoList(accent, main){
       ${replies?`<div class="mt-1.5">${replies}</div>`:""}
       <div class="flex gap-1.5 mt-1.5">
         <input data-rep="${c.id}" placeholder="返信…" class="vc-rep flex-1 min-w-0 text-[11px] border border-stone-200 rounded px-2 py-1 focus:outline-none">
-        <button data-repbtn="${c.id}" class="vc-repbtn text-[10px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-500">返信</button>
+        <button data-repbtn="${c.id}" class="vc-repbtn text-[10px] font-bold pl-2 pr-2.5 py-1 rounded-full border border-stone-200 bg-white text-stone-500 inline-flex items-center gap-1">${icon("reply","w-2.5 h-2.5")}返信</button>
       </div>
     </div>`;}).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだコメントはありません。</div>';
   el.querySelectorAll(".vc-seek").forEach(b=>b.addEventListener("click", ()=>seekTo(+b.dataset.seek)));
@@ -974,7 +993,7 @@ function openVideoForm(accent, main){
       <textarea id="vc-tx" rows="2" placeholder="修正依頼・気になる点…" class="w-full text-[13px] px-2 py-1.5 border border-stone-200 rounded focus:outline-none resize-y"></textarea>
       <div class="flex justify-end gap-2 mt-1.5">
         <button id="vc-cancel" class="text-[11px] text-stone-400 px-3 py-1.5">キャンセル</button>
-        <button id="vc-send" class="text-[11px] font-bold text-white px-4 py-1.5 rounded-lg shadow" style="background:var(--main)">送信 <span class="opacity-70">⌘↵</span></button>
+        <button id="vc-send" class="text-[11px] font-bold text-white pl-3 pr-4 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5" style="background:var(--main)">${icon("send","w-3 h-3")}送信 <span class="opacity-70">⌘↵</span></button>
       </div>
     </div>`;
   const tx=document.getElementById("vc-tx"); if(tx){ tx.focus(); tx.addEventListener("keydown", e=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){ e.preventDefault(); postVideoComment(sec, accent, main); } }); }
@@ -1055,7 +1074,7 @@ function renderFileList(p, accent, main){
           <div class="text-[13px] font-semibold text-stone-800 truncate">${esc(f.name||"file")}</div>
           <div class="text-[10px] text-stone-400 mono">${fmtBytes(f.size)}${f.by==="guest"?" ・先方アップ":""}${f.expiresAt?` ・${fmtTime(f.expiresAt)}まで`:""}</div>
         </div>
-        <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg shrink-0" style="background:${main}">⬇ DL</a>
+        <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold text-white pl-2.5 pr-3 py-1.5 rounded-full shadow-md shrink-0 inline-flex items-center gap-1.5" style="background:${main}">${icon("download","w-3 h-3")}DL</a>
       </div>`).join("")}
     </div>`).join("");
 }
@@ -1071,7 +1090,7 @@ function renderShorts(d){
     ${running?'<div class="text-[11px] text-stone-400 mb-1.5">⏳ 生成中…（数分かかることがあります）</div>':''}
     ${errored?'<div class="text-[11px] text-rose-500 mb-1.5">⚠️ 生成に失敗した回があります</div>':''}
     ${shorts.length?`<div class="flex flex-wrap gap-2">${shorts.map(f=>`
-      <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">🎬 ${esc(f.name||"short.mp4")}</a>
+      <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5">${icon("film","w-3 h-3")}${esc(f.name||"short.mp4")}</a>
     `).join("")}</div>`:''}
   </div>`;
 }
