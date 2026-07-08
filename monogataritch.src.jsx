@@ -4263,6 +4263,31 @@ export default function App() {
     } catch { showToast("コピーに失敗しました"); }
   };
 
+  /* ヒアリングを外部（GPT等）へ出す。装飾マーカー（**・!!）は除いたプレーン文で書き出す */
+  const hearingPlain = (s) => (s || "").toString().replace(/\*\*/g, "").replace(/!!/g, "");
+  const exportHearingCSV = () => {
+    const esc = (s) => { const v = hearingPlain(s); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = [["セクション", "項目", "内容"]];
+    (project.hearing || []).forEach((sec) => (sec.items || []).forEach((it) => rows.push([sec.title, it.label, it.value])));
+    const csv = "﻿" + rows.map((r) => r.map(esc).join(",")).join("\r\n"); // BOM付き＝Excel/GPTで文字化けしない
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "ヒアリング_" + (project.name || "案件").replace(/[\\/:*?"<>|]/g, "_") + ".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("ヒアリングをCSVで書き出したよ");
+  };
+  const copyHearingForAI = async () => {
+    const L = ["# ヒアリング：" + (project.name || "")];
+    (project.hearing || []).forEach((sec) => {
+      L.push("", "## " + sec.title);
+      (sec.items || []).forEach((it) => { if ((it.value || "").trim()) L.push("- " + it.label + "：" + hearingPlain(it.value)); });
+    });
+    try { await navigator.clipboard.writeText(L.join("\n")); showToast("ヒアリングをGPT用にコピーしたよ（そのまま貼り付けて）📋"); }
+    catch { showToast("コピーに失敗しました"); }
+  };
+
   /* 編集者向けヘルプAIチャット送信（/api/help）。要望は worker 側で Discord へ */
   const sendHelp = async () => {
     const text = helpInput.trim();
@@ -5863,6 +5888,15 @@ export default function App() {
               style={{ borderColor: theme.accent, color: theme.accent }}>
               <Icon name="sparkle" className="w-4 h-4" />文字起こしを貼ってAIに自動でまとめてもらう
             </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-stone-400">GPT等に渡す：</span>
+              <button onClick={copyHearingForAI} className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                <Icon name="sparkle" className="w-3.5 h-3.5" />GPT用にコピー
+              </button>
+              <button onClick={exportHearingCSV} className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                <Icon name="download" className="w-3.5 h-3.5" />CSVで書き出し
+              </button>
+            </div>
             {(project.hearing || []).map((sec) => (
               <div key={sec.id} className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
                 <div className="flex items-center gap-2 mb-3">
