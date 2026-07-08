@@ -2178,7 +2178,10 @@ export default function App() {
         const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData("案件");
         setActiveId(id); setProject(data); setTab("script");
       }
-    } catch (e) { showToast("案件を開けませんでした：" + (e.message || e)); }
+    } catch (e) {
+      if ((e && e.message) === "nf") { setBrokenIds((b) => ({ ...b, [id]: true })); showToast("この案件の本体データが見つかりません。企画一覧の右のゴミ箱から削除してください"); }
+      else showToast("案件を開けませんでした：" + (e.message || e));
+    }
   };
 
   /* ホームの案件カードから開く＝概要タブに着地（作業の入口） */
@@ -2188,11 +2191,12 @@ export default function App() {
     const n = index.length + 1;
     const data = newProjectData((format === "talk" ? "トーク案件" : "案件") + n, channel, format);
     if (!template && format !== "talk") data.rows = [];
-    const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
+    // 本体を先に確定させ、書けたときだけ index に載せる（回線切れで本体だけ欠ける“幽霊案件”を作らない）
     try {
       if (project) await saveProjectData(project);
       await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
-    } catch (e) {}
+    } catch (e) { showToast("案件を保存できませんでした（通信）。回線を確認してもう一度お試しください"); return; }
+    const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
     setIndex(idx); persistIndex(idx);
     setActiveId(data.id); setProject(data); setTab("overview"); setView("editor");
     setNewMenu(false); setView("editor");
@@ -2204,9 +2208,10 @@ export default function App() {
     const n = index.length + 1;
     const base = newProjectData(parsed.name || ("取込案件" + n), parsed.channel || DEFAULT_CHANNEL);
     const data = { ...base, meta: parsed.meta, theme: parsed.theme, rate: parsed.rate, timeFormat: parsed.timeFormat, rows: parsed.rows, plans: seedPlansFromMeta(parsed.meta) };
-    const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
     if (project) await saveProjectData(project);
-    try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+    // 本体が書けたときだけ index に載せる（“幽霊案件”防止）
+    try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) { showToast("取込案件を保存できませんでした（通信）。もう一度お試しください"); return; }
+    const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
     setIndex(idx); persistIndex(idx);
     setActiveId(data.id); setProject(data); setTab("script"); setView("editor");
     setShowFullImport(false); setFullImportText(""); setImportFileName("");
@@ -2688,6 +2693,7 @@ export default function App() {
 
   /* ===== チャンネル案件ボード（企画・サムネ = チャンネル内の全案件を1案件1カードで一覧）===== */
   const [boardCache, setBoardCache] = useState({});          // {id: 案件本体}（アクティブ以外の同チャンネル案件）
+  const [brokenIds, setBrokenIds] = useState({});            // {id:true} 本体がKVから消えた幽霊案件（無限ロード回避＝削除誘導）
   const [recentIds, setRecentIds] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:recent") || "[]"); } catch (e) { return []; } }); // 最近触った案件id（新しい順）
   const pushRecent = (id) => setRecentIds((r) => { const n = [id, ...r.filter((x) => x !== id)].slice(0, 12); try { localStorage.setItem("mg:recent", JSON.stringify(n)); } catch (e) {} return n; });
   const [collapseActive, setCollapseActive] = useState(false); // アクティブ案件カードを畳むか
@@ -2707,7 +2713,7 @@ export default function App() {
           if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); data = { ...migrateProject(r.project), id: x.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }; }
           else { const r = await window.storage.get(STORE_PROJ(x.id)); data = r && r.value ? migrateProject(JSON.parse(r.value)) : null; }
           if (data && !cancelled) setBoardCache((c) => ({ ...c, [x.id]: data }));
-        } catch (e) {}
+        } catch (e) { if ((e && e.message) === "nf" && !cancelled) setBrokenIds((b) => ({ ...b, [x.id]: true })); }
       }
     })();
     return () => { cancelled = true; };
@@ -2725,7 +2731,7 @@ export default function App() {
           if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); data = { ...migrateProject(r.project), id: x.id, collab: true }; }
           else { const r = await window.storage.get(STORE_PROJ(x.id)); data = r && r.value ? migrateProject(JSON.parse(r.value)) : null; }
           if (data && !cancelled) setBoardCache((c) => ({ ...c, [x.id]: data }));
-        } catch (e) {}
+        } catch (e) { if ((e && e.message) === "nf" && !cancelled) setBrokenIds((b) => ({ ...b, [x.id]: true })); }
       }
     })();
     return () => { cancelled = true; };
@@ -5650,6 +5656,8 @@ export default function App() {
                         <input value={title} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "title", e.target.value)} onBlur={() => commitCaseName(entry.id)}
                           placeholder={"タイトル案（例：30歳で会社を捨てた男の末路）"}
                           className="flex-1 min-w-0 text-[13px] font-bold bg-transparent border-0 border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1" />
+                      ) : brokenIds[entry.id] ? (
+                        <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-rose-500">{entry.name}（本体データ無し → 右のゴミ箱で削除）</span>
                       ) : <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-stone-400">{entry.name}（読み込み中…）</span>}
                       {data && (
                         <input value={thumbText} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "thumbText", e.target.value)}
