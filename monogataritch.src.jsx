@@ -921,6 +921,58 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize
   );
 }
 
+/* 太字(**)・赤文字(!!)の装飾に対応し、内容に合わせて高さが伸びる入力欄。
+   ScriptCellと同じマークアップ（⌘B / ⌘⇧H・ツールバーB/A）だが、構成台本特有の◼︎質問行の自動処理は持たない。
+   ヒアリング等の自由記述で「全文が見える＋太字・色付け」を使いたい箇所向け。 */
+function RichCell({ value, onChange, placeholder, className = "", minHeight = 44, fontSize = 13 }) {
+  const taRef = useRef(null);
+  const [focused, setFocused] = useState(false);
+  const [val, set, flush] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
+  const textStyle = { fontFamily: "inherit", fontSize, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" };
+  const wrap = (mk) => {
+    const ta = taRef.current; if (!ta) return;
+    const s = ta.selectionStart, e = ta.selectionEnd; const v = val || "";
+    const sel = e > s ? v.slice(s, e) : "ここ";
+    const nv = v.slice(0, s) + mk + sel + mk + v.slice(e);
+    set(nv);
+    requestAnimationFrame(() => { ta.focus(); ta.selectionStart = s + mk.length; ta.selectionEnd = s + mk.length + sel.length; });
+  };
+  const handleKeyDown = (e) => {
+    if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "B")) { e.preventDefault(); wrap("**"); }
+    else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "h" || e.key === "H")) { e.preventDefault(); wrap("!!"); }
+  };
+  const runs = buildStyledRuns(val || "");
+  const nodes = []; let key = 0;
+  runs.forEach((r) => {
+    const st = {}; if (r.red) st.color = "#DC2645"; if (r.bold) st.fontWeight = 800;
+    r.text.split("\n").forEach((p, idx) => {
+      if (idx > 0) nodes.push("\n");
+      if (p) nodes.push(<span key={key++} style={st}>{p}</span>);
+    });
+  });
+  const fmtBtn = "w-6 h-6 grid place-items-center rounded-md bg-white border border-stone-200 shadow-sm hover:bg-stone-50 text-[12px] leading-none";
+  return (
+    <div className={"relative " + className}>
+      {focused && (
+        <div className="absolute -top-3 right-1 z-10 flex gap-1" onMouseDown={(e) => e.preventDefault()}>
+          <button type="button" onClick={() => wrap("**")} title="太字（⌘B）" className={fmtBtn} style={{ fontWeight: 800 }}>B</button>
+          <button type="button" onClick={() => wrap("!!")} title="赤文字（⌘⇧H）" className={fmtBtn} style={{ color: "#DC2645", fontWeight: 800 }}>A</button>
+        </div>
+      )}
+      <div aria-hidden className="px-3 py-2 text-stone-800" style={{ ...textStyle, minHeight }}>
+        {val ? nodes : <span className="text-stone-300">{placeholder}</span>}
+        {"​"}
+      </div>
+      <textarea ref={taRef} value={val}
+        onChange={(e) => set(e.target.value)} onKeyDown={handleKeyDown}
+        onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); flush(); }}
+        spellCheck={false}
+        className="absolute inset-0 w-full h-full resize-none bg-transparent px-3 py-2 focus:outline-none"
+        style={{ ...textStyle, color: "transparent", caretColor: "#1C1C1E" }} />
+    </div>
+  );
+}
+
 /* 再生専用ビュー（mp4=速度ボタン付き / YouTube=埋め込み）。モーダルと企画カードで共用 */
 function VideoView({ video, main }) {
   const vref = React.useRef(null);
@@ -5799,9 +5851,9 @@ export default function App() {
                         {it.hint && <span className="text-[10px] text-stone-300 truncate">{it.hint}</span>}
                         <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="ml-auto shrink-0 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500"><Icon name="close" className="w-3.5 h-3.5" /></button>
                       </div>
-                      <textarea value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
-                        placeholder={it.hint || "ここに聞き取った内容を入力…"}
-                        className="w-full min-h-[44px] text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y leading-relaxed" />
+                      <RichCell value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
+                        placeholder={it.hint || "ここに聞き取った内容を入力…"} minHeight={44}
+                        className="w-full bg-white border border-stone-200 rounded-lg focus-within:border-stone-400" />
                     </div>
                   ))}
                 </div>
