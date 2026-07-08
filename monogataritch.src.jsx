@@ -1697,6 +1697,7 @@ export default function App() {
   const [hoverId, setHoverId] = useState(null);
   const [highlightCollapsed, setHighlightCollapsed] = useState(false);
   const [deliverBusy, setDeliverBusy] = useState(false);
+  const [saveState, setSaveState] = useState("ok");   // ok | error（クラウド保存の状態。回線断のsilent lost可視化）
   const [showTheme, setShowTheme] = useState(false);
   const [tab, setTab] = useState("overview"); // overview | plan | script | kouban | assets | review | deliver | concept
   const [showImport, setShowImport] = useState(false);
@@ -1797,6 +1798,7 @@ export default function App() {
   const [comments, setComments] = useState([]);             // 現案件の先方コメント
   const [showComments, setShowComments] = useState(false);
   const saveTimer = useRef(null);
+  const pendingSaveRef = useRef(null);   // クラウド保存に失敗したデータ。オンライン復帰で自動再送（silent lost根絶）
   const liveWS = useRef(null);          // リアルタイム編集の WebSocket
   const lastRemoteRef = useRef("");     // 直近に受信した project JSON（自分の送信エコー抑止）
   const liveSendTimer = useRef(null);
@@ -1990,9 +1992,28 @@ export default function App() {
       return () => clearTimeout(liveSendTimer.current);
     }
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { saveProjectData(project); }, 700);
+    saveTimer.current = setTimeout(async () => {
+      // クラウド保存の成否を握る。失敗したら pendingSaveRef に退避して「未保存」表示＋裏で再送し続ける。
+      const ok = await saveProjectData(project);
+      if (ok === false) { pendingSaveRef.current = project; setSaveState("error"); }
+      else { pendingSaveRef.current = null; setSaveState("ok"); }
+    }, 700);
     return () => clearTimeout(saveTimer.current);
   }, [project, loaded]);
+
+  /* クラウド保存の失敗を自動リトライ（8秒毎＋オンライン復帰イベントで即再送）。回線断でも黙って消えない。 */
+  useEffect(() => {
+    const retry = async () => {
+      const p = pendingSaveRef.current;
+      if (!p) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      const ok = await saveProjectData(p);
+      if (ok !== false) { pendingSaveRef.current = null; setSaveState("ok"); }
+    };
+    const id = setInterval(retry, 8000);
+    if (typeof window !== "undefined") window.addEventListener("online", retry);
+    return () => { clearInterval(id); if (typeof window !== "undefined") window.removeEventListener("online", retry); };
+  }, []);
 
   /* 共有スナップの自動再発行：素材/動画/構成などを変えたら、既存の共有リンクを裏で最新化する。
      ＝「押し直し忘れで共有URLに出てこない」を構造的に撲滅（URLもトークンも不変・副作用なし）。 */
@@ -4647,8 +4668,8 @@ export default function App() {
             共有・連携設定
           </a>
         </div>
-        <div className="px-3 py-2 border-t border-white/10 text-[10px] text-white/40">
-          {index.length}件の案件・自動保存
+        <div className={"px-3 py-2 border-t border-white/10 text-[10px] " + (saveState === "error" ? "text-amber-400" : "text-white/40")}>
+          {index.length}件の案件・{saveState === "error" ? "未保存（電波待ち・自動で再送中）" : "自動保存"}
         </div>
       </aside>
 
