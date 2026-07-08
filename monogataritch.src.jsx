@@ -2083,15 +2083,17 @@ export default function App() {
   };
 
   /* 案件を正しい保存先へ（collabはWorker collabストア、それ以外は個人ストレージ） */
+  // 戻り値: クラウド(collab)へ確実に保存できたら true / 失敗してローカル退避に留まったら false。
+  // 呼び出し側が保存成否をユーザーに知らせられるように（回線断のsilent fail対策）。既存の呼び出しは戻り値を使わないので後方互換。
   const saveProjectData = async (data0) => {
-    if (!data0) return;
+    if (!data0) return true;
     const data = { ...data0, updatedAt: Date.now() };
     // collab かつログイン中のみクラウドへ。未ログイン(ログアウト後)は個人ストレージへフォールバック保存（silent fail防止）
     if (data.collab && MG_SESSION) {
-      try { await authFetch("/api/collab/upsert", { id: data.id, project: data }); }
-      catch (e) { console.error("collab保存", e); try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} }
+      try { await authFetch("/api/collab/upsert", { id: data.id, project: data }); return true; }
+      catch (e) { console.error("collab保存", e); try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} return false; }
     } else {
-      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) { console.error(e); }
+      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); return true; } catch (e) { console.error(e); return false; }
     }
   };
 
@@ -2398,13 +2400,18 @@ export default function App() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "生成に失敗しました");
-      setMeta("deliverTitle", d.title || "");
-      setMeta("deliverDescription", d.description || "");
-      setMeta("deliverHashtags", d.hashtags || "");
-      if (transcript && (d.chapters || "").trim()) setMeta("deliverChapters", d.chapters.trim());
-      showToast(transcript && (d.chapters || "").trim()
-        ? "自動生成しました（目次は完成動画の文字起こしから実尺で作成）"
-        : "タイトル・概要欄・ハッシュタグ・目次を自動生成しました");
+      // 生成結果を1つのpatchに集約。setMeta（非同期反映）に頼らず、この場で確実にクラウド保存する。
+      const patch = { deliverChapters: chapters, deliverTitle: d.title || "", deliverDescription: d.description || "", deliverHashtags: d.hashtags || "" };
+      if (transcript && (d.chapters || "").trim()) patch.deliverChapters = d.chapters.trim();
+      Object.entries(patch).forEach(([k, v]) => setMeta(k, v));
+      // デバウンスautosaveを待たず即・明示保存（回線が飛んでも取りこぼさない）。失敗はloud-failでAKに知らせる。
+      const merged = { ...project, meta: { ...project.meta, ...patch } };
+      const saved = await saveProjectData(merged);
+      showToast(saved === false
+        ? "生成できたけど保存に失敗（オフラインかも）。電波のいい所でもう一度「自動生成」を押すか、手直しして保存し直して"
+        : (transcript && (d.chapters || "").trim()
+            ? "自動生成して保存しました（目次は完成動画の文字起こしから実尺で作成）"
+            : "自動生成して保存しました（タイトル・概要欄・ハッシュタグ・目次）"));
     } catch (e) {
       showToast("自動生成に失敗：" + (e.message || e));
     } finally { setDeliverBusy(false); }
