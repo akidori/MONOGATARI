@@ -39,6 +39,34 @@ const rid = (n = 8) => {
   return s;
 };
 
+// 編集者が共有リンクから上げた完成動画を、AKがアプリを開かなくても「確認用バージョン」に自動昇格する。
+// R2直再生で即見え、Stream変換をキックして完了後にHLS昇格（配信時の自己治癒で ready 反映）。
+// 版は key を持たせるので、後でAKのアプリが取り込んでも key/uid 一致で重複しない（importGuestUploads / reconcile と整合）。
+async function autoRegisterReviewVersion(env, origin, snapId, meta) {
+  const snap = await env.SNAPS.get("snap:" + snapId, "json");
+  if (!snap || !snap.project) return;
+  const review = snap.project.review || (snap.project.review = {});
+  const vers = Array.isArray(review.versions) ? review.versions : (review.versions = []);
+  if (vers.some((v) => v && (v.key === meta.key))) return; // 二重completeガード
+  const nextN = vers.filter((v) => v && !v.trashedAt).length + 1;
+  const ver = { id: rid(8), label: "v" + nextN, name: meta.name || ("v" + nextN),
+    type: "stream", key: meta.key, url: "", uid: "", hls: "", ready: false,
+    createdAt: Date.now(), createdBy: meta.by === "owner" ? "AK" : "編集者" };
+  if (env.STREAM_ACCOUNT_ID && env.STREAM_API_TOKEN) {
+    try {
+      const r = await fetch("https://api.cloudflare.com/client/v4/accounts/" + env.STREAM_ACCOUNT_ID + "/stream/copy", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + env.STREAM_API_TOKEN, "Content-Type": "application/json" },
+        body: JSON.stringify({ url: origin + "/api/file/" + meta.key, meta: { name: (meta.name || "確認用動画").toString().slice(0, 120) }, requireSignedURLs: false }),
+      });
+      const d = await r.json().catch(() => null);
+      if (d && d.success && d.result && d.result.uid) ver.uid = d.result.uid;
+    } catch (e) {}
+  }
+  vers.push(ver);
+  await env.SNAPS.put("snap:" + snapId, JSON.stringify(snap));
+}
+
 // IPベースの簡易レート制限（KVカウンタ）。無認証で叩けるAI系のコスト焼却DoSを抑止。
 // KVは結果整合なのでバースト時に多少すり抜けるが、持続的な濫用は確実に頭打ちにできる。
 async function rateLimit(env, ip, bucket, limit, windowSec) {
@@ -865,6 +893,10 @@ export default {
           const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
           ups.push(meta);
           await env.SNAPS.put("file_up:" + snap, JSON.stringify(ups));
+        }
+        // 完成動画(role:review)は、AKがアプリを開かなくてもその場で確認用バージョンに自動昇格＋Stream変換。
+        if (meta.role === "review") {
+          try { await autoRegisterReviewVersion(env, new URL(request.url).origin, snap, meta); } catch (e) {}
         }
         return json({ file: meta });
       }

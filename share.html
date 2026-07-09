@@ -159,7 +159,7 @@ async function load(){
     try{ const uR = await fetch(API+"/api/snap/"+ID+"/uploads"); if(uR.ok) UPLOADS = (await uR.json()).uploads || []; }catch(e){}
     render();
     // 自動更新：ロード後に届いた編集者アップ／エンコード完了を、リロード無しで反映（凍結ページ問題の根治）
-    POLL_SIG = optionsSig(SNAP, UPLOADS);
+    POLL_SIG = optionsSig(SNAP, UPLOADS) + "#" + commentsSig(COMMENTS);
     if(!window._mgPoll) window._mgPoll = setInterval(pollUpdates, 20000);
   }catch(e){
     document.getElementById("loading").textContent = "読み込みに失敗しました：" + e.message;
@@ -181,6 +181,11 @@ function optionsSig(snap, uploads){
     return vs+"|"+us;
   }catch(e){ return ""; }
 }
+// コメント署名：追加/削除/対応ステータス/返信件数の変化を検知（先方が開きっぱなしでも新コメントが反映される）
+function commentsSig(comments){
+  try{ return (comments||[]).map(c=>(c.id||"")+":"+(c.status||"")+":"+((c.replies||[]).length)).join(","); }
+  catch(e){ return ""; }
+}
 async function pollUpdates(){
   if(CHMODE || !ID || document.hidden) return;
   try{
@@ -189,15 +194,17 @@ async function pollUpdates(){
     const snap = await sR.json();
     let uploads = UPLOADS;
     try{ const uR = await fetch(API+"/api/snap/"+ID+"/uploads"); if(uR.ok) uploads = (await uR.json()).uploads || []; }catch(e){}
-    const sig = optionsSig(snap, uploads);
+    let comments = COMMENTS;
+    try{ const cR = await fetch(API+"/api/snap/"+ID+"/comments"); if(cR.ok) comments = (await cR.json()).comments || []; }catch(e){}
+    const sig = optionsSig(snap, uploads) + "#" + commentsSig(comments);
     if(!sig || sig === POLL_SIG) return;
     POLL_SIG = sig;
     const busy = (videoEl && !videoEl.paused && !videoEl.ended) || (document.activeElement && /TEXTAREA|INPUT/.test(document.activeElement.tagName||""));
-    if(busy){ PENDING = { snap, uploads }; showUpdatePill(); }
-    else { SNAP = snap; UPLOADS = uploads; PENDING = null; hideUpdatePill(); render(); }
+    if(busy){ PENDING = { snap, uploads, comments }; showUpdatePill(); }
+    else { SNAP = snap; UPLOADS = uploads; COMMENTS = comments; PENDING = null; hideUpdatePill(); render(); }
   }catch(e){}
 }
-function applyPending(){ if(PENDING){ SNAP = PENDING.snap; UPLOADS = PENDING.uploads; PENDING = null; } hideUpdatePill(); render(); }
+function applyPending(){ if(PENDING){ SNAP = PENDING.snap; UPLOADS = PENDING.uploads; if(PENDING.comments) COMMENTS = PENDING.comments; PENDING = null; } hideUpdatePill(); render(); }
 function showUpdatePill(){
   if(document.getElementById("mg-refresh-pill")) return;
   const b=document.createElement("button"); b.id="mg-refresh-pill"; b.onclick=applyPending;
