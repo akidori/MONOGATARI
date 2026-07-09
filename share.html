@@ -158,10 +158,54 @@ async function load(){
     COMMENTS = (await cR.json()).comments || [];
     try{ const uR = await fetch(API+"/api/snap/"+ID+"/uploads"); if(uR.ok) UPLOADS = (await uR.json()).uploads || []; }catch(e){}
     render();
+    // 自動更新：ロード後に届いた編集者アップ／エンコード完了を、リロード無しで反映（凍結ページ問題の根治）
+    POLL_SIG = optionsSig(SNAP, UPLOADS);
+    if(!window._mgPoll) window._mgPoll = setInterval(pollUpdates, 20000);
   }catch(e){
     document.getElementById("loading").textContent = "読み込みに失敗しました：" + e.message;
   }
 }
+
+/* ── 共有ページ自動更新（凍結ページ根治）──────────────────────
+   ロード時点のスナップで固まるのを防ぐ。20秒ごとに /api/snap を再取得し、
+   動画の版・ready状態・編集者アップに変化があれば反映。/api/snap はサーバ側で
+   Stream変換完了を自己治癒するので、再取得＝ready昇格も兼ねる。
+   再生中／コメント入力中は割り込まず「更新」ピルを出し、タップで反映。 */
+let PENDING=null, POLL_SIG="";
+function optionsSig(snap, uploads){
+  try{
+    const p = snap && (snap.project||snap); if(!p) return "";
+    const vers = (p.review && p.review.versions) || [];
+    const vs = vers.filter(v=>v && !v.trashedAt).map(v=>(v.uid||v.key||v.url||"")+":"+(v.ready?1:0)+":"+(v.hls?1:0)).join(",");
+    const us = (uploads||[]).map(u=>u.key||"").join(",");
+    return vs+"|"+us;
+  }catch(e){ return ""; }
+}
+async function pollUpdates(){
+  if(CHMODE || !ID || document.hidden) return;
+  try{
+    const sR = await fetch(API+"/api/snap/"+ID+RQ);
+    if(!sR.ok) return;
+    const snap = await sR.json();
+    let uploads = UPLOADS;
+    try{ const uR = await fetch(API+"/api/snap/"+ID+"/uploads"); if(uR.ok) uploads = (await uR.json()).uploads || []; }catch(e){}
+    const sig = optionsSig(snap, uploads);
+    if(!sig || sig === POLL_SIG) return;
+    POLL_SIG = sig;
+    const busy = (videoEl && !videoEl.paused && !videoEl.ended) || (document.activeElement && /TEXTAREA|INPUT/.test(document.activeElement.tagName||""));
+    if(busy){ PENDING = { snap, uploads }; showUpdatePill(); }
+    else { SNAP = snap; UPLOADS = uploads; PENDING = null; hideUpdatePill(); render(); }
+  }catch(e){}
+}
+function applyPending(){ if(PENDING){ SNAP = PENDING.snap; UPLOADS = PENDING.uploads; PENDING = null; } hideUpdatePill(); render(); }
+function showUpdatePill(){
+  if(document.getElementById("mg-refresh-pill")) return;
+  const b=document.createElement("button"); b.id="mg-refresh-pill"; b.onclick=applyPending;
+  b.textContent="新しい更新が届きました ↻ タップで反映";
+  b.style.cssText="position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:9999;background:#1C1C1E;color:#fff;border:0;border-radius:999px;padding:10px 18px;font-size:13px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";
+  document.body.appendChild(b);
+}
+function hideUpdatePill(){ const b=document.getElementById("mg-refresh-pill"); if(b) b.remove(); }
 
 function commentsFor(sid){ return COMMENTS.filter(c=>c.sceneId===sid); }
 
