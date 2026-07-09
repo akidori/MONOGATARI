@@ -5909,10 +5909,10 @@ export default function App() {
                     <div key={it.id} className="group">
                       <div className="flex items-center gap-2 mb-1">
                         <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)}
-                          className="text-[11px] font-bold text-stone-500 bg-transparent border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none" />
-                        {it.hint && <span className="text-[10px] text-stone-300 truncate">{it.hint}</span>}
-                        <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="ml-auto shrink-0 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500"><Icon name="close" className="w-3.5 h-3.5" /></button>
+                          className="flex-1 min-w-0 text-[11px] font-bold text-stone-500 bg-transparent border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none" />
+                        <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500"><Icon name="close" className="w-3.5 h-3.5" /></button>
                       </div>
+                      {it.hint && <div className="text-[10px] text-stone-400 mb-1 leading-snug whitespace-pre-wrap break-words">{it.hint}</div>}
                       <RichCell value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
                         placeholder={it.hint || "ここに聞き取った内容を入力…"} minHeight={44}
                         className="w-full bg-white border border-stone-200 rounded-lg focus-within:border-stone-400" />
