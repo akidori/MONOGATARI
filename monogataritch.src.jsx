@@ -937,6 +937,20 @@ function RichCell({ value, onChange, placeholder, className = "", minHeight = 44
     set(nv);
     requestAnimationFrame(() => { ta.focus(); ta.selectionStart = s + mk.length; ta.selectionEnd = s + mk.length + sel.length; });
   };
+  // 選択行（複数可）の先頭に mk を付ける／既に付いていれば外すトグル。箇条書き「・」・コールアウト「> 」用。
+  const prefixLines = (mk) => {
+    const ta = taRef.current; if (!ta) return;
+    const v = val || "";
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    const ls = v.lastIndexOf("\n", s - 1) + 1;
+    let le = v.indexOf("\n", e); if (le === -1) le = v.length;
+    const block = v.slice(ls, le);
+    const on = block.split("\n").every((l) => l.startsWith(mk));
+    const nb = block.split("\n").map((l) => on ? l.slice(mk.length) : mk + l).join("\n");
+    const nv = v.slice(0, ls) + nb + v.slice(le);
+    set(nv);
+    requestAnimationFrame(() => { ta.focus(); ta.selectionStart = ls; ta.selectionEnd = ls + nb.length; });
+  };
   const handleKeyDown = (e) => {
     if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "B")) { e.preventDefault(); wrap("**"); }
     else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "h" || e.key === "H")) { e.preventDefault(); wrap("!!"); }
@@ -957,6 +971,8 @@ function RichCell({ value, onChange, placeholder, className = "", minHeight = 44
         <div className="absolute -top-3 right-1 z-10 flex gap-1" onMouseDown={(e) => e.preventDefault()}>
           <button type="button" onClick={() => wrap("**")} title="太字（⌘B）" className={fmtBtn} style={{ fontWeight: 800 }}>B</button>
           <button type="button" onClick={() => wrap("!!")} title="赤文字（⌘⇧H）" className={fmtBtn} style={{ color: "#DC2645", fontWeight: 800 }}>A</button>
+          <button type="button" onClick={() => prefixLines("・")} title="箇条書き" className={fmtBtn}>・</button>
+          <button type="button" onClick={() => prefixLines("> ")} title="コールアウト（共有画面で囲み枠）" className={fmtBtn} style={{ color: "#F5A623", fontWeight: 800 }}>▍</button>
         </div>
       )}
       <div aria-hidden className="px-3 py-2 text-stone-800" style={{ ...textStyle, minHeight }}>

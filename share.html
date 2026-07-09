@@ -87,6 +87,28 @@ function inline(text){
   t = t.replace(/\*\*([\s\S]+?)\*\*/g, '<strong style="font-weight:800">$1</strong>');
   return t;
 }
+/* ブロック書式: 「・」「- 」始まりは箇条書き、「> 」始まりはコールアウト。行内は inline() で装飾。 */
+function richBlocks(text){
+  const lines = (text||"").replace(/\r/g,"").split("\n");
+  let html = "", i = 0;
+  const isBullet = (l) => /^[・･]\s?/.test(l) || /^-\s/.test(l);
+  const isCallout = (l) => /^>\s?/.test(l);
+  while(i < lines.length){
+    if(isCallout(lines[i])){
+      const buf=[]; while(i<lines.length && isCallout(lines[i])){ buf.push(lines[i].replace(/^>\s?/,"")); i++; }
+      html += `<div style="border-left:4px solid #F5A623;background:#FEF7EC;border-radius:8px;padding:8px 12px;margin:6px 0">${buf.map(inline).join("<br>")}</div>`;
+      continue;
+    }
+    if(isBullet(lines[i])){
+      const buf=[]; while(i<lines.length && isBullet(lines[i])){ buf.push(lines[i].replace(/^[・･]\s?/,"").replace(/^-\s/,"")); i++; }
+      html += `<ul style="margin:4px 0;padding:0;list-style:none">${buf.map(b=>`<li style="display:flex;gap:7px;margin:2px 0"><span style="color:#F5A623;flex:none">・</span><span>${inline(b)}</span></li>`).join("")}</ul>`;
+      continue;
+    }
+    html += inline(lines[i]) + (i < lines.length-1 ? "<br>" : "");
+    i++;
+  }
+  return html;
+}
 function renderScript(accent, val){
   if(!val) return '<span class="text-stone-300">（原稿未入力）</span>';
   return val.split("\n").map(line => {
@@ -306,8 +328,8 @@ function paneHearing(p, accent, main){
   return secs.map(sec=>`<div class="rounded-xl border border-stone-200 bg-white p-4 mb-3">
     <div class="text-[13px] font-bold mb-3" style="color:${main}">${esc(sec.title||"")}</div>
     ${(sec.items||[]).map(it=>`<div class="mb-3">
-      <div class="text-[10px] font-bold text-stone-400 mb-0.5">${esc(it.label||"")}</div>
-      <div class="text-[13px] whitespace-pre-wrap leading-relaxed ${(it.value||"").trim()?'text-stone-700':'text-stone-300'}">${esc((it.value||"").trim()||"（未記入）")}</div>
+      <div class="text-[11px] font-bold text-stone-600 mb-1">${esc(it.label||"")}</div>
+      <div class="text-[13px] leading-relaxed ${(it.value||"").trim()?'text-stone-700':'text-stone-300'}">${(it.value||"").trim()?richBlocks(it.value):"（未記入）"}</div>
     </div>`).join("")}
   </div>`).join("");
 }
