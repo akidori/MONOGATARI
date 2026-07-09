@@ -1324,7 +1324,7 @@ function slim(p) {
     rows: (p.rows || []).map((r) =>
       r.kind === "location"
         ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", done: !!r.done }
-        : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, script: r.script || "" }
+        : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, tc: r.tc ?? null, script: r.script || "" }
     ),
     plans: (p.plans || []).map((pl) => ({
       id: pl.id, title: pl.title || "", thumbText: pl.thumbText || "", note: pl.note || "",

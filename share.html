@@ -29,11 +29,11 @@
 <script>
 const API = (() => { try { const o = localStorage.getItem("mg:shareApi"); if (o) return o.replace(/\/$/, ""); } catch(e){} return "https://mg-share.aki-surf89315.workers.dev"; })();
 const SECTION_TYPES = {
-  "インサート": { full: "インサート", color: "#71717A", bg: "#F0F0F2" },
-  "ブリッジ":   { full: "ブリッジ",   color: "#0D9488", bg: "#E0F2EF" },
-  "VLOG":      { full: "VLOG",       color: "#D97706", bg: "#FCF0DC" },
-  "解説系":     { full: "解説系",     color: "#2563EB", bg: "#E3EBFC" },
-  "訴求":      { full: "訴求",        color: "#DC2645", bg: "#FBE5EA" },
+  "インサート": { full: "インサート（3~5秒）",   target: 5,   color: "#71717A", bg: "#F0F0F2" },
+  "ブリッジ":   { full: "ブリッジ（5~10秒）",    target: 10,  color: "#0D9488", bg: "#E0F2EF" },
+  "VLOG":      { full: "VLOG（15~30秒）",       target: 30,  color: "#D97706", bg: "#FCF0DC" },
+  "解説系":     { full: "解説系（30秒~1分）",    target: 60,  color: "#2563EB", bg: "#E3EBFC" },
+  "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#DC2645", bg: "#FBE5EA" },
 };
 const params = new URLSearchParams(location.search);
 const ID = params.get("id");
@@ -243,9 +243,20 @@ function setTab(t){
 
 /* ── 構成台本ペイン（コメント機能つき） ── */
 function paneScript(p, accent, main){
+  // 本体エディタと同じ時間計算：時間＝ロケ到着時刻＋尺の積み上げ（時刻未設定なら動画内TC）、
+  // 所要時間＝文字数÷rate字/秒（原稿が空ならシーンの目標秒数で積む）。
+  const rate = p.rate || 5;
+  const fmtT = (sec)=>{ const s=Math.round(sec); return p.timeFormat==="jp" ? (Math.floor(s/60)+"分"+String(s%60).padStart(2,"0")+"秒") : (String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0")); };
+  const parseClock = (str)=>{ const m=(str||"").trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/); return m ? (+m[1])*3600+(+m[2])*60+(+(m[3]||0)) : null; };
+  const fmtClock = (sec)=>{ if(sec==null) return ""; const s=((Math.round(sec)%86400)+86400)%86400; return Math.floor(s/3600)+":"+String(Math.floor((s%3600)/60)).padStart(2,"0"); };
+  const nChars = (s)=>(s||"").replace(/\s/g,"").length;
   let sceneNo = 0, rowsHtml = "";
+  let acc = 0, totalTarget = 0, totalChars = 0, anchorClock = null, anchorTcIn = 0;
   (p.rows||[]).forEach(r => {
+    if(r.tc != null && r.tc !== "" && !isNaN(Number(r.tc))) acc = Number(r.tc);
     if(r.kind === "location"){
+      const lc = parseClock(r.time);
+      if(lc != null){ anchorClock = lc; anchorTcIn = acc; }
       rowsHtml += `<div class="mt-4 mb-2 rounded-t-xl overflow-hidden flex items-stretch" style="background:${main};color:#fff">
         <div class="w-4 shrink-0 stripe"></div>
         <div class="px-3 py-2 font-bold tracking-wide text-[14px]">${esc(r.label||"")}</div>
@@ -259,14 +270,25 @@ function paneScript(p, accent, main){
     }
     sceneNo++;
     const t = SECTION_TYPES[r.type] || {full:r.type,color:"#555",bg:"#eee"};
+    const target = (r.sec != null && r.sec !== "") ? Number(r.sec) : (t.target || 0);
+    const ch = nChars(r.script);
+    const dur = ch > 0 ? ch/rate : target;
+    const timeLabel = anchorClock != null ? fmtClock(anchorClock + (acc - anchorTcIn)) : fmtT(acc);
     const cs = commentsFor(r.id);
     const open = cs.filter(c=>!c.resolved).length;
     rowsHtml += `<div class="bg-white border border-stone-200 border-t-0 px-3 py-3 flex gap-3" style="border-left:3px solid ${t.color}">
-      <div class="w-8 shrink-0 text-center"><div class="text-[10px] text-stone-300 mono">#${sceneNo}</div></div>
+      <div class="w-11 shrink-0 text-center pt-0.5">
+        <div class="text-[11px] text-stone-400 mono leading-tight" style="font-variant-numeric:tabular-nums" title="ロケ到着時刻＋尺の積み上げ（時刻未設定なら動画内TC）">${timeLabel}</div>
+        <div class="text-[10px] text-stone-300 mono">#${sceneNo}</div>
+      </div>
       <div class="flex-1 min-w-0">
         <div class="flex items-center gap-2 mb-1 flex-wrap">
           <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:${t.bg};color:${t.color}">${esc(t.full)}</span>
           <span class="text-[13px] font-bold">${esc(r.label||"")}</span>
+          <span class="ml-auto shrink-0 inline-flex items-baseline gap-2 text-[10px] text-stone-400 mono" style="font-variant-numeric:tabular-nums">
+            <span title="目標秒数">${target}秒</span>
+            <span title="所要時間（文字数÷${rate}字/秒）・文字数">${ch>0?fmtT(ch/rate):"—"}・${ch}字</span>
+          </span>
         </div>
         <div class="script text-stone-800">${renderScript(accent, r.script)}</div>
         ${CHMODE?'':`<div class="mt-2">
@@ -277,8 +299,14 @@ function paneScript(p, accent, main){
         <div id="cwrap-${r.id}" class="hidden mt-2 space-y-2"></div>`}
       </div>
     </div>`;
+    acc += dur; totalTarget += target; totalChars += ch;
   });
   return `<div>${rowsHtml}</div>
+    <div class="flex justify-end gap-4 mt-3 pr-1 text-[11px] text-stone-500 mono" style="font-variant-numeric:tabular-nums">
+      <span title="原稿がある行は文字数÷${rate}字/秒、無い行は目標秒数で積み上げ">合計（目安） ${fmtT(acc)}</span>
+      <span title="各シーンの目標秒数の合計">目標 ${fmtT(totalTarget)}</span>
+      <span>${totalChars}字</span>
+    </div>
     <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">各シーンの「コメント」ボタンから、気になる点・修正してほしい所を書き込めます。</p>`;
 }
 
