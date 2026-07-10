@@ -3714,6 +3714,23 @@ export default function App() {
     finally { setReportingUp(false); }
   };
 
+  // 納品セット完了報告：納品完了タブのワンタップで ball→AK＋納品動画URLをFlip Boardに書き添え。
+  // 納品確定(status='delivered')はAKがFボード側で押す＝誤タップが請求まで波及しない承認ゲート。
+  const [reportingDelivered, setReportingDelivered] = useState(false);
+  const reportDelivered = async () => {
+    if (!project || !project.shareId || reportingDelivered) return;
+    if (!window.confirm("納品セット完了をAKに報告しますか？\n（Flip BoardのボールがAKに渡り、納品動画URLが書き添えられます。納品確定はAKが行います）")) return;
+    setReportingDelivered(true);
+    try {
+      const d = await authFetch("/api/report-delivered", { id: project.shareId, videoUrl: ((project.meta || {}).deliverVideoUrl || "").trim() });
+      if (d && d.ok) {
+        setSched((s) => (s ? { ...s, ballHolder: "ak", canReportUp: false } : s));
+        showToast(d.note === "already" ? "この案件はもう納品済みだよ" : "納品セット完了をAKに報告したよ 📦");
+      } else showToast("報告できなかった：" + ((d && d.error) || "不明"));
+    } catch (e) { showToast(e.code === 401 ? "報告にはログインが必要です" : "報告失敗：" + (e.message || e)); }
+    finally { setReportingDelivered(false); }
+  };
+
   // 変換中(stream)のまま戻ってきた版のポーリングを再開＝リロードで「変換中%」が固まる問題の根治
   const streamResumeRef = React.useRef({});
   const resumeStreamPolls = (force) => {
@@ -4937,6 +4954,9 @@ export default function App() {
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: theme.accent }} />
               {sched.phase || "進行中"}
             </span>
+            {(sched.status === "delivered" || sched.status === "posted") && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">納品済</span>
+            )}
             {sched.shootDate && (
               <span className="text-stone-500">撮影 {sched.shootDate.slice(5).replace("-", "/")}{sched.shootTime ? " " + sched.shootTime : ""}</span>
             )}
@@ -6117,6 +6137,16 @@ export default function App() {
                   <Icon name="sparkle" className="w-3.5 h-3.5" />{deliverBusy ? "生成中…" : "自動生成"}
                 </button>
                 <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-500 tabular-nums">{doneCount}/{dv.length}</span>
+                {/* 納品セット完了の報告：Flip Boardリンク済案件だけ。納品確定はAKがFボードで押す（ここでは status を触らない） */}
+                {sched && ((sched.status === "delivered" || sched.status === "posted") ? (
+                  <span className="h-8 px-3 rounded-lg inline-flex items-center text-[11px] font-bold bg-emerald-50 text-emerald-600">納品済（Flip Board）</span>
+                ) : (
+                  <button onClick={reportDelivered} disabled={reportingDelivered || !(m.deliverVideoUrl || "").trim()}
+                    title="納品セットの完了をAKに報告（Flip Boardのボール→AK＋納品動画URLを書き添え）。納品完了動画のURLが入ると押せます。"
+                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50 bg-emerald-500">
+                    <Icon name="checkCircle" className="w-3.5 h-3.5" />{reportingDelivered ? "報告中…" : "納品セット完了を報告"}
+                  </button>
+                ))}
               </div>
             </div>
             <section className={cardCls}>
@@ -6636,6 +6666,7 @@ export default function App() {
                         <div className="flex items-center gap-2 px-3 py-2 text-[12px]">
                           <span className={"shrink-0 w-[60px] text-right font-bold " + dc}>{dt}</span>
                           <span className="shrink-0 inline-flex items-center gap-1 text-stone-600"><span className="w-1.5 h-1.5 rounded-full" style={{ background: theme.accent }} />{r.phase || "—"}</span>
+                          {r.status === "delivered" && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600">納品済</span>}
                           <span className="shrink-0 text-stone-400">{r.editor || "未割当"}</span>
                           <span className="min-w-0 flex-1 truncate font-semibold text-stone-800">{r.title}</span>
                           <span className={"shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded " + (r.ballHolder === "editor" ? "bg-amber-50 text-amber-700" : "bg-stone-100 text-stone-500")}>{BALL[r.ballHolder] || "—"}</span>

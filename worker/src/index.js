@@ -210,6 +210,25 @@ export default {
         }
       }
 
+      // POST /api/report-delivered { id, videoUrl } → 納品セット完了の報告。要ログイン。cronで members 照合し ball→ak＋納品URL書き添え＋AK通知。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "report-delivered") {
+        const ru = await requireUser(request, env);
+        if (!ru || !ru.email) return json({ ok: false, error: "ログインが必要です" }, 401);
+        if (!env.MG_LIST_KEY) return json({ ok: false, error: "未接続" });
+        const b = await request.json().catch(() => ({}));
+        const id = (b && b.id ? String(b.id) : "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ ok: false, error: "id不正" }, 400);
+        const vu = (b && b.videoUrl ? String(b.videoUrl) : "").trim().slice(0, 500);
+        const cronPath = "/api/report-delivered?id=" + encodeURIComponent(id) + "&email=" + encodeURIComponent(ru.email) + "&key=" + encodeURIComponent(env.MG_LIST_KEY) + (vu ? "&videoUrl=" + encodeURIComponent(vu) : "");
+        try {
+          const r = env.CRON ? await env.CRON.fetch(new Request("https://birdflip-cron" + cronPath, { method: "POST" }))
+            : await fetch("https://birdflip-cron.aki-surf89315.workers.dev" + cronPath, { method: "POST" });
+          return json(await r.json());
+        } catch (e) {
+          return json({ ok: false, error: "報告失敗: " + e.message });
+        }
+      }
+
       // GET /api/board → Flip Board(D1正本)の全案件を担当・工程・次の締切で一望（進行ボード・読み取り）。
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "board") {
         if (!env.MG_LIST_KEY) return json({ count: 0, rows: [], error: "未接続" });
