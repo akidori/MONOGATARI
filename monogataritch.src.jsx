@@ -3725,7 +3725,7 @@ export default function App() {
       const d = await authFetch("/api/report-delivered", { id: project.shareId, videoUrl: ((project.meta || {}).deliverVideoUrl || "").trim() });
       if (d && d.ok) {
         setSched((s) => (s ? { ...s, ballHolder: "ak", canReportUp: false } : s));
-        showToast(d.note === "already" ? "この案件はもう納品済みだよ" : "納品セット完了をAKに報告したよ 📦");
+        showToast(d.note === "already" ? (d.status ? "この案件はもう納品済みだよ" : "もう報告済みだよ（ボールはAKにあります）") : "納品セット完了をAKに報告したよ 📦");
       } else showToast("報告できなかった：" + ((d && d.error) || "不明"));
     } catch (e) { showToast(e.code === 401 ? "報告にはログインが必要です" : "報告失敗：" + (e.message || e)); }
     finally { setReportingDelivered(false); }
