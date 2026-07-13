@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://customer-clbb6903mpf6390m.cloudflarestream.com" crossorigin>
 <link rel="preconnect" href="https://mg-share.aki-surf89315.workers.dev" crossorigin>
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="tailwind.css?v=20260713a">
+<link rel="stylesheet" href="tailwind.css?v=20260713b">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
 <style>
   html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
@@ -322,13 +322,22 @@ function paneKouban(p){
   if(!blocks.length) return '<div class="text-stone-400 text-sm py-8 text-center">香盤表はまだありません。</div>';
   const last = blocks.length - 1;
   const yen = (n) => "¥" + Number(n).toLocaleString("ja-JP");
-  const totalTravel = blocks.reduce((a, x) => a + ((x.loc && Number(x.loc.travelCost)) || 0), 0);
+  /* 連続ロケが同じ場所なら移動なし＝表示も合計も対象外 */
+  const normPl = (s) => (s||"").replace(/[\s　]/g,"");
+  const samePlace = (a,b) => {
+    if(!a||!b) return false;
+    if(a.placeId && b.placeId && a.placeId===b.placeId) return true;
+    if(a.lat!=null && b.lat!=null && a.lat===b.lat && a.lng===b.lng) return true;
+    const x=normPl(a.address), y=normPl(b.address);
+    return !!x && x===y;
+  };
+  const totalTravel = blocks.reduce((a, x, i) => a + (i>0 && x.loc && !samePlace(blocks[i-1].loc, x.loc) ? (Number(x.loc.travelCost) || 0) : 0), 0);
   blocks.forEach((b, i) => {
     const loc = b.loc;
     const peak = !!(loc && loc.peak);
     /* 前ロケ→このロケの移動ストリップ（区間・手段・交通費・経路リンク） */
     let travelHtml = "";
-    if(i > 0 && loc && (loc.travelBy || (loc.travelCost != null && loc.travelCost !== ""))){
+    if(i > 0 && loc && !samePlace(blocks[i-1].loc, loc) && (loc.travelBy || (loc.travelCost != null && loc.travelCost !== ""))){
       const prev = blocks[i-1].loc;
       const from = (prev && (prev.label||"").trim()) || "前のロケ";
       const to = (loc.label||"").trim() || "このロケ";

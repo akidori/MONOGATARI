@@ -769,6 +769,16 @@ function loadGMaps() {
   return gmapsPromise;
 }
 
+/* 連続するロケが同じ場所か（住所の空白差は無視）。同じ場所なら移動なし＝交通費の対象外 */
+const normPlaceStr = (s) => (s || "").replace(/[\s　]/g, "");
+const samePlace = (a, b) => {
+  if (!a || !b) return false;
+  if (a.placeId && b.placeId && a.placeId === b.placeId) return true;
+  if (a.lat != null && b.lat != null && a.lat === b.lat && a.lng === b.lng) return true;
+  const x = normPlaceStr(a.address), y = normPlaceStr(b.address);
+  return !!x && x === y;
+};
+
 /* 鍵なしで使える場所検索（国土地理院＝住所・地名／OpenStreetMap＝建物・施設）。候補をマージして返す */
 async function searchPlaces(q) {
   const enc = encodeURIComponent(q);
@@ -4306,7 +4316,8 @@ export default function App() {
       // 実時刻＝アンカーのロケ到着時刻＋（その行までの尺 − アンカー時点の尺）
       if (anchorClock != null) clocks[r.id] = anchorClock + (tcs[r.id] - anchorTcIn);
     }
-    const totalTravel = locations.reduce((a, l) => a + (Number(l.travelCost) || 0), 0);
+    // 交通費合計：先頭ロケと「前ロケと同じ場所」の区間は移動が存在しないので除外
+    const totalTravel = locations.reduce((a, l, i) => a + (i > 0 && !samePlace(locations[i - 1], l) ? (Number(l.travelCost) || 0) : 0), 0);
     return { tcs, clocks, totalEst: acc, totalTarget: tt, totalChars: tc, totalTravel, locations, sceneNos, sceneLocDone };
   }, [project]);
 
@@ -4367,7 +4378,8 @@ export default function App() {
     };
     const lines = [["順番", "予定時刻", "ロケーション", "住所", "シーン数", "想定尺", "移動手段", "交通費", "メモ"].join("\t")];
     locations.forEach((loc, i) => {
-      lines.push([i + 1, esc(loc.time), esc(loc.label), esc(loc.address), loc.scenes.length, fmtJP(loc.dur), esc(loc.travelBy), loc.travelCost == null ? "" : loc.travelCost, esc(loc.note)].join("\t"));
+      const noMove = i === 0 || samePlace(locations[i - 1], loc);
+      lines.push([i + 1, esc(loc.time), esc(loc.label), esc(loc.address), loc.scenes.length, fmtJP(loc.dur), noMove ? (i === 0 ? "" : "（同じ場所）") : esc(loc.travelBy), noMove || loc.travelCost == null ? "" : loc.travelCost, esc(loc.note)].join("\t"));
     });
     if (totalTravel > 0) lines.push(["", "", "", "", "", "", "合計", totalTravel, ""].join("\t"));
     try {
@@ -5743,6 +5755,11 @@ export default function App() {
                     <div className="flex-1 min-w-0 mb-3">
                     {i > 0 && (() => {
                       const prev = locations[i - 1];
+                      if (samePlace(prev, loc)) return (
+                        <div className="mb-2 px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-stone-300" title="前のロケと同じ住所のため移動なし（交通費の対象外）">
+                          <Icon name="pin" className="w-3 h-3" />同じ場所（移動なし）
+                        </div>
+                      );
                       const from = (prev.label || "").trim() || "前のロケ";
                       const to = (loc.label || "").trim() || "このロケ";
                       const oq = prev.lat != null ? prev.lat + "," + prev.lng : (prev.address || "").trim();
