@@ -1342,7 +1342,7 @@ function slim(p) {
     timeFormat: p.timeFormat || "tc",
     rows: (p.rows || []).map((r) =>
       r.kind === "location"
-        ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", done: !!r.done }
+        ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", done: !!r.done, peak: !!r.peak, travelBy: (r.travelBy || "").slice(0, 40), travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null, lat: typeof r.lat === "number" ? r.lat : null, lng: typeof r.lng === "number" ? r.lng : null, placeId: (r.placeId || "").slice(0, 200) }
         : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, tc: r.tc ?? null, script: r.script || "" }
     ),
     plans: (p.plans || []).map((pl) => ({

@@ -16,7 +16,7 @@ const TYPE_KEYS = Object.keys(SECTION_TYPES);
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const newScene = (type = "解説系", label = "") => ({ id: uid(), kind: "scene", label, type, sec: null, tc: null, script: "" });
-const newLocation = (name = "") => ({ id: uid(), kind: "location", label: name, address: "", time: "", note: "" });
+const newLocation = (name = "") => ({ id: uid(), kind: "location", label: name, address: "", time: "", note: "", travelBy: "", travelCost: null });
 
 const templateRows = () => [
   newLocation("ご自宅（朝）"),
@@ -549,7 +549,7 @@ const normalizeImport = (obj) => {
     timeFormat: obj.timeFormat === "jp" ? "jp" : "tc",
     rows: (obj.rows || []).map((r) =>
       r.kind === "location"
-        ? { id: uid(), kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "" }
+        ? { id: uid(), kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", travelBy: r.travelBy || "", travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null }
         : { id: uid(), kind: "scene", label: r.label || "", type: TYPE_KEYS.includes(r.type) ? r.type : (typeFromText(r.type) || "解説系"), sec: r.sec === 0 || r.sec ? Number(r.sec) : null, script: r.script || "" }
     ),
   };
@@ -769,9 +769,50 @@ function loadGMaps() {
   return gmapsPromise;
 }
 
+/* 鍵なしで使える場所検索（国土地理院＝住所・地名／OpenStreetMap＝建物・施設）。候補をマージして返す */
+async function searchPlaces(q) {
+  const enc = encodeURIComponent(q);
+  const [gsi, osm] = await Promise.all([
+    fetch("https://msearch.gsi.go.jp/address-search/AddressSearch?q=" + enc)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((a) => (Array.isArray(a) ? a : []).map((f) => ({
+        title: (f.properties && f.properties.title) || "",
+        sub: "住所・地名",
+        lat: f.geometry && f.geometry.coordinates ? f.geometry.coordinates[1] : null,
+        lng: f.geometry && f.geometry.coordinates ? f.geometry.coordinates[0] : null,
+      })).filter((c) => c.title.includes(q) || q.includes(c.title)).slice(0, 5)) // GSIは前方一致で無関係な地名も返すため、クエリを含むものだけ残す
+      .catch(() => []),
+    fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&accept-language=ja&limit=5&q=" + enc)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((a) => (Array.isArray(a) ? a : []).map((f) => {
+        const name = f.name || (f.display_name || "").split(",")[0] || "";
+        const addr = (f.display_name || "").split(",").map((s) => s.trim()).filter((s) => s && s !== name);
+        return {
+          title: name,
+          sub: addr.slice(0, 4).reverse().join("") || "施設",
+          lat: f.lat != null ? Number(f.lat) : null,
+          lng: f.lon != null ? Number(f.lon) : null,
+        };
+      }))
+      .catch(() => []),
+  ]);
+  const seen = new Set(), out = [];
+  for (const c of [...osm, ...gsi]) {
+    if (!c.title || seen.has(c.title)) continue;
+    seen.add(c.title);
+    out.push(c);
+    if (out.length >= 8) break;
+  }
+  return out;
+}
+
 function AddressField({ loc, onChange }) {
   const ref = useRef(null);
   const acRef = useRef(null);
+  const [cands, setCands] = useState(null); // null=閉 / []=0件 / [...]=候補
+  const [busy, setBusy] = useState(false);
+  const timerRef = useRef(null);
+  const qRef = useRef("");
   useEffect(() => {
     let cancelled = false;
     loadGMaps().then(() => {
@@ -791,8 +832,27 @@ function AddressField({ loc, onChange }) {
       });
       acRef.current = ac;
     }).catch(() => {});
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(timerRef.current); };
   }, []);
+  /* Google未設定時のフォールバック検索：入力を500msデバウンスして候補表示 */
+  const kick = (v) => {
+    if (acRef.current) return; // Google Placesが生きていればそちらに任せる
+    clearTimeout(timerRef.current);
+    const q = (v || "").trim();
+    qRef.current = q;
+    if (q.length < 2) { setCands(null); setBusy(false); return; }
+    setBusy(true);
+    timerRef.current = setTimeout(async () => {
+      const res = await searchPlaces(q).catch(() => []);
+      if (qRef.current !== q) return; // 入力が進んでいたら破棄
+      setCands(res);
+      setBusy(false);
+    }, 500);
+  };
+  const pick = (c) => {
+    setCands(null);
+    onChange({ address: c.title, placeId: "", lat: c.lat, lng: c.lng });
+  };
   const q = (loc.address || "").trim();
   const linked = !!loc.placeId || loc.lat != null;
   const mapHref = !q ? null
@@ -800,21 +860,39 @@ function AddressField({ loc, onChange }) {
     : loc.lat != null ? "https://www.google.com/maps/search/?api=1&query=" + loc.lat + "," + loc.lng
     : "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(q);
   return (
-    <>
+    <div className="relative flex-1 min-w-0 flex items-center">
       <input
         ref={ref}
         value={loc.address}
-        onChange={(e) => onChange({ address: e.target.value, placeId: "", lat: null, lng: null })}
+        onChange={(e) => { onChange({ address: e.target.value, placeId: "", lat: null, lng: null }); kick(e.target.value); }}
+        onBlur={() => setTimeout(() => setCands(null), 200)}
         placeholder="住所・施設名で検索（例：東京タワー）"
         className="block w-full min-w-0 bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
       />
+      {busy && <span className="shrink-0 mr-1 text-[10px] text-stone-300">検索中…</span>}
       {q && (
         <a href={mapHref} target="_blank" rel="noreferrer" title={linked ? "連携済みの場所をGoogleマップで開く" : "Googleマップで開く"}
            className={"shrink-0 mr-2 text-[11px] font-bold px-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1 border active:scale-95 transition " + (linked ? "border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
           <Icon name={linked ? "pin" : "map"} className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">{linked ? "連携済" : "地図"}</span>
         </a>
       )}
-    </>
+      {cands != null && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-30 rounded-lg border border-stone-200 bg-white shadow-lg overflow-hidden">
+          {cands.length === 0 && <div className="px-3 py-2 text-[11px] text-stone-400">候補が見つかりません（そのまま手入力でOK）</div>}
+          {cands.map((c, i) => (
+            <button key={i} type="button"
+              onMouseDown={(e) => { e.preventDefault(); pick(c); }}
+              className="w-full text-left px-3 py-2 hover:bg-stone-50 flex items-start gap-2 border-b border-stone-100 last:border-b-0">
+              <Icon name="pin" className="w-3.5 h-3.5 shrink-0 mt-0.5 text-stone-400" />
+              <span className="min-w-0">
+                <span className="block text-[12px] font-bold text-stone-700 truncate">{c.title}</span>
+                {c.sub && <span className="block text-[10px] text-stone-400 truncate">{c.sub}</span>}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -4191,7 +4269,7 @@ export default function App() {
     return next.flatMap((b) => b.items);
   });
 
-  const { tcs, clocks, totalEst, totalTarget, totalChars, locations, sceneNos, sceneLocDone } = useMemo(() => {
+  const { tcs, clocks, totalEst, totalTarget, totalChars, totalTravel, locations, sceneNos, sceneLocDone } = useMemo(() => {
     let acc = 0, tt = 0, tc = 0, no = 0;
     const tcs = {};
     const clocks = {}; // 行id → 実時計の経過秒（香盤表のロケ到着時刻＋尺の積み上げ）
@@ -4228,7 +4306,8 @@ export default function App() {
       // 実時刻＝アンカーのロケ到着時刻＋（その行までの尺 − アンカー時点の尺）
       if (anchorClock != null) clocks[r.id] = anchorClock + (tcs[r.id] - anchorTcIn);
     }
-    return { tcs, clocks, totalEst: acc, totalTarget: tt, totalChars: tc, locations, sceneNos, sceneLocDone };
+    const totalTravel = locations.reduce((a, l) => a + (Number(l.travelCost) || 0), 0);
+    return { tcs, clocks, totalEst: acc, totalTarget: tt, totalChars: tc, totalTravel, locations, sceneNos, sceneLocDone };
   }, [project]);
 
   /* ---------- TSV書き出し ---------- */
@@ -4286,10 +4365,11 @@ export default function App() {
       const v = (s || "").toString();
       return /[\t\n"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
     };
-    const lines = [["順番", "予定時刻", "ロケーション", "住所", "シーン数", "想定尺", "メモ"].join("\t")];
+    const lines = [["順番", "予定時刻", "ロケーション", "住所", "シーン数", "想定尺", "移動手段", "交通費", "メモ"].join("\t")];
     locations.forEach((loc, i) => {
-      lines.push([i + 1, esc(loc.time), esc(loc.label), esc(loc.address), loc.scenes.length, fmtJP(loc.dur), esc(loc.note)].join("\t"));
+      lines.push([i + 1, esc(loc.time), esc(loc.label), esc(loc.address), loc.scenes.length, fmtJP(loc.dur), esc(loc.travelBy), loc.travelCost == null ? "" : loc.travelCost, esc(loc.note)].join("\t"));
     });
+    if (totalTravel > 0) lines.push(["", "", "", "", "", "", "合計", totalTravel, ""].join("\t"));
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
       showToast("香盤表をコピーしました");
@@ -5624,7 +5704,7 @@ export default function App() {
                   <h2 className="text-[12px] font-bold tracking-wider text-stone-600">香盤表 — 1日の流れ</h2>
                 </div>
                 <div className="text-[11px] text-stone-400" style={{ fontFamily: mono }}>
-                  {m.shootDate || "撮影日未設定"}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}・シーン尺 {fmt(totalTarget)}
+                  {m.shootDate || "撮影日未設定"}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}・シーン尺 {fmt(totalTarget)}{totalTravel > 0 && <>・交通費 ¥{totalTravel.toLocaleString()}</>}
                 </div>
               </div>
 
@@ -5659,8 +5739,47 @@ export default function App() {
                       )}
                     </div>
 
-                    {/* 右：ロケーションカード */}
-                    <div className={"relative flex-1 min-w-0 mb-3 rounded-xl border overflow-visible transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : (loc.peak ? "border-2 bg-white shadow-md" : "border-stone-200 bg-white shadow-sm"))}
+                    {/* 右：移動ストリップ＋ロケーションカード */}
+                    <div className="flex-1 min-w-0 mb-3">
+                    {i > 0 && (() => {
+                      const prev = locations[i - 1];
+                      const from = (prev.label || "").trim() || "前のロケ";
+                      const to = (loc.label || "").trim() || "このロケ";
+                      const oq = prev.lat != null ? prev.lat + "," + prev.lng : (prev.address || "").trim();
+                      const dq = loc.lat != null ? loc.lat + "," + loc.lng : (loc.address || "").trim();
+                      const dirHref = oq && dq ? "https://www.google.com/maps/dir/?api=1&origin=" + encodeURIComponent(oq) + "&destination=" + encodeURIComponent(dq) : null;
+                      return (
+                        <div className="mb-2 px-2.5 py-1.5 rounded-lg border border-dashed border-stone-200 bg-stone-50 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-stone-500">
+                          <span className="inline-flex items-center gap-1 font-bold text-stone-400 shrink-0"><Icon name="map" className="w-3.5 h-3.5" />移動</span>
+                          <span className="min-w-0 truncate" title={from + " → " + to}>{from} <span className="text-stone-300">→</span> {to}</span>
+                          <span className="flex items-center gap-1.5 ml-auto">
+                            <input
+                              value={loc.travelBy || ""}
+                              onChange={(e) => updateRow(loc.id, { travelBy: e.target.value })}
+                              placeholder="電車・車など"
+                              className="w-[84px] bg-white border border-stone-200 rounded px-1.5 py-0.5 text-[11px] focus:outline-none placeholder:text-stone-300"
+                            />
+                            <span className="inline-flex items-center gap-0.5">
+                              <span className="text-stone-400">¥</span>
+                              <input
+                                type="number" inputMode="numeric" min="0"
+                                value={loc.travelCost == null ? "" : loc.travelCost}
+                                onChange={(e) => updateRow(loc.id, { travelCost: e.target.value === "" ? null : Number(e.target.value) })}
+                                placeholder="0"
+                                className="w-[64px] bg-white border border-stone-200 rounded px-1.5 py-0.5 text-[11px] tabular-nums focus:outline-none placeholder:text-stone-300"
+                                style={{ fontFamily: mono }}
+                                title="この区間の交通費（片道の実費）"
+                              />
+                            </span>
+                            {dirHref && (
+                              <a href={dirHref} target="_blank" rel="noreferrer" title="Googleマップで経路を開く"
+                                 className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-stone-200 text-stone-500 hover:bg-white whitespace-nowrap">経路</a>
+                            )}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                    <div className={"relative rounded-xl border overflow-visible transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : (loc.peak ? "border-2 bg-white shadow-md" : "border-stone-200 bg-white shadow-sm"))}
                       style={loc.peak && !loc.done ? { borderColor: theme.accent } : undefined}>
                       {loc.peak && !loc.done && (
                         <span className="absolute -top-2.5 left-3 z-20 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm inline-flex items-center gap-0.5"
@@ -5741,12 +5860,13 @@ export default function App() {
                         </>
                       )}
                     </div>
+                    </div>
                   </div>
                 ))}
               </div>
             </section>
             <p className="text-[11px] text-stone-400 leading-relaxed">
-              時刻・住所・メモはこの画面で入力（構成台本と自動で連動）　／　↑↓でロケーションごと順番を入れ替え（配下のシーンも一緒に動きます）　／　右上のボタンで香盤表だけをスプシ用にコピーできます
+              時刻・住所・メモはこの画面で入力（構成台本と自動で連動）　／　ロケ間の「移動」行に手段・交通費を入れると合計が上に出ます（共有ページにも表示）　／　↑↓でロケーションごと順番を入れ替え（配下のシーンも一緒に動きます）　／　右上のボタンで香盤表だけをスプシ用にコピーできます
             </p>
           </>
         )}
