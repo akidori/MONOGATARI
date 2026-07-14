@@ -2532,14 +2532,59 @@ export default function App() {
       // デバウンスautosaveを待たず即・明示保存（回線が飛んでも取りこぼさない）。失敗はloud-failでAKに知らせる。
       const merged = { ...project, meta: { ...project.meta, ...patch } };
       const saved = await saveProjectData(merged);
+      // 文字起こしがまだ無ければMacエンジンにWhisperを依頼→出来次第、目次だけ実尺TC版へ自動差し替え
+      const transcribing = !transcript && (await requestTranscriptChapters());
       showToast(saved === false
         ? "生成できたけど保存に失敗（オフラインかも）。電波のいい所でもう一度「自動生成」を押すか、手直しして保存し直して"
         : (transcript && (d.chapters || "").trim()
             ? "自動生成して保存しました（目次は完成動画の文字起こしから実尺で作成）"
-            : "自動生成して保存しました（タイトル・概要欄・ハッシュタグ・目次）"));
+            : transcribing
+              ? "自動生成して保存しました。完成動画の文字起こしを開始したので、目次は数分後に実尺版へ自動で差し替わります"
+              : "自動生成して保存しました（タイトル・概要欄・ハッシュタグ・目次）"));
     } catch (e) {
       showToast("自動生成に失敗：" + (e.message || e));
     } finally { setDeliverBusy(false); }
+  };
+
+  /* 完成動画のWhisper文字起こしをMacエンジンに依頼（kind:"transcribe"＝ショートは作らない）。
+     出来上がったら目次(deliverChapters)だけ実尺TC版に差し替える。タイトル・概要欄の手直しは触らない。
+     setMetaは関数型更新なので、待っている間にAKが他を編集していても上書き事故にならない。 */
+  const requestTranscriptChapters = async () => {
+    try {
+      if (!project || !project.shareId) return false;
+      const vers = ((project.review && project.review.versions) || []).filter((v) => !v.trashedAt && v.key);
+      const videoKey = vers.length ? vers[vers.length - 1].key : "";
+      if (!videoKey) return false;
+      const snap = project.shareId, token = project.shareToken || "";
+      const r = await fetch(SHARE_API + "/api/shorts/enqueue", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snap, token, videoKey, kind: "transcribe" }),
+      }).then((x) => x.json());
+      if (!r || !r.ok) return false;
+      const projRef = project; // deliver再依頼用（台本内容は目次生成に影響しないので多少古くてもOK）
+      const poll = async (tries) => {
+        if (tries > 60) { showToast("文字起こしが終わらなかった（Mac側停止かも）。あとでもう一度「自動生成」を押して"); return; }
+        let segs = null;
+        try {
+          const tr = await fetch(SHARE_API + "/api/transcript/" + snap + "?token=" + encodeURIComponent(token)).then((x) => x.json());
+          if (tr && Array.isArray(tr.segments) && tr.segments.length) segs = tr.segments;
+        } catch (e) {}
+        if (!segs) { setTimeout(() => poll(tries + 1), 20000); return; }
+        try {
+          const res = await fetch(SHARE_API + "/api/deliver", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ project: projRef, transcript: segs }),
+          });
+          const d = await res.json();
+          if (res.ok && (d.chapters || "").trim()) {
+            setMeta("deliverChapters", d.chapters.trim());
+            showToast("目次を完成動画の文字起こしから実尺で作り直しました");
+          }
+        } catch (e) {}
+      };
+      setTimeout(() => poll(0), 20000);
+      return true;
+    } catch (e) { return false; }
   };
 
   /* 納品完了動画・切り抜きショート：動画確認の完成データから自動補完。
