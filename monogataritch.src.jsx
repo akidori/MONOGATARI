@@ -192,11 +192,11 @@ const collectDroppedFiles = async (dt) => {
       const f = await new Promise((res) => ent.file(res, () => res(null)));
       if (f && !f.name.startsWith(".")) {
         // フォルダごとドロップしたときの「どのシーンの素材か」を保持する。
-        // ent.fullPath = "/01_冒頭/C0162.MP4" → 先頭フォルダ名(01_冒頭)を素材の区分として持たせる。
-        // これが無いと132クリップが平置きになり、編集者がどのカットがどのシーンか分からなくなる（＝素材の「解除」事故）。
+        // ent.fullPath = "/金澤さん/01_冒頭/C0162.MP4" → ファイル名を除く全階層(金澤さん/01_冒頭)を素材の区分として持たせる。
+        // 先頭1階層だけだと親フォルダごとドロップした時に中のシーン構造が潰れて平置きになる（＝素材の「解除」事故）。
         const fp = (ent.fullPath || "").replace(/^\/+/, "");
         const segs = fp.split("/");
-        if (segs.length > 1) { try { f._folder = segs[0]; f._relPath = fp; } catch (e) {} }
+        if (segs.length > 1) { try { f._folder = segs.slice(0, -1).join("/"); f._relPath = fp; } catch (e) {} }
         out.push(f);
       }
     } else if (ent.isDirectory) {
@@ -3657,8 +3657,8 @@ export default function App() {
       // 素材管理（撮影素材・テンプレ素材）は無期限固定。90日で勝手に消えると後日の再編集・編集者の後追いDLで素材ロストになるため（確認用動画と同じ思想）。
       const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token, { retention: 0 });
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
-      // フォルダごとドロップした素材は先頭フォルダ名を folder に保持（シーン区分）。平置き＝構造消失を防ぐ。
-      const folder = (file._folder || "").toString().slice(0, 60);
+      // フォルダごとドロップした素材はフォルダ階層を folder に保持（シーン区分）。平置き＝構造消失を防ぐ。
+      const folder = (file._folder || "").toString().slice(0, 160);
       setAssets((arr) => [newAsset(category, { type: isVideo ? "mp4" : "file", key: meta.key, name: meta.name, size: meta.size || file.size, mime: meta.mime || file.type, folder }), ...arr]);
       if (!batch) showToast(category + "に追加したよ");
       return true;
