@@ -171,6 +171,47 @@ export default {
         }
       }
 
+      // ── 質問ウィザード（wizard.html）中継 ──
+      // Stage1: GET /api/wizard/questions?domain=台本設計 → LABの質問テンプレ（質問13）
+      // Stage2: POST /api/wizard/scaffold {answers, performer, genre, ...} → 台本の骨を生成
+      // 認証: 本体アプリのログインセッション必須（lab-manualと同じ相乗り・新規認証は作らない）。
+      // scaffoldはOpus生成で重い＝rateLimitを別バケツできつめに。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "questions") {
+        if (!(await requireUser(request, env))) return json({ ok: false, error: "unauthorized" }, 401);
+        if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続" }, 502);
+        const domain = url.searchParams.get("domain") || "台本設計";
+        const qs = "domain=" + encodeURIComponent(domain);
+        const labReq = new Request("https://flip-lens/api/questions?" + qs, { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } });
+        try {
+          const r = env.LAB ? await env.LAB.fetch(labReq)
+            : await fetch("https://flip-lens.aki-surf89315.workers.dev/api/questions?" + qs, { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } });
+          const d = await r.json();
+          return json(d, r.ok ? 200 : 502);
+        } catch (e) { return json({ ok: false, error: "LAB取得失敗: " + e.message }, 502); }
+      }
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "scaffold") {
+        if (!(await requireUser(request, env))) return json({ ok: false, error: "unauthorized" }, 401);
+        if (!(await rateLimit(env, ip, "wizard", 6, 3600))) return json({ ok: false, error: "生成リクエストが多すぎます。1時間ほど待ってください。" }, 429);
+        if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続" }, 502);
+        const b = await request.json().catch(() => ({}));
+        if (!b.answers || !String(b.answers).trim()) return json({ ok: false, error: "answers必須" }, 400);
+        const body = JSON.stringify({
+          answers: String(b.answers).slice(0, 20000),
+          performer: (b.performer || "").toString().slice(0, 300),
+          genre: (b.genre || "").toString().slice(0, 300),
+          shootContext: (b.shootContext || "").toString().slice(0, 500),
+          targetLength: (b.targetLength || "").toString().slice(0, 100),
+          caseLabel: (b.caseLabel || "").toString().slice(0, 100),
+        });
+        const labReq = new Request("https://flip-lens/api/script_scaffold", { method: "POST", headers: { "content-type": "application/json", "Authorization": "Bearer " + env.FLIP_LAB_TOKEN }, body });
+        try {
+          const r = env.LAB ? await env.LAB.fetch(labReq)
+            : await fetch("https://flip-lens.aki-surf89315.workers.dev/api/script_scaffold", { method: "POST", headers: { "content-type": "application/json", "Authorization": "Bearer " + env.FLIP_LAB_TOKEN }, body });
+          const d = await r.json();
+          return json(d, r.ok ? 200 : 502);
+        } catch (e) { return json({ ok: false, error: "生成失敗: " + e.message }, 502); }
+      }
+
       // GET /api/schedule?id=<snapId> → Flip Board(D1正本)から担当案件の日程スライスを中継。
       // 編集者がものがたりっちの中だけで「撮影日・次の締切・次の一手」を見れる（窓表示・読み取り専用）。
       // MG_LIST_KEY はサーバ側に秘匿し、cron(birdflip-cron)へService Binding(env.CRON)で直結＝1042回避。

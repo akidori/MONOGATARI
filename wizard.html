@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>質問ウィザード｜ものがたりっち！</title>
+<link rel="icon" href="favicon-64.png">
+<style>
+:root{--red:#DC2645;--red2:#E63946;--paper:#E9E8E3;--cream:#FCF0DC;--ink:#1F2430;--sub:#57534E;--gray:#9ca3af;--bg:#F0F0F2;}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:"Hiragino Sans","Noto Sans JP",sans-serif;background:var(--bg);color:var(--ink);line-height:1.7;}
+.wrap{max-width:760px;margin:0 auto;padding:20px 16px 80px;}
+header{display:flex;align-items:baseline;gap:10px;padding:14px 0;border-bottom:3px solid var(--red);margin-bottom:20px;}
+header h1{font-size:20px;letter-spacing:.06em;}
+header .sub{font-size:12px;color:var(--sub);}
+.card{background:#fff;border:1px solid #ddd;border-radius:10px;padding:20px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.card h2{font-size:15px;color:var(--red);margin-bottom:12px;letter-spacing:.04em;}
+label{display:block;font-size:12px;color:var(--sub);margin:10px 0 4px;}
+input[type=text],textarea{width:100%;border:1px solid #ccc;border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;background:#fff;}
+textarea{min-height:96px;resize:vertical;}
+input:focus,textarea:focus{outline:2px solid var(--red2);border-color:transparent;}
+.btn{display:inline-block;border:none;border-radius:8px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:.04em;}
+.btn-red{background:var(--red);color:#fff;}
+.btn-red:hover{background:var(--red2);}
+.btn-ghost{background:#fff;color:var(--sub);border:1px solid #ccc;}
+.btn-ghost:hover{border-color:var(--sub);}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+.row{display:flex;gap:10px;justify-content:space-between;align-items:center;margin-top:16px;flex-wrap:wrap;}
+.progress{height:6px;background:#e5e5e5;border-radius:3px;overflow:hidden;margin:6px 0 16px;}
+.progress i{display:block;height:100%;background:var(--red);transition:width .3s;}
+.qnum{font-size:12px;color:var(--red);font-weight:700;letter-spacing:.1em;}
+.qtext{font-size:16px;font-weight:700;margin:6px 0 4px;}
+.qhint{font-size:12px;color:var(--sub);background:var(--cream);border-radius:6px;padding:8px 10px;margin-bottom:10px;}
+.banner{border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:14px;}
+.banner.warn{background:#FDECEC;color:#8a1f2b;border:1px solid #f3c2c8;}
+.banner.info{background:var(--cream);color:var(--sub);border:1px solid #eadfc8;}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:sp 0.8s linear infinite;vertical-align:-3px;margin-right:8px;}
+@keyframes sp{to{transform:rotate(360deg)}}
+.hidden{display:none;}
+/* 結果のmarkdown表示 */
+.md h2{font-size:17px;color:var(--red);border-bottom:2px solid var(--paper);padding-bottom:4px;margin:22px 0 10px;}
+.md h3{font-size:15px;margin:16px 0 8px;}
+.md p{margin:8px 0;font-size:14px;}
+.md ul{padding-left:22px;margin:8px 0;font-size:14px;}
+.md li{margin:4px 0;}
+.md strong{color:var(--red2);}
+.md .tblwrap{overflow-x:auto;margin:10px 0;border:1px solid #ddd;border-radius:8px;}
+.md table{border-collapse:collapse;font-size:12px;min-width:700px;width:100%;}
+.md th{background:var(--ink);color:#fff;padding:8px 10px;text-align:left;white-space:nowrap;}
+.md td{border-top:1px solid #e5e5e5;padding:8px 10px;vertical-align:top;min-width:90px;}
+.md tr:nth-child(even) td{background:#fafaf8;}
+.small{font-size:12px;color:var(--gray);}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>質問ウィザード</h1>
+  <span class="sub">答えるだけで、密着台本の骨ができる — ものがたりっち！</span>
+</header>
+
+<div id="authBanner" class="banner warn hidden">本体アプリでログインしてから開いてください（このページは本体のログインを使います）。<a href="./index.html">本体を開く</a></div>
+
+<!-- STEP 0: 案件メタ -->
+<section id="step0" class="card">
+  <h2>STEP 0｜案件のこと</h2>
+  <label>演者・対象（誰に密着する？）</label>
+  <input type="text" id="mPerformer" placeholder="例: 在宅緩和ケア医（終末期の患者を自宅で看取る医師）">
+  <label>ジャンル・業種</label>
+  <input type="text" id="mGenre" placeholder="例: 終末医療ドキュメンタリー">
+  <label>撮影想定（どんな1日を撮る？）</label>
+  <input type="text" id="mShoot" placeholder="例: 往診に1日密着（クリニック出発→患者宅→カンファ→帰宅）">
+  <label>想定尺</label>
+  <input type="text" id="mLength" placeholder="例: 23分前後">
+  <label>案件名（任意・入れるとLABに骨が資産保存される）</label>
+  <input type="text" id="mCase" placeholder="例: 自社ch 小澤医師">
+  <div class="row"><span></span><button class="btn btn-red" id="startBtn">質問をはじめる</button></div>
+</section>
+
+<!-- STEP 1: 質問13 -->
+<section id="step1" class="card hidden">
+  <h2>STEP 1｜質問に答える <span class="small" id="qCount"></span></h2>
+  <div class="progress"><i id="qBar" style="width:0%"></i></div>
+  <div class="qnum" id="qNum"></div>
+  <div class="qtext" id="qText"></div>
+  <div class="qhint" id="qHint"></div>
+  <textarea id="qAnswer" placeholder="思いつくまま書けばOK。分からなければスキップ（現場で埋める前提の【未回収】になる）"></textarea>
+  <div class="row">
+    <button class="btn btn-ghost" id="prevBtn">← 前へ</button>
+    <div>
+      <button class="btn btn-ghost" id="skipBtn">スキップ</button>
+      <button class="btn btn-red" id="nextBtn">次へ →</button>
+    </div>
+  </div>
+</section>
+
+<!-- STEP 2: 生成 -->
+<section id="step2" class="card hidden">
+  <h2>STEP 2｜台本の骨をつくる</h2>
+  <div class="banner info">回答済み <span id="ansCount"></span>。未回答は【未回収】として骨に載り、現場で埋める質問リストになります。</div>
+  <div class="row">
+    <button class="btn btn-ghost" id="backBtn">← 質問に戻る</button>
+    <button class="btn btn-red" id="genBtn">台本の骨を生成する（1〜2分かかります）</button>
+  </div>
+</section>
+
+<!-- RESULT -->
+<section id="result" class="card hidden">
+  <h2>密着台本の骨</h2>
+  <div id="mdOut" class="md"></div>
+  <div class="row">
+    <button class="btn btn-ghost" id="copyBtn">Markdownをコピー</button>
+    <button class="btn btn-ghost" id="dlBtn">.mdダウンロード</button>
+    <button class="btn btn-red" id="againBtn">条件を変えてもう一度</button>
+  </div>
+</section>
+</div>
+
+<script>
+"use strict";
+// ── API基盤（settings.htmlと同じ流儀: mg:shareApi上書き対応・認証は本体セッション相乗り）──
+let API = "https://mg-share.aki-surf89315.workers.dev";
+try { const o = localStorage.getItem("mg:shareApi"); if (o) API = o.replace(/\/$/, ""); } catch (e) {}
+const token = () => { try { return localStorage.getItem("mg:auth:token") || ""; } catch (e) { return ""; } };
+const authHeaders = () => ({ "Content-Type": "application/json", "Authorization": "Bearer " + token() });
+if (!token()) document.getElementById("authBanner").classList.remove("hidden");
+
+// ── 下書き自動保存 ──
+const DRAFT_KEY = "mg:wizard:draft";
+const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}"); } catch (e) { return {}; } };
+const saveDraft = () => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(state)); } catch (e) {} };
+
+let state = Object.assign({ meta: {}, answers: {}, qIndex: 0 }, loadDraft());
+let questions = []; // {num, text, hint}
+
+const $ = (id) => document.getElementById(id);
+const show = (id) => { ["step0","step1","step2","result"].forEach(s => $(s).classList.toggle("hidden", s !== id)); window.scrollTo(0,0); };
+
+// メタ復元
+["mPerformer","mGenre","mShoot","mLength","mCase"].forEach((id) => { if (state.meta[id]) $(id).value = state.meta[id]; });
+
+// ── 質問テンプレのパース：「## Q1 〜」見出し＋直後の行を狙いヒントとして拾う ──
+function parseQuestions(md) {
+  const out = [];
+  const blocks = md.split(/^##+\s+/m).slice(1);
+  for (const b of blocks) {
+    const lines = b.trim().split("\n");
+    const head = lines[0].trim();
+    const m = head.match(/^(Q\d+)\s*(.*)$/);
+    if (!m) continue;
+    const hint = lines.slice(1).join(" ").replace(/[（(]|[）)]/g, "").trim();
+    out.push({ num: m[1], text: m[2] || head, hint });
+  }
+  return out;
+}
+
+async function fetchQuestions() {
+  const r = await fetch(API + "/api/wizard/questions?domain=" + encodeURIComponent("台本設計"), { headers: authHeaders() });
+  if (r.status === 401) { $("authBanner").classList.remove("hidden"); throw new Error("unauthorized"); }
+  const d = await r.json();
+  if (!d.ok || !d.template) throw new Error(d.error || "質問テンプレ取得失敗");
+  const qs = parseQuestions(d.template);
+  if (!qs.length) throw new Error("質問テンプレの形式が読めない");
+  return qs;
+}
+
+function renderQ() {
+  const q = questions[state.qIndex];
+  $("qCount").textContent = "（" + (state.qIndex + 1) + " / " + questions.length + "）";
+  $("qBar").style.width = Math.round(((state.qIndex) / questions.length) * 100) + "%";
+  $("qNum").textContent = q.num;
+  $("qText").textContent = q.text;
+  $("qHint").textContent = q.hint ? "狙い: " + q.hint : "";
+  $("qHint").style.display = q.hint ? "" : "none";
+  $("qAnswer").value = state.answers[q.num] || "";
+  $("prevBtn").disabled = state.qIndex === 0;
+  $("nextBtn").textContent = state.qIndex === questions.length - 1 ? "回答おわり →" : "次へ →";
+  $("qAnswer").focus();
+}
+
+function stashAnswer() {
+  const q = questions[state.qIndex];
+  const v = $("qAnswer").value.trim();
+  if (v) state.answers[q.num] = v; else delete state.answers[q.num];
+  saveDraft();
+}
+
+function buildAnswersText() {
+  return questions.map((q) => {
+    const a = state.answers[q.num];
+    return q.num + "（" + q.text + "）: " + (a ? a : "【未回収】");
+  }).join("\n");
+}
+
+// ── ミニMarkdownレンダラ（見出し/表/太字/リスト/段落）──
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+function inline(s){return esc(s).replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/`([^`]+)`/g,"<code>$1</code>");}
+function renderMd(md) {
+  const lines = md.split("\n");
+  let html = "", i = 0;
+  while (i < lines.length) {
+    const L = lines[i];
+    if (/^\s*\|/.test(L) && i + 1 < lines.length && /^\s*\|[\s:|-]+\|?\s*$/.test(lines[i+1] || "")) {
+      const heads = L.split("|").slice(1, -1).map((c) => inline(c.trim()));
+      i += 2;
+      let rows = "";
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        const cells = lines[i].split("|").slice(1, -1).map((c) => inline(c.trim()));
+        rows += "<tr>" + cells.map((c) => "<td>" + c + "</td>").join("") + "</tr>";
+        i++;
+      }
+      html += '<div class="tblwrap"><table><thead><tr>' + heads.map((h) => "<th>" + h + "</th>").join("") + "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+      continue;
+    }
+    if (/^###\s+/.test(L)) { html += "<h3>" + inline(L.replace(/^###\s+/, "")) + "</h3>"; i++; continue; }
+    if (/^##\s+/.test(L)) { html += "<h2>" + inline(L.replace(/^##\s+/, "")) + "</h2>"; i++; continue; }
+    if (/^#\s+/.test(L)) { html += "<h2>" + inline(L.replace(/^#\s+/, "")) + "</h2>"; i++; continue; }
+    if (/^\s*[-*]\s+/.test(L)) {
+      let items = "";
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items += "<li>" + inline(lines[i].replace(/^\s*[-*]\s+/, "")) + "</li>"; i++; }
+      html += "<ul>" + items + "</ul>";
+      continue;
+    }
+    if (L.trim() === "") { i++; continue; }
+    html += "<p>" + inline(L) + "</p>"; i++;
+  }
+  return html;
+}
+
+let lastMd = "";
+
+// ── イベント ──
+$("startBtn").onclick = async () => {
+  state.meta = { mPerformer: $("mPerformer").value, mGenre: $("mGenre").value, mShoot: $("mShoot").value, mLength: $("mLength").value, mCase: $("mCase").value };
+  saveDraft();
+  $("startBtn").disabled = true; $("startBtn").textContent = "質問を読み込み中…";
+  try {
+    questions = await fetchQuestions();
+    state.qIndex = Math.min(state.qIndex || 0, questions.length - 1);
+    show("step1"); renderQ();
+  } catch (e) {
+    if (e.message !== "unauthorized") alert("読み込み失敗: " + e.message);
+  } finally { $("startBtn").disabled = false; $("startBtn").textContent = "質問をはじめる"; }
+};
+$("nextBtn").onclick = () => {
+  stashAnswer();
+  if (state.qIndex < questions.length - 1) { state.qIndex++; saveDraft(); renderQ(); }
+  else { $("ansCount").textContent = Object.keys(state.answers).length + " / " + questions.length; show("step2"); }
+};
+$("skipBtn").onclick = () => { $("qAnswer").value = ""; $("nextBtn").onclick(); };
+$("prevBtn").onclick = () => { stashAnswer(); if (state.qIndex > 0) { state.qIndex--; saveDraft(); renderQ(); } };
+$("backBtn").onclick = () => { show("step1"); renderQ(); };
+$("againBtn").onclick = () => { show("step2"); };
+$("genBtn").onclick = async () => {
+  const btn = $("genBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>生成中…（1〜2分。閉じないで）';
+  try {
+    const body = {
+      answers: buildAnswersText(),
+      performer: state.meta.mPerformer || "", genre: state.meta.mGenre || "",
+      shootContext: state.meta.mShoot || "", targetLength: state.meta.mLength || "",
+      caseLabel: state.meta.mCase || "",
+    };
+    const r = await fetch(API + "/api/wizard/scaffold", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+    if (r.status === 401) { $("authBanner").classList.remove("hidden"); throw new Error("ログインが必要です"); }
+    const d = await r.json();
+    if (!d.ok || !d.scaffold) throw new Error(d.error || "生成失敗");
+    lastMd = d.scaffold;
+    $("mdOut").innerHTML = renderMd(lastMd);
+    show("result");
+  } catch (e) { alert("生成できなかった: " + e.message); }
+  finally { btn.disabled = false; btn.textContent = "台本の骨を生成する（1〜2分かかります）"; }
+};
+$("copyBtn").onclick = async () => { await navigator.clipboard.writeText(lastMd); $("copyBtn").textContent = "コピーした"; setTimeout(() => { $("copyBtn").textContent = "Markdownをコピー"; }, 1500); };
+$("dlBtn").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lastMd], { type: "text/markdown" }));
+  a.download = ((state.meta.mCase || "台本の骨") + ".md");
+  a.click();
+};
+</script>
+</body>
+</html>
