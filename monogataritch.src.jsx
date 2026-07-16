@@ -179,7 +179,7 @@ const ASSET_CATEGORIES = ["撮影素材", "テンプレ素材"];
 const ASSET_CAT_ICON = { "撮影素材": "🎥", "テンプレ素材": "🧩", "確認用動画": "🎬", "参考素材": "📎", "納品物": "📦" };
 const ASSET_CAT_DESC = { "撮影素材": "元動画・音声・写真・Bロール・インタビュー音声・文字起こしなど", "テンプレ素材": "OP/ED・テロップ・BGM・ロゴなど使い回す素材" };
 /* asset: { id, category, type:"mp4"|"youtube"|"file", key?, url?, name, size?, mime?, planId?, sceneId?, createdAt } */
-const newAsset = (category = "撮影素材", patch = {}) => ({ id: uid(), category, type: "file", key: "", url: "", name: "", size: 0, mime: "", planId: "", sceneId: "", createdAt: Date.now(), ...patch });
+const newAsset = (category = "撮影素材", patch = {}) => ({ id: uid(), category, type: "file", key: "", url: "", name: "", size: 0, mime: "", planId: "", sceneId: "", folder: "", createdAt: Date.now(), ...patch });
 /* Finderからのドロップを再帰展開してFile[]にする。フォルダごとドロップOK（.DS_Store等の不可視ファイルは除外）。
    注意: webkitGetAsEntry はdropイベント同期中に呼ぶ必要がある＝この関数はawaitを挟む前に呼び出すこと。 */
 const collectDroppedFiles = async (dt) => {
@@ -190,7 +190,15 @@ const collectDroppedFiles = async (dt) => {
   const walk = async (ent) => {
     if (ent.isFile) {
       const f = await new Promise((res) => ent.file(res, () => res(null)));
-      if (f && !f.name.startsWith(".")) out.push(f);
+      if (f && !f.name.startsWith(".")) {
+        // フォルダごとドロップしたときの「どのシーンの素材か」を保持する。
+        // ent.fullPath = "/01_冒頭/C0162.MP4" → 先頭フォルダ名(01_冒頭)を素材の区分として持たせる。
+        // これが無いと132クリップが平置きになり、編集者がどのカットがどのシーンか分からなくなる（＝素材の「解除」事故）。
+        const fp = (ent.fullPath || "").replace(/^\/+/, "");
+        const segs = fp.split("/");
+        if (segs.length > 1) { try { f._folder = segs[0]; f._relPath = fp; } catch (e) {} }
+        out.push(f);
+      }
     } else if (ent.isDirectory) {
       const rd = ent.createReader();
       for (;;) {   // readEntriesは最大100件ずつ＝空になるまで繰り返す
@@ -3646,9 +3654,12 @@ export default function App() {
     const lbl = batch ? `${category}（${batch.i}/${batch.n}）` : category;
     setAssetUp({ cat: category, name: file.name, pct: 0 });
     try {
-      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token);
+      // 素材管理（撮影素材・テンプレ素材）は無期限固定。90日で勝手に消えると後日の再編集・編集者の後追いDLで素材ロストになるため（確認用動画と同じ思想）。
+      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token, { retention: 0 });
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
-      setAssets((arr) => [newAsset(category, { type: isVideo ? "mp4" : "file", key: meta.key, name: meta.name, size: meta.size || file.size, mime: meta.mime || file.type }), ...arr]);
+      // フォルダごとドロップした素材は先頭フォルダ名を folder に保持（シーン区分）。平置き＝構造消失を防ぐ。
+      const folder = (file._folder || "").toString().slice(0, 60);
+      setAssets((arr) => [newAsset(category, { type: isVideo ? "mp4" : "file", key: meta.key, name: meta.name, size: meta.size || file.size, mime: meta.mime || file.type, folder }), ...arr]);
       if (!batch) showToast(category + "に追加したよ");
       return true;
     } catch (e) { showToast(file.name + " のアップロードに失敗：" + (e.message || e)); return false; }
@@ -6228,9 +6239,13 @@ export default function App() {
                     )}
                     {items.length === 0 ? (
                       <p className="text-[11px] text-stone-400 py-2">{uping ? "" : "まだありません"}</p>
-                    ) : (
-                      <ul className="divide-y divide-stone-100">
-                        {items.map((a) => (
+                    ) : (() => {
+                      // フォルダごとドロップした素材はシーン別(00_外観〜)にまとめて表示。平置きにしない。
+                      const groups = []; const gi = {};
+                      for (const a of items) { const fk = a.folder || ""; if (!(fk in gi)) { gi[fk] = groups.length; groups.push([fk, []]); } groups[gi[fk]][1].push(a); }
+                      groups.sort((x, y) => (x[0] === "" ? -1 : y[0] === "" ? 1 : x[0].localeCompare(y[0], "ja")));
+                      const selGroup = (arr, on) => setSelAssets((cur) => { const ids = arr.filter((a) => a.key && a.type !== "youtube").map((a) => a.id); return on ? Array.from(new Set([...cur, ...ids])) : cur.filter((id) => !ids.includes(id)); });
+                      const renderRow = (a) => (
                           <li key={a.id} className="flex items-center gap-2 py-2 text-[12px]">
                             {a.key && a.type !== "youtube"
                               ? <input type="checkbox" checked={selAssets.includes(a.id)} onChange={() => toggleSelAsset(a.id)} title="まとめてDL用に選択" className="shrink-0 w-3.5 h-3.5 accent-stone-600 cursor-pointer" />
@@ -6260,9 +6275,29 @@ export default function App() {
                             )}
                             <button onClick={() => { if (window.confirm("この素材を削除しますか？")) removeAsset(a.id); }} className="shrink-0 text-stone-300 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
                           </li>
-                        ))}
-                      </ul>
-                    )}
+                      );
+                      return (
+                        <div className="space-y-1">
+                          {groups.map(([fname, arr]) => {
+                            const dlIds = arr.filter((a) => a.key && a.type !== "youtube").map((a) => a.id);
+                            const allSel = dlIds.length > 0 && dlIds.every((id) => selAssets.includes(id));
+                            return (
+                              <div key={fname || "_loose"}>
+                                {fname ? (
+                                  <div className="flex items-center gap-1.5 mt-2 mb-0.5 pb-0.5 border-b border-stone-100">
+                                    {dlIds.length > 0 && <input type="checkbox" checked={allSel} onChange={(e) => selGroup(arr, e.target.checked)} title="このシーンをまとめて選択" className="w-3.5 h-3.5 accent-stone-600 cursor-pointer" />}
+                                    <Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />
+                                    <span className="text-[11px] font-bold text-stone-500">{fname}</span>
+                                    <span className="text-[10px] text-stone-400">{arr.length}</span>
+                                  </div>
+                                ) : null}
+                                <ul className="divide-y divide-stone-100">{arr.map(renderRow)}</ul>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </section>
                 );
               })}
