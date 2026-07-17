@@ -4994,6 +4994,7 @@ export default function App() {
           width: 292,
           background: "#15181D",
           color: "#fff",
+          display: (() => { try { return window.self !== window.top ? "none" : ""; } catch (e) { return ""; } })(),  // Fボード埋め込み時はサイドバー自体を出さない（左タブ二重防止）
           transform: sidebarOpen ? "translateX(0)" : "translateX(-292px)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
           willChange: "transform",
