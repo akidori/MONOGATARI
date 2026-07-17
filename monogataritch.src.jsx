@@ -1861,6 +1861,7 @@ function WizardPane({ project, setProject, theme }) {
   const [qIdx, setQIdx] = useState(0);
   const [busy, setBusy] = useState(false);
   const [genErr, setGenErr] = useState("");
+  const [sugBusy, setSugBusy] = useState(false);
   const [view, setView] = useState(wiz.scaffold ? "result" : "form");
   const [copied, setCopied] = useState(false);
   const taRef = useRef(null);
@@ -1881,6 +1882,29 @@ function WizardPane({ project, setProject, theme }) {
 
   const setMetaF = (k, v) => setProject((p) => { const w = p.wizard || newWizard(); return { ...p, wizard: { ...w, meta: { ...(w.meta || {}), [k]: v } } }; });
   const setAns = (num, v) => setProject((p) => { const w = p.wizard || newWizard(); const a = { ...(w.answers || {}) }; if (v && v.trim()) a[num] = v; else delete a[num]; return { ...p, wizard: { ...w, answers: a } }; });
+  const dropSug = (num) => setProject((p) => { const w = p.wizard || newWizard(); const s = { ...(w.suggestions || {}) }; delete s[num]; return { ...p, wizard: { ...w, suggestions: s } }; });
+  // ヒアリングタブの入力から答え候補をAIに推測させる（「こういうのじゃない？」提案）
+  const suggest = async () => {
+    if (sugBusy || !questions) return;
+    const secs = (project.hearing || []).map((sec) => {
+      const items = (sec.items || []).filter((it) => (it.value || "").replace(/<[^>]+>/g, "").trim()).map((it) => it.label + ": " + (it.value || "").replace(/<[^>]+>/g, " ").trim());
+      return items.length ? sec.title + "\n" + items.join("\n") : null;
+    }).filter(Boolean);
+    if (!secs.length) { setGenErr("ヒアリングタブにまだ入力がありません。先にヒアリングを埋めると提案できます。"); return; }
+    setSugBusy(true); setGenErr("");
+    try {
+      const res = await fetch(SHARE_API + "/api/wizard/suggest", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ questions: questions.map((q) => ({ num: q.num, text: q.text, hint: q.hint })), hearing: secs.join("\n\n"), performer: m.performer || "", genre: m.genre || "" }),
+      });
+      const d = await res.json();
+      if (!d.ok || !d.suggestions) throw new Error(d.error || "提案の取得に失敗しました");
+      const clean = {};
+      Object.keys(d.suggestions).forEach((k) => { const v = d.suggestions[k]; if (v && String(v).trim()) clean[k] = String(v); });
+      setProject((p) => { const w = p.wizard || newWizard(); return { ...p, wizard: { ...w, suggestions: clean } }; });
+    } catch (e) { setGenErr(String((e && e.message) || e)); }
+    setSugBusy(false);
+  };
 
   const total = questions ? questions.length : 13;
   const answered = questions ? questions.filter((qq) => (ans[qq.num] || "").trim()).length : 0;
@@ -1956,7 +1980,15 @@ function WizardPane({ project, setProject, theme }) {
         <>
           {/* 案件の前提 */}
           <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-            <h2 className="text-[13px] font-bold text-stone-800 mb-3">案件の前提<span className="ml-2 text-[10px] font-normal text-stone-400">埋めるほど骨の精度が上がります（空欄でもOK）</span></h2>
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <h2 className="text-[13px] font-bold text-stone-800">案件の前提<span className="ml-2 text-[10px] font-normal text-stone-400">埋めるほど骨の精度が上がります（空欄でもOK）</span></h2>
+              <button onClick={suggest} disabled={sugBusy}
+                className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg border inline-flex items-center gap-1.5 disabled:opacity-60"
+                style={{ borderColor: theme.accent, color: theme.accent, background: "#fff" }}>
+                {sugBusy && <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />}
+                <Icon name="sparkle" className="w-3.5 h-3.5" />{sugBusy ? "ヒアリングを読んでいる…" : "ヒアリングから答え候補をもらう"}
+              </button>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[["performer", "演者・対象", "例: 在宅緩和ケア医（終末期の患者を自宅で看取る医師）"], ["genre", "ジャンル・業種", "例: 終末医療ドキュメンタリー"], ["shoot", "撮影想定", "例: 往診に1日密着（出発→患者宅→カンファ→帰宅）"], ["length", "想定尺", "例: 23分前後"]].map(([k, label, ph]) => (
                 <label key={k} className="block"><span className="text-[11px] font-bold text-stone-500">{label}</span>
@@ -1998,6 +2030,17 @@ function WizardPane({ project, setProject, theme }) {
                 <div className="text-[11px] font-bold tracking-widest" style={{ color: theme.accent }}>{q.num}<span className="text-stone-300 font-normal"> / {total}</span></div>
                 <div className="text-[17px] font-bold text-stone-800 mt-1.5 leading-relaxed">{q.text}</div>
                 {q.hint && <div className="mt-2.5 text-[11px] text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-3 py-2">狙い：{q.hint}</div>}
+                {(() => { const sug = (wiz.suggestions || {})[q.num]; if (!sug) return null; return (
+                  <div className="mt-2.5 rounded-xl border px-3.5 py-3" style={{ borderColor: "#F3C2CB", background: "#FBE5EA55" }}>
+                    <div className="text-[10px] font-bold mb-1" style={{ color: theme.accent }}>ヒアリングからの提案 — こういうのじゃない？</div>
+                    <div className="text-[12px] text-stone-700 leading-relaxed whitespace-pre-wrap">{sug}</div>
+                    <div className="flex gap-2 mt-2.5">
+                      <button onClick={() => { const cur = (ans[q.num] || "").trim(); setAns(q.num, cur ? cur + "\n" + sug : sug); dropSug(q.num); }}
+                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.accent }}>これで埋める</button>
+                      <button onClick={() => dropSug(q.num)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 bg-white">却下</button>
+                    </div>
+                  </div>
+                ); })()}
                 <textarea ref={taRef} value={ans[q.num] || ""} onChange={(e) => setAns(q.num, e.target.value)}
                   onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); if (qIdx < total - 1) setQIdx(qIdx + 1); } }}
                   placeholder="思いつくまま書けばOK。空欄のままなら【未回収】として骨に載り、現場で埋める質問リストになります"
