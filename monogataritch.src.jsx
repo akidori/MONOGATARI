@@ -1852,7 +1852,46 @@ function wizMdHtml(md) {
   return html;
 }
 
-function WizardPane({ project, setProject, theme }) {
+/* 骨markdownの「シーン割り」表を構成台本の行データに変換する */
+function wizParseScaffoldRows(md) {
+  const lines = String(md || "").split("\n");
+  // シーン割りセクションの表を探す（ヘッダに時間帯/シーンを含む表）
+  let hi = -1, idx = null;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^\s*\|/.test(lines[i]) && /時間/.test(lines[i]) && /シーン/.test(lines[i])) { hi = i; break; }
+  }
+  if (hi < 0) return [];
+  const heads = lines[hi].split("|").slice(1, -1).map((c) => c.trim());
+  const col = (kw) => heads.findIndex((h) => h.includes(kw));
+  idx = { time: col("時間"), scene: col("シーン"), brain: col("脳"), aim: col("狙い"), q: col("質問"), promo: col("訴求"), len: col("尺") };
+  if (idx.scene < 0) return [];
+  const out = [];
+  for (let i = hi + 2; i < lines.length; i++) {
+    if (!/^\s*\|/.test(lines[i])) break;
+    const c = lines[i].split("|").slice(1, -1).map((x) => x.trim());
+    const g = (k) => (idx[k] >= 0 && c[idx[k]] ? c[idx[k]].replace(/\*\*/g, "") : "");
+    const scene = g("scene"); if (!scene) continue;
+    const aim = g("aim"), promo = g("promo"), brain = g("brain"), qraw = g("q");
+    const blob = scene + " " + aim;
+    let type = "解説系";
+    if (promo && !/^[—―ー\-–]$/.test(promo)) type = "訴求";
+    else if (/移動|車中|出発|支度|帰宅|日常|積む|片付け/.test(blob)) type = "VLOG";
+    else if (/第三者|証言|風景|表情|無言|インサート|余韻/.test(blob)) type = "インサート";
+    // 質問→◼︎行（「…」を1問ずつ）。無ければ括弧書き等をそのまま1行
+    const qs = []; const re = /「([^」]+)」/g; let mm;
+    while ((mm = re.exec(qraw))) qs.push("◼︎ " + mm[1]);
+    let script = qs.length ? qs.join("\n") : (qraw && !/^[—―ー\-–]$/.test(qraw) ? qraw : "");
+    const memo = ["※", brain, aim && (brain ? "｜" : "") + aim, promo && !/^[—―ー\-–]$/.test(promo) ? "｜訴求: " + promo : ""].join("").replace(/^※$/, "");
+    if (memo) script = script ? script + "\n" + memo : memo;
+    // 尺 "1:30"→90秒
+    let sec = null; const lm = (g("len") || "").match(/^(\d+):(\d{2})$/);
+    if (lm) sec = parseInt(lm[1], 10) * 60 + parseInt(lm[2], 10);
+    out.push({ time: g("time"), label: scene, type, sec, script });
+  }
+  return out;
+}
+
+function WizardPane({ project, setProject, theme, setTab }) {
   const wiz = project.wizard || newWizard();
   const m = wiz.meta || {};
   const ans = wiz.answers || {};
@@ -1927,6 +1966,21 @@ function WizardPane({ project, setProject, theme }) {
     setBusy(false);
   };
   const copyMd = async () => { try { await navigator.clipboard.writeText(wiz.scaffold || ""); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
+  const [pourOpen, setPourOpen] = useState(false);
+  const [pourMode, setPourMode] = useState("append");
+  const pourRows = wiz.scaffold ? wizParseScaffoldRows(wiz.scaffold) : [];
+  const doPour = () => {
+    if (!pourRows.length) return;
+    const made = []; let lastTime = null;
+    pourRows.forEach((r) => {
+      if (r.time && r.time !== lastTime) { made.push(newLocation(r.time)); lastTime = r.time; }
+      const sc = newScene(r.type, r.label); sc.sec = r.sec; sc.script = r.script || "";
+      made.push(sc);
+    });
+    setProject((p) => ({ ...p, rows: pourMode === "replace" ? made : [...(p.rows || []), ...made] }));
+    setPourOpen(false);
+    if (typeof setTab === "function") setTab("script");
+  };
   const dlMd = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([wiz.scaffold || ""], { type: "text/markdown" }));
@@ -2076,6 +2130,9 @@ function WizardPane({ project, setProject, theme }) {
               {wiz.scaffoldAt && <div className="text-[10px] text-stone-400 mt-0.5">{new Date(wiz.scaffoldAt).toLocaleString("ja-JP")} 生成・回答を直して再生成できます</div>}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
+              {pourRows.length > 0 && (
+                <button onClick={() => setPourOpen(true)} className="text-[12px] font-bold px-4 py-2 rounded-lg text-white shadow-sm" style={{ background: theme.accent }}>構成台本に流し込む</button>
+              )}
               <button onClick={copyMd} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">{copied ? "コピーした" : "コピー"}</button>
               <button onClick={dlMd} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5"><Icon name="download" className="w-3.5 h-3.5" />.md</button>
               <button onClick={() => setView("form")} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">回答を編集</button>
@@ -2085,6 +2142,43 @@ function WizardPane({ project, setProject, theme }) {
           {genErr && <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] px-4 py-3 mb-4">{genErr}</div>}
           <div className="wiz-md" dangerouslySetInnerHTML={{ __html: wizMdHtml(wiz.scaffold) }} />
         </div>
+      )}
+
+      {pourOpen && (
+        <>
+          <div className="fixed inset-0 z-[70] bg-black/40" onClick={() => setPourOpen(false)} />
+          <div className="fixed z-[71] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,92vw)] bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 pt-5">
+              <div className="text-[15px] font-bold text-stone-800">構成台本に流し込む</div>
+              <div className="text-[11.5px] text-stone-500 mt-1">骨のシーン割り {pourRows.length}行 を構成台本のシーン行に変換します。流し込んだ後も1行ずつ普通に編集できます。</div>
+            </div>
+            <div className="px-5 py-4">
+              <div className="rounded-xl border border-stone-200 overflow-hidden text-[11.5px]">
+                {[["時間帯", "ロケ地行（時間の区切り）"], ["シーン＋尺", "シーンラベル＋秒数＋タイプ自動判定"], ["演者に投げる質問", "原稿（◼︎ 質問行として）"], ["使う脳・狙い・訴求", "原稿末尾の ※演出メモ行"]].map(([f, to], i) => (
+                  <div key={i} className={"flex items-center gap-2 px-3 py-2 " + (i ? "border-t border-stone-100" : "")}>
+                    <span className="text-stone-500">{f}</span><span className="text-stone-300">→</span><span className="font-bold text-stone-700">{to}</span>
+                  </div>
+                ))}
+              </div>
+              {(project.rows || []).length > 0 && (
+                <div className="flex gap-2 mt-3">
+                  {[["append", "末尾に追記する", "いまの構成台本はそのまま"], ["replace", "丸ごと置き換える", "既存 " + (project.rows || []).length + " 行を消して骨だけにする"]].map(([k, l, s]) => (
+                    <button key={k} onClick={() => setPourMode(k)}
+                      className={"flex-1 text-left rounded-xl border px-3.5 py-2.5 " + (pourMode === k ? "" : "border-stone-200")}
+                      style={pourMode === k ? { borderColor: theme.accent, background: "#FBE5EA44" } : {}}>
+                      <div className="text-[12px] font-bold text-stone-800">{l}</div>
+                      <div className="text-[10px] text-stone-400 mt-0.5">{s}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-stone-100">
+              <button onClick={() => setPourOpen(false)} className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-500 bg-white">やめる</button>
+              <button onClick={doPour} className="text-[12px] font-bold px-5 py-2 rounded-lg text-white" style={{ background: theme.accent }}>{pourRows.length}行を流し込む</button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -6502,7 +6596,7 @@ export default function App() {
         )}
 
         {/* ================= 質問ウィザードタブ（質問13→台本の骨） ================= */}
-        {tab === "wizard" && <WizardPane project={project} setProject={setProject} theme={theme} />}
+        {tab === "wizard" && <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />}
 
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
