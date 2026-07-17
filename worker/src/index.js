@@ -213,6 +213,49 @@ export default {
         } catch (e) { return json({ ok: false, error: "生成失敗: " + e.message }, 502); }
       }
 
+      // POST /api/wizard/suggest { questions:[{num,text,hint}], hearing, performer, genre }
+      // ヒアリングタブの入力内容から質問13の答え候補を推測して返す（「こういうのじゃない？」提案）。
+      // 注意: 質問13の主語は視聴者(ターゲット)。ヒアリング(演者情報)から視聴者像への翻訳を行う。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "suggest") {
+        const wip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
+        if (!(await rateLimit(env, wip, "ai", 40, 60))) return json({ ok: false, error: "リクエストが多すぎます。1分ほど待ってください。" }, 429);
+        if (!env.ANTHROPIC_API_KEY) return json({ ok: false, error: "ANTHROPIC_API_KEY 未設定" }, 500);
+        const b = await request.json().catch(() => ({}));
+        const qs = Array.isArray(b.questions) ? b.questions.slice(0, 20) : [];
+        const hearing = (b.hearing || "").toString().slice(0, 20000);
+        if (!qs.length || !hearing.trim()) return json({ ok: false, error: "questionsとhearingが必要" }, 400);
+        const qList = qs.map((q) => `${q.num}: ${q.text}${q.hint ? "（狙い: " + q.hint + "）" : ""}`).join("\n");
+        const prompt = `あなたは密着ドキュメンタリーの構成作家。演者への事前ヒアリング内容を読み、下の質問リスト（認識OSの質問13＝主語は「視聴者ターゲット」）への答えの下書き案を作る。
+
+# ヒアリング内容（演者の情報）
+演者: ${(b.performer || "").toString().slice(0, 200)}／ジャンル: ${(b.genre || "").toString().slice(0, 200)}
+${hearing}
+
+# 質問リスト
+${qList}
+
+# ルール
+- これは「仮説の下書き」。断定せず、AKが編集する前提の簡潔な案（各1〜3文）。
+- 質問の主語は視聴者ターゲット。演者情報から「この演者の動画を見る視聴者は誰で、何に苦しみ、何を信じているか」へ翻訳して答える。
+- ヒアリングに材料が無い質問は無理に埋めず null。
+- 出力はJSONのみ: {"Q1":"…","Q2":null,…}。説明・前置き禁止。`;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({ model: env.PARSE_MODEL || "claude-sonnet-4-6", max_tokens: 3000, messages: [{ role: "user", content: prompt }] }),
+          });
+          if (!res.ok) return json({ ok: false, error: "生成失敗: " + res.status }, 502);
+          const data = await res.json();
+          let text = (data.content && data.content[0] && data.content[0].text) || "";
+          text = text.replace(/^```(json)?/m, "").replace(/```\s*$/m, "").trim();
+          const m = text.match(/\{[\s\S]*\}/);
+          const suggestions = m ? JSON.parse(m[0]) : null;
+          if (!suggestions) return json({ ok: false, error: "提案の解析に失敗" }, 502);
+          return json({ ok: true, suggestions });
+        } catch (e) { return json({ ok: false, error: "提案生成失敗: " + e.message }, 502); }
+      }
+
       // GET /api/schedule?id=<snapId> → Flip Board(D1正本)から担当案件の日程スライスを中継。
       // 編集者がものがたりっちの中だけで「撮影日・次の締切・次の一手」を見れる（窓表示・読み取り専用）。
       // MG_LIST_KEY はサーバ側に秘匿し、cron(birdflip-cron)へService Binding(env.CRON)で直結＝1042回避。
@@ -1496,6 +1539,8 @@ function slim(p) {
       mime: (a.mime || "").slice(0, 120),
       type: (a.type || "").slice(0, 40),
       planId: (a.planId || "").slice(0, 40),
+      // フォルダD&Dのシーン階層。落とすと共有ページで平置き＝構造消失になる
+      folder: (a.folder || "").slice(0, 160),
       uploadedAt: a.uploadedAt || "",
       expiresAt: a.expiresAt || null,
     })) : [],

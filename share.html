@@ -69,6 +69,7 @@ const ICONS = {
   note: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
   user: '<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
   map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z"/><path d="M9 4v14"/><path d="M15 6v14"/>',
+  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/>',
 };
 const icon = (name, cls="w-3.5 h-3.5") => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="${cls} shrink-0">${ICONS[name]||""}</svg>`;
 /* YouTube流の起動チューニング：低画質で即開始→自動昇格（初動体感の要） */
@@ -1164,7 +1165,7 @@ function fmtBytes(n){ n=+n||0; if(n>=1073741824) return (n/1073741824).toFixed(2
 function fileGroups(p){
   const upBy = (pid)=> (UPLOADS||[]).filter(u=> (u.planId||"")===pid );
   // 素材管理(project.assets)のファイルも共有でDLできるように取り込む（key有り・YouTube以外）
-  const asBy = (pid)=> (p.assets||[]).filter(a=> a && a.key && a.type!=="youtube" && (a.planId||"")===pid ).map(a=>({ key:a.key, name:a.name, size:a.size, by:"owner" }));
+  const asBy = (pid)=> (p.assets||[]).filter(a=> a && a.key && a.type!=="youtube" && (a.planId||"")===pid ).map(a=>({ key:a.key, name:a.name, size:a.size, folder:a.folder||"", by:"owner" }));
   const dedup = (arr)=>{ const seen=new Set(); return arr.filter(f=>{ const k=f.key||f.name; if(seen.has(k)) return false; seen.add(k); return true; }); };
   const groups=[{ id:"project", label:"案件全体", files:dedup((p.files||[]).map(f=>({...f,by:"owner"})).concat(asBy("")).concat(upBy("").map(f=>({...f,by:"guest"})))) }];
   (p.plans||[]).forEach((pl,i)=>{
@@ -1208,17 +1209,85 @@ function renderFileList(p, accent, main){
   const groups=fileGroups(p).filter(g=>g.files.length);
   if(!groups.length){ el.innerHTML='<div class="text-[11px] text-stone-400 text-center py-4">まだファイルはありません。</div>'; return; }
   const single = groups.length===1 && groups[0].id==="project";
-  el.innerHTML = groups.map(g=>`
-    <div class="mb-3">
-      ${single?"":`<div class="text-[11px] font-bold text-stone-500 mb-1">${esc(g.label)}</div>`}
-      ${g.files.map(f=>`<div class="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2 mb-1.5">
+  const row=(f)=>`<div class="flex items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2 mb-1.5">
         <div class="flex-1 min-w-0">
           <div class="text-[13px] font-semibold text-stone-800 truncate">${esc(f.name||"file")}</div>
           <div class="text-[10px] text-stone-400 mono">${fmtBytes(f.size)}${f.by==="guest"?" ・先方アップ":""}${f.expiresAt?` ・${fmtTime(f.expiresAt)}まで`:""}</div>
         </div>
         <a href="${API}/api/file/${f.key}?dl=1" class="text-[11px] font-bold text-white pl-2.5 pr-3 py-1.5 rounded-full shadow-md shrink-0 inline-flex items-center gap-1.5" style="background:${main}">${icon("download","w-3 h-3")}DL</a>
-      </div>`).join("")}
-    </div>`).join("");
+      </div>`;
+  el.innerHTML = groups.map((g,gi)=>{
+    // シーン階層（asset.folder）でサブグループ化。フォルダ無しが先頭、以降は名前順（00_外観〜の並びを保つ）
+    const folders=[...new Set(g.files.map(f=>f.folder||""))].sort((a,b)=> a===""?-1 : b===""?1 : a.localeCompare(b,"ja"));
+    const total=g.files.reduce((s,f)=>s+(+f.size||0),0);
+    return `
+    <div class="mb-3">
+      <div class="flex items-center gap-2 mb-1.5">
+        ${single?"":`<div class="text-[11px] font-bold text-stone-500">${esc(g.label)}</div>`}
+        <div class="text-[10px] text-stone-400 mono">${g.files.length}ファイル・${fmtBytes(total)}</div>
+        <button data-bulk="${gi}" class="ml-auto text-[11px] font-bold text-white pl-2.5 pr-3 py-1.5 rounded-full shadow-md shrink-0 inline-flex items-center gap-1.5" style="background:${main}">${icon("download","w-3 h-3")}まとめてDL</button>
+      </div>
+      <div id="fl-bulk-st-${gi}" class="hidden text-[11px] text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 mb-1.5"></div>
+      ${folders.map(fd=>{
+        const fs=g.files.filter(f=>(f.folder||"")===fd);
+        return (fd?`<div class="flex items-center gap-1.5 text-[11px] font-bold text-stone-500 mt-2.5 mb-1">${icon("folder","w-3.5 h-3.5 text-stone-400")}${esc(fd)}<span class="mono text-[10px] text-stone-400 font-normal">${fs.length}</span></div>`:"")+fs.map(row).join("");
+      }).join("")}
+    </div>`;
+  }).join("");
+  el.querySelectorAll("[data-bulk]").forEach(btn=>btn.addEventListener("click",()=>bulkDownload(groups[+btn.dataset.bulk], btn, +btn.dataset.bulk)));
+}
+/* まとめてDL。Chrome/Edge＝保存先を選んでシーン構造(folder)ごとストリーム保存、他ブラウザ＝順次DL起動（構造は保てない） */
+let BULK_BUSY=false;
+const fsSafe=(s)=>String(s||"").replace(/[\\/:*?"<>|]/g,"_").replace(/^\.+$/,"_").slice(0,150)||"_";
+async function bulkDownload(g, btn, gi){
+  if(BULK_BUSY){ alert("まとめてDLは1件ずつ実行してね（いま実行中）"); return; }
+  const st=document.getElementById("fl-bulk-st-"+gi);
+  const total=Math.max(1, g.files.reduce((s,f)=>s+(+f.size||0),0));
+  const show=(t)=>{ if(st){ st.classList.remove("hidden"); st.textContent=t; } };
+  if(!window.showDirectoryPicker){
+    // フォルダ保存API非対応（Safari/Firefox）：1.5秒間隔で順次DLを起動。ブラウザの「複数ダウンロード許可」は許可してもらう
+    BULK_BUSY=true; btn.disabled=true;
+    show("ブラウザがフォルダ保存に対応してないので1つずつDLを起動するよ（Chromeならフォルダ構造ごと保存できる）");
+    for(let i=0;i<g.files.length;i++){
+      const f=g.files[i];
+      show(`(${i+1}/${g.files.length}) ${f.name||"file"} のDLを起動…「複数ダウンロードを許可」が出たら許可してね`);
+      const a=document.createElement("a"); a.href=API+"/api/file/"+f.key+"?dl=1"; a.download=f.name||"file"; document.body.appendChild(a); a.click(); a.remove();
+      await new Promise(r=>setTimeout(r,1500));
+    }
+    show(`✓ ${g.files.length}件のDLを起動したよ。ブラウザのダウンロード一覧で進捗を確認してね`);
+    BULK_BUSY=false; btn.disabled=false; return;
+  }
+  let root; try{ root=await window.showDirectoryPicker({ mode:"readwrite" }); }catch(e){ return; } // キャンセル
+  BULK_BUSY=true; btn.disabled=true;
+  let done=0, ok=0; const fail=[];
+  const leave=(e)=>{ e.preventDefault(); e.returnValue=""; };
+  window.addEventListener("beforeunload", leave);
+  try{
+    for(let i=0;i<g.files.length;i++){
+      const f=g.files[i]; const before=done;
+      const label=()=>`(${i+1}/${g.files.length}) ${f.name||"file"} を保存中… 全体 ${Math.min(100,Math.round(done/total*100))}%（このタブは閉じないでね）`;
+      show(label());
+      try{
+        let dir=root;
+        for(const seg of String(f.folder||"").split("/").filter(Boolean)) dir=await dir.getDirectoryHandle(fsSafe(seg),{create:true});
+        const fh=await dir.getFileHandle(fsSafe(f.name||"file"),{create:true});
+        const w=await fh.createWritable();
+        try{
+          const r=await fetch(API+"/api/file/"+f.key+"?dl=1");
+          if(!r.ok||!r.body) throw new Error("HTTP "+r.status);
+          const reader=r.body.getReader(); let lastPct=-1;
+          while(true){
+            const {done:d, value}=await reader.read(); if(d) break;
+            await w.write(value); done+=value.byteLength;
+            const pct=Math.round(done/total*100); if(pct!==lastPct){ lastPct=pct; show(label()); }
+          }
+          await w.close(); ok++;
+        }catch(e){ try{ await w.abort(); }catch(_){} throw e; }
+      }catch(e){ fail.push(f.name||"file"); done=before+(+f.size||0); }
+    }
+    show(fail.length ? `⚠ ${ok}件保存・${fail.length}件失敗：${fail.slice(0,3).join("、")}${fail.length>3?" ほか":""}。失敗分は個別DLで取り直してね`
+                     : `✓ ${ok}件ぜんぶ保存したよ（シーンフォルダ構造そのまま）`);
+  }finally{ window.removeEventListener("beforeunload", leave); BULK_BUSY=false; btn.disabled=false; }
 }
 /* たてがた君（縦ショート自動生成）結果表示。存在しなければ何も出さない（新規UI面積を増やさない） */
 function renderShorts(d){
