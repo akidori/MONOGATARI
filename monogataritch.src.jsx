@@ -2068,7 +2068,7 @@ export default function App() {
   const [importTarget, setImportTarget] = useState("new"); // "new" = 新規案件 / "current" = 開いている案件を更新
   const [importFileName, setImportFileName] = useState("");
   const importFileRef = useRef(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => { try { return window.self === window.top; } catch (e) { return true; } });  // Fボード埋め込み時は初期閉じ（左ツリーとダブらせない）
   const [user, setUser] = useState(null);                   // ログイン中のGoogleユーザー（null=未ログイン）
   const [showAccount, setShowAccount] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
@@ -2620,6 +2620,33 @@ export default function App() {
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
 
   /* ---- 案件操作 ---- */
+  /* Fボード制作モードからのリロードなし案件切替（postMessage）。ページ遷移の再読込を無くす */
+  useEffect(() => {
+    const onMsg = async (e) => {
+      if (e.origin !== "https://birdflip-app.pages.dev") return;
+      const d = e.data || {};
+      if (d.type !== "mg:open" || !d.case) return;
+      const key = String(d.case);
+      let hitId = index.some((x) => x.id === key) ? key : null;
+      if (!hitId) {
+        let map = {}; try { map = JSON.parse(localStorage.getItem("mg:shareMap") || "{}"); } catch (err) {}
+        if (map[key] && index.some((x) => x.id === map[key])) hitId = map[key];
+        else {
+          for (const x of index) {
+            try {
+              const rr = await window.storage.get(STORE_PROJ(x.id));
+              const pd = rr && rr.value ? JSON.parse(rr.value) : null;
+              if (pd && pd.shareId === key) { hitId = x.id; map[key] = x.id; try { localStorage.setItem("mg:shareMap", JSON.stringify(map)); } catch (err) {} break; }
+            } catch (err) {}
+          }
+        }
+      }
+      if (hitId) switchProject(hitId);
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  });
+
   const switchProject = async (id) => {
     // チャンネル編集モード：storageでなく該当案件のライブセッションを開く
     if (chanLive) { const c = chanLive.cases.find((x) => x.id === id); if (c) { openChanCase(c); return; } }
