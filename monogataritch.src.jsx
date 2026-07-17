@@ -4207,7 +4207,7 @@ export default function App() {
     // 完成動画(role:review)は「動画確認」のバージョンへ、それ以外は素材へ
     const reviewUps = fresh.filter((u) => u.role === "review");
     const assetUps = fresh.filter((u) => u.role !== "review");
-    const mk = (u) => { const isVid = /^video\//.test(u.mime || "") || /\.(mp4|mov|m4v|webm)$/i.test(u.name || ""); return newAsset("撮影素材", { type: isVid ? "mp4" : "file", key: u.key, name: u.name || "ファイル", size: u.size || 0, mime: u.mime || "", planId: u.planId || "", by: "guest" }); };
+    const mk = (u) => { const isVid = /^video\//.test(u.mime || "") || /\.(mp4|mov|m4v|webm)$/i.test(u.name || ""); return newAsset("撮影素材", { type: isVid ? "mp4" : "file", key: u.key, name: u.name || "ファイル", size: u.size || 0, mime: u.mime || "", planId: u.planId || "", folder: u.folder || "", by: "guest" }); };
     if (assetUps.length) setAssets((arr) => { const have = new Set(arr.map((a) => a.key).filter(Boolean)); const add = assetUps.filter((u) => !have.has(u.key)).map(mk); return add.length ? [...add, ...arr] : arr; });
     for (const u of reviewUps) {
       // R2直再生で即追加し、Stream（軽量化）が使えるなら変換して差し替え

@@ -990,6 +990,8 @@ ${qList}
           // role: "review"=完成動画（動画確認に出す） / 既定=素材
           role: (b.role === "review") ? "review" : "",
           planId: (b.planId || "").toString().slice(0, 40),
+          // アップ先フォルダ（シーン階層）。"/"区切りはそのまま、パスに使えない文字だけ潰す
+          folder: (b.folder || "").toString().replace(/[\\:*?"<>|]/g, "_").slice(0, 160),
         };
         await env.SNAPS.put("file:" + key, JSON.stringify(meta));
         // 先方・編集者アップは案件ごとの一覧 file_up:{snap} に積む（owner はクライアントが project.files に保持）

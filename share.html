@@ -455,7 +455,28 @@ function paneManual(p, accent, main){
       <div class="text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">${esc(m.body||"")}</div></div>`;
   const sections = groups.filter(([,arr])=>arr.length).map(([label,arr])=>`
     <div class="mb-5"><div class="text-[12px] font-bold mb-2" style="color:${main}">${esc(label)}</div>${arr.map(card).join("")}</div>`).join("");
-  return sections || '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>';
+  // Flip-LABのチャンネル編集ルール（編集者リンクのみ・mountLabManualが非同期で埋める）
+  return `<div id="lab-manual"></div>` + (sections || '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>');
+}
+/* Flip-LABの編集ルールを取得して表示。機密（NGワード等）が乗るため編集者トークン(&up=)がある時だけ。 */
+let LABMAN;
+async function mountLabManual(p){
+  const el=document.getElementById("lab-manual"); if(!el) return;
+  if(!UP_TOKEN || !p.channel){ el.innerHTML=""; return; }
+  if(LABMAN===undefined){
+    el.innerHTML='<div class="text-[11px] text-stone-400 py-1 mb-2">Flip-LABの編集ルールを読み込み中…</div>';
+    try{
+      const qs=new URLSearchParams({ channel:p.channel, id:ID, up:UP_TOKEN });
+      LABMAN=await fetch(API+"/api/lab-manual?"+qs.toString()).then(r=>r.json());
+    }catch(e){ LABMAN={}; }
+  }
+  const d=LABMAN||{};
+  const cur=document.getElementById("lab-manual"); if(!cur) return;
+  if(!d.manual){ cur.innerHTML=""; return; }
+  cur.innerHTML=`<div class="mb-5">
+    <div class="flex items-center gap-1.5 text-[12px] font-bold mb-2 text-stone-700">${icon("note","w-3.5 h-3.5 text-stone-400")}${esc(p.channel)} 編集ルール（Flip-LAB）${d.updated?`<span class="ml-auto text-[10px] text-stone-400 mono font-normal">${esc(String(d.updated).slice(0,10))}時点</span>`:""}</div>
+    <div class="rounded-xl border border-stone-200 bg-white p-3 text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">${esc(d.manual)}</div>
+  </div>`;
 }
 function paneConcept(p){
   const ci = p.channelInfo;
@@ -509,7 +530,8 @@ function render(){
   const hasFilesAny = (p.files||[]).length || (p.plans||[]).some(pl=>(pl.files||[]).length) || (UPLOADS||[]).length || (p.assets||[]).some(a=>a&&a.key&&a.type!=="youtube");
   if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
   const manualCount = ((p.manuals||[]).length) + (((p.channelInfo&&p.channelInfo.manuals)||[]).length) + ((p.manualsGlobal||[]).length);
-  if(manualCount) tabs.push(["manual","マニュアル"]);
+  // 編集者リンクはFlip-LABの編集ルールも出すので、ローカルのマニュアルが空でもタブを出す
+  if(manualCount || (UP_TOKEN && p.channel)) tabs.push(["manual","マニュアル"]);
   // 複数タブ束ね共有：許可タブだけに絞る（タブバーは出す＝相手は許可タブ内で切替できる）
   if(ALLOW_TABS.length){
     // 編集者URL(UP_TOKEN)なら、旧プリセットでtabsにvideoが無くても動画タブは必ず通す（アップ入口を消さない）
@@ -571,6 +593,7 @@ function render(){
   document.querySelectorAll(".cbtn").forEach(b => b.addEventListener("click", () => toggleComments(b.dataset.c, b.dataset.l)));
   if(TAB==="video") mountVideo(p, accent, main);
   if(TAB==="files") mountFiles(p, accent, main);
+  if(TAB==="manual") mountLabManual(p);
   // 編集者バー配線：どのタブからでも動画タブへ飛んでアップ枠を目立たせる／upトークン抜きの閲覧URLを渡す
   const ebUp = document.getElementById("eb-up");
   if(ebUp) ebUp.addEventListener("click", () => {
@@ -1177,17 +1200,25 @@ function fileGroups(p){
 }
 function paneFiles(p, accent, main){
   const plans=(p.plans||[]);
-  const targetSel = plans.length ? `<select id="fl-target" class="text-[12px] border border-stone-200 rounded px-2 py-1 mb-2 block">
+  const targetSel = plans.length ? `<select id="fl-target" class="text-[12px] border border-stone-200 rounded px-2 py-1 block">
       <option value="project">案件全体に送る</option>
       ${plans.map((pl,i)=>`<option value="${esc(pl.id)}">${esc((pl.title||("企画"+(i+1))).slice(0,20))} に送る</option>`).join("")}
     </select>` : "";
+  // アップ先フォルダ（既存のシーンフォルダ＋新規入力）。指定するとそのフォルダの中に入る
+  const allFolders=[...new Set(fileGroups(p).flatMap(g=>g.files.map(f=>f.folder||"")).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ja"));
+  const folderSel = `<select id="fl-folder" class="text-[12px] border border-stone-200 rounded px-2 py-1 block max-w-full">
+      <option value="">フォルダ指定なし</option>
+      ${allFolders.map(f=>`<option value="${esc(f)}">${esc(f)} に入れる</option>`).join("")}
+      <option value="__new__">新しいフォルダ…</option>
+    </select>
+    <input id="fl-folder-new" type="text" placeholder="フォルダ名（例：18_追撮）" class="hidden text-[12px] border border-stone-200 rounded px-2 py-1 block w-64 max-w-full">`;
   return `
     <div>
       <div id="fl-list"></div>
       ${CHMODE?"":`<div id="fl-drop" class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3 transition-colors">
         <div class="text-[12px] font-bold text-stone-600 mb-1">ファイルを送る</div>
         <div class="text-[11px] text-stone-400 mb-2">ここに<span class="font-bold">ドラッグ＆ドロップ</span>、または下から選択（${UP_TOKEN?"大容量OK":"1ファイル2GBまで"}・複数可）。</div>
-        ${targetSel}
+        <div class="flex flex-wrap items-center gap-2 mb-2">${targetSel}${folderSel}</div>
         <input id="fl-input" type="file" multiple class="text-[12px] block">
         <div id="fl-prog" class="hidden mt-2"><div class="h-1.5 bg-stone-200 rounded overflow-hidden"><div id="fl-bar" class="h-full" style="width:0%;background:${accent}"></div></div><div id="fl-pct" class="text-[10px] text-stone-400 mt-1">0%</div></div>
       </div>`}
@@ -1196,6 +1227,8 @@ function paneFiles(p, accent, main){
 async function guestUploadMany(files, p, accent, main){ for(const f of (files||[])){ await guestUpload(f, p, accent, main); } }
 function mountFiles(p, accent, main){
   renderFileList(p, accent, main);
+  const fsel=document.getElementById("fl-folder");
+  if(fsel) fsel.addEventListener("change", ()=>{ const nw=document.getElementById("fl-folder-new"); if(nw){ nw.classList.toggle("hidden", fsel.value!=="__new__"); if(fsel.value==="__new__") nw.focus(); } });
   const inp=document.getElementById("fl-input");
   if(inp) inp.addEventListener("change", ()=>{ const fs=Array.from(inp.files||[]); if(fs.length) guestUploadMany(fs, p, accent, main); });
   const drop=document.getElementById("fl-drop");
@@ -1231,11 +1264,20 @@ function renderFileList(p, accent, main){
       <div id="fl-bulk-st-${gi}" class="hidden text-[11px] text-stone-500 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 mb-1.5"></div>
       ${folders.map(fd=>{
         const fs=g.files.filter(f=>(f.folder||"")===fd);
-        return (fd?`<div class="flex items-center gap-1.5 text-[11px] font-bold text-stone-500 mt-2.5 mb-1">${icon("folder","w-3.5 h-3.5 text-stone-400")}${esc(fd)}<span class="mono text-[10px] text-stone-400 font-normal">${fs.length}</span></div>`:"")+fs.map(row).join("");
+        return (fd?`<div class="flex items-center gap-1.5 text-[11px] font-bold text-stone-500 mt-2.5 mb-1">${icon("folder","w-3.5 h-3.5 text-stone-400")}${esc(fd)}<span class="mono text-[10px] text-stone-400 font-normal">${fs.length}</span>${CHMODE?"":`<button data-addto="${esc(fd)}" class="inline-flex items-center gap-1 text-[10px] font-bold text-stone-400 border border-stone-200 rounded-full px-2 py-0.5 hover:text-stone-600 hover:border-stone-300">${icon("plus","w-2.5 h-2.5")}ここに追加</button>`}</div>`:"")+fs.map(row).join("");
       }).join("")}
     </div>`;
   }).join("");
   el.querySelectorAll("[data-bulk]").forEach(btn=>btn.addEventListener("click",()=>bulkDownload(groups[+btn.dataset.bulk], btn, +btn.dataset.bulk)));
+  // フォルダ見出しの「ここに追加」：アップ先フォルダをそのフォルダにセットしてファイル選択を開く
+  el.querySelectorAll("[data-addto]").forEach(b=>b.addEventListener("click",()=>{
+    const s=document.getElementById("fl-folder"); const inp=document.getElementById("fl-input"); if(!s||!inp) return;
+    const v=b.dataset.addto;
+    if(![...s.options].some(o=>o.value===v)){ const o=document.createElement("option"); o.value=v; o.textContent=v+" に入れる"; s.insertBefore(o, s.querySelector('option[value="__new__"]')); }
+    s.value=v; s.dispatchEvent(new Event("change"));
+    const drop=document.getElementById("fl-drop"); if(drop) drop.scrollIntoView({behavior:"smooth", block:"center"});
+    inp.click();
+  }));
 }
 /* まとめてDL。Chrome/Edge＝保存先を選んでシーン構造(folder)ごとストリーム保存、他ブラウザ＝順次DL起動（構造は保てない） */
 let BULK_BUSY=false;
@@ -1357,10 +1399,14 @@ async function mpuUpload(file, extra, onProg){
 async function guestUpload(file, p, accent, main){
   const prog=document.getElementById("fl-prog"), bar=document.getElementById("fl-bar"), pct=document.getElementById("fl-pct");
   const selEl=document.getElementById("fl-target"); const target=selEl?selEl.value:"project";
+  // アップ先フォルダ：選択 or 新規入力。パスに使えない文字だけ潰して "/" 階層は維持
+  const fEl=document.getElementById("fl-folder"), fNew=document.getElementById("fl-folder-new");
+  let folder=fEl?fEl.value:""; if(folder==="__new__") folder=(fNew&&fNew.value||"");
+  folder=String(folder).replace(/[\\:*?"<>|]/g,"_").split("/").map(s=>s.trim()).filter(s=>s&&s!==".."&&s!==".").join("/").slice(0,160);
   if(prog) prog.classList.remove("hidden");
   if(bar) bar.style.background=accent; if(pct){ pct.style.color="#9ca3af"; pct.textContent="アップロード準備中…"; }
   try{
-    const meta = await mpuUpload(file, { planId: target==="project"?"":target }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target, folder }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
     UPLOADS.push(meta);
     if(bar){ bar.style.width="100%"; } if(pct){ pct.style.color="#15803D"; pct.textContent="✓ 「"+(file.name||"ファイル")+"」を送信しました"; }
     const inp=document.getElementById("fl-input"); if(inp) inp.value="";
