@@ -84,6 +84,8 @@ const migrate = (p) => {
 };
 
 const STORAGE_KEY = "kousei-project-v1";        // 旧：単一プロジェクト（移行元）
+// Fボード埋め込み（iframe）判定。埋め込み時はサイドバー/ハンバーガー/チャンネルチップを出さない
+const IS_EMBED = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
 const STORE_INDEX = "monogataritch-index-v1";   // 案件の並び順とメタ
 const STORE_PROJ = (id) => "monogataritch-proj-" + id; // 各案件の本体
 const STORE_CHANNELS = "monogataritch-channels-v1"; // チャンネル(クライアント)単位のコンセプト情報 {name:{...}}
@@ -5330,10 +5332,13 @@ export default function App() {
       {/* ===== ツールバー ===== */}
       <header className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
         <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap">
+          {/* Fボード埋め込み時はハンバーガーとチャンネルチップを出さない（左ツリーが案件切替を担う 2026-07-17 AK指示） */}
+          {!IS_EMBED && (
           <button onClick={() => setSidebarOpen((s) => !s)} title="案件リスト"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 shrink-0">
             <Icon name="menu" className="w-[18px] h-[18px]" />
           </button>
+          )}
           <input
             value={project.name}
             onChange={(e) => renameProject(project.id, e.target.value)}
@@ -5341,8 +5346,8 @@ export default function App() {
             style={{ color: mainText }}
             title="案件名（クリックで編集）"
           />
-          {/* カテゴリ（クライアント／チャンネル）— クリックで変更 */}
-          {editHeaderChannel ? (
+          {/* カテゴリ（クライアント／チャンネル）— クリックで変更。埋め込み時は非表示（正本はFボード側の紐付け） */}
+          {IS_EMBED ? null : editHeaderChannel ? (
             <input
               autoFocus
               list="mg-channels"
@@ -5403,32 +5408,23 @@ export default function App() {
             {shareMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
               <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 max-h-[80vh] overflow-y-auto">
-                {/* ===== AKの2択を最上段に（思考ストレス0）：全部 / 今のタブだけ ===== */}
-                <div className="px-3 pt-2.5 pb-1 text-[10px] font-bold tracking-wider text-stone-400">見せるリンクをコピー（読み取り専用）</div>
-                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                  <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
-                  全部見せる<span className="text-[10px] text-stone-400 font-normal ml-auto">全タブ</span>
-                </button>
+                {/* ===== 2択だけ（2026-07-17 AK指示：このタブだけ／全体、それだけでいい） ===== */}
                 {TAB_SHARE_PANE[tab] && (
-                  <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-b border-stone-100">
+                  <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
                     <Icon name="folder" className="w-4 h-4 shrink-0 text-stone-500" />
-                    今のタブだけ見せる<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
+                    このタブだけ共有<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
                   </button>
                 )}
-                {/* ===== 編集者に渡す（大容量アップに必要な唯一のリンク） ===== */}
-                <div className="px-3 pt-2 pb-1 text-[10px] font-bold tracking-wider text-stone-400">編集者に渡す</div>
-                {handoffs.filter((h) => h.id === "editor" || h.upload === true).map((h) => (
-                  <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2 border-b border-stone-100">
-                    <span className="text-[14px] leading-none">{h.emoji || "✂️"}</span>
-                    {h.label}<span className="text-[10px] text-stone-400 font-normal ml-auto">大容量アップOK＋文面</span>
-                  </button>
-                ))}
-                {/* ===== その他（折りたたみ）：先方/演者・同時編集・AI・書き出し ===== */}
+                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-b border-stone-100">
+                  <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
+                  全体を共有<span className="text-[10px] text-stone-400 font-normal ml-auto">全タブ</span>
+                </button>
+                {/* ===== その他（折りたたみ）：編集者渡し（大容量アップ）・先方/演者・同時編集・AI・書き出し ===== */}
                 <button onClick={() => setShareMore((v) => !v)} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2">
                   <span className="text-[10px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他のリンク・書き出し
                 </button>
                 {shareMore && (<>
-                  {handoffs.filter((h) => !(h.id === "editor" || h.upload === true)).map((h) => (
+                  {handoffs.map((h) => (
                     <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
                       <span className="text-[13px] leading-none">{h.emoji || "📨"}</span>
                       {h.label}<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
@@ -5452,7 +5448,6 @@ export default function App() {
                     <span className="text-[13px] leading-none">📄</span> 台本コピー{project.format === "talk" ? "（テキスト）" : "（TSV）"}
                   </button>
                 </>)}
-                <div className="px-3 py-2 text-[10px] text-stone-400 bg-stone-50 border-t border-stone-100 leading-relaxed">🔄 一度配ったリンクは、中身を直すと<span className="font-bold text-stone-500">自動で最新</span>になるよ（押し直し不要）。</div>
               </div>
             </>)}
           </div>
