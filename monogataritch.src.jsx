@@ -1920,7 +1920,7 @@ function WizardPane({ project, setProject, theme }) {
   );
 
   return (
-    <div className="max-w-[980px] mx-auto px-1 sm:px-0 py-1 space-y-4" style={{ "--wiz": theme.accent }}>
+    <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1 space-y-4" style={{ "--wiz": theme.accent }}>
       <style>{`
         .wiz-md h3{font-size:15px;font-weight:700;color:#292524;margin:22px 0 8px;padding-bottom:6px;border-bottom:2px solid #e7e5e4}
         .wiz-md h3:first-child{margin-top:0}
@@ -6381,7 +6381,7 @@ export default function App() {
 
         {/* ================= ヒアリングタブ（演者の事前聞き取り→構成のネタ元） ================= */}
         {tab === "hearing" && (
-          <div className="max-w-[820px] mx-auto px-1 sm:px-0 py-1 space-y-4">
+          <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1 space-y-4">
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <p className="text-[12px] text-stone-500">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
               <button onClick={resetHearing} className="shrink-0 text-[11px] font-bold text-stone-400 hover:text-stone-600 underline">初期テンプレに戻す</button>
@@ -6434,7 +6434,7 @@ export default function App() {
 
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
-          <div className="max-w-[820px] mx-auto px-1 sm:px-0 py-1 space-y-4">
+          <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1 space-y-4">
             {/* 「いまの状態」(ステータス/次にやること/締切)はタスク管理＝Flip Boardに集約のため削除 */}
             {/* 基本情報 */}
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
@@ -6466,7 +6466,7 @@ export default function App() {
 
         {/* ================= 素材管理タブ（assets単一正本） ================= */}
         {tab === "assets" && (
-          <div className="max-w-[920px] mx-auto px-1 sm:px-0 py-1">
+          <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1">
             <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-400">ファイルやフォルダはFinderから各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でアップできます（フォルダは中身をまとめてアップ）。名前は鉛筆アイコンで変更できます。</span></p>
             {project.shareId && (
               <div className="flex items-center gap-2 mb-3 flex-wrap">
