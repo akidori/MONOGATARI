@@ -2231,6 +2231,32 @@ export default function App() {
       // 既存indexにchannelが無ければ補完
       idx = idx.map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL }));
       setIndex(idx);
+      // Fボード制作モードからの案件指定（?case=<projectId|shareId>）を最優先で開く（PHASE1接続版）
+      let urlCase = null;
+      try { urlCase = new URLSearchParams(location.search).get("case"); } catch (e) {}
+      if (urlCase) {
+        let hitId = idx.some((x) => x.id === urlCase) ? urlCase : null;
+        if (!hitId) {
+          // shareId→projectId はキャッシュ(mg:shareMap)を先に見る。無ければ全案件を走査して逆引き
+          let map = {};
+          try { map = JSON.parse(localStorage.getItem("mg:shareMap") || "{}"); } catch (e) {}
+          if (map[urlCase] && idx.some((x) => x.id === map[urlCase])) hitId = map[urlCase];
+          else {
+            for (const x of idx) {
+              try {
+                const rr = await window.storage.get(STORE_PROJ(x.id));
+                const pd = rr && rr.value ? JSON.parse(rr.value) : null;
+                if (pd && pd.shareId === urlCase) { hitId = x.id; map[urlCase] = x.id; try { localStorage.setItem("mg:shareMap", JSON.stringify(map)); } catch (e) {} break; }
+              } catch (e) {}
+            }
+          }
+        }
+        if (hitId) {
+          const rr = await window.storage.get(STORE_PROJ(hitId));
+          const data = rr && rr.value ? migrateProject(JSON.parse(rr.value)) : null;
+          if (data) { setActiveId(hitId); setProject(data); setView("editor"); setLoaded(true); return; }
+        }
+      }
       // 直前に開いていた案件＋タブを復元（⌘R/リロードでホームに戻さない）
       let lastView = null;
       try { lastView = JSON.parse(localStorage.getItem("mg:lastView") || "null"); } catch (e) {}
