@@ -7152,7 +7152,7 @@ export default function App() {
                     </button>
                     <span className="ml-auto text-[10px] text-stone-400">Flip Board連動・読み取り</span>
                   </div>
-                  <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 max-h-[52vh] overflow-y-auto">
+                  <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100">
                     {(() => {
                       const rr = (r, dim) => {
                         const dl = r.next && r.next.days != null ? r.next.days : null;
