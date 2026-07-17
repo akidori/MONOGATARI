@@ -2179,6 +2179,7 @@ export default function App() {
   const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
   const [board, setBoard] = useState(null);                  // Flip Board(D1)全案件の進行ボード＝ホームの可視化。読み取り専用
   const [boardAll, setBoardAll] = useState(false);           // 進行ボード：全件 ⇔ このチャンネルだけ
+  const [boardDone, setBoardDone] = useState(false);          // 進行ボード：納品済の折りたたみ
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("case");    // global | channel | case
 
@@ -4808,12 +4809,12 @@ export default function App() {
   if (loaded && chanLive && view === "home") return (
     <div className="fixed inset-0 overflow-y-auto" style={{ background: "#E9E8E3" }}>
       <header className="sticky top-0 z-10 shadow-sm" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
+        <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
           <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
           <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
         </div>
       </header>
-      <main className="max-w-3xl mx-auto px-4 py-7">
+      <main className="max-w-[1200px] mx-auto px-5 py-7">
         <div className="text-[11px] font-bold text-stone-400 tracking-widest mb-1">CHANNEL</div>
         <div className="rounded-2xl px-5 py-4 mb-4" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
           <div className="text-[20px] font-black">{chanLive.name}</div>
@@ -7072,7 +7073,7 @@ export default function App() {
       {view === "home" && (
         <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
-            <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-2">
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
               <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
               <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
               <div className="flex-1" />
@@ -7083,9 +7084,10 @@ export default function App() {
               </button>
             </div>
           </header>
-          <main className="max-w-3xl mx-auto px-4 py-7">
-            {/* 全案件 横断検索（ホーム） */}
-            <div className="relative mb-5">
+          <main className="max-w-[1200px] mx-auto px-5 py-7">
+            {/* 全案件 横断検索＋新規（1行に統合） */}
+            <div className="flex items-center gap-2 mb-6">
+            <div className="relative flex-1 min-w-0">
               <div className="relative z-30 flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-sm">
                 <Icon name="search" className="w-4 h-4 text-stone-400 shrink-0" />
                 <input value={caseSearch}
@@ -7117,22 +7119,21 @@ export default function App() {
                 </>
               )}
             </div>
+            <button onClick={(e) => setAddMenu({ channel: DEFAULT_CHANNEL, x: e.clientX, y: e.clientY })}
+              className="shrink-0 h-9 px-3.5 rounded-xl inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow-sm" style={{ background: theme.accent }}>
+              <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
+            </button>
+            <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
+              title="チャンネルを追加" className="shrink-0 h-9 px-3 rounded-xl inline-flex items-center gap-1 text-[12px] font-bold border border-stone-300 bg-white text-stone-500 hover:bg-stone-50">
+              <Icon name="folder" className="w-3.5 h-3.5" />＋
+            </button>
+            </div>
             {!user && (
               <div className="mb-5 text-[12px] text-stone-600 bg-white border border-stone-200 rounded-xl px-4 py-3 flex items-start gap-2">
                 <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
                 <span><span className="font-bold">ログインすると</span>案件がクラウドに保存され、どの端末でも開けます。<button onClick={() => setShowAccount(true)} className="font-bold underline" style={{ color: theme.main }}>ログイン</button></span>
               </div>
             )}
-            <div className="flex items-center gap-2 mb-5 flex-wrap">
-              <button onClick={(e) => setAddMenu({ channel: DEFAULT_CHANNEL, x: e.clientX, y: e.clientY })}
-                className="h-10 px-4 rounded-xl inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow" style={{ background: theme.accent }}>
-                <Icon name="plus" className="w-4 h-4" /> 新規案件
-              </button>
-              <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
-                className="h-10 px-4 rounded-xl inline-flex items-center gap-1.5 text-[12px] font-bold border border-stone-300 bg-white text-stone-600 shadow-sm hover:bg-stone-50">
-                <Icon name="folder" className="w-4 h-4" /> チャンネルを追加
-              </button>
-            </div>
 
             {/* ===== 進行ボード（Flip Board D1の窓）：誰がどの案件のどの工程か・次の締切を一望。読み取り専用 ===== */}
             {board && board.length > 0 && (() => {
@@ -7151,25 +7152,35 @@ export default function App() {
                     </button>
                     <span className="ml-auto text-[10px] text-stone-400">Flip Board連動・読み取り</span>
                   </div>
-                  <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 max-h-[46vh] overflow-y-auto">
-                    {shown.map((r) => {
-                      const dl = r.next && r.next.days != null ? r.next.days : null;
-                      const dc = dl == null ? "text-stone-300" : dl < 0 ? "text-rose-600" : dl <= 3 ? "text-amber-600" : "text-stone-400";
-                      const dt = dl == null ? "—" : dl < 0 ? "超過" + (-dl) + "日" : dl === 0 ? "今日" : "あと" + dl + "日";
-                      const row = (
-                        <div className="flex items-center gap-2 px-3 py-2 text-[12px]">
-                          <span className={"shrink-0 w-[60px] text-right font-bold " + dc}>{dt}</span>
-                          <span className="shrink-0 inline-flex items-center gap-1 text-stone-600"><span className="w-1.5 h-1.5 rounded-full" style={{ background: theme.accent }} />{r.phase || "—"}</span>
-                          {r.status === "delivered" && <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600">納品済</span>}
-                          <span className="shrink-0 text-stone-400">{r.editor || "未割当"}</span>
-                          <span className="min-w-0 flex-1 truncate font-semibold text-stone-800">{r.title}</span>
-                          <span className={"shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded " + (r.ballHolder === "editor" ? "bg-amber-50 text-amber-700" : "bg-stone-100 text-stone-500")}>{BALL[r.ballHolder] || "—"}</span>
-                        </div>
-                      );
-                      return r.mgId
-                        ? <a key={r.caseId} href={shareUrl(r.mgId)} target="_blank" rel="noreferrer" className="block hover:bg-stone-50">{row}</a>
-                        : <div key={r.caseId} className="opacity-90">{row}</div>;
-                    })}
+                  <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 max-h-[52vh] overflow-y-auto">
+                    {(() => {
+                      const rr = (r, dim) => {
+                        const dl = r.next && r.next.days != null ? r.next.days : null;
+                        const dc = dl == null ? "text-stone-300" : dl < 0 ? "text-rose-600" : dl <= 3 ? "text-amber-600" : "text-stone-400";
+                        const dt = dl == null ? "—" : dl < 0 ? "-" + (-dl) + "d" : dl === 0 ? "今日" : "+" + dl + "d";
+                        const row = (
+                          <div className={"flex items-center gap-3 px-3.5 py-2 text-[12px]" + (dim ? " opacity-55" : "")}>
+                            <span className={"shrink-0 w-[46px] text-right font-mono tabular-nums font-bold text-[11px] " + dc}>{dt}</span>
+                            <span className="min-w-0 flex-1 truncate font-semibold text-stone-800">{r.title}</span>
+                            <span className="shrink-0 text-[10px] text-stone-400">{(r.phase || "—") + (r.editor ? "・" + r.editor : "")}</span>
+                          </div>
+                        );
+                        return r.mgId
+                          ? <a key={r.caseId} href={shareUrl(r.mgId)} target="_blank" rel="noreferrer" className="block hover:bg-stone-50">{row}</a>
+                          : <div key={r.caseId}>{row}</div>;
+                      };
+                      const act = shown.filter((r) => r.status !== "delivered");
+                      const done = shown.filter((r) => r.status === "delivered");
+                      return (<>
+                        {act.map((r) => rr(r, false))}
+                        {done.length > 0 && (
+                          <button onClick={() => setBoardDone((v) => !v)} className="w-full text-left px-3.5 py-2 text-[11px] font-bold text-stone-400 hover:bg-stone-50">
+                            {boardDone ? "▲ 納品済を隠す" : "▼ 納品済 " + done.length + "件"}
+                          </button>
+                        )}
+                        {boardDone && done.map((r) => rr(r, true))}
+                      </>);
+                    })()}
                   </div>
                 </div>
               );
@@ -7194,7 +7205,7 @@ export default function App() {
               {channelGroups.map(({ channel, items }) => {
                 const ci = channelInfo[channel] || {};
                 return (
-                  <div key={channel} className="bg-white border border-stone-200 rounded-2xl p-4 shadow-sm"
+                  <div key={channel} className="bg-white border border-stone-200 rounded-xl px-4 py-2.5 shadow-sm"
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
                     <div className="flex items-start gap-2">
                       <button onClick={() => openChannel(channel)} title="このチャンネルの企画一覧を開く" className="flex items-start gap-2 min-w-0 flex-1 text-left group/cn">
@@ -7208,7 +7219,6 @@ export default function App() {
                             {ci.shareId && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 shrink-0">共有中</span>}
                             <span className="text-[11px] shrink-0 opacity-0 group-hover/cn:opacity-100 transition-opacity" style={{ color: theme.main }}>開く →</span>
                           </div>
-                          {(ci.concept || ci.target) && <div className="text-[11px] text-stone-500 mt-0.5 line-clamp-1">{ci.concept || ci.target}</div>}
                         </div>
                       </button>
                       <div className="flex gap-1 shrink-0">
@@ -7217,17 +7227,6 @@ export default function App() {
                           <button onClick={(e) => setChShareMenu({ channel, x: e.clientX, y: e.clientY })} disabled={chSharing} title="共有リンクを発行（見せる用／編集つきを選べます）" className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-50">共有</button>
                         )}
                       </div>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5 mt-2.5">
-                      {items.length === 0 && <span className="text-[11px] text-stone-300">案件がありません。「＋案件」から追加</span>}
-                      {items.slice(0, 6).map((it) => (
-                        <button key={it.id} onClick={() => switchProject(it.id)}
-                          className="text-[11px] font-medium text-stone-600 bg-stone-100 hover:bg-stone-200 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1 max-w-[200px]">
-                          {it.collab && <Icon name="user" className="w-3 h-3 shrink-0 text-stone-400" />}
-                          <span className="truncate">{it.name}</span>
-                        </button>
-                      ))}
-                      {items.length > 6 && <button onClick={() => openChannel(channel)} className="text-[11px] font-bold text-stone-400 hover:text-stone-600 px-2 py-1.5">他{items.length - 6}件 →</button>}
                     </div>
                   </div>
                 );
