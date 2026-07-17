@@ -5188,7 +5188,7 @@ export default function App() {
         onClick={() => setSidebarOpen(false)} />
 
       {/* ===== コンテンツ（サイドバー分シフト） ===== */}
-      <div className="pb-28" style={{ marginLeft: sidebarOpen && !isNarrow ? 292 : 0, transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
+      <div className="pb-28" style={{ marginLeft: (() => { try { if (window.self !== window.top) return 0; } catch (e) {} return sidebarOpen && !isNarrow ? 292 : 0; })(), transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
 
       {/* ===== ツールバー ===== */}
       <header className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
