@@ -243,6 +243,9 @@ const HEARING_TEMPLATE = () => ([
   ] },
 ]);
 
+/* 質問ウィザード（認識OS 質問13→密着台本の骨）。回答も生成した骨も案件データとして持つ */
+const newWizard = () => ({ meta: { performer: "", genre: "", shoot: "", length: "" }, answers: {}, scaffold: "", scaffoldAt: null });
+
 const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format = "documentary") => ({
   id: uid(),
   name,
@@ -262,6 +265,7 @@ const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format
   talk: format === "talk" ? newTalk() : null,
   plans: [],
   hearing: HEARING_TEMPLATE(),
+  wizard: newWizard(),
   assets: [],
   review: { versions: [], comments: [] },
   manuals: [],
@@ -331,6 +335,7 @@ const migrateProject = (p) => {
       ? { ...newTalk(), ...(p.talk || {}), toc: (p.talk && p.talk.toc && p.talk.toc.length) ? p.talk.toc : [""], body: (p.talk && p.talk.body && p.talk.body.length) ? p.talk.body : [newTalkBody()] }
       : (p.talk || null),
     hearing: (Array.isArray(p.hearing) && p.hearing.length) ? p.hearing : HEARING_TEMPLATE(),
+    wizard: { ...newWizard(), ...(p.wizard || {}), meta: { ...newWizard().meta, ...((p.wizard && p.wizard.meta) || {}) }, answers: (p.wizard && p.wizard.answers && typeof p.wizard.answers === "object") ? p.wizard.answers : {} },
     assets: assetsFromLegacy(p),
     review: { versions: Array.isArray(p.review && p.review.versions) ? p.review.versions : [], comments: Array.isArray(p.review && p.review.comments) ? p.review.comments : [] },
     manuals: Array.isArray(p.manuals) ? p.manuals : [],
@@ -1799,6 +1804,249 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
 }
 
 /* ---------- メイン ---------- */
+/* ============================================================
+   質問ウィザード — 認識OSの質問13に答えると密着台本の骨ができる
+   Stage1: Flip-LABの質問テンプレ（質問13）を1問ずつ
+   Stage2: 回答 → /api/wizard/scaffold（Opus）→ 台本の骨（markdown）
+   回答も骨も project.wizard に保存＝案件データとして永続化
+   ============================================================ */
+const wizEsc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const wizInline = (s) => wizEsc(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/`([^`]+)`/g, "<code>$1</code>");
+function wizParseQuestions(md) {
+  const out = [];
+  const blocks = String(md).split(/^##+\s+/m).slice(1);
+  for (const b of blocks) {
+    const lines = b.trim().split("\n");
+    const m = (lines[0] || "").trim().match(/^(Q\d+)\s*(.*)$/);
+    if (!m) continue;
+    out.push({ num: m[1], text: m[2] || lines[0], hint: lines.slice(1).join(" ").replace(/[（(）)]/g, "").trim() });
+  }
+  return out;
+}
+function wizMdHtml(md) {
+  const lines = String(md).split("\n");
+  let html = "", i = 0;
+  while (i < lines.length) {
+    const L = lines[i];
+    if (/^\s*\|/.test(L) && /^\s*\|[\s:|-]+\|?\s*$/.test(lines[i + 1] || "")) {
+      const heads = L.split("|").slice(1, -1).map((c) => wizInline(c.trim()));
+      i += 2;
+      let rows = "";
+      while (i < lines.length && /^\s*\|/.test(lines[i])) {
+        const cells = lines[i].split("|").slice(1, -1).map((c) => wizInline(c.trim()));
+        rows += '<tr' + (lines[i].includes("★") ? ' class="wiz-hot"' : "") + '>' + cells.map((c) => "<td>" + c + "</td>").join("") + "</tr>";
+        i++;
+      }
+      html += '<div class="wiz-tbl"><table><thead><tr>' + heads.map((h) => "<th>" + h + "</th>").join("") + "</tr></thead><tbody>" + rows + "</tbody></table></div>";
+      continue;
+    }
+    if (/^#{1,3}\s+/.test(L)) { const lv = L.match(/^(#{1,3})/)[1].length; const t = wizInline(L.replace(/^#{1,3}\s+/, "")); html += lv >= 3 ? "<h4>" + t + "</h4>" : "<h3>" + t + "</h3>"; i++; continue; }
+    if (/^\s*[-*]\s+/.test(L)) {
+      let items = "";
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { items += "<li>" + wizInline(lines[i].replace(/^\s*[-*]\s+/, "")) + "</li>"; i++; }
+      html += "<ul>" + items + "</ul>"; continue;
+    }
+    if (!L.trim()) { i++; continue; }
+    html += "<p>" + wizInline(L) + "</p>"; i++;
+  }
+  return html;
+}
+
+function WizardPane({ project, setProject, theme }) {
+  const wiz = project.wizard || newWizard();
+  const m = wiz.meta || {};
+  const ans = wiz.answers || {};
+  const [questions, setQuestions] = useState(null);
+  const [qErr, setQErr] = useState("");
+  const [qIdx, setQIdx] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [genErr, setGenErr] = useState("");
+  const [view, setView] = useState(wiz.scaffold ? "result" : "form");
+  const [copied, setCopied] = useState(false);
+  const taRef = useRef(null);
+
+  useEffect(() => {
+    let dead = false;
+    fetch(SHARE_API + "/api/wizard/questions")
+      .then((r) => r.json())
+      .then((d) => {
+        if (dead) return;
+        if (d && d.ok && d.template) { const qs = wizParseQuestions(d.template); if (qs.length) { setQuestions(qs); return; } }
+        setQErr((d && d.error) || "質問の読み込みに失敗しました");
+      })
+      .catch((e) => { if (!dead) setQErr(String((e && e.message) || e)); });
+    return () => { dead = true; };
+  }, []);
+  useEffect(() => { if (view === "form" && taRef.current) taRef.current.focus(); }, [qIdx, questions, view]);
+
+  const setMetaF = (k, v) => setProject((p) => { const w = p.wizard || newWizard(); return { ...p, wizard: { ...w, meta: { ...(w.meta || {}), [k]: v } } }; });
+  const setAns = (num, v) => setProject((p) => { const w = p.wizard || newWizard(); const a = { ...(w.answers || {}) }; if (v && v.trim()) a[num] = v; else delete a[num]; return { ...p, wizard: { ...w, answers: a } }; });
+
+  const total = questions ? questions.length : 13;
+  const answered = questions ? questions.filter((qq) => (ans[qq.num] || "").trim()).length : 0;
+  const q = questions ? questions[Math.min(qIdx, questions.length - 1)] : null;
+
+  const generate = async () => {
+    if (busy || !questions) return;
+    setBusy(true); setGenErr("");
+    try {
+      const answersText = questions.map((qq) => qq.num + "（" + qq.text + "）: " + ((ans[qq.num] || "").trim() || "【未回収】")).join("\n");
+      const res = await fetch(SHARE_API + "/api/wizard/scaffold", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: answersText, performer: m.performer || "", genre: m.genre || "", shootContext: m.shoot || "", targetLength: m.length || "", caseLabel: project.name || "" }),
+      });
+      const d = await res.json();
+      if (!d.ok || !d.scaffold) throw new Error(d.error || "生成に失敗しました");
+      setProject((p) => ({ ...p, wizard: { ...(p.wizard || newWizard()), scaffold: d.scaffold, scaffoldAt: Date.now() } }));
+      setView("result");
+    } catch (e) { setGenErr(String((e && e.message) || e)); }
+    setBusy(false);
+  };
+  const copyMd = async () => { try { await navigator.clipboard.writeText(wiz.scaffold || ""); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
+  const dlMd = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([wiz.scaffold || ""], { type: "text/markdown" }));
+    a.download = (project.name || "台本の骨") + "_骨.md";
+    a.click();
+  };
+
+  const genBtn = (label) => (
+    <button onClick={generate} disabled={busy || !questions}
+      className="text-[12px] font-bold px-5 py-2.5 rounded-lg text-white shadow-sm disabled:opacity-60 inline-flex items-center gap-2"
+      style={{ background: theme.accent }}>
+      {busy && <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+      {busy ? "生成中…（1〜2分そのまま）" : label}
+    </button>
+  );
+
+  return (
+    <div className="max-w-[980px] mx-auto px-1 sm:px-0 py-1 space-y-4" style={{ "--wiz": theme.accent }}>
+      <style>{`
+        .wiz-md h3{font-size:15px;font-weight:700;color:#292524;margin:22px 0 8px;padding-bottom:6px;border-bottom:2px solid #e7e5e4}
+        .wiz-md h3:first-child{margin-top:0}
+        .wiz-md h4{font-size:13px;font-weight:700;color:#44403c;margin:14px 0 6px}
+        .wiz-md p{font-size:13px;color:#44403c;margin:6px 0;line-height:1.85}
+        .wiz-md ul{padding-left:20px;margin:6px 0;list-style:disc}
+        .wiz-md li{font-size:13px;color:#44403c;margin:3px 0;line-height:1.75}
+        .wiz-md strong{color:var(--wiz)}
+        .wiz-md code{background:#f5f5f4;border-radius:4px;padding:1px 5px;font-size:12px}
+        .wiz-tbl{overflow-x:auto;border:1px solid #e7e5e4;border-radius:12px;margin:10px 0}
+        .wiz-tbl table{border-collapse:collapse;width:100%;min-width:780px;font-size:12px}
+        .wiz-tbl th{background:#1c1917;color:#fff;padding:8px 10px;text-align:left;white-space:nowrap;font-weight:600}
+        .wiz-tbl td{border-top:1px solid #f0efee;padding:8px 10px;vertical-align:top;line-height:1.7;color:#44403c}
+        .wiz-tbl tr:nth-child(even) td{background:#fafaf9}
+        .wiz-tbl tr.wiz-hot td{background:color-mix(in srgb, var(--wiz) 8%, #fff)}
+      `}</style>
+
+      {/* リード文＋ビュー切替 */}
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <p className="text-[12px] text-stone-500">認識OSの<span className="font-bold">13の質問</span>に順に答えると、視聴維持の脳科学設計に沿った<span className="font-bold">密着台本の骨</span>（シーン割り・現場で投げる質問・訴求の置き場所）ができます。ヒアリングの内容を横に置きながら埋めるのがおすすめ。</p>
+        {wiz.scaffold && (
+          <div className="shrink-0 inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
+            {[["form", "回答"], ["result", "台本の骨"]].map(([k, l]) => (
+              <button key={k} onClick={() => setView(k)}
+                className={"text-[11px] font-bold px-3 py-1.5 rounded-md transition-colors " + (view === k ? "text-white shadow-sm" : "text-stone-500 hover:text-stone-700")}
+                style={view === k ? { background: theme.accent } : {}}>{l}</button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {view === "form" && (
+        <>
+          {/* 案件の前提 */}
+          <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
+            <h2 className="text-[13px] font-bold text-stone-800 mb-3">案件の前提<span className="ml-2 text-[10px] font-normal text-stone-400">埋めるほど骨の精度が上がります（空欄でもOK）</span></h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[["performer", "演者・対象", "例: 在宅緩和ケア医（終末期の患者を自宅で看取る医師）"], ["genre", "ジャンル・業種", "例: 終末医療ドキュメンタリー"], ["shoot", "撮影想定", "例: 往診に1日密着（出発→患者宅→カンファ→帰宅）"], ["length", "想定尺", "例: 23分前後"]].map(([k, label, ph]) => (
+                <label key={k} className="block"><span className="text-[11px] font-bold text-stone-500">{label}</span>
+                  <input value={m[k] || ""} onChange={(e) => setMetaF(k, e.target.value)} placeholder={ph}
+                    className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" /></label>
+              ))}
+            </div>
+          </div>
+
+          {/* 質問エリア */}
+          {qErr ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] px-4 py-4">{qErr}<button onClick={() => { setQErr(""); setQuestions(null); location.reload(); }} className="ml-3 underline font-bold">再読み込み</button></div>
+          ) : !questions ? (
+            <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center text-[12px] text-stone-400">
+              <span className="inline-block w-4 h-4 border-2 border-stone-300 border-t-transparent rounded-full animate-spin align-middle mr-2" />質問を読み込み中…
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-[230px_1fr] gap-4 items-start">
+              {/* 左：質問ナビ */}
+              <div className="flex md:flex-col gap-1.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
+                {questions.map((qq, i) => {
+                  const done = !!(ans[qq.num] || "").trim(); const cur = i === qIdx;
+                  return (
+                    <button key={qq.num} onClick={() => setQIdx(i)}
+                      className={"shrink-0 md:w-full text-left rounded-lg px-2.5 py-1.5 text-[11px] font-bold border transition-colors " + (cur ? "bg-white shadow-sm" : "border-transparent hover:bg-white " + (done ? "text-stone-500" : "text-stone-400"))}
+                      style={cur ? { borderColor: theme.accent, color: theme.accent } : {}}>
+                      <span className="inline-flex items-center gap-1.5 max-w-full">
+                        <span className="shrink-0 inline-block w-1.5 h-1.5 rounded-full" style={{ background: done ? theme.accent : "#d6d3d1" }} />
+                        <span className="shrink-0">{qq.num}</span>
+                        <span className="hidden md:inline font-normal text-stone-400 truncate">{qq.text.slice(0, 12)}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {/* 右：現在の質問 */}
+              <div className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6">
+                <div className="h-1 rounded-full bg-stone-100 mb-5 overflow-hidden"><div className="h-full rounded-full transition-all duration-300" style={{ width: (answered / total * 100) + "%", background: theme.accent }} /></div>
+                <div className="text-[11px] font-bold tracking-widest" style={{ color: theme.accent }}>{q.num}<span className="text-stone-300 font-normal"> / {total}</span></div>
+                <div className="text-[17px] font-bold text-stone-800 mt-1.5 leading-relaxed">{q.text}</div>
+                {q.hint && <div className="mt-2.5 text-[11px] text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-3 py-2">狙い：{q.hint}</div>}
+                <textarea ref={taRef} value={ans[q.num] || ""} onChange={(e) => setAns(q.num, e.target.value)}
+                  onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); if (qIdx < total - 1) setQIdx(qIdx + 1); } }}
+                  placeholder="思いつくまま書けばOK。空欄のままなら【未回収】として骨に載り、現場で埋める質問リストになります"
+                  className="mt-4 w-full min-h-[130px] text-[13px] leading-relaxed border border-stone-200 rounded-xl px-3.5 py-3 focus:outline-none focus:border-stone-400 resize-y" />
+                <div className="flex items-center justify-between gap-2 mt-4">
+                  <button onClick={() => setQIdx(Math.max(0, qIdx - 1))} disabled={qIdx === 0}
+                    className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 disabled:opacity-40">← 前へ</button>
+                  <span className="text-[10px] text-stone-300 hidden sm:inline">⌘+Enter で次へ</span>
+                  {qIdx < total - 1
+                    ? <button onClick={() => setQIdx(qIdx + 1)} className="text-[12px] font-bold px-5 py-2 rounded-lg text-white shadow-sm" style={{ background: theme.accent }}>次へ →</button>
+                    : genBtn("台本の骨を生成 →")}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 生成バー */}
+          {questions && (
+            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-[12px] text-stone-500"><span className="font-bold text-stone-700">{answered}</span> / {total} 問 回答済み{answered < total && <span className="text-stone-400">　未回答は【未回収】＝現場で埋める質問リストになります</span>}</div>
+              {genBtn("台本の骨を生成する")}
+            </div>
+          )}
+          {genErr && <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] px-4 py-3">{genErr}</div>}
+        </>
+      )}
+
+      {view === "result" && wiz.scaffold && (
+        <div className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-7">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-5">
+            <div>
+              <div className="text-[15px] font-bold text-stone-800">密着台本の骨</div>
+              {wiz.scaffoldAt && <div className="text-[10px] text-stone-400 mt-0.5">{new Date(wiz.scaffoldAt).toLocaleString("ja-JP")} 生成・回答を直して再生成できます</div>}
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button onClick={copyMd} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">{copied ? "コピーした" : "コピー"}</button>
+              <button onClick={dlMd} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5"><Icon name="download" className="w-3.5 h-3.5" />.md</button>
+              <button onClick={() => setView("form")} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">回答を編集</button>
+              {genBtn("再生成")}
+            </div>
+          </div>
+          {genErr && <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] px-4 py-3 mb-4">{genErr}</div>}
+          <div className="wiz-md" dangerouslySetInnerHTML={{ __html: wizMdHtml(wiz.scaffold) }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [index, setIndex] = useState([]);       // [{id,name,createdAt}]
   const [activeId, setActiveId] = useState(null);
@@ -3475,7 +3723,7 @@ export default function App() {
     setShareModal({ id, url, updated: !!project.shareId, handoff: h, text });
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
   };
-  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル" };
+  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", wizard: "質問ウィザード", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル" };
   /* タブ共有バー（全タブ共通・右上に固定表示）のボタン文言 */
   const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー" };
   const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept"]; // 受け渡しで選べるタブ
@@ -5054,7 +5302,7 @@ export default function App() {
         </div>
         {/* タブ（アイコン＋短ラベルで1行に収める） */}
         <div className="max-w-[1500px] mx-auto px-2 sm:px-4 flex gap-1">
-          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]].map(([k, ic, label, short]) => (
+          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"], ["wizard", "sparkle", "質問ウィザード", "質問"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]].map(([k, ic, label, short]) => (
             <button key={k} onClick={() => setTab(k)}
               className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap px-1 sm:px-4 py-2 sm:py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
@@ -6154,6 +6402,9 @@ export default function App() {
             <button onClick={addHearingSection} className="w-full rounded-2xl border-2 border-dashed border-stone-200 hover:border-stone-300 text-[12px] font-bold text-stone-400 hover:text-stone-600 py-3 inline-flex items-center justify-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
           </div>
         )}
+
+        {/* ================= 質問ウィザードタブ（質問13→台本の骨） ================= */}
+        {tab === "wizard" && <WizardPane project={project} setProject={setProject} theme={theme} />}
 
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (

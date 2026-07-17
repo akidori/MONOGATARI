@@ -171,16 +171,17 @@ export default {
         }
       }
 
-      // ── 質問ウィザード（wizard.html）中継 ──
-      // Stage1: GET /api/wizard/questions?domain=台本設計 → LABの質問テンプレ（質問13）
+      // ── 質問ウィザード（本体アプリの質問タブ）中継 ──
+      // Stage1: GET /api/wizard/questions → LABの質問テンプレ（質問13）
       // Stage2: POST /api/wizard/scaffold {answers, performer, genre, ...} → 台本の骨を生成
-      // 認証: 本体アプリのログインセッション必須（lab-manualと同じ相乗り・新規認証は作らない）。
+      // 認証: 本体のAI系(assist/chat等)と同じ無認証+IPレート制限の流儀。
+      // domainはサーバ側で台本設計に固定＝任意domain指定でLAB側の新規Opus生成を焼却されない。
       // scaffoldはOpus生成で重い＝rateLimitを別バケツできつめに。
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "questions") {
-        if (!(await requireUser(request, env))) return json({ ok: false, error: "unauthorized" }, 401);
+        const wip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
+        if (!(await rateLimit(env, wip, "ai", 40, 60))) return json({ ok: false, error: "リクエストが多すぎます。1分ほど待ってください。" }, 429);
         if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続" }, 502);
-        const domain = url.searchParams.get("domain") || "台本設計";
-        const qs = "domain=" + encodeURIComponent(domain);
+        const qs = "domain=" + encodeURIComponent("台本設計");
         const labReq = new Request("https://flip-lens/api/questions?" + qs, { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } });
         try {
           const r = env.LAB ? await env.LAB.fetch(labReq)
@@ -190,8 +191,8 @@ export default {
         } catch (e) { return json({ ok: false, error: "LAB取得失敗: " + e.message }, 502); }
       }
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "scaffold") {
-        if (!(await requireUser(request, env))) return json({ ok: false, error: "unauthorized" }, 401);
-        if (!(await rateLimit(env, ip, "wizard", 6, 3600))) return json({ ok: false, error: "生成リクエストが多すぎます。1時間ほど待ってください。" }, 429);
+        const wip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
+        if (!(await rateLimit(env, wip, "wizard", 6, 3600))) return json({ ok: false, error: "生成リクエストが多すぎます。1時間ほど待ってください。" }, 429);
         if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続" }, 502);
         const b = await request.json().catch(() => ({}));
         if (!b.answers || !String(b.answers).trim()) return json({ ok: false, error: "answers必須" }, 400);
