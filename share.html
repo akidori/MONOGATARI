@@ -805,8 +805,9 @@ function videoOptions(p){
   vers.forEach((v)=>{ if(v.trashedAt) return; /* ゴミ箱入りの版は先方に見せない */ if(v.uid || v.url || v.key) out.push({ id: v.uid || v.key || v.url, label: v.label + (v.name && v.name!==v.label ? " "+v.name : ""), video: { type: v.type, key: v.key, url: v.url, uid: v.uid, hls: v.hls, ready: v.ready } }); });
   if(p.video && (p.video.url||p.video.key)) out.push({ id: vidKey(p.video), label:"案件全体", video:p.video });
   (p.plans||[]).forEach((pl,i)=>{ if(pl.video && (pl.video.url||pl.video.key)) out.push({ id: vidKey(pl.video), label:(pl.title||("企画"+(i+1))).slice(0,24), video:pl.video }); });
-  // 編集者が共有リンクから上げた動画（role:review もしくは動画mime/拡張子）も確認対象に合流。AKの取り込み待ちなく即見える。
-  const isVid = (u)=> u && u.key && (u.role==="review" || /^video\//.test(u.mime||"") || /\.(mp4|mov|m4v|webm)$/i.test(u.name||""));
+  // 編集者が「動画確認タブのアップ枠」から上げた動画（role:review）だけ確認対象に合流。
+  // mime/拡張子での合流は禁止：ファイルタブに上げた撮影素材(mp4)が動画確認に湧く誤爆になる。
+  const isVid = (u)=> u && u.key && u.role==="review";
   (UPLOADS||[]).filter(isVid).forEach((u)=>{ const id="up:"+u.key; if(out.some(o=>o.id===id)) return; out.push({ id, label:"編集者アップ"+(u.name?"："+u.name.slice(0,20):""), up:true, video:{ type:"r2", key:u.key } }); });
   return out;
 }
