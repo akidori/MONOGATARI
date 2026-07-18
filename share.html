@@ -252,11 +252,19 @@ function paneScript(p, accent, main){
   const parseClock = (str)=>{ const m=(str||"").trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/); return m ? (+m[1])*3600+(+m[2])*60+(+(m[3]||0)) : null; };
   const fmtClock = (sec)=>{ if(sec==null) return ""; const s=((Math.round(sec)%86400)+86400)%86400; return Math.floor(s/3600)+":"+String(Math.floor((s%3600)/60)).padStart(2,"0"); };
   const nChars = (s)=>(s||"").replace(/\s/g,"").length;
-  let sceneNo = 0, rowsHtml = "";
+  const dayD = (r)=>{ const d=Number(r&&r.day); return Number.isFinite(d)&&d>=1?Math.floor(d):1; };
+  const maxDay = (p.rows||[]).reduce((a,r)=> r.kind==="location" ? Math.max(a, dayD(r)) : a, 1);
+  let sceneNo = 0, rowsHtml = "", prevDay = null;
   let acc = 0, totalTarget = 0, totalChars = 0, anchorClock = null, anchorTcIn = 0;
   (p.rows||[]).forEach(r => {
     if(r.tc != null && r.tc !== "" && !isNaN(Number(r.tc))) acc = Number(r.tc);
     if(r.kind === "location"){
+      const d = dayD(r);
+      if(d !== prevDay){
+        if(maxDay > 1) rowsHtml += `<div class="mt-6 mb-1 flex items-center gap-2"><span class="mono text-[11px] font-bold px-2.5 py-1 rounded-md text-white" style="background:var(--accent);letter-spacing:.2em">${d}日目</span><div class="flex-1" style="height:1px;background:var(--accent);opacity:.35"></div></div>`;
+        if(prevDay !== null) anchorClock = null; /* 日をまたいだら実時刻の積み上げをリセット */
+      }
+      prevDay = d;
       const lc = parseClock(r.time);
       if(lc != null){ anchorClock = lc; anchorTcIn = acc; }
       rowsHtml += `<div class="mt-4 mb-2 rounded-t-xl overflow-hidden flex items-stretch" style="background:${main};color:#fff">
@@ -323,6 +331,10 @@ function paneKouban(p){
   if(!blocks.length) return '<div class="text-stone-400 text-sm py-8 text-center">香盤表はまだありません。</div>';
   const last = blocks.length - 1;
   const yen = (n) => "¥" + Number(n).toLocaleString("ja-JP");
+  /* 撮影日（1=1日目）。loc の無いブロックは直前の日を引き継ぐ */
+  const dayD = (r)=>{ const d=Number(r&&r.day); return Number.isFinite(d)&&d>=1?Math.floor(d):1; };
+  const dArr = []; { let cd = 1; blocks.forEach((b,i)=>{ if(b.loc) cd = dayD(b.loc); dArr[i] = cd; }); }
+  const maxDay = dArr.reduce((a,d)=>Math.max(a,d),1);
   /* 連続ロケが同じ場所なら移動なし＝表示も合計も対象外 */
   const normPl = (s) => (s||"").replace(/[\s　]/g,"");
   const samePlace = (a,b) => {
@@ -332,13 +344,20 @@ function paneKouban(p){
     const x=normPl(a.address), y=normPl(b.address);
     return !!x && x===y;
   };
-  const totalTravel = blocks.reduce((a, x, i) => a + (i>0 && x.loc && !samePlace(blocks[i-1].loc, x.loc) ? (Number(x.loc.travelCost) || 0) : 0), 0);
+  const totalTravel = blocks.reduce((a, x, i) => a + (i>0 && dArr[i]===dArr[i-1] && x.loc && !samePlace(blocks[i-1].loc, x.loc) ? (Number(x.loc.travelCost) || 0) : 0), 0);
+  let noInDay = 0;
   blocks.forEach((b, i) => {
     const loc = b.loc;
     const peak = !!(loc && loc.peak);
-    /* 前ロケ→このロケの移動ストリップ（区間・手段・交通費・経路リンク） */
+    const dayStart = i === 0 || dArr[i] !== dArr[i-1];
+    if(dayStart) noInDay = 0;
+    noInDay++;
+    if(maxDay > 1 && dayStart){
+      html += `<div class="mb-3 ${i>0?"mt-2":""} flex items-center gap-2"><span class="mono text-[11px] font-bold px-2.5 py-1 rounded-md text-white" style="background:var(--accent);letter-spacing:.2em">${dArr[i]}日目</span><div class="flex-1" style="height:1px;background:var(--accent);opacity:.35"></div></div>`;
+    }
+    /* 前ロケ→このロケの移動ストリップ（区間・手段・交通費・経路リンク）。日をまたぐ区間は出さない */
     let travelHtml = "";
-    if(i > 0 && loc && !samePlace(blocks[i-1].loc, loc) && (loc.travelBy || (loc.travelCost != null && loc.travelCost !== ""))){
+    if(i > 0 && !dayStart && loc && !samePlace(blocks[i-1].loc, loc) && (loc.travelBy || (loc.travelCost != null && loc.travelCost !== ""))){
       const prev = blocks[i-1].loc;
       const from = (prev && (prev.label||"").trim()) || "前のロケ";
       const to = (loc.label||"").trim() || "このロケ";
@@ -363,8 +382,8 @@ function paneKouban(p){
     html += `<div class="flex gap-2.5 sm:gap-3">
       <div class="flex flex-col items-center w-[56px] sm:w-[64px] shrink-0 pt-0.5">
         <div class="w-full text-center text-[14px] font-bold mono leading-tight" style="color:var(--main)">${esc(loc&&loc.time||"--:--")}</div>
-        <div class="w-6 h-6 mt-1 rounded-full grid place-items-center text-[11px] font-bold text-white mono shadow-sm" style="background:var(--accent)">${i+1}</div>
-        ${i<last?`<div class="flex-1 w-0.5 my-1 rounded min-h-[20px]" style="background:var(--main);opacity:.2"></div>`:""}
+        <div class="w-6 h-6 mt-1 rounded-full grid place-items-center text-[11px] font-bold text-white mono shadow-sm" style="background:var(--accent)">${noInDay}</div>
+        ${i<last&&dArr[i+1]===dArr[i]?`<div class="flex-1 w-0.5 my-1 rounded min-h-[20px]" style="background:var(--main);opacity:.2"></div>`:""}
       </div>
       <div class="flex-1 min-w-0 mb-3">
       ${travelHtml}

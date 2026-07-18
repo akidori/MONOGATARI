@@ -17,6 +17,8 @@ const TYPE_KEYS = Object.keys(SECTION_TYPES);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const newScene = (type = "解説系", label = "") => ({ id: uid(), kind: "scene", label, type, sec: null, tc: null, script: "" });
 const newLocation = (name = "") => ({ id: uid(), kind: "location", label: name, address: "", time: "", note: "", travelBy: "", travelCost: null });
+/* ロケの撮影日（1=1日目）。未設定は1日目扱い（既存データ互換） */
+const dayOf = (r) => { const d = Number(r && r.day); return Number.isFinite(d) && d >= 1 ? Math.floor(d) : 1; };
 
 const templateRows = () => [
   newLocation("ご自宅（朝）"),
@@ -564,7 +566,7 @@ const normalizeImport = (obj) => {
     timeFormat: obj.timeFormat === "jp" ? "jp" : "tc",
     rows: (obj.rows || []).map((r) =>
       r.kind === "location"
-        ? { id: uid(), kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", travelBy: r.travelBy || "", travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null }
+        ? { id: uid(), kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", travelBy: r.travelBy || "", travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null, ...(Number(r.day) >= 1 ? { day: Math.floor(Number(r.day)) } : {}) }
         : { id: uid(), kind: "scene", label: r.label || "", type: TYPE_KEYS.includes(r.type) ? r.type : (typeFromText(r.type) || "解説系"), sec: r.sec === 0 || r.sec ? Number(r.sec) : null, script: r.script || "" }
     ),
   };
@@ -587,6 +589,7 @@ const parseImportText = (text) => {
   const meta = { shootDate: "", place: "", titles: ["", "", ""], thumbs: ["", "", ""], highlight: "" };
   const rows = [];
   let inTable = false;
+  let curDay = 1; // 「2日目」区切り行以降のロケに付ける撮影日
   let cols = null; // ヘッダーから割り出した列位置 {time,loc,label,type,sec,script}
   const trimAt = (cells, i) => (i >= 0 && cells[i] != null ? String(cells[i]) : "");
   for (const cells of table) {
@@ -625,7 +628,10 @@ const parseImportText = (text) => {
     // ロケーション行：種別が無く名前がある（col0=時刻 のスプシ形式にも対応）
     const locName = ((cols && cols.loc >= 0 ? trimAt(cells, cols.loc) : c1) || "").trim();
     const locTime = ((cols && cols.time >= 0 ? trimAt(cells, cols.time) : c0) || "").trim();
-    if (inTable && locName) { rows.push({ kind: "location", label: locName, time: /\d/.test(locTime) ? locTime : "" }); continue; }
+    // 「2日目」だけの行 = 撮影日の区切りマーカー（以降のロケに day を付ける）
+    const dm = locName.match(/^(\d+)日目$/);
+    if (inTable && dm) { curDay = Number(dm[1]) || 1; continue; }
+    if (inTable && locName) { rows.push({ kind: "location", label: locName, time: /\d/.test(locTime) ? locTime : "", day: curDay }); continue; }
   }
   if (!rows.length) return null;
   return normalizeImport({ meta, rows });
@@ -2903,6 +2909,7 @@ export default function App() {
         if (!prev) return r;
         const out = { ...r };
         if (prev.done) out.done = true;
+        if (out.day == null && prev.day != null) out.day = prev.day;
         if ((prev.address || "").trim() === (r.address || "").trim() && (prev.placeId || prev.lat != null)) {
           out.placeId = prev.placeId || ""; out.lat = prev.lat ?? null; out.lng = prev.lng ?? null;
         }
@@ -3203,6 +3210,7 @@ export default function App() {
         if (!prev) return r;
         const out = { ...r };
         if (prev.done) out.done = true;
+        if (out.day == null && prev.day != null) out.day = prev.day;
         if ((prev.address || "").trim() === (r.address || "").trim() && (prev.placeId || prev.lat != null)) {
           out.placeId = prev.placeId || ""; out.lat = prev.lat ?? null; out.lng = prev.lng ?? null;
         }
@@ -4776,7 +4784,7 @@ export default function App() {
     return next.flatMap((b) => b.items);
   });
 
-  const { tcs, clocks, totalEst, totalTarget, totalChars, totalTravel, locations, sceneNos, sceneLocDone } = useMemo(() => {
+  const { tcs, clocks, totalEst, totalTarget, totalChars, totalTravel, locations, sceneNos, sceneLocDone, dayStarts, maxDay } = useMemo(() => {
     let acc = 0, tt = 0, tc = 0, no = 0;
     const tcs = {};
     const clocks = {}; // 行id → 実時計の経過秒（香盤表のロケ到着時刻＋尺の積み上げ）
@@ -4787,6 +4795,9 @@ export default function App() {
     let anchorClock = null; // 直近で時刻が入ったロケの実時計（秒）
     let anchorTcIn = 0;     // そのロケ時点の尺（秒）
     const sceneLocDone = {}; // シーンid → 所属ロケが撮影完了か
+    const dayStarts = {};    // ロケid → 撮影日（日が切り替わる先頭ロケのみ）
+    let prevLocDay = null;
+    let noInDay = 0;         // その撮影日の中でのロケ通し番号
     const rows = (project && project.rows) ? project.rows : [];
     const rate = (project && project.rate) ? project.rate : 5;
     for (const r of rows) {
@@ -4794,7 +4805,15 @@ export default function App() {
       if (r.tc != null && r.tc !== "" && !isNaN(Number(r.tc))) acc = Number(r.tc);
       tcs[r.id] = acc;
       if (r.kind === "location") {
-        cur = { ...r, scenes: [], dur: 0, secSum: 0, tcIn: acc };
+        const d = dayOf(r);
+        if (prevLocDay === null || d !== prevLocDay) {
+          dayStarts[r.id] = d;
+          noInDay = 0;
+          if (prevLocDay !== null) anchorClock = null; // 日をまたいだら実時刻の積み上げをリセット
+        }
+        prevLocDay = d;
+        noInDay += 1;
+        cur = { ...r, scenes: [], dur: 0, secSum: 0, tcIn: acc, dayNo: d, noInDay };
         curDone = !!r.done;
         locations.push(cur);
         // このロケに到着時刻が入っていれば、以降の実時刻アンカーを更新
@@ -4813,10 +4832,34 @@ export default function App() {
       // 実時刻＝アンカーのロケ到着時刻＋（その行までの尺 − アンカー時点の尺）
       if (anchorClock != null) clocks[r.id] = anchorClock + (tcs[r.id] - anchorTcIn);
     }
-    // 交通費合計：先頭ロケと「前ロケと同じ場所」の区間は移動が存在しないので除外
-    const totalTravel = locations.reduce((a, l, i) => a + (i > 0 && !samePlace(locations[i - 1], l) ? (Number(l.travelCost) || 0) : 0), 0);
-    return { tcs, clocks, totalEst: acc, totalTarget: tt, totalChars: tc, totalTravel, locations, sceneNos, sceneLocDone };
+    // 交通費合計：先頭ロケ・「前ロケと同じ場所」・日をまたぐ区間は移動が存在しないので除外
+    const totalTravel = locations.reduce((a, l, i) => a + (i > 0 && locations[i - 1].dayNo === l.dayNo && !samePlace(locations[i - 1], l) ? (Number(l.travelCost) || 0) : 0), 0);
+    const maxDay = locations.reduce((a, l) => Math.max(a, l.dayNo || 1), 1);
+    return { tcs, clocks, totalEst: acc, totalTarget: tt, totalChars: tc, totalTravel, locations, sceneNos, sceneLocDone, dayStarts, maxDay };
   }, [project]);
+
+  /* ロケ見出しの撮影日セレクタ（1日目/2日目…）。dark=濃色ヘッダー上に置く時 */
+  const dayPickerEl = (r, dark) => (
+    <select
+      value={dayOf(r)}
+      onChange={(e) => updateRow(r.id, { day: Number(e.target.value) })}
+      onClick={(e) => e.stopPropagation()}
+      title="このロケの撮影日。日を分けると構成台本・香盤表が1日目/2日目で区切られる（時刻の積み上げ・移動も日ごとにリセット）"
+      className={"shrink-0 self-center rounded-md text-[10px] font-bold px-1.5 py-1 appearance-none cursor-pointer focus:outline-none text-center " + (dark ? "bg-white/10 hover:bg-white/20" : "bg-stone-100 hover:bg-stone-200 text-stone-600")}
+      style={dark ? { color: mainText, fontFamily: mono, opacity: dayOf(r) > 1 || maxDay > 1 ? 1 : 0.55 } : { fontFamily: mono }}>
+      {Array.from({ length: Math.min(9, Math.max(2, maxDay + 1)) }, (_, i) => i + 1).map((d) => (
+        <option key={d} value={d} style={{ color: "#1A1A1A" }}>{d}日目</option>
+      ))}
+    </select>
+  );
+
+  /* 日の区切りバナー（複数日のときだけ台本・香盤表に出す） */
+  const dayBannerEl = (d) => (
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] font-bold tracking-[0.2em] px-2.5 py-1 rounded-md whitespace-nowrap" style={{ background: theme.accent, color: accentText, fontFamily: mono }}>{d}日目</span>
+      <div className="flex-1 h-px" style={{ background: theme.accent, opacity: 0.35 }} />
+    </div>
+  );
 
   /* ---------- TSV書き出し ---------- */
   /* トーク系台本をプレーンテキストでコピー */
@@ -4849,8 +4892,13 @@ export default function App() {
     lines.push("");
     lines.push(["時間", "ロケーション", "内容", "シーン", "秒数", "所要時間", "文字数", "原稿"].join("\t"));
     let acc = 0;
+    let prevDay = null;
     for (const r of project.rows) {
       if (r.kind === "location") {
+        // 複数日撮影のときは日の区切り行を入れる（取り込み時に day として復元される）
+        const d = dayOf(r);
+        if (maxDay > 1 && d !== prevDay) lines.push(["", d + "日目", "", "", "", "", "", ""].join("\t"));
+        prevDay = d;
         lines.push(["", esc(r.label), "", "", "", "", "", ""].join("\t"));
       } else {
         const t = sectionOf(r.type);
@@ -4873,12 +4921,14 @@ export default function App() {
       const v = (s || "").toString();
       return /[\t\n"]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
     };
-    const lines = [["順番", "予定時刻", "ロケーション", "住所", "シーン数", "想定尺", "移動手段", "交通費", "メモ"].join("\t")];
+    const multi = maxDay > 1;
+    const lines = [[...(multi ? ["日"] : []), "順番", "予定時刻", "ロケーション", "住所", "シーン数", "想定尺", "移動手段", "交通費", "メモ"].join("\t")];
     locations.forEach((loc, i) => {
-      const noMove = i === 0 || samePlace(locations[i - 1], loc);
-      lines.push([i + 1, esc(loc.time), esc(loc.label), esc(loc.address), loc.scenes.length, fmtJP(loc.dur), noMove ? (i === 0 ? "" : "（同じ場所）") : esc(loc.travelBy), noMove || loc.travelCost == null ? "" : loc.travelCost, esc(loc.note)].join("\t"));
+      const dayStart = i === 0 || dayStarts[loc.id] != null; // 日の先頭ロケ＝移動区間なし
+      const noMove = dayStart || samePlace(locations[i - 1], loc);
+      lines.push([...(multi ? [loc.dayNo + "日目"] : []), multi ? loc.noInDay : i + 1, esc(loc.time), esc(loc.label), esc(loc.address), loc.scenes.length, fmtJP(loc.dur), noMove ? (dayStart ? "" : "（同じ場所）") : esc(loc.travelBy), noMove || loc.travelCost == null ? "" : loc.travelCost, esc(loc.note)].join("\t"));
     });
-    if (totalTravel > 0) lines.push(["", "", "", "", "", "", "合計", totalTravel, ""].join("\t"));
+    if (totalTravel > 0) lines.push([...(multi ? [""] : []), "", "", "", "", "", "", "合計", totalTravel, ""].join("\t"));
     try {
       await navigator.clipboard.writeText(lines.join("\n"));
       showToast("香盤表をコピーしました");
@@ -5879,7 +5929,14 @@ export default function App() {
                   {project.rows.map((r, idx) => {
                     if (r.kind === "location") {
                       return (
-                        <tr key={r.id} id={"row-" + r.id} {...dropZoneProps(idx)}
+                        <React.Fragment key={r.id}>
+                        {maxDay > 1 && dayStarts[r.id] != null && (
+                          <tr>
+                            <td colSpan={6} className="pt-4 pb-1 px-1">{dayBannerEl(dayStarts[r.id])}</td>
+                            {!isNarrow && <td className="pt-4 pb-1" />}
+                          </tr>
+                        )}
+                        <tr id={"row-" + r.id} {...dropZoneProps(idx)}
                           onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
                           onPointerEnter={() => paintSelectTo(idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "location", x: e.clientX, y: e.clientY }); }}
@@ -5898,6 +5955,7 @@ export default function App() {
                                 className="flex-1 bg-transparent text-[13px] font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
                                 style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                               />
+                              {dayPickerEl(r, true)}
                               <input
                                 type="time"
                                 value={r.time || ""}
@@ -5929,6 +5987,7 @@ export default function App() {
                           </td>
                           {!isNarrow && <td className="pt-2 align-middle" />}
                         </tr>
+                        </React.Fragment>
                       );
                     }
 
@@ -6050,7 +6109,11 @@ export default function App() {
               {project.rows.map((r, idx) => {
                 if (r.kind === "location") {
                   return (
-                    <div key={r.id} id={"row-" + r.id}
+                    <React.Fragment key={r.id}>
+                    {maxDay > 1 && dayStarts[r.id] != null && (
+                      <div className="mt-4 mb-0.5">{dayBannerEl(dayStarts[r.id])}</div>
+                    )}
+                    <div id={"row-" + r.id}
                       className="flex items-stretch overflow-hidden rounded-lg mt-3 mb-1.5 shadow-sm"
                       style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1, ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
                       <div className="w-1.5 shrink-0" style={{ background: stripe }} />
@@ -6061,6 +6124,7 @@ export default function App() {
                         className="flex-1 min-w-0 bg-transparent text-[13px] font-bold tracking-[0.06em] px-2.5 py-2 focus:outline-none"
                         style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                       />
+                      {dayPickerEl(r, true)}
                       <input
                         type="time"
                         value={r.time || ""}
@@ -6082,6 +6146,7 @@ export default function App() {
                         </span>
                       ); })()}
                     </div>
+                    </React.Fragment>
                   );
                 }
 
@@ -6171,7 +6236,7 @@ export default function App() {
             )}
 
             <div className="mt-4 flex flex-wrap gap-2 items-center">
-              <button onClick={() => setRows((rows) => [...rows, newLocation("")])}
+              <button onClick={() => setRows((rows) => { const lastLoc = [...rows].reverse().find((x) => x.kind === "location"); const d = lastLoc ? dayOf(lastLoc) : 1; return [...rows, { ...newLocation(""), ...(d > 1 ? { day: d } : {}) }]; })}
                 className="text-xs font-bold px-4 py-2 rounded-full shadow-sm hover:opacity-90 inline-flex items-center gap-1"
                 style={{ background: theme.main, color: mainText }}>
                 <Icon name="plus" className="w-3.5 h-3.5" /> ロケーション
@@ -6192,7 +6257,7 @@ export default function App() {
             </div>
 
             <p className="mt-3 text-[11px] text-stone-400 leading-relaxed">
-              原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の⋮⋮をドラッグで移動・左の✓で撮影完了（グレーアウト）　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
+              原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　ロケ見出しの「1日目」で撮影日を割り当て（2日目にすると台本・香盤表が日別に区切られ、時刻・移動も日ごとにリセット）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の⋮⋮をドラッグで移動・左の✓で撮影完了（グレーアウト）　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
             </p>
           </>
         )}
@@ -6207,7 +6272,7 @@ export default function App() {
                   <h2 className="text-[12px] font-bold tracking-wider text-stone-600">香盤表 — 1日の流れ</h2>
                 </div>
                 <div className="text-[11px] text-stone-400" style={{ fontFamily: mono }}>
-                  {m.shootDate || "撮影日未設定"}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}・シーン尺 {fmt(totalTarget)}{totalTravel > 0 && <>・交通費 ¥{totalTravel.toLocaleString()}</>}
+                  {m.shootDate || "撮影日未設定"}{maxDay > 1 && <>・{maxDay}日撮影</>}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}・シーン尺 {fmt(totalTarget)}{totalTravel > 0 && <>・交通費 ¥{totalTravel.toLocaleString()}</>}
                 </div>
               </div>
 
@@ -6217,7 +6282,11 @@ export default function App() {
                 )}
 
                 {locations.map((loc, i) => (
-                  <div key={loc.id} className="relative flex gap-2.5 sm:gap-4 group/loc">
+                  <React.Fragment key={loc.id}>
+                  {maxDay > 1 && dayStarts[loc.id] != null && (
+                    <div className={"mb-3 " + (i > 0 ? "mt-2" : "")}>{dayBannerEl(dayStarts[loc.id])}</div>
+                  )}
+                  <div className="relative flex gap-2.5 sm:gap-4 group/loc">
                     {/* 左：時刻レール */}
                     <div className="flex flex-col items-center w-[46px] sm:w-[72px] shrink-0 pt-0.5">
                       <input
@@ -6235,16 +6304,16 @@ export default function App() {
                       )}
                       <div className="w-5 h-5 sm:w-7 sm:h-7 mt-1 rounded-full grid place-items-center font-bold text-[10px] sm:text-[12px] shadow-sm z-10 transition-colors"
                         style={{ background: loc.done ? "#A8A29E" : theme.accent, color: accentText, fontFamily: mono }}>
-                        {loc.done ? <Icon name="check" className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : i + 1}
+                        {loc.done ? <Icon name="check" className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : (loc.noInDay || i + 1)}
                       </div>
-                      {i < locations.length - 1 && (
+                      {i < locations.length - 1 && locations[i + 1].dayNo === loc.dayNo && (
                         <div className="flex-1 w-0.5 my-1 rounded min-h-[20px]" style={{ background: theme.main, opacity: 0.2 }} />
                       )}
                     </div>
 
-                    {/* 右：移動ストリップ＋ロケーションカード */}
+                    {/* 右：移動ストリップ＋ロケーションカード（日をまたぐ区間は移動なし） */}
                     <div className="flex-1 min-w-0 mb-3">
-                    {i > 0 && (() => {
+                    {i > 0 && dayStarts[loc.id] == null && (() => {
                       const prev = locations[i - 1];
                       if (samePlace(prev, loc)) return (
                         <div className="mb-2 px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-stone-300" title="前のロケと同じ住所のため移動なし（交通費の対象外）">
@@ -6302,6 +6371,7 @@ export default function App() {
                           className="flex-1 min-w-0 bg-transparent text-[14px] font-bold tracking-wide px-3 py-2 focus:outline-none"
                           style={{ color: mainText, textDecoration: loc.done ? "line-through" : "none" }}
                         />
+                        {dayPickerEl(loc, true)}
                         <button
                           onClick={() => updateRow(loc.id, { peak: !loc.peak })}
                           title={loc.peak ? "山場マークを外す" : "ここを山場（見せ場）にする"}
@@ -6370,6 +6440,7 @@ export default function App() {
                     </div>
                     </div>
                   </div>
+                  </React.Fragment>
                 ))}
               </div>
             </section>
