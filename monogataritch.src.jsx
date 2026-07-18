@@ -5916,11 +5916,10 @@ export default function App() {
                   <col style={{ width: 58 }} />
                   <col style={{ width: 80 }} />
                   <col />
-                  {!isNarrow && <col style={{ width: 100 }} />}
                 </colgroup>
                 <thead>
                   <tr style={{ background: theme.main, color: mainText }}>
-                    {["時間", "内容", "シーン", "秒数", "所要時間", "原稿", ...(isNarrow ? [] : [""])].map((h, i) => (
+                    {["時間", "内容", "シーン", "秒数", "所要時間", "原稿"].map((h, i) => (
                       <th key={i} className="px-3 py-2 text-left text-[10px] font-bold tracking-[0.15em] whitespace-nowrap" style={{ opacity: 0.9 }}>{h}</th>
                     ))}
                   </tr>
@@ -5933,7 +5932,6 @@ export default function App() {
                         {maxDay > 1 && dayStarts[r.id] != null && (
                           <tr>
                             <td colSpan={6} className="pt-4 pb-1 px-1">{dayBannerEl(dayStarts[r.id])}</td>
-                            {!isNarrow && <td className="pt-4 pb-1" />}
                           </tr>
                         )}
                         <tr id={"row-" + r.id} {...dropZoneProps(idx)}
@@ -5985,7 +5983,6 @@ export default function App() {
                               <span className="self-center pr-3 text-[9px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
                             </div>
                           </td>
-                          {!isNarrow && <td className="pt-2 align-middle" />}
                         </tr>
                         </React.Fragment>
                       );
@@ -6082,7 +6079,6 @@ export default function App() {
                         <td className="align-top p-0 border-l border-stone-100">
                           <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} />
                         </td>
-                        {!isNarrow && <td className="align-top py-1.5 pr-2" />}
                       </tr>
                     );
                   })}
@@ -6095,7 +6091,6 @@ export default function App() {
                     <td className="px-1 py-2.5 text-center text-[12px] tabular-nums" style={{ fontFamily: mono, opacity: 0.7 }}>{totalTarget}</td>
                     <td className="px-2 py-2.5 text-[13px] font-bold tabular-nums whitespace-nowrap" style={{ fontFamily: mono }}>{fmt(totalEst)}</td>
                     <td className="px-3 py-2.5 text-[11px]" style={{ fontFamily: mono, opacity: 0.6 }}>{totalChars.toLocaleString()}字</td>
-                    {!isNarrow && <td></td>}
                   </tr>
                 </tfoot>
               </table>
