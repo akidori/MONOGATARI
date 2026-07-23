@@ -245,6 +245,8 @@ const HEARING_TEMPLATE = () => ([
     hearingItem("今後の目標", "これから成し遂げたいこと"),
     hearingItem("それを達成するための現在の壁", "いま立ちはだかっている課題"),
   ] },
+  { id: uid(), title: "物語の骨組み（ストーリースパイン）", items:
+    STORY_FRAMEWORKS.spine.steps.map((s) => hearingItem(s.n + " " + s.phrase, s.hint)) },
 ]);
 
 /* 質問ウィザード（認識OS 質問13→密着台本の骨）。回答も生成した骨も案件データとして持つ */
@@ -1972,7 +1974,7 @@ function WizardPane({ project, setProject, theme, setTab }) {
   const [busy, setBusy] = useState(false);
   const [genErr, setGenErr] = useState("");
   const [sugBusy, setSugBusy] = useState(false);
-  const [view, setView] = useState(wiz.scaffold ? "result" : "form");
+  const [view, setView] = useState("form"); // AI生成は廃止（コピペでClaudeへ）。常にフォーム
   const [copied, setCopied] = useState(false);
   const taRef = useRef(null);
 
@@ -2037,6 +2039,16 @@ function WizardPane({ project, setProject, theme, setTab }) {
     setBusy(false);
   };
   const copyMd = async () => { try { await navigator.clipboard.writeText(wiz.scaffold || ""); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (e) {} };
+  // 質問13＋回答＋前提を丸ごとコピー → Claudeに貼って骨を作ってもらう運用（AI消費を自前で持たない）
+  const copyForClaude = async () => {
+    const metaText = [["演者・対象", m.performer], ["ジャンル・業種", m.genre], ["撮影想定", m.shoot], ["想定尺", m.length]]
+      .filter(([, v]) => (v || "").trim()).map(([k, v]) => "・" + k + "：" + v).join("\n");
+    const qa = (questions || []).map((qq) => "Q" + qq.num + "（" + qq.text + "）\n→ " + ((ans[qq.num] || "").trim() || "（未回答・現場で埋める）")).join("\n\n");
+    const text =
+      "以下は密着ドキュメンタリーの取材メモです。この前提と13の質問への回答をもとに、視聴維持を意識した密着台本の骨（ロケ／シーン割り／各シーンで演者に投げる質問）を作ってください。\n\n" +
+      "■案件の前提\n" + (metaText || "（未記入）") + "\n\n■認識OS 13の質問と回答\n" + qa;
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) {}
+  };
   const [pourOpen, setPourOpen] = useState(false);
   const [pourMode, setPourMode] = useState("append");
   const pourRows = wiz.scaffold ? wizParseScaffoldRows(wiz.scaffold) : [];
@@ -2087,18 +2099,9 @@ function WizardPane({ project, setProject, theme, setTab }) {
         .wiz-tbl tr.wiz-hot td{background:color-mix(in srgb, var(--wiz) 8%, #fff)}
       `}</style>
 
-      {/* リード文＋ビュー切替 */}
+      {/* リード文 */}
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        <p className="text-[12px] text-stone-500">認識OSの<span className="font-bold">13の質問</span>に順に答えると、視聴維持の脳科学設計に沿った<span className="font-bold">密着台本の骨</span>（シーン割り・現場で投げる質問・訴求の置き場所）ができます。ヒアリングの内容を横に置きながら埋めるのがおすすめ。</p>
-        {wiz.scaffold && (
-          <div className="shrink-0 inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
-            {[["form", "回答"], ["result", "台本の骨"]].map(([k, l]) => (
-              <button key={k} onClick={() => setView(k)}
-                className={"text-[11px] font-bold px-3 py-1.5 rounded-md transition-colors " + (view === k ? "text-white shadow-sm" : "text-stone-500 hover:text-stone-700")}
-                style={view === k ? { background: theme.accent } : {}}>{l}</button>
-            ))}
-          </div>
-        )}
+        <p className="text-[12px] text-stone-500">認識OSの<span className="font-bold">13の質問</span>。思いつく範囲で埋めたら<span className="font-bold" style={{ color: theme.accent }}>「Claudeにコピー」</span>で丸ごとコピー → Claudeに貼れば、密着台本の骨（シーン割り・現場で投げる質問・訴求の置き場所）を作れます。空欄は現場で埋める質問リストに。</p>
       </div>
 
       {view === "form" && (
@@ -2106,13 +2109,7 @@ function WizardPane({ project, setProject, theme, setTab }) {
           {/* 案件の前提 */}
           <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-              <h2 className="text-[13px] font-bold text-stone-800">案件の前提<span className="ml-2 text-[10px] font-normal text-stone-400">埋めるほど骨の精度が上がります（空欄でもOK）</span></h2>
-              <button onClick={suggest} disabled={sugBusy}
-                className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-lg border inline-flex items-center gap-1.5 disabled:opacity-60"
-                style={{ borderColor: theme.accent, color: theme.accent, background: "#fff" }}>
-                {sugBusy && <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />}
-                <Icon name="sparkle" className="w-3.5 h-3.5" />{sugBusy ? "ヒアリングを読んでいる…" : "ヒアリングから答え候補をもらう"}
-              </button>
+              <h2 className="text-[13px] font-bold text-stone-800">案件の前提<span className="ml-2 text-[10px] font-normal text-stone-400">埋めるほどコピー内容が濃くなります（空欄でもOK）</span></h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[["performer", "演者・対象", "例: 在宅緩和ケア医（終末期の患者を自宅で看取る医師）"], ["genre", "ジャンル・業種", "例: 終末医療ドキュメンタリー"], ["shoot", "撮影想定", "例: 往診に1日密着（出発→患者宅→カンファ→帰宅）"], ["length", "想定尺", "例: 23分前後"]].map(([k, label, ph]) => (
@@ -2176,20 +2173,21 @@ function WizardPane({ project, setProject, theme, setTab }) {
                   <span className="text-[10px] text-stone-300 hidden sm:inline">⌘+Enter で次へ</span>
                   {qIdx < total - 1
                     ? <button onClick={() => setQIdx(qIdx + 1)} className="text-[12px] font-bold px-5 py-2 rounded-lg text-white shadow-sm" style={{ background: theme.accent }}>次へ →</button>
-                    : genBtn("台本の骨を生成 →")}
+                    : <button onClick={copyForClaude} className="text-[12px] font-bold px-5 py-2 rounded-lg text-white shadow-sm inline-flex items-center gap-1.5" style={{ background: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />{copied ? "コピーした！" : "Claudeにコピー"}</button>}
                 </div>
               </div>
             </div>
           )}
 
-          {/* 生成バー */}
+          {/* コピーバー：質問＋回答をClaudeに持っていく */}
           {questions && (
-            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5 flex items-center justify-between gap-3 flex-wrap">
-              <div className="text-[12px] text-stone-500"><span className="font-bold text-stone-700">{answered}</span> / {total} 問 回答済み{answered < total && <span className="text-stone-400">　未回答は【未回収】＝現場で埋める質問リストになります</span>}</div>
-              {genBtn("台本の骨を生成する")}
+            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5 flex items-center justify-between gap-3 flex-wrap sticky bottom-2 shadow-sm">
+              <div className="text-[12px] text-stone-500"><span className="font-bold text-stone-700">{answered}</span> / {total} 問 回答済み{answered < total && <span className="text-stone-400">　空欄は現場で埋める質問リストになります</span>}</div>
+              <button onClick={copyForClaude} className="text-[13px] font-bold px-5 py-2.5 rounded-lg text-white shadow-sm inline-flex items-center gap-2" style={{ background: theme.accent }}>
+                <Icon name="sparkle" className="w-4 h-4" />{copied ? "コピーした！Claudeに貼ってね" : "質問＋回答をClaudeにコピー"}
+              </button>
             </div>
           )}
-          {genErr && <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] px-4 py-3">{genErr}</div>}
         </>
       )}
 
@@ -5619,16 +5617,18 @@ export default function App() {
             </svg>
           </button>
         </div>
-        {/* タブ：モバイルのみ横バー（PCは左の縦レールへ移設） */}
-        <div className="sm:hidden max-w-[1500px] mx-auto px-2 flex gap-1">
-          {tabItems.map(([k, ic, label, short]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 whitespace-nowrap px-1 py-2 rounded-t-lg text-[11px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
-              style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
-              <Icon name={ic} className="w-4 h-4 shrink-0" />
-              <span className="truncate">{short}</span>
-            </button>
-          ))}
+        {/* タブ：モバイルのみ横スクロールバー（詰め込まずフルラベルで読める。PCは左の縦レールへ移設） */}
+        <div className="sm:hidden overflow-x-auto" style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+          <div className="flex gap-1 px-2 w-max">
+            {tabItems.map(([k, ic, label]) => (
+              <button key={k} onClick={() => setTab(k)}
+                className={"shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 rounded-t-lg text-[12.5px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-55")}
+                style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
+                <Icon name={ic} className="w-4 h-4 shrink-0" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
         <div className="h-[5px] w-full" style={{ background: stripe }} />
 
