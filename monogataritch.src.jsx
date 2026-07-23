@@ -6803,32 +6803,35 @@ export default function App() {
                 <Icon name="download" className="w-3.5 h-3.5" />CSVで書き出し
               </button>
             </div>
-            {(project.hearing || []).map((sec) => (
-              <div key={sec.id} className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)}
-                    className="flex-1 min-w-0 text-[14px] font-bold text-stone-800 bg-transparent border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none py-0.5" />
-                  <button onClick={() => removeHearingSection(sec.id)} title="セクション削除" className="shrink-0 text-stone-300 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
-                </div>
-                <div className="space-y-3">
-                  {sec.items.map((it) => (
-                    <div key={it.id} className="group">
-                      <div className="flex items-center gap-2 mb-1">
-                        <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)}
-                          className="flex-1 min-w-0 text-[11px] font-bold text-stone-500 bg-transparent border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none" />
-                        <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500"><Icon name="close" className="w-3.5 h-3.5" /></button>
+            {/* ドキュメント風の1枚シート：全セクションを1枚に流し込む。箱枠なし・見出し＋罫線区切り・入力欄はボーダーレス */}
+            <div className="rounded-2xl border border-stone-200 bg-white px-5 sm:px-8 py-6 sm:py-8 shadow-sm">
+              {(project.hearing || []).map((sec) => (
+                <div key={sec.id} className="group/sec mt-7 first:mt-0">
+                  <div className="flex items-center gap-2 mb-2 pb-1.5 border-b-2 border-stone-100">
+                    <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)}
+                      className="flex-1 min-w-0 text-[15px] font-bold text-stone-800 bg-transparent focus:outline-none py-0.5" />
+                    <button onClick={() => removeHearingSection(sec.id)} title="セクション削除" className="shrink-0 opacity-0 group-hover/sec:opacity-100 text-stone-300 hover:text-rose-500 transition-opacity"><Icon name="trash" className="w-4 h-4" /></button>
+                  </div>
+                  <div className="divide-y divide-stone-100">
+                    {sec.items.map((it) => (
+                      <div key={it.id} className="group py-2">
+                        <div className="flex items-center gap-2">
+                          <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)}
+                            className="flex-1 min-w-0 text-[11px] font-bold text-stone-400 bg-transparent focus:outline-none" />
+                          <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500"><Icon name="close" className="w-3.5 h-3.5" /></button>
+                        </div>
+                        {it.hint && <div className="text-[10px] text-stone-400 leading-snug whitespace-pre-wrap break-words">{it.hint}</div>}
+                        <RichCell value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
+                          placeholder={it.hint || "ここに聞き取った内容を入力…"} minHeight={30}
+                          className="w-full bg-transparent" />
                       </div>
-                      {it.hint && <div className="text-[10px] text-stone-400 mb-1 leading-snug whitespace-pre-wrap break-words">{it.hint}</div>}
-                      <RichCell value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
-                        placeholder={it.hint || "ここに聞き取った内容を入力…"} minHeight={44}
-                        className="w-full bg-white border border-stone-200 rounded-lg focus-within:border-stone-400" />
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                  <button onClick={() => addHearingItem(sec.id)} className="mt-2 text-[11px] font-bold text-stone-300 hover:text-stone-600 inline-flex items-center gap-1 transition-colors"><Icon name="plus" className="w-3 h-3" />項目を追加</button>
                 </div>
-                <button onClick={() => addHearingItem(sec.id)} className="mt-3 text-[12px] font-bold text-stone-500 hover:text-stone-800 inline-flex items-center gap-1"><Icon name="plus" className="w-3.5 h-3.5" />項目を追加</button>
-              </div>
-            ))}
-            <button onClick={addHearingSection} className="w-full rounded-2xl border-2 border-dashed border-stone-200 hover:border-stone-300 text-[12px] font-bold text-stone-400 hover:text-stone-600 py-3 inline-flex items-center justify-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
+              ))}
+              <button onClick={addHearingSection} className="mt-8 text-[12px] font-bold text-stone-400 hover:text-stone-700 inline-flex items-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
+            </div>
           </div>
             )}
           </div>
