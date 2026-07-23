@@ -5476,28 +5476,7 @@ export default function App() {
             style={{ color: mainText }}
             title="案件名（クリックで編集）"
           />
-          {/* カテゴリ（クライアント／チャンネル）— クリックで変更。埋め込み時は非表示（正本はFボード側の紐付け） */}
-          {IS_EMBED ? null : editHeaderChannel ? (
-            <input
-              autoFocus
-              list="mg-channels"
-              defaultValue={project.channel || DEFAULT_CHANNEL}
-              placeholder="カテゴリ名"
-              onBlur={(e) => { setProjectChannel(project.id, e.target.value); setEditHeaderChannel(false); }}
-              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditHeaderChannel(false); }}
-              className="text-[11px] bg-black/30 border border-white/30 rounded-md px-2 py-1 focus:outline-none w-32"
-              style={{ color: mainText }}
-            />
-          ) : (
-            <button onClick={() => setEditHeaderChannel(true)} title="カテゴリ（クライアント）を変更"
-              className="shrink-0 inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded-md border border-white/20 hover:bg-white/10 max-w-[160px]"
-              style={{ color: mainText, opacity: (project.channel || DEFAULT_CHANNEL) === DEFAULT_CHANNEL ? 0.6 : 1 }}>
-              <svg className="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              </svg>
-              <span className="truncate">{project.channel || DEFAULT_CHANNEL}</span>
-            </button>
-          )}
+          {/* カテゴリ（チャンネル）チップはヘッダーから撤去（2026-07-23 AK指示）。変更は左の案件ツリー側で行う */}
           {/* Googleアカウント（チャンネル名の右横） */}
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
             className="w-8 h-8 rounded-full grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden shrink-0" style={{ color: mainText }}>
