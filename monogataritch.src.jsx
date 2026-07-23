@@ -6062,15 +6062,19 @@ export default function App() {
                   <input className={metaInput} value={m.place} onChange={(e) => setMeta("place", e.target.value)} />
                 </div>
               </div>
-              {/* タイトル（企画・サムネタブと連携／1企画＝1案件） */}
-              <div className="flex border-b border-stone-100">
-                <div className="w-20 shrink-0 px-3 py-2 text-[11px] font-bold text-stone-400">タイトル</div>
-                <input className={metaInput} value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路" onChange={(e) => setPlanField(0, "title", e.target.value)} onBlur={() => commitCaseName(activeId)} title="企画・サムネタブのタイトルと連携しています" />
+              {/* タイトル（企画・サムネタブと連携）＝ラベル下・改行可 */}
+              <div className="border-b border-stone-100 px-3 py-2">
+                <div className="text-[11px] font-bold text-stone-400 mb-1">タイトル</div>
+                <textarea rows={2} value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路"
+                  onChange={(e) => setPlanField(0, "title", e.target.value)} onBlur={() => commitCaseName(activeId)} title="企画・サムネタブのタイトルと連携しています"
+                  className="block w-full bg-transparent text-[13px] leading-relaxed resize-y focus:outline-none placeholder:text-stone-300" />
               </div>
-              {/* サムネ文言 */}
-              <div className="flex">
-                <div className="w-20 shrink-0 px-3 py-2 text-[11px] font-bold text-stone-400">サムネ文言</div>
-                <input className={metaInput} value={((project.plans || [])[0] && project.plans[0].thumbText) || ""} placeholder="例）人生、詰んだ。" onChange={(e) => setPlanField(0, "thumbText", e.target.value)} title="企画・サムネタブのサムネ文言と連携しています" />
+              {/* サムネ文言 ＝ラベル下・改行可 */}
+              <div className="px-3 py-2">
+                <div className="text-[11px] font-bold text-stone-400 mb-1">サムネ文言</div>
+                <textarea rows={2} value={((project.plans || [])[0] && project.plans[0].thumbText) || ""} placeholder="例）人生、詰んだ。"
+                  onChange={(e) => setPlanField(0, "thumbText", e.target.value)} title="企画・サムネタブのサムネ文言と連携しています"
+                  className="block w-full bg-transparent text-[13px] leading-relaxed resize-y focus:outline-none placeholder:text-stone-300" />
               </div>
             </section>
 
