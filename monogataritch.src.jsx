@@ -2266,6 +2266,7 @@ export default function App() {
   const [hoverId, setHoverId] = useState(null);
   const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
   const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
+  const [prepView, setPrepView] = useState("hearing"); // 取材メモタブ内の切替：聞き取りシート / 質問ウィザード
   const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
   const toggleHighlight = () => setHighlightCollapsed((v) => { const nv = !v; try { localStorage.setItem("mg:hlCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
   // PC縦タブレールの sticky 追従用にヘッダー実高さを測る（flex-wrapで高さ可変のため固定値にしない）
@@ -4002,7 +4003,7 @@ export default function App() {
     setShareModal({ id, url, updated: !!project.shareId, handoff: h, text });
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
   };
-  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "ヒアリング", wizard: "質問ウィザード", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル" };
+  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", wizard: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル" };
   /* タブ共有バー（全タブ共通・右上に固定表示）のボタン文言 */
   const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー" };
   const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept"]; // 受け渡しで選べるタブ
@@ -5247,7 +5248,7 @@ export default function App() {
   );
 
   // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
-  const tabItems = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"], ["wizard", "sparkle", "質問ウィザード", "質問"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  const tabItems = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
 
   return (
     <div className="min-h-screen" style={{ background: "#E9E8E3", fontFamily: sans, color: "#1C1C1E" }}>
@@ -6782,8 +6783,19 @@ export default function App() {
         )}
 
         {/* ================= ヒアリングタブ（演者の事前聞き取り→構成のネタ元） ================= */}
-        {tab === "hearing" && (
-          <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1 space-y-4">
+        {(tab === "hearing" || tab === "wizard") && (
+          <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1">
+            {/* 取材メモ＝ヒアリング＋質問ウィザードを統合（どちらも構成前のメモ）。中で切替 */}
+            <div className="inline-flex gap-1 mb-4 p-1 rounded-xl bg-stone-100">
+              {[["hearing", "聞き取りシート"], ["wizard", "質問ウィザード"]].map(([k, lab]) => (
+                <button key={k} onClick={() => setPrepView(k)}
+                  className={"text-[12px] font-bold px-3.5 py-1.5 rounded-lg transition-colors " + (prepView === k ? "bg-white shadow-sm text-stone-800" : "text-stone-500 hover:text-stone-700")}>{lab}</button>
+              ))}
+            </div>
+            {prepView === "wizard" ? (
+              <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
+            ) : (
+          <div className="space-y-4">
             <div className="flex items-start justify-between gap-2 flex-wrap">
               <p className="text-[12px] text-stone-500">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
               <button onClick={resetHearing} className="shrink-0 text-[11px] font-bold text-stone-400 hover:text-stone-600 underline">初期テンプレに戻す</button>
@@ -6829,10 +6841,9 @@ export default function App() {
             ))}
             <button onClick={addHearingSection} className="w-full rounded-2xl border-2 border-dashed border-stone-200 hover:border-stone-300 text-[12px] font-bold text-stone-400 hover:text-stone-600 py-3 inline-flex items-center justify-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
           </div>
+            )}
+          </div>
         )}
-
-        {/* ================= 質問ウィザードタブ（質問13→台本の骨） ================= */}
-        {tab === "wizard" && <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />}
 
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
