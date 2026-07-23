@@ -2264,8 +2264,19 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState("");
   const [hoverId, setHoverId] = useState(null);
-  const [highlightCollapsed, setHighlightCollapsed] = useState(false);
-  const [spineOpen, setSpineOpen] = useState(true);   // ストーリースパイン・パネルの開閉
+  const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
+  const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
+  const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
+  const toggleHighlight = () => setHighlightCollapsed((v) => { const nv = !v; try { localStorage.setItem("mg:hlCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
+  // PC縦タブレールの sticky 追従用にヘッダー実高さを測る（flex-wrapで高さ可変のため固定値にしない）
+  const headerRef = useRef(null);
+  const [headerH, setHeaderH] = useState(56);
+  useEffect(() => {
+    const el = headerRef.current; if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setHeaderH(el.offsetHeight));
+    ro.observe(el); setHeaderH(el.offsetHeight);
+    return () => ro.disconnect();
+  }, []);
   const [spineFw, setSpineFwState] = useState(() => { try { return localStorage.getItem("mg:spineFw") || "spine"; } catch (e) { return "spine"; } });
   const setSpineFw = (k) => { setSpineFwState(k); try { localStorage.setItem("mg:spineFw", k); } catch (e) {} };
   const [deliverBusy, setDeliverBusy] = useState(false);
@@ -5235,6 +5246,9 @@ export default function App() {
     </div>
   );
 
+  // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
+  const tabItems = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"], ["wizard", "sparkle", "質問ウィザード", "質問"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+
   return (
     <div className="min-h-screen" style={{ background: "#E9E8E3", fontFamily: sans, color: "#1C1C1E" }}>
 
@@ -5447,7 +5461,7 @@ export default function App() {
       <div className="pb-28" style={{ marginLeft: (() => { try { if (window.self !== window.top) return 0; } catch (e) {} return sidebarOpen && !isNarrow ? 292 : 0; })(), transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
 
       {/* ===== ツールバー ===== */}
-      <header className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
+      <header ref={headerRef} className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
         <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Fボード埋め込み時はハンバーガーとチャンネルチップを出さない（左ツリーが案件切替を担う 2026-07-17 AK指示） */}
           {!IS_EMBED && (
@@ -5604,14 +5618,14 @@ export default function App() {
             </svg>
           </button>
         </div>
-        {/* タブ（アイコン＋短ラベルで1行に収める） */}
-        <div className="max-w-[1500px] mx-auto px-2 sm:px-4 flex gap-1">
-          {[["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "ヒアリング", "聞取り"], ["wizard", "sparkle", "質問ウィザード", "質問"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]].map(([k, ic, label, short]) => (
+        {/* タブ：モバイルのみ横バー（PCは左の縦レールへ移設） */}
+        <div className="sm:hidden max-w-[1500px] mx-auto px-2 flex gap-1">
+          {tabItems.map(([k, ic, label, short]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 sm:gap-1.5 whitespace-nowrap px-1 sm:px-4 py-2 sm:py-1.5 rounded-t-lg text-[11px] sm:text-[12px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
+              className={"flex-1 min-w-0 inline-flex items-center justify-center gap-1 whitespace-nowrap px-1 py-2 rounded-t-lg text-[11px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-50 hover:opacity-80")}
               style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
               <Icon name={ic} className="w-4 h-4 shrink-0" />
-              <span className="truncate"><span className="sm:hidden">{short}</span><span className="hidden sm:inline">{label}</span></span>
+              <span className="truncate">{short}</span>
             </button>
           ))}
         </div>
@@ -5645,7 +5659,20 @@ export default function App() {
         )}
       </header>
 
-      <main className="max-w-[1500px] mx-auto px-3 sm:px-5 pt-5">
+      <div className="max-w-[1500px] mx-auto flex">
+        {/* PC：工程タブの縦レール（Google Docs風・左）。モバイルはヘッダーの横バーを使う。案件サイドバーはハンバーガーで別レイヤー */}
+        <nav className="hidden sm:flex flex-col gap-0.5 shrink-0 w-[188px] px-2 pt-5 pb-8 self-start sticky" style={{ top: headerH }}>
+          {tabItems.map(([k, ic, label]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={"inline-flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-bold text-left transition-colors " + (tab === k ? "bg-white shadow-sm" : "text-stone-500 hover:bg-white/70")}
+              style={tab === k ? { color: "#1C1C1E" } : {}}>
+              <span className="w-1 h-4 rounded-full shrink-0" style={{ background: tab === k ? theme.accent : "transparent" }} />
+              <Icon name={ic} className="w-4 h-4 shrink-0" style={tab === k ? { color: theme.accent } : {}} />
+              <span className="truncate">{label}</span>
+            </button>
+          ))}
+        </nav>
+      <main className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
         {sched && (
@@ -5943,7 +5970,7 @@ export default function App() {
               return (
                 <section className={cardCls + " mb-4"}>
                   {cardHead("物語の背骨", (
-                    <button onClick={() => setSpineOpen((v) => !v)} title={spineOpen ? "畳む" : "開く"}
+                    <button onClick={toggleSpine} title={spineOpen ? "畳む" : "開く"}
                       className="w-6 h-6 shrink-0 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors">
                       <span className="text-[10px] transition-transform inline-block" style={{ transform: spineOpen ? "none" : "rotate(-90deg)" }}>▾</span>
                     </button>
@@ -5979,7 +6006,7 @@ export default function App() {
                                 const s = steps[p];
                                 return (
                                   <div key={i} className="w-[120px] shrink-0 px-1 text-center">
-                                    <div className="text-[10px] font-bold leading-tight truncate" style={{ color: theme.accent }}>{isHead && s ? s.n + " " + s.phrase : ""}</div>
+                                    <div className="text-[10px] font-bold leading-tight truncate" style={{ color: theme.accent }}>{isHead && s ? (s.n === s.phrase ? s.phrase : s.n + " " + s.phrase) : ""}</div>
                                   </div>);
                               })}
                             </div>
@@ -6042,7 +6069,7 @@ export default function App() {
             {/* ハイライト（独立カード） */}
             <section className={cardCls + " mb-4"}>
               {cardHead("ハイライト（冒頭フック）", (
-                <button onClick={() => setHighlightCollapsed((v) => !v)} title={highlightCollapsed ? "ハイライトを開く" : "ハイライトを畳む"}
+                <button onClick={toggleHighlight} title={highlightCollapsed ? "ハイライトを開く" : "ハイライトを畳む"}
                   className="w-6 h-6 shrink-0 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors">
                   <span className="text-[10px] transition-transform inline-block" style={{ transform: highlightCollapsed ? "rotate(-90deg)" : "none" }}>▾</span>
                 </button>
@@ -7097,6 +7124,7 @@ export default function App() {
         })()}
 
       </main>
+      </div>{/* /工程タブ縦レール＋本文の flex */}
       </div>{/* /content wrapper */}
 
       {/* ===== サムネ目立ちテスト モーダル ===== */}
