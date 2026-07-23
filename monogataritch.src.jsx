@@ -643,6 +643,70 @@ const fmtTC = (sec) => { const s = Math.round(sec); return String(Math.floor(s /
 const sectionOf = (type) => SECTION_TYPES[type] || SECTION_TYPES["解説系"];
 const targetOf = (r) => (r.sec != null && r.sec !== "" ? Number(r.sec) : sectionOf(r.type).target);
 
+/* 物語フレームワーク：ロケブロックを各型のステップに比例配分して、物語の骨の穴を可視化する */
+const STORY_FRAMEWORKS = {
+  spine: {
+    label: "ストーリースパイン",
+    steps: [
+      { n: "①", phrase: "昔々、あるところに", hint: "主人公の日常と世界観" },
+      { n: "②", phrase: "毎日", hint: "退屈だが安定したルーティン" },
+      { n: "③", phrase: "しかし、ある日", hint: "日常を壊す事件・トラブル" },
+      { n: "④", phrase: "このせいで", hint: "生じた新たな課題・欲求" },
+      { n: "⑤", phrase: "そのため", hint: "課題を解決するための行動" },
+      { n: "⑥", phrase: "そのせいで", hint: "行動の結果生じた新たな困難" },
+      { n: "⑦", phrase: "ついに", hint: "最終決断・クライマックス" },
+      { n: "⑧", phrase: "それ以来", hint: "成長して迎える新たな日常" },
+    ],
+  },
+  pixar: {
+    label: "ピクサー理論",
+    steps: [
+      { n: "①", phrase: "むかしむかし", hint: "主人公と日常の紹介" },
+      { n: "②", phrase: "毎日", hint: "安定したルーティン" },
+      { n: "③", phrase: "ある日", hint: "事件が起きる" },
+      { n: "④", phrase: "そのため", hint: "変化の連鎖①" },
+      { n: "⑤", phrase: "そのため", hint: "変化の連鎖②" },
+      { n: "⑥", phrase: "ついに", hint: "クライマックス・解決" },
+    ],
+  },
+  kishotenketsu: {
+    label: "起承転結",
+    steps: [
+      { n: "起", phrase: "起", hint: "導入・状況説明" },
+      { n: "承", phrase: "承", hint: "展開・掘り下げ" },
+      { n: "転", phrase: "転", hint: "転換・山場" },
+      { n: "結", phrase: "結", hint: "結末・まとめ" },
+    ],
+  },
+  threeAct: {
+    label: "三幕構成",
+    steps: [
+      { n: "Ⅰ", phrase: "設定", hint: "人物と世界の提示" },
+      { n: "Ⅱ", phrase: "対立", hint: "葛藤・障害との格闘" },
+      { n: "Ⅲ", phrase: "解決", hint: "クライマックスと結末" },
+    ],
+  },
+};
+/* beat i（全M個）を、K ステップのフレームワークへ比例配分したときのステップ index */
+const phaseOf = (i, m, k) => Math.min(k - 1, Math.floor((i * k) / Math.max(m, 1)));
+/* project.rows → ロケブロック単位の beat 配列（原稿の埋まり具合と撮影完了で骨の状態を出す） */
+const deriveSpineBeats = (rows) => {
+  const beats = [];
+  let cur = null;
+  for (const r of rows || []) {
+    if (r.kind === "location") {
+      cur = { id: r.id, label: r.label || "（無題ロケ）", locDone: !!r.done, scenes: 0, filled: 0 };
+      beats.push(cur);
+    } else {
+      if (!cur) { cur = { id: null, label: "（冒頭）", locDone: false, scenes: 0, filled: 0 }; beats.push(cur); }
+      cur.scenes++;
+      if (countChars(r.script) > 0) cur.filled++;
+    }
+  }
+  return beats;
+};
+const spineStatus = (b) => (b.scenes === 0 || b.filled === 0) ? "gap" : (b.filled === b.scenes ? "done" : "part");
+
 const textOn = (hex) => {
   try {
     const h = hex.replace("#", "");
@@ -2201,6 +2265,9 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [hoverId, setHoverId] = useState(null);
   const [highlightCollapsed, setHighlightCollapsed] = useState(false);
+  const [spineOpen, setSpineOpen] = useState(true);   // ストーリースパイン・パネルの開閉
+  const [spineFw, setSpineFwState] = useState(() => { try { return localStorage.getItem("mg:spineFw") || "spine"; } catch (e) { return "spine"; } });
+  const setSpineFw = (k) => { setSpineFwState(k); try { localStorage.setItem("mg:spineFw", k); } catch (e) {} };
   const [deliverBusy, setDeliverBusy] = useState(false);
   const [saveState, setSaveState] = useState("ok");   // ok | error（クラウド保存の状態。回線断のsilent lost可視化）
   const [showTheme, setShowTheme] = useState(false);
@@ -5866,6 +5933,87 @@ export default function App() {
         {/* ================= 構成台本タブ ================= */}
         {tab === "script" && project.format !== "talk" && (
           <>
+            {/* 物語フレームワーク（背骨）：ロケブロックを選んだ型に比例配分して「穴」を可視化。クリックで該当ロケへ */}
+            {(() => {
+              const beats = deriveSpineBeats(project.rows);
+              const gaps = beats.filter((b) => spineStatus(b) === "gap").length;
+              const fw = STORY_FRAMEWORKS[spineFw] || STORY_FRAMEWORKS.spine;
+              const steps = fw.steps, K = steps.length, M = beats.length;
+              const jump = (id) => { if (id != null) { const el = document.getElementById("row-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); } };
+              return (
+                <section className={cardCls + " mb-4"}>
+                  {cardHead("物語の背骨", (
+                    <button onClick={() => setSpineOpen((v) => !v)} title={spineOpen ? "畳む" : "開く"}
+                      className="w-6 h-6 shrink-0 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors">
+                      <span className="text-[10px] transition-transform inline-block" style={{ transform: spineOpen ? "none" : "rotate(-90deg)" }}>▾</span>
+                    </button>
+                  ))}
+                  {spineOpen && (
+                    <div className="px-3 sm:px-4 py-3">
+                      {/* フレームワーク切替 */}
+                      <div className="flex items-center gap-1 mb-2 flex-wrap">
+                        {Object.keys(STORY_FRAMEWORKS).map((k) => (
+                          <button key={k} onClick={() => setSpineFw(k)}
+                            className={"text-[11px] font-bold px-2.5 py-1 rounded-full border transition-colors " + (spineFw === k ? "text-white border-transparent" : "text-stone-500 border-stone-200 hover:bg-stone-50")}
+                            style={spineFw === k ? { background: theme.accent } : {}}>
+                            {STORY_FRAMEWORKS[k].label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 mb-1.5 text-[11px] flex-wrap">
+                        {gaps > 0
+                          ? <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: "#FDECEC", color: "#C0392B" }}>物語の穴 {gaps}</span>
+                          : <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: "#E6F4EC", color: "#2E7D50" }}>背骨がつながってる</span>}
+                        <span className="text-stone-400">ロケ{M}ブロックを「{fw.label}」の{K}ステップに対応</span>
+                      </div>
+                      {M === 0 ? (
+                        <div className="text-[12px] text-stone-400 py-2">ロケ・シーンを追加すると、ここに物語の背骨が出ます。</div>
+                      ) : (
+                        <div className="overflow-x-auto pb-1">
+                          <div className="min-w-max">
+                            {/* 上段：フェーズ見出し（フェーズの先頭ブロックにだけ表示） */}
+                            <div className="flex">
+                              {beats.map((b, i) => {
+                                const p = phaseOf(i, M, K);
+                                const isHead = i === 0 || phaseOf(i - 1, M, K) !== p;
+                                const s = steps[p];
+                                return (
+                                  <div key={i} className="w-[120px] shrink-0 px-1 text-center">
+                                    <div className="text-[10px] font-bold leading-tight truncate" style={{ color: theme.accent }}>{isHead && s ? s.n + " " + s.phrase : ""}</div>
+                                  </div>);
+                              })}
+                            </div>
+                            {/* 中段：ノード＋背骨ライン */}
+                            <div className="relative flex items-center my-1.5">
+                              <div className="absolute h-0.5 bg-stone-200" style={{ left: 60, right: 60, top: "50%" }} />
+                              {beats.map((b, i) => { const st = spineStatus(b); const s = steps[phaseOf(i, M, K)]; return (
+                                <div key={i} className="relative w-[120px] shrink-0 flex justify-center">
+                                  <button onClick={() => jump(b.id)} title={(s ? s.hint + " ／ " : "") + b.label}
+                                    className="relative z-10 w-3.5 h-3.5 rounded-full transition-transform hover:scale-125"
+                                    style={st === "gap" ? { background: "#fff", border: "2px dashed #C2BDB2" } : { background: st === "done" ? "#3E9C6A" : "#D89A2E", boxShadow: "0 0 0 3px #fff" }} />
+                                </div>); })}
+                            </div>
+                            {/* 下段：ロケ名＋状態 */}
+                            <div className="flex">
+                              {beats.map((b, i) => { const st = spineStatus(b); return (
+                                <div key={i} className="w-[120px] shrink-0 px-1 text-center">
+                                  <button onClick={() => jump(b.id)} className="block w-full">
+                                    <div className="text-[11px] font-bold text-stone-700 truncate">{b.label}</div>
+                                    <div className="text-[10px]" style={{ color: st === "gap" ? "#C0392B" : (st === "done" ? "#2E7D50" : "#B8860B") }}>
+                                      {st === "gap" ? "未取材・穴" : "原稿 " + b.filled + "/" + b.scenes}{b.locDone ? "・撮影✓" : ""}
+                                    </div>
+                                  </button>
+                                </div>); })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
+
             {/* 番組情報 */}
             <section className={cardCls + " mb-4"}>
               {cardHead("番組情報")}
