@@ -661,12 +661,11 @@ const STORY_FRAMEWORKS = {
   pixar: {
     label: "ピクサー理論",
     steps: [
-      { n: "①", phrase: "むかしむかし", hint: "主人公と日常の紹介" },
-      { n: "②", phrase: "毎日", hint: "安定したルーティン" },
-      { n: "③", phrase: "ある日", hint: "事件が起きる" },
-      { n: "④", phrase: "そのため", hint: "変化の連鎖①" },
-      { n: "⑤", phrase: "そのため", hint: "変化の連鎖②" },
-      { n: "⑥", phrase: "ついに", hint: "クライマックス・解決" },
+      { n: "①", phrase: "日常", hint: "主人公の日常と世界観" },
+      { n: "②", phrase: "喪失", hint: "何かを失う・欠落が生まれる" },
+      { n: "③", phrase: "敵対", hint: "障害・敵との対立" },
+      { n: "④", phrase: "気づき", hint: "内面の変化・悟り" },
+      { n: "⑤", phrase: "統合", hint: "変化を受け入れた新たな自分" },
     ],
   },
   kishotenketsu: {
@@ -5239,8 +5238,9 @@ export default function App() {
   const metaInput = "block w-full bg-transparent text-[13px] px-3 py-2 focus:outline-none placeholder:text-stone-300";
   const opBtn = "w-6 h-6 grid place-items-center rounded-md text-stone-400 hover:bg-stone-200 hover:text-stone-700 text-[11px] leading-none transition-colors";
   const cardCls = "bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden";
-  const cardHead = (label, right) => (
-    <div className="px-4 py-2 flex items-center gap-2 border-b border-stone-100">
+  const cardHead = (label, right, onClick) => (
+    <div onClick={onClick}
+      className={"px-4 py-2 flex items-center gap-2 border-b border-stone-100 " + (onClick ? "cursor-pointer select-none hover:bg-stone-50 transition-colors" : "")}>
       <span className="w-1.5 h-4 rounded-full" style={{ background: theme.accent }} />
       <h2 className="text-[12px] font-bold tracking-wider text-stone-600 flex-1">{label}</h2>
       {right}
@@ -5967,15 +5967,22 @@ export default function App() {
               const gaps = beats.filter((b) => spineStatus(b) === "gap").length;
               const fw = STORY_FRAMEWORKS[spineFw] || STORY_FRAMEWORKS.spine;
               const steps = fw.steps, K = steps.length, M = beats.length;
+              // 連続するロケブロックをフェーズ単位にまとめる（どこからどこまでが起/承/転/結かの「帯」）
+              const phases = [];
+              beats.forEach((b, i) => {
+                const p = phaseOf(i, M, K);
+                const last = phases[phases.length - 1];
+                if (last && last.p === p) last.count++;
+                else phases.push({ p, step: steps[p], start: i, count: 1 });
+              });
               const jump = (id) => { if (id != null) { const el = document.getElementById("row-" + id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); } };
               return (
                 <section className={cardCls + " mb-4"}>
                   {cardHead("物語の背骨", (
-                    <button onClick={toggleSpine} title={spineOpen ? "畳む" : "開く"}
-                      className="w-6 h-6 shrink-0 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors">
+                    <span className="w-6 h-6 shrink-0 grid place-items-center text-stone-400" title={spineOpen ? "畳む" : "開く"}>
                       <span className="text-[10px] transition-transform inline-block" style={{ transform: spineOpen ? "none" : "rotate(-90deg)" }}>▾</span>
-                    </button>
-                  ))}
+                    </span>
+                  ), toggleSpine)}
                   {spineOpen && (
                     <div className="px-3 sm:px-4 py-3">
                       {/* フレームワーク切替 */}
@@ -5999,15 +6006,15 @@ export default function App() {
                       ) : (
                         <div className="overflow-x-auto pb-1">
                           <div className="min-w-max">
-                            {/* 上段：フェーズ見出し（フェーズの先頭ブロックにだけ表示） */}
+                            {/* 上段：フェーズの帯（どこからどこまでが各ステップに属すか。全ブロックが必ずどれかの帯の下に入る） */}
                             <div className="flex">
-                              {beats.map((b, i) => {
-                                const p = phaseOf(i, M, K);
-                                const isHead = i === 0 || phaseOf(i - 1, M, K) !== p;
-                                const s = steps[p];
+                              {phases.map((ph, pi) => {
+                                const s = ph.step;
+                                const lab = s ? (s.n === s.phrase ? s.phrase : s.n + " " + s.phrase) : "";
                                 return (
-                                  <div key={i} className="w-[120px] shrink-0 px-1 text-center">
-                                    <div className="text-[10px] font-bold leading-tight truncate" style={{ color: theme.accent }}>{isHead && s ? (s.n === s.phrase ? s.phrase : s.n + " " + s.phrase) : ""}</div>
+                                  <div key={pi} style={{ width: ph.count * 120 }} className="shrink-0 px-1 text-center">
+                                    <div className="text-[11px] font-bold leading-tight truncate mb-0.5" style={{ color: theme.accent }}>{lab}</div>
+                                    <div className="mx-3 h-2 rounded-t-md border-t-2 border-l-2 border-r-2" style={{ borderColor: theme.accent, opacity: 0.45 }} />
                                   </div>);
                               })}
                             </div>
@@ -6070,11 +6077,10 @@ export default function App() {
             {/* ハイライト（独立カード） */}
             <section className={cardCls + " mb-4"}>
               {cardHead("ハイライト（冒頭フック）", (
-                <button onClick={toggleHighlight} title={highlightCollapsed ? "ハイライトを開く" : "ハイライトを畳む"}
-                  className="w-6 h-6 shrink-0 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors">
+                <span className="w-6 h-6 shrink-0 grid place-items-center text-stone-400" title={highlightCollapsed ? "開く" : "畳む"}>
                   <span className="text-[10px] transition-transform inline-block" style={{ transform: highlightCollapsed ? "rotate(-90deg)" : "none" }}>▾</span>
-                </button>
-              ))}
+                </span>
+              ), toggleHighlight)}
               {!highlightCollapsed && (
                 <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（空行でEnter → ◼︎ 自動挿入）" />
               )}
