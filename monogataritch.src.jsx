@@ -1430,39 +1430,63 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
     return () => { on = false; };
   }, [channel, snapId, token, upToken, liveId, liveToken]);
   if (data === null) return <div className="text-[12px] text-stone-400 py-2">🧪 Flip-LABの編集ルールを読み込み中…</div>;
-  const tendencies = splitTendencies(data.distilled);
-  if (!data.fixed && !tendencies.length) return null;
+  // 共通「編集マニュアル」は採用UIでなく“読み物”として扱う（16章の実マニュアルを1行ずつ採用ボタンにすると読めない）。
+  const isCommon = (channel || "").trim() === "編集マニュアル";
+  const tendencies = isCommon ? [] : splitTendencies(data.distilled);
+  if (!data.fixed && !tendencies.length && !(isCommon && data.distilled)) return null;
   const adopt = (t) => { if (!onAdopt) return; onAdopt(t); setAdopted((a) => ({ ...a, [t]: true })); };
   return (
     <div className="rounded-xl border mb-3 overflow-hidden" style={{ borderColor: main + "55", background: main + "0c" }}>
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
         <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: main }}>🧪 Flip-LAB</span>
-        <span className="text-[12.5px] font-bold text-stone-800">{channel} 編集ルール</span>
+        <span className="text-[12.5px] font-bold text-stone-800">{isCommon ? "編集マニュアル" : channel + " 編集ルール"}</span>
         <span className="ml-auto text-[10px] text-stone-400 shrink-0">{data.updated ? data.updated.slice(0, 10) : ""} {open ? "▲" : "▼"}</span>
       </button>
       {open && (
-        <div className="px-3 pb-3 border-t border-stone-200/60 pt-2 max-h-[46vh] overflow-y-auto">
-          {data.fixed && (
-            <div className="mb-3">
-              <div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">確定ルール（人が設定・厳守）</div>
-              <div className="text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">{data.fixed}</div>
+        <div className="px-3 pb-3 border-t border-stone-200/60 pt-2 max-h-[56vh] overflow-y-auto">
+          {isCommon ? (
+            <div className="lab-md" style={{ "--lab": main }}>
+              <style>{`
+                .lab-md h3{font-size:14px;font-weight:700;color:#292524;margin:18px 0 7px;padding-bottom:5px;border-bottom:2px solid #e7e5e4}
+                .lab-md h3:first-child{margin-top:2px}
+                .lab-md h4{font-size:12.5px;font-weight:700;color:#44403c;margin:12px 0 5px}
+                .lab-md p{font-size:12.5px;color:#44403c;margin:5px 0;line-height:1.85}
+                .lab-md ul{padding-left:18px;margin:5px 0;list-style:disc}
+                .lab-md li{font-size:12.5px;color:#44403c;margin:2px 0;line-height:1.75}
+                .lab-md strong{color:var(--lab)}
+                .lab-md code{background:#f5f5f4;border-radius:4px;padding:1px 5px;font-size:11.5px}
+                .lab-md .wiz-tbl{overflow-x:auto;border:1px solid #e7e5e4;border-radius:10px;margin:8px 0}
+                .lab-md .wiz-tbl table{border-collapse:collapse;width:100%;min-width:520px;font-size:11.5px}
+                .lab-md .wiz-tbl th{background:#1c1917;color:#fff;padding:6px 9px;text-align:left;white-space:nowrap;font-weight:600}
+                .lab-md .wiz-tbl td{border-top:1px solid #f0efee;padding:6px 9px;vertical-align:top;line-height:1.6;color:#44403c}
+                .lab-md .wiz-tbl tr:nth-child(even) td{background:#fafaf9}
+              `}</style>
+              {data.fixed && <div className="mb-3"><div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">確定ルール（人が設定・厳守）</div><div dangerouslySetInnerHTML={{ __html: wizMdHtml(data.fixed) }} /></div>}
+              <div dangerouslySetInnerHTML={{ __html: wizMdHtml(data.distilled) }} />
             </div>
-          )}
-          {tendencies.length > 0 && (
-            <div>
-              <div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">学習した傾向（確認コメントから自動蒸留）{onAdopt && <span className="font-normal text-stone-400">— 「採用」で確定ルールに昇格</span>}</div>
-              <div className="space-y-1">
-                {tendencies.map((t, i) => (
-                  <div key={i} className="flex items-start gap-2 group">
-                    <span className="text-[12.5px] text-stone-700 leading-relaxed flex-1">{t}</span>
-                    {onAdopt && (adopted[t]
-                      ? <span className="shrink-0 text-[10px] font-bold text-emerald-600 mt-0.5">✓採用</span>
-                      : <button onClick={() => adopt(t)} title="この傾向を確定ルールに昇格" className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border text-white mt-0.5" style={{ background: main, borderColor: main }}>採用</button>)}
-                  </div>
-                ))}
+          ) : (<>
+            {data.fixed && (
+              <div className="mb-3">
+                <div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">確定ルール（人が設定・厳守）</div>
+                <div className="text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">{data.fixed}</div>
               </div>
-            </div>
-          )}
+            )}
+            {tendencies.length > 0 && (
+              <div>
+                <div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">学習した傾向（確認コメントから自動蒸留）{onAdopt && <span className="font-normal text-stone-400">— 「採用」で確定ルールに昇格</span>}</div>
+                <div className="space-y-1">
+                  {tendencies.map((t, i) => (
+                    <div key={i} className="flex items-start gap-2 group">
+                      <span className="text-[12.5px] text-stone-700 leading-relaxed flex-1">{t}</span>
+                      {onAdopt && (adopted[t]
+                        ? <span className="shrink-0 text-[10px] font-bold text-emerald-600 mt-0.5">✓採用</span>
+                        : <button onClick={() => adopt(t)} title="この傾向を確定ルールに昇格" className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full border text-white mt-0.5" style={{ background: main, borderColor: main }}>採用</button>)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>)}
         </div>
       )}
     </div>
