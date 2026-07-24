@@ -2264,6 +2264,7 @@ export default function App() {
   const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
   const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
   const [prepView, setPrepView] = useState("hearing"); // 取材メモタブ内の切替：聞き取りシート / 質問ウィザード
+  const [collapsedFolders, setCollapsedFolders] = useState({}); // 素材管理：フォルダ(シーン)ごとの開閉
   const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
   const toggleHighlight = () => setHighlightCollapsed((v) => { const nv = !v; try { localStorage.setItem("mg:hlCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
   // PC縦タブレールの sticky 追従用にヘッダー実高さを測る（flex-wrapで高さ可変のため固定値にしない）
@@ -6963,17 +6964,21 @@ export default function App() {
                           {groups.map(([fname, arr]) => {
                             const dlIds = arr.filter((a) => a.key && a.type !== "youtube").map((a) => a.id);
                             const allSel = dlIds.length > 0 && dlIds.every((id) => selAssets.includes(id));
+                            const fkey = cat + "|" + fname;
+                            const collapsed = !!fname && !!collapsedFolders[fkey];
                             return (
                               <div key={fname || "_loose"}>
                                 {fname ? (
-                                  <div className="flex items-center gap-1.5 mt-2 mb-0.5 pb-0.5 border-b border-stone-100">
-                                    {dlIds.length > 0 && <input type="checkbox" checked={allSel} onChange={(e) => selGroup(arr, e.target.checked)} title="このシーンをまとめて選択" className="w-3.5 h-3.5 accent-stone-600 cursor-pointer" />}
+                                  <div className="flex items-center gap-1.5 mt-2 mb-0.5 pb-0.5 border-b border-stone-100 cursor-pointer select-none hover:bg-stone-50 rounded-sm"
+                                    onClick={() => setCollapsedFolders((m) => ({ ...m, [fkey]: !collapsed }))} title={collapsed ? "開く" : "閉じる"}>
+                                    {dlIds.length > 0 && <input type="checkbox" checked={allSel} onClick={(e) => e.stopPropagation()} onChange={(e) => selGroup(arr, e.target.checked)} title="このシーンをまとめて選択" className="w-3.5 h-3.5 accent-stone-600 cursor-pointer" />}
+                                    <span className="text-[9px] text-stone-400 w-3 shrink-0 inline-block text-center transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}>▾</span>
                                     <Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />
                                     <span className="text-[11px] font-bold text-stone-500">{fname}</span>
                                     <span className="text-[10px] text-stone-400">{arr.length}</span>
                                   </div>
                                 ) : null}
-                                <ul className="divide-y divide-stone-100">{arr.map(renderRow)}</ul>
+                                {!collapsed && <ul className="divide-y divide-stone-100">{arr.map(renderRow)}</ul>}
                               </div>
                             );
                           })}
