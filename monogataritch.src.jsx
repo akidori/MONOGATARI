@@ -4701,12 +4701,14 @@ export default function App() {
   /* ---- 複数選択 ---- */
   const isSelected = (id) => selectedIds.includes(id);
   const clearSelection = () => { setSelectedIds([]); lastSelRef.current = null; };
-  // 選択したシーンの原稿だけをまとめてコピー（複数セクションの原稿をコピペしたい時用）
+  // 選択したシーンの原稿だけをまとめてコピー（複数セクションの原稿をコピペしたい時用）。
+  // 装飾記号(**太字/!!赤)を外したプレーンテキストにする＝Claude等に貼っても「空の添付」にならず素直に読める。
   const copySelectedScripts = async () => {
     const rows = (project.rows || []).filter((r) => r.kind === "scene" && selectedIds.includes(r.id));
-    const text = rows.map((r) => (r.label ? "【" + r.label + "】\n" : "") + (r.script || "").trim()).join("\n\n").trim();
+    const clean = (s) => (s || "").replace(/\*\*/g, "").replace(/!!/g, "").trim();
+    const text = rows.map((r) => (r.label ? "【" + r.label + "】\n" : "") + clean(r.script)).join("\n\n").trim();
     if (!text) { showToast("選択した原稿が空です"); return; }
-    try { await navigator.clipboard.writeText(text); showToast(rows.length + "件の原稿をコピーしました"); }
+    try { await navigator.clipboard.writeText(text); showToast(rows.length + "件の原稿をコピーしました（プレーン）"); }
     catch (e) { showToast("コピーに失敗しました"); }
   };
   const toggleSelect = (id, e) => {
