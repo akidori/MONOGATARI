@@ -5004,6 +5004,32 @@ export default function App() {
       showToast("構成台本をコピーしました");
     } catch { showToast("コピーに失敗しました"); }
   };
+  // 台本を CSV / txt でダウンロード（共有メニューから。装飾記号 **//!! は除去）
+  const scriptClean = (s) => (s || "").replace(/\*\*/g, "").replace(/!!/g, "").trim();
+  const dlFile = (name, text, mime) => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: mime })); a.download = name; a.click(); };
+  const exportScriptCSV = () => {
+    const q = (s) => { const v = (s || "").toString(); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const rows = [["時間", "ロケーション", "内容", "シーン", "秒数", "文字数", "原稿"]];
+    let acc = 0, prevDay = null;
+    for (const r of project.rows) {
+      if (r.kind === "location") { const d = dayOf(r); if (maxDay > 1 && d !== prevDay) rows.push(["", d + "日目", "", "", "", "", ""]); prevDay = d; rows.push(["", r.label || "", "", "", "", "", ""]); }
+      else { const t = sectionOf(r.type), target = targetOf(r), chars = countChars(r.script), dur = chars / project.rate; rows.push([fmt(acc), "", r.label || "", t.full, target, chars || "", scriptClean(r.script)]); acc += chars > 0 ? dur : target; }
+    }
+    dlFile((project.name || "構成台本") + ".csv", "﻿" + rows.map((row) => row.map(q).join(",")).join("\n"), "text/csv;charset=utf-8");
+    showToast("構成台本をCSVで保存しました");
+  };
+  const exportScriptTxt = () => {
+    const m = project.meta, L = [];
+    if (m.titles && m.titles[0]) L.push("【タイトル】" + m.titles[0]);
+    if (m.highlight) L.push("【ハイライト】\n" + scriptClean(m.highlight));
+    let prevDay = null;
+    for (const r of project.rows) {
+      if (r.kind === "location") { const d = dayOf(r); if (maxDay > 1 && d !== prevDay) L.push("\n=== " + d + "日目 ==="); prevDay = d; L.push("\n■ " + (r.label || "")); }
+      else { const t = sectionOf(r.type); L.push("\n【" + (r.label || "") + "】（" + t.full + "）\n" + scriptClean(r.script)); }
+    }
+    dlFile((project.name || "構成台本") + "_台本.txt", L.join("\n").trim(), "text/plain;charset=utf-8");
+    showToast("構成台本をtxtで保存しました");
+  };
 
   const exportKoubanTSV = async () => {
     const esc = (s) => {
@@ -5539,16 +5565,30 @@ export default function App() {
                     このタブだけ共有<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
                   </button>
                 )}
-                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-b border-stone-100">
+                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
                   <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
-                  全体を共有<span className="text-[10px] text-stone-400 font-normal ml-auto">全タブ</span>
+                  全タブ共有<span className="text-[10px] text-stone-400 font-normal ml-auto">閲覧・全タブ</span>
                 </button>
-                {/* ===== その他（折りたたみ）：編集者渡し（大容量アップ）・先方/演者・同時編集・AI・書き出し ===== */}
+                <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
+                  <span className="text-[15px] leading-none w-4 text-center shrink-0">✏️</span>
+                  全タブ編集共有<span className="text-[10px] text-stone-400 font-normal ml-auto">{project.liveId ? "更新・同時編集" : "同時編集"}</span>
+                </button>
+                {handoffs.find((h) => h.upload || h.id === "upload") && (
+                  <button onClick={() => { setShareMenu(false); doHandoff(handoffs.find((h) => h.upload || h.id === "upload")); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
+                    <span className="text-[15px] leading-none w-4 text-center shrink-0">⬆️</span>
+                    アップだけ<span className="text-[10px] text-stone-400 font-normal ml-auto">編集者が上げる用</span>
+                  </button>
+                )}
+                <div className="flex items-stretch border-t border-b border-stone-100">
+                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5"><span className="text-[15px] leading-none w-4 text-center shrink-0">📄</span>台本コピー<span className="text-[10px] text-stone-400 font-normal ml-auto">CSV</span></button>
+                  <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 py-3 hover:bg-stone-50 text-[12px] font-bold text-stone-500 border-l border-stone-100">txt</button>
+                </div>
+                {/* ===== その他（折りたたみ）：先方/演者・AI・動画確認・カスタマイズ ===== */}
                 <button onClick={() => setShareMore((v) => !v)} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2">
                   <span className="text-[10px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他のリンク・書き出し
                 </button>
                 {shareMore && (<>
-                  {handoffs.map((h) => (
+                  {handoffs.filter((h) => !(h.upload || h.id === "upload")).map((h) => (
                     <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
                       <span className="text-[13px] leading-none">{h.emoji || "📨"}</span>
                       {h.label}<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
@@ -5557,19 +5597,12 @@ export default function App() {
                   <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left pl-7 pr-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2 border-b border-stone-100">
                     <span className="text-[12px] leading-none">⚙️</span> 受け渡しをカスタマイズ
                   </button>
-                  <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                    <span className="text-[13px] leading-none">✏️</span>
-                    {project.liveId ? "編集用リンクを更新" : "編集用リンクを発行"}<span className="text-[10px] text-stone-400 font-normal ml-auto">同時編集</span>
-                  </button>
                   <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
                     <span className="text-[13px] leading-none">🤖</span>
                     AIに読ませる用<span className="text-[10px] text-stone-400 font-normal ml-auto">Claude/GPT</span>
                   </button>
                   <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
                     <span className="text-[13px] leading-none">🎬</span> 動画確認・ファイル転送
-                  </button>
-                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptTSV)(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                    <span className="text-[13px] leading-none">📄</span> 台本コピー{project.format === "talk" ? "（テキスト）" : "（TSV）"}
                   </button>
                 </>)}
               </div>
