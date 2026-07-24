@@ -4701,6 +4701,14 @@ export default function App() {
   /* ---- 複数選択 ---- */
   const isSelected = (id) => selectedIds.includes(id);
   const clearSelection = () => { setSelectedIds([]); lastSelRef.current = null; };
+  // 選択したシーンの原稿だけをまとめてコピー（複数セクションの原稿をコピペしたい時用）
+  const copySelectedScripts = async () => {
+    const rows = (project.rows || []).filter((r) => r.kind === "scene" && selectedIds.includes(r.id));
+    const text = rows.map((r) => (r.label ? "【" + r.label + "】\n" : "") + (r.script || "").trim()).join("\n\n").trim();
+    if (!text) { showToast("選択した原稿が空です"); return; }
+    try { await navigator.clipboard.writeText(text); showToast(rows.length + "件の原稿をコピーしました"); }
+    catch (e) { showToast("コピーに失敗しました"); }
+  };
   const toggleSelect = (id, e) => {
     const rows = (project && project.rows) || [];
     if (e && e.shiftKey && lastSelRef.current) {
@@ -8056,6 +8064,8 @@ export default function App() {
           style={{ background: theme.main, color: mainText }}>
           <span className="text-[12px] font-bold mr-1">{selectedIds.length}件 選択中</span>
           <span className="text-[11px] opacity-70 mr-2 hidden sm:inline">左の番号をドラッグでまとめて移動</span>
+          <button onClick={copySelectedScripts}
+            className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">⧉ 原稿をコピー</button>
           <button onClick={deleteSelected}
             className="text-[11px] font-bold px-3 py-1.5 rounded-full" style={{ background: "#DC2645", color: "#fff" }}>削除</button>
           <button onClick={clearSelection}
