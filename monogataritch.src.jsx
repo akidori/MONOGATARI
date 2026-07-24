@@ -992,7 +992,7 @@ function AddressField({ loc, onChange }) {
   );
 }
 
-const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
+function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush] = useBufferedField(value, onChange);
@@ -1093,9 +1093,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
       />
     </div>
   );
-}, (a, b) => a.value === b.value && a.placeholder === b.placeholder && a.accent === b.accent && a.fontSize === b.fontSize);
-// ↑ onChangeの関数identityは無視して比較。ハンドラは全て関数型setStateなので古いクロージャを呼んでも正しく反映される＝安全。
-// 1つの原稿セル入力で他の全原稿セルが再描画される問題を止める（構成台本のもっさり対策）。
+}
 
 /* 太字(**)・赤文字(!!)の装飾に対応し、内容に合わせて高さが伸びる入力欄。
    ScriptCellと同じマークアップ（⌘B / ⌘⇧H・ツールバーB/A）だが、構成台本特有の◼︎質問行の自動処理は持たない。
@@ -4921,9 +4919,12 @@ export default function App() {
 
   /* 日の区切りバナー（複数日のときだけ台本・香盤表に出す） */
   const dayBannerEl = (d) => (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] font-bold tracking-[0.2em] px-2.5 py-1 rounded-md whitespace-nowrap" style={{ background: theme.accent, color: accentText, fontFamily: mono }}>{d}日目</span>
-      <div className="flex-1 h-px" style={{ background: theme.accent, opacity: 0.35 }} />
+    <div className="flex items-center gap-2.5 my-1">
+      <div className="flex-1 h-px" style={{ background: theme.accent, opacity: 0.3 }} />
+      <span className="text-[12px] font-bold tracking-[0.16em] px-3 py-1.5 rounded-lg whitespace-nowrap inline-flex items-center gap-1.5 shadow-sm" style={{ background: theme.accent, color: accentText }}>
+        <Icon name="video" className="w-3.5 h-3.5" />撮影 {d}日目
+      </span>
+      <div className="flex-1 h-px" style={{ background: theme.accent, opacity: 0.3 }} />
     </div>
   );
 
@@ -5200,6 +5201,8 @@ export default function App() {
       showToast("【番号】の形式が見つかりませんでした。出力形式を確認してください");
       return;
     }
+    // 取り込み前の状態をスナップ＝「↩️ 直前の反映を取り消す」で取り込みごと戻せる（取り込んだら戻れない問題の解消）
+    setChatUndo({ rows: project.rows, talk: project.talk, meta: project.meta, name: project.name, channel: project.channel, plans: project.plans });
     let count = 0;
     setRows((rows) => {
       let no = 0;
@@ -7758,7 +7761,8 @@ export default function App() {
               <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
               <button onClick={() => { moveRow(rowMenu.idx, 1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
             </div>
-            <button onClick={() => { const idx = rowMenu.idx, kind = rowMenu.kind, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(kind === "location" ? "解説系" : sceneType)); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />{rowMenu.kind === "location" ? "下にシーンを追加" : "下に行を追加"}</button>
+            <button onClick={() => { const idx = rowMenu.idx, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(rowMenu.kind === "location" ? "解説系" : (sceneType || "解説系"))); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />下にシーンを追加</button>
+            <button onClick={() => { const idx = rowMenu.idx; setRowMenu(null); insertBelow(idx, newLocation("")); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />下にロケ（セクション）を追加</button>
             <button onClick={() => { const id = rowMenu.id; setRowMenu(null); deleteRow(id); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[12px] font-bold text-red-500 flex items-center gap-2"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
           </div>
         </>
