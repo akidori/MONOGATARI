@@ -992,7 +992,7 @@ function AddressField({ loc, onChange }) {
   );
 }
 
-function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
+const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush] = useBufferedField(value, onChange);
@@ -1093,7 +1093,9 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize
       />
     </div>
   );
-}
+}, (a, b) => a.value === b.value && a.placeholder === b.placeholder && a.accent === b.accent && a.fontSize === b.fontSize);
+// ↑ onChangeの関数identityは無視して比較。ハンドラは全て関数型setStateなので古いクロージャを呼んでも正しく反映される＝安全。
+// 1つの原稿セル入力で他の全原稿セルが再描画される問題を止める（構成台本のもっさり対策）。
 
 /* 太字(**)・赤文字(!!)の装飾に対応し、内容に合わせて高さが伸びる入力欄。
    ScriptCellと同じマークアップ（⌘B / ⌘⇧H・ツールバーB/A）だが、構成台本特有の◼︎質問行の自動処理は持たない。
