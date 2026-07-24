@@ -6159,9 +6159,9 @@ export default function App() {
                         {...dropZoneProps(idx)}
                         onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
                         onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: e.clientX, y: e.clientY }); }}
-                        className="border-b border-stone-100 transition-colors hover:bg-stone-50/70"
+                        className="border-b border-stone-100 transition-colors"
                         style={{
-                          ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : {}),
+                          ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : { background: t.color + "0e" }), // シーン種別ごとに極薄トーンで色分け（見分けやすく）
                           ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
                           ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}),
                         }}>
@@ -6313,8 +6313,8 @@ export default function App() {
                 const sceneDone = !!r.done;
                 return (
                   <div key={r.id} id={"row-" + r.id}
-                    className="rounded-xl border border-stone-200 bg-white overflow-hidden mb-2"
-                    style={{ borderLeft: "3px solid " + t.color, ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
+                    className="rounded-xl border border-stone-200 overflow-hidden mb-2"
+                    style={{ borderLeft: "3px solid " + t.color, background: sceneDone ? "#F5F5F4" : t.color + "0c", ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
                     {/* メタ：撮影完了・番号・時刻・所要 */}
                     <div className="flex items-center gap-2 px-3 pt-2">
                       <button
