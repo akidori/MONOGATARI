@@ -4701,15 +4701,27 @@ export default function App() {
   /* ---- 複数選択 ---- */
   const isSelected = (id) => selectedIds.includes(id);
   const clearSelection = () => { setSelectedIds([]); lastSelRef.current = null; };
-  // 選択したシーンの原稿だけをまとめてコピー（複数セクションの原稿をコピペしたい時用）。
-  // 装飾記号(**太字/!!赤)を外したプレーンテキストにする＝Claude等に貼っても「空の添付」にならず素直に読める。
-  const copySelectedScripts = async () => {
+  // 選択したシーンの原稿をプレーンテキスト化（装飾記号 **太字/!!赤 を除去）。コピー・txt保存で共用。
+  const selectedScriptText = () => {
     const rows = (project.rows || []).filter((r) => r.kind === "scene" && selectedIds.includes(r.id));
     const clean = (s) => (s || "").replace(/\*\*/g, "").replace(/!!/g, "").trim();
-    const text = rows.map((r) => (r.label ? "【" + r.label + "】\n" : "") + clean(r.script)).join("\n\n").trim();
+    return { n: rows.length, text: rows.map((r) => (r.label ? "【" + r.label + "】\n" : "") + clean(r.script)).join("\n\n").trim() };
+  };
+  const copySelectedScripts = async () => {
+    const { n, text } = selectedScriptText();
     if (!text) { showToast("選択した原稿が空です"); return; }
-    try { await navigator.clipboard.writeText(text); showToast(rows.length + "件の原稿をコピーしました（プレーン）"); }
+    try { await navigator.clipboard.writeText(text); showToast(n + "件の原稿をコピーしました（プレーン）"); }
     catch (e) { showToast("コピーに失敗しました"); }
+  };
+  // 選択した原稿を .txt でダウンロード → Claude等にファイルとしてドラッグすれば「空の添付」にならず確実に読める。
+  const downloadSelectedScripts = () => {
+    const { n, text } = selectedScriptText();
+    if (!text) { showToast("選択した原稿が空です"); return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+    a.download = (project.name || "原稿") + "_原稿.txt";
+    a.click();
+    showToast(n + "件の原稿を.txtで保存しました");
   };
   const toggleSelect = (id, e) => {
     const rows = (project && project.rows) || [];
@@ -8068,6 +8080,8 @@ export default function App() {
           <span className="text-[11px] opacity-70 mr-2 hidden sm:inline">左の番号をドラッグでまとめて移動</span>
           <button onClick={copySelectedScripts}
             className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">⧉ 原稿をコピー</button>
+          <button onClick={downloadSelectedScripts} title="選択した原稿を.txtで保存（Claudeにファイルとしてドラッグ＝空にならない）"
+            className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">↓ .txt</button>
           <button onClick={deleteSelected}
             className="text-[11px] font-bold px-3 py-1.5 rounded-full" style={{ background: "#DC2645", color: "#fff" }}>削除</button>
           <button onClick={clearSelection}
