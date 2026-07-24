@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, startTransition } from "react";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -735,7 +735,7 @@ function buildStyledRuns(text) {
 }
 
 /* ===== ピクトグラム（ライン系SVG・currentColorで配色追従）===== */
-function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
+const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
   const c = { className, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", style, "aria-hidden": true };
   switch (name) {
     case "pin": return (<svg {...c}><path d="M12 21s6-5.3 6-10A6 6 0 1 0 6 11c0 4.7 6 10 6 10z" /><circle cx="12" cy="11" r="2.2" /></svg>);
@@ -767,9 +767,13 @@ function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
     case "share": return (<svg {...c}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 13.2l7.6 4.6M15.8 6.2L8.2 10.8" /></svg>);
     case "grip": return (<svg {...c} strokeWidth="0" fill="currentColor"><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>);
     case "pencil": return (<svg {...c}><path d="M4 20l1-4L16.5 4.5a2.12 2.12 0 0 1 3 3L8 19l-4 1z" /><path d="M14.5 6.5l3 3" /></svg>);
+    case "upload": return (<svg {...c}><path d="M12 14V4m0 0L8 8m4-4 4 4" /><path d="M5 18h14" /></svg>);
+    case "gear": return (<svg {...c}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 4.09V4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01A1.7 1.7 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" /></svg>);
+    case "mic": return (<svg {...c}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></svg>);
+    case "book": return (<svg {...c}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>);
     default: return null;
   }
-}
+});
 
 /* 入力内容に応じて高さが伸びる textarea（全文が常に見える） */
 function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80 }) {
@@ -808,7 +812,10 @@ function useBufferedField(value, onChange, delay = 220) {
   const flush = () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     if (pending.current != null && pending.current !== sent.current) {
-      sent.current = pending.current; cbRef.current(pending.current);
+      const nv = pending.current;
+      sent.current = nv;
+      // 親(巨大state)への反映は低優先度レンダーで＝打鍵再開時にコミット描画へ割り込める
+      startTransition(() => cbRef.current(nv));
     }
     pending.current = null;
   };
@@ -992,7 +999,13 @@ function AddressField({ loc, onChange }) {
   );
 }
 
-function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
+/* 原稿セルのメモ化比較：関数props(onChange)は毎レンダー再生成されるので無視する。
+   onChangeの中身は全て setProject の関数型更新＝古いクロージャが呼ばれても安全。 */
+const cellPropsEqual = (a, b) =>
+  a.value === b.value && a.placeholder === b.placeholder && a.accent === b.accent &&
+  a.fontSize === b.fontSize && a.className === b.className && a.minHeight === b.minHeight;
+
+const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush] = useBufferedField(value, onChange);
@@ -1093,12 +1106,12 @@ function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize
       />
     </div>
   );
-}
+}, cellPropsEqual);
 
 /* 太字(**)・赤文字(!!)の装飾に対応し、内容に合わせて高さが伸びる入力欄。
    ScriptCellと同じマークアップ（⌘B / ⌘⇧H・ツールバーB/A）だが、構成台本特有の◼︎質問行の自動処理は持たない。
    ヒアリング等の自由記述で「全文が見える＋太字・色付け」を使いたい箇所向け。 */
-function RichCell({ value, onChange, placeholder, className = "", minHeight = 44, fontSize = 13 }) {
+const RichCell = React.memo(function RichCell({ value, onChange, placeholder, className = "", minHeight = 44, fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
@@ -1161,7 +1174,7 @@ function RichCell({ value, onChange, placeholder, className = "", minHeight = 44
         style={{ ...textStyle, color: "transparent", caretColor: "#1C1C1E" }} />
     </div>
   );
-}
+}, cellPropsEqual);
 
 /* 再生専用ビュー（mp4=速度ボタン付き / YouTube=埋め込み）。モーダルと企画カードで共用 */
 function VideoView({ video, main }) {
@@ -1441,7 +1454,7 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
         <span className="ml-auto text-[10px] text-stone-400 shrink-0">{data.updated ? data.updated.slice(0, 10) : ""} {open ? "▲" : "▼"}</span>
       </button>
       {open && (
-        <div className="px-3 pb-3 border-t border-stone-200/60 pt-2 max-h-[56vh] overflow-y-auto">
+        <div className="px-3 pb-3 border-t border-stone-200/60 pt-2 max-h-[56vh] overflow-y-auto mg-scroll">
           <div className="lab-md" style={{ "--lab": main }}>
             <style>{`
               .lab-md h3{font-size:14px;font-weight:700;color:#292524;margin:18px 0 7px;padding-bottom:5px;border-bottom:2px solid #e7e5e4}
@@ -1828,7 +1841,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             ))}
             <select value={CMT_CATEGORIES.includes(filter) ? filter : ""} onChange={(e) => e.target.value && setFilter(e.target.value)} className="text-[10px] border border-stone-200 rounded-full px-2 py-1 text-stone-500"><option value="">カテゴリ</option>{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
           </div>
-          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto mg-scroll pr-1">
             {filtered.length === 0 && <p className="text-[11px] text-stone-400 py-4 text-center">修正はありません</p>}
             {filtered.map((c) => {
               const st = cstat(c);
@@ -2247,7 +2260,6 @@ export default function App() {
   const [channelInfo, setChannelInfo] = useState({}); // {channelName: {name,url,concept,target,purpose,competitors[]}}
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState("");
-  const [hoverId, setHoverId] = useState(null);
   const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
   const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
   const [prepView, setPrepView] = useState("hearing"); // 取材メモタブ内の切替：聞き取りシート / 質問ウィザード
@@ -2269,6 +2281,14 @@ export default function App() {
   const [saveState, setSaveState] = useState("ok");   // ok | error（クラウド保存の状態。回線断のsilent lost可視化）
   const [showTheme, setShowTheme] = useState(false);
   const [tab, setTab] = useState("overview"); // overview | plan | script | kouban | assets | review | deliver | concept
+  // タブ切替時にmainへ入場フェードを付け直す（remountなし＝状態・スクロール副作用ゼロ）
+  const mainRef = useRef(null);
+  useEffect(() => {
+    const el = mainRef.current; if (!el) return;
+    el.classList.remove("mg-tab-in");
+    void el.offsetWidth; // reflowでアニメ再発火
+    el.classList.add("mg-tab-in");
+  }, [tab]);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
   const [showFullImport, setShowFullImport] = useState(false);
@@ -5108,7 +5128,7 @@ export default function App() {
           <span className="text-[13px] font-bold">💬 ヘルプ・ご意見</span>
           <button onClick={() => setHelpOpen(false)} className="ml-auto w-7 h-7 grid place-items-center rounded-lg hover:bg-white/15 text-white/80">✕</button>
         </div>
-        <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2 bg-stone-50">
+        <div className="flex-1 overflow-y-auto mg-scroll px-3 py-3 space-y-2 bg-stone-50">
           {helpMsgs.length === 0 && (
             <div className="text-[12px] text-stone-500 leading-relaxed bg-white border border-stone-200 rounded-xl px-3 py-2.5">
               使い方で迷ったら聞いてください（例：「完成動画はどこから上げる？」）。<br />「ここ使いにくい」「こうしてほしい」もそのまま書いてOK。運営に届きます。
@@ -5332,14 +5352,14 @@ export default function App() {
           {newMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setNewMenu(false)} />
-              <div className="absolute left-3 right-3 top-full mt-1 z-50 bg-[#1f242c] border border-white/15 rounded-xl shadow-2xl overflow-hidden">
+              <div className="mg-pop absolute left-3 right-3 top-full mt-1 z-50 bg-[#1f242c] border border-white/15 rounded-xl shadow-2xl overflow-hidden" style={{ transformOrigin: "top left" }}>
                 <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-white/40">どのタイプの台本？</div>
                 <button onClick={() => createProject(true, DEFAULT_CHANNEL, "documentary")} className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-start gap-2">
-                  <span className="text-base leading-none mt-0.5">🎬</span>
+                  <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-white/60" />
                   <span><span className="block text-[12px] font-bold text-white">一日密着</span><span className="block text-[10px] text-white/45">ロケ・シーン構成のドキュメンタリー</span></span>
                 </button>
                 <button onClick={() => createProject(true, DEFAULT_CHANNEL, "talk")} className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-start gap-2 border-t border-white/10">
-                  <span className="text-base leading-none mt-0.5">🎙️</span>
+                  <Icon name="mic" className="w-4 h-4 shrink-0 mt-0.5 text-white/60" />
                   <span><span className="block text-[12px] font-bold text-white">トーク系</span><span className="block text-[10px] text-white/45">ハイライト/冒頭/目次/本編/CTA構成</span></span>
                 </button>
               </div>
@@ -5354,7 +5374,7 @@ export default function App() {
         </datalist>
 
         {/* ===== チャンネル → 案件 ネスト ===== */}
-        <div className="flex-1 overflow-y-auto px-2 pb-3">
+        <div className="mg-scroll flex-1 overflow-y-auto px-2 pb-3">
           {chanLive ? (
             <div className="pt-1">
               <div className="px-2 py-1.5 text-[11px] font-bold text-white/50 truncate flex items-center gap-1">
@@ -5546,7 +5566,7 @@ export default function App() {
           {/* マニュアル／決め事 */}
           <button onClick={() => setShowManual(true)} title="マニュアル・決め事（全体／チャンネル／案件）"
             className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
-            <span className="text-[13px] leading-none">📖</span><span className="hidden sm:inline">マニュアル</span>
+            <Icon name="book" className="w-4 h-4 shrink-0" /><span className="hidden sm:inline">マニュアル</span>
           </button>
           {/* 共有メニュー（共有リンク発行 / 台本コピー） */}
           <div className="relative">
@@ -5557,7 +5577,7 @@ export default function App() {
             </button>
             {shareMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 max-h-[80vh] overflow-y-auto">
+              <div className="mg-pop mg-scroll absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 max-h-[80vh] overflow-y-auto">
                 {/* ===== 2択だけ（2026-07-17 AK指示：このタブだけ／全体、それだけでいい） ===== */}
                 {TAB_SHARE_PANE[tab] && (
                   <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
@@ -5570,17 +5590,17 @@ export default function App() {
                   全タブ共有<span className="text-[10px] text-stone-400 font-normal ml-auto">閲覧・全タブ</span>
                 </button>
                 <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                  <span className="text-[15px] leading-none w-4 text-center shrink-0">✏️</span>
+                  <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-500" />
                   全タブ編集共有<span className="text-[10px] text-stone-400 font-normal ml-auto">{project.liveId ? "更新・同時編集" : "同時編集"}</span>
                 </button>
                 {handoffs.find((h) => h.upload || h.id === "upload") && (
                   <button onClick={() => { setShareMenu(false); doHandoff(handoffs.find((h) => h.upload || h.id === "upload")); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                    <span className="text-[15px] leading-none w-4 text-center shrink-0">⬆️</span>
+                    <Icon name="upload" className="w-4 h-4 shrink-0 text-stone-500" />
                     アップだけ<span className="text-[10px] text-stone-400 font-normal ml-auto">編集者が上げる用</span>
                   </button>
                 )}
                 <div className="flex items-stretch border-t border-b border-stone-100">
-                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5"><span className="text-[15px] leading-none w-4 text-center shrink-0">📄</span>台本コピー<span className="text-[10px] text-stone-400 font-normal ml-auto">CSV</span></button>
+                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5"><Icon name="file" className="w-4 h-4 shrink-0 text-stone-500" />台本コピー<span className="text-[10px] text-stone-400 font-normal ml-auto">CSV</span></button>
                   <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 py-3 hover:bg-stone-50 text-[12px] font-bold text-stone-500 border-l border-stone-100">txt</button>
                 </div>
                 {/* ===== その他（折りたたみ）：先方/演者・AI・動画確認・カスタマイズ ===== */}
@@ -5595,14 +5615,14 @@ export default function App() {
                     </button>
                   ))}
                   <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left pl-7 pr-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2 border-b border-stone-100">
-                    <span className="text-[12px] leading-none">⚙️</span> 受け渡しをカスタマイズ
+                    <Icon name="gear" className="w-3.5 h-3.5 shrink-0" /> 受け渡しをカスタマイズ
                   </button>
                   <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                    <span className="text-[13px] leading-none">🤖</span>
+                    <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-500" />
                     AIに読ませる用<span className="text-[10px] text-stone-400 font-normal ml-auto">Claude/GPT</span>
                   </button>
                   <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                    <span className="text-[13px] leading-none">🎬</span> 動画確認・ファイル転送
+                    <Icon name="video" className="w-4 h-4 shrink-0 text-stone-500" /> 動画確認・ファイル転送
                   </button>
                 </>)}
               </div>
@@ -5622,7 +5642,7 @@ export default function App() {
             </button>
             {aiMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setAiMenu(false)} />
-              <div className="absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700">
+              <div className="mg-pop absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700">
                 <button onClick={() => { setAiMenu(false); setShowReview(true); if (!reviewBusy) runReview(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2 border-b border-stone-100">
                   <Icon name="spellcheck" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
                   <span><span className="block text-[12px] font-bold">AI校正チェック</span><span className="block text-[10px] text-stone-400">誤字脱字・未記入・構成の弱点を確認</span></span>
@@ -5660,7 +5680,7 @@ export default function App() {
         <div className="h-[5px] w-full" style={{ background: stripe }} />
 
         {showTheme && (
-          <div className="absolute right-4 top-full mt-2 bg-white text-stone-800 rounded-xl shadow-xl border border-stone-200 p-4 w-64 z-40">
+          <div className="mg-pop absolute right-4 top-full mt-2 bg-white text-stone-800 rounded-xl shadow-xl border border-stone-200 p-4 w-64 z-40">
             <h3 className="text-xs font-bold mb-3">テーマカラー</h3>
             <label className="flex items-center justify-between text-xs mb-2.5">
               メインカラー
@@ -5700,7 +5720,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-      <main className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
+      <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
         {sched && (
@@ -6117,10 +6137,11 @@ export default function App() {
               )}
             </section>
 
-            {/* 構成テーブル（PC：横並びテーブル） */}
+            {/* 構成テーブル（PC：横並びテーブル）。overflow-clip＝角丸クリップは維持しつつ
+                スクロールコンテナ化しない→theadのstickyが効く（列名がスクロールで消えない） */}
             {!isNarrow && (
-            <section className={cardCls}>
-             <div className="overflow-x-auto">
+            <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-clip">
+             <div className="overflow-x-clip">
               <table className="w-full border-collapse table-fixed" style={{ minWidth: isNarrow ? 600 : undefined }}>
                 <colgroup>
                   <col style={{ width: isNarrow ? 64 : 86 }} />
@@ -6133,7 +6154,10 @@ export default function App() {
                 <thead>
                   <tr style={{ background: theme.main, color: mainText }}>
                     {["時間", "内容", "シーン", "秒数", "所要時間", "原稿"].map((h, i) => (
-                      <th key={i} className="px-3 py-2 text-left text-[10px] font-bold tracking-[0.15em] whitespace-nowrap" style={{ opacity: 0.9 }}>{h}</th>
+                      <th key={i} className="sticky z-[5] px-3 py-2 text-left text-[10px] font-bold tracking-[0.15em] whitespace-nowrap"
+                        style={{ top: headerH, background: theme.main }}>
+                        <span style={{ opacity: 0.9 }}>{h}</span>
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -6148,7 +6172,6 @@ export default function App() {
                           </tr>
                         )}
                         <tr id={"row-" + r.id} {...dropZoneProps(idx)}
-                          onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
                           onPointerEnter={() => paintSelectTo(idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "location", x: e.clientX, y: e.clientY }); }}
                           style={{
@@ -6212,7 +6235,6 @@ export default function App() {
                     return (
                       <tr key={r.id} id={"row-" + r.id}
                         {...dropZoneProps(idx)}
-                        onMouseEnter={() => setHoverId(r.id)} onMouseLeave={() => setHoverId(null)}
                         onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: e.clientX, y: e.clientY }); }}
                         className="border-b border-stone-100 transition-colors"
                         style={{
@@ -7192,7 +7214,7 @@ export default function App() {
         cells.splice(Math.min(t.myPos, cells.length), 0, { mine: true });
         return (
           <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-3" onClick={() => setThumbTest(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto mg-scroll" onClick={(e) => e.stopPropagation()}>
               <div className="px-5 py-3 flex items-center justify-between sticky top-0 z-10" style={{ background: theme.main, color: mainText }}>
                 <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="sparkle" className="w-4 h-4" />目立ちテスト「{t.keyword}」</h3>
                 <button onClick={() => setThumbTest(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
@@ -7359,7 +7381,7 @@ export default function App() {
               ))}
             </div>
             <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件で共通のスタジオの決め事（テロップ・書き出し・命名規則など）。" : manualScope === "channel" ? "このクライアント（チャンネル）固有のルール。同じチャンネルの全案件で共有。" : "この案件だけの指示書・メモ。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
-            <div className="p-5 overflow-y-auto">
+            <div className="p-5 overflow-y-auto mg-scroll">
               {manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken}
                 onAdopt={(t) => saveGlobalManuals([...globalManuals, { ...newManual("その他"), body: t }])} />}
               {manualScope === "global" && <ManualPanel entries={globalManuals} onChange={saveGlobalManuals} main={theme.main} accent={theme.accent} />}
@@ -7419,7 +7441,7 @@ export default function App() {
               <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="spellcheck" className="w-4 h-4" />AI校正チェック</h3>
               <button onClick={() => setShowReview(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
-            <div className="p-5 overflow-y-auto">
+            <div className="p-5 overflow-y-auto mg-scroll">
               <p className="text-[12px] text-stone-500 mb-3 leading-relaxed">
                 「<span className="font-bold">{project ? project.name : ""}</span>」の構成台本を、<span className="font-bold">誤字脱字</span>・<span className="font-bold">質問と回答の逆転</span>・<span className="font-bold">未記入の箇所</span>の3観点でチェックします。指摘をクリックすると該当シーンに移動します。
               </p>
@@ -7560,7 +7582,7 @@ export default function App() {
               {searchHits != null && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setSearchHits(null)} />
-                  <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-stone-200 bg-white shadow-xl max-h-[60vh] overflow-y-auto">
+                  <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-stone-200 bg-white shadow-xl max-h-[60vh] overflow-y-auto mg-scroll">
                     {searchHits.length === 0 ? (
                       <div className="px-4 py-3 text-[12px] text-stone-400">「{caseSearch}」にヒットなし</div>
                     ) : searchHits.map((h, i) => (
@@ -7701,11 +7723,11 @@ export default function App() {
       {addMenu && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setAddMenu(null)} />
-          <div className="fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+          <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(addMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: addMenu.y }}>
             <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{addMenu.channel} に追加</div>
-            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "documentary"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><span>🎬</span>一日密着</button>
-            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "talk"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><span>🎙️</span>トーク系</button>
+            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "documentary"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><Icon name="video" className="w-4 h-4 shrink-0 text-stone-500" />一日密着</button>
+            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "talk"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><Icon name="mic" className="w-4 h-4 shrink-0 text-stone-500" />トーク系</button>
           </div>
         </>
       )}
@@ -7713,7 +7735,7 @@ export default function App() {
       {chShareMenu && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setChShareMenu(null)} />
-          <div className="fixed z-[61] w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+          <div className="mg-pop fixed z-[61] w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(chShareMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 250), top: chShareMenu.y }}>
             <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{chShareMenu.channel} を共有</div>
             <button onClick={() => { const ch = chShareMenu.channel; setChShareMenu(null); publishChannel(ch, false); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 flex items-start gap-2">
@@ -7732,7 +7754,7 @@ export default function App() {
       {ctxMenu && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }} />
-          <div className="fixed z-[61] w-52 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+          <div className="mg-pop fixed z-[61] w-52 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(ctxMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 220), top: ctxMenu.y }}>
             <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{ctxMenu.channel}</div>
             {ctxMenu.channel !== DEFAULT_CHANNEL && (
@@ -7767,10 +7789,10 @@ export default function App() {
       {chanMenu && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setChanMenu(null)} onContextMenu={(e) => { e.preventDefault(); setChanMenu(null); }} />
-          <div className="fixed z-[61] w-56 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+          <div className="mg-pop fixed z-[61] w-56 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(chanMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 236), top: chanMenu.y }}>
             <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400">移動先のチャンネルを選ぶ</div>
-            <div className="max-h-72 overflow-y-auto">
+            <div className="max-h-72 overflow-y-auto mg-scroll">
               {channelOptions.map((c) => {
                 const isCur = c === chanMenu.channel;
                 return (
@@ -7796,7 +7818,7 @@ export default function App() {
       {caseMenu && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setCaseMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCaseMenu(null); }} />
-          <div className="fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+          <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(caseMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(caseMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 220) }}>
             <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); setChannelEditId(null); setRenamingId(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">✎</span>名前変更</button>
             <button onClick={() => { const c = caseMenu; setCaseMenu(null); setChanMenu({ id: c.id, channel: c.channel, x: c.x, y: c.y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">📁</span>チャンネル移動</button>
@@ -7810,7 +7832,7 @@ export default function App() {
       {rowMenu && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setRowMenu(null)} onContextMenu={(e) => { e.preventDefault(); setRowMenu(null); }} />
-          <div className="fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
+          <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 200) }}>
             <div className="flex border-b border-stone-100">
               <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
@@ -7827,7 +7849,7 @@ export default function App() {
       {iconPick && (
         <>
           <div className="fixed inset-0 z-[62]" onClick={() => setIconPick(null)} onContextMenu={(e) => { e.preventDefault(); setIconPick(null); }} />
-          <div className="fixed z-[63] w-[244px] bg-white rounded-xl shadow-2xl border border-stone-200 p-2.5 text-stone-700"
+          <div className="mg-pop fixed z-[63] w-[244px] bg-white rounded-xl shadow-2xl border border-stone-200 p-2.5 text-stone-700"
             style={{ left: Math.min(iconPick.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 256), top: Math.min(iconPick.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 230) }}>
             <div className="px-1 pb-1.5 text-[10px] font-bold text-stone-400 truncate flex items-center justify-between">
               <span className="truncate">{iconPick.channel} のアイコン</span>
@@ -7962,7 +7984,7 @@ export default function App() {
       {/* ===== 受け渡し（ラリー）プリセットのカスタマイズ ===== */}
       {showHandoffEdit && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowHandoffEdit(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto mg-scroll" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between sticky top-0 z-10" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider">受け渡しのカスタマイズ</h3>
               <button onClick={() => setShowHandoffEdit(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
@@ -8047,7 +8069,7 @@ export default function App() {
       {/* ===== 動画確認・ファイル転送 モーダル ===== */}
       {showMediaModal && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !mediaBusy && setShowMediaModal(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[88vh] overflow-y-auto mg-scroll" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between sticky top-0 z-10" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider">動画確認・ファイル転送</h3>
               <button onClick={() => !mediaBusy && setShowMediaModal(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
@@ -8074,7 +8096,7 @@ export default function App() {
                 <button onClick={() => setShowComments(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 space-y-2" style={{ background: "#F4F3EF" }}>
+            <div className="flex-1 overflow-y-auto mg-scroll p-3 space-y-2" style={{ background: "#F4F3EF" }}>
               {comments.length === 0 && (
                 <p className="text-[12px] text-stone-400 text-center py-10">まだコメントはありません。<br />共有URLを先方に送ると、ここに届きます。</p>
               )}
@@ -8146,7 +8168,7 @@ export default function App() {
           </div>
 
           {/* メッセージ */}
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5 bg-stone-50">
+          <div className="flex-1 overflow-y-auto mg-scroll px-3 py-3 space-y-2.5 bg-stone-50">
             {chatMsgs.length === 0 && !chatBusy && (
               <div className="text-[12px] text-stone-400 leading-relaxed px-1 py-2">
                 <p className="font-bold text-stone-500 mb-1.5">台本を一緒に作れます。例えば：</p>

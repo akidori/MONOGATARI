@@ -1,3 +1,29 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ===== ブラッシュアップ用グローバル（2026-07-24） ===== */
+
+/* タブ切替の軽い入場フェード（tab変更時にmainへ .mg-tab-in を付け直す） */
+@keyframes mg-tab-in {
+  from { opacity: 0.55; transform: translateY(4px); }
+  to   { opacity: 1;    transform: none; }
+}
+.mg-tab-in { animation: mg-tab-in 0.16s ease-out; }
+
+/* ドロップダウン/ポップオーバーの入場（メニューが「ぱっ」でなく「すっ」と出る） */
+@keyframes mg-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.mg-pop { animation: mg-pop 0.12s ease-out; transform-origin: top right; }
+
+/* 内部スクロール領域の細いスクロールバー（macの常時表示設定でも太い灰色棒にならない） */
+.mg-scroll { scrollbar-width: thin; scrollbar-color: #C9C5BB transparent; }
+.mg-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.mg-scroll::-webkit-scrollbar-thumb { background: #C9C5BB; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.mg-scroll::-webkit-scrollbar-thumb:hover { background: #A8A399; border-radius: 8px; border: 2px solid transparent; background-clip: content-box; }
+.mg-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* テキスト選択色をブランドに寄せる */
+::selection { background: rgba(230, 57, 70, 0.18); }
