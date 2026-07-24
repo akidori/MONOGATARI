@@ -1492,6 +1492,68 @@ function VersionTrashPanel({ items, onRestore }) {
     </div>
   );
 }
+/* 縦ショート自動生成（たてがた君）＝納品段階で使う自己完結パネル。納品完了タブに置く。 */
+function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent }) {
+  const [busy, setBusy] = React.useState(false);
+  const [jobs, setJobs] = React.useState([]);
+  const [items, setItems] = React.useState([]);
+  const pollList = async (snap, token, tries = 0) => {
+    if (tries > 80) return;
+    try {
+      const r = await fetch(SHARE_API + "/api/shorts/list/" + snap + "?token=" + encodeURIComponent(token || ""));
+      const d = await r.json();
+      if (d && !d.error) {
+        setItems(d.shorts || []); setJobs(d.jobs || []);
+        if (!(d.jobs || []).some((j) => j.status === "pending" || j.status === "processing")) return;
+      }
+    } catch (e) {}
+    setTimeout(() => pollList(snap, token, tries + 1), 5000);
+  };
+  React.useEffect(() => { if (shareId) pollList(shareId, shareToken, 0); }, [shareId]);
+  const running = jobs.some((j) => j.status === "pending" || j.status === "processing");
+  const enqueue = async () => {
+    if (!videoKey || busy || running) return;
+    setBusy(true);
+    try {
+      const sh = await onEnsureShare();
+      if (!sh) { setBusy(false); return; }
+      const r = await fetch(SHARE_API + "/api/shorts/enqueue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: sh.id, token: sh.token, videoKey }) });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || "登録に失敗しました");
+      pollList(sh.id, sh.token, 0);
+    } catch (e) { setJobs((js) => [{ id: "err_" + Date.now(), status: "error", error: String((e && e.message) || e) }, ...js]); }
+    setBusy(false);
+  };
+  return (
+    <div className="rounded-xl border border-stone-200 bg-white p-3 mb-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="text-[12px] font-bold text-stone-600">🎬 たてがた君（縦ショート自動生成）</div>
+        <div className="flex-1" />
+        <button onClick={enqueue} disabled={!videoKey || busy || running}
+          title={!videoKey ? "先に動画確認で完成版をアップしてください" : running ? "既に生成中です" : "納品動画から縦型ショートを自動生成"}
+          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
+          {busy || running ? "生成中…" : "ショート生成"}
+        </button>
+      </div>
+      {!videoKey && <div className="text-[11px] text-stone-400 mt-1.5">動画確認タブで完成版動画をアップすると、ここからショートを生成できます。</div>}
+      {(busy || jobs.length > 0 || items.length > 0) && (
+        <div className="mt-2">
+          {busy && <div className="text-[11px] text-stone-500">📤 リクエストを送信中…</div>}
+          {running && <div className="text-[11px] text-stone-500">⏳ 生成中…（Macでの処理待ち／実行中。数分かかることがあります）</div>}
+          {jobs.filter((j) => j.status === "error").map((j) => <div key={j.id} className="text-[11px] text-rose-500">⚠️ {j.error || "生成に失敗しました"}</div>)}
+          {items.length > 0 && (
+            <ul className="flex flex-wrap gap-2 mt-1.5">
+              {items.map((f) => (
+                <li key={f.key}><a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">🎬 {f.name}</a></li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
   trashedVersions = trashedVersions || [];
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
@@ -1505,9 +1567,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const [text, setText] = React.useState("");
   const [yt, setYt] = React.useState("");
   const [replyText, setReplyText] = React.useState({});
-  const [shortsBusy, setShortsBusy] = React.useState(false);
-  const [shortsJobs, setShortsJobs] = React.useState([]);
-  const [shortsItems, setShortsItems] = React.useState([]);
   const vref = React.useRef(null);
   const [rate, setRate] = React.useState(1);
   const [cur, setCur] = React.useState(0);
@@ -1626,43 +1685,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
   const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} };
 
-  // たてがた君（縦ショート自動生成）結果ポーリング。pollStreamReadyと同じ「再帰setTimeout・triesで打ち切り」スタイル。
-  const pollShortsList = async (snap, token, tries = 0) => {
-    if (tries > 80) return;
-    try {
-      const r = await fetch(SHARE_API + "/api/shorts/list/" + snap + "?token=" + encodeURIComponent(token || ""));
-      const d = await r.json();
-      if (d && !d.error) {
-        setShortsItems(d.shorts || []);
-        setShortsJobs(d.jobs || []);
-        const running = (d.jobs || []).some((j) => j.status === "pending" || j.status === "processing");
-        if (!running) return;
-      }
-    } catch (e) {}
-    setTimeout(() => pollShortsList(snap, token, tries + 1), 5000);
-  };
-  React.useEffect(() => {
-    if (shareId) pollShortsList(shareId, shareToken, 0);
-  }, [shareId]);
-  const shortsRunning = shortsJobs.some((j) => j.status === "pending" || j.status === "processing");
-  const enqueueShorts = async () => {
-    if (!sel || !sel.key || shortsBusy || shortsRunning) return;
-    setShortsBusy(true);
-    try {
-      const sh = await onEnsureShare();
-      if (!sh) { setShortsBusy(false); return; }
-      const r = await fetch(SHARE_API + "/api/shorts/enqueue", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ snap: sh.id, token: sh.token, videoKey: sel.key }),
-      });
-      const d = await r.json();
-      if (!d.ok) throw new Error(d.error || "登録に失敗しました");
-      pollShortsList(sh.id, sh.token, 0);
-    } catch (e) {
-      setShortsJobs((js) => [{ id: "err_" + Date.now(), status: "error", error: String((e && e.message) || e) }, ...js]);
-    }
-    setShortsBusy(false);
-  };
 
   if (!versions.length) {
     return (
@@ -1723,42 +1745,9 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             ⬇ 元mp4をDL
           </a>
         )}
-        {sel.key && (
-          <button onClick={enqueueShorts} disabled={shortsBusy || shortsRunning}
-            title={shortsRunning ? "既に生成中です" : "この版から縦型ショートを自動生成"}
-            className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
-            {shortsBusy || shortsRunning ? "生成中…" : "🎬 ショート生成"}
-          </button>
-        )}
         <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（7日間はゴミ箱から復元できます。コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
       </div>
       <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
-      {(shortsBusy || shortsJobs.length > 0 || shortsItems.length > 0) && (
-        <div className="mb-3 rounded-xl border border-stone-200 bg-white p-3">
-          <div className="text-[11px] font-bold text-stone-500 mb-1.5">たてがた君（縦ショート自動生成）</div>
-          {shortsBusy && (
-            <div className="text-[11px] text-stone-500">📤 リクエストを送信中…</div>
-          )}
-          {shortsJobs.some((j) => j.status === "pending" || j.status === "processing") && (
-            <div className="text-[11px] text-stone-500">⏳ 生成中…（Macでの処理待ち／実行中。数分かかることがあります）</div>
-          )}
-          {shortsJobs.filter((j) => j.status === "error").map((j) => (
-            <div key={j.id} className="text-[11px] text-rose-500">⚠️ {j.error || "生成に失敗しました"}</div>
-          ))}
-          {shortsItems.length > 0 && (
-            <ul className="flex flex-wrap gap-2 mt-1.5">
-              {shortsItems.map((f) => (
-                <li key={f.key}>
-                  <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer"
-                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
-                    🎬 {f.name}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
         {/* 左：プレイヤー */}
         <div>
@@ -7027,6 +7016,7 @@ export default function App() {
           ];
           const isFilled = ([key, , , , , kind]) => kind === "image" ? deliverThumbs().length > 0 : !!(m[key] || "").trim();
           const doneCount = dv.filter(isFilled).length;
+          const shortsKey = (() => { const vs = activeReviewVersions().filter((v) => v && v.key && v.type !== "youtube"); return vs.length ? vs[vs.length - 1].key : ""; })();
           return (
           <div className="max-w-3xl mx-auto px-1 sm:px-0 py-2">
             <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
@@ -7053,6 +7043,7 @@ export default function App() {
                 ))}
               </div>
             </div>
+            <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent} />
             <section className={cardCls}>
               {dv.map((row, i) => {
                 const [key, label, placeholder, multiline, auto, kind] = row;
