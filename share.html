@@ -447,8 +447,7 @@ function metaInfoBlock(p){
   if(title) rows.push(["metaTitle", "タイトル", title]);
   if(thumbText || imgs.length) rows.push(["metaThumb", "サムネ", thumbText]);
   if(!rows.length) return "";
-  return `<div class="bg-white px-5 py-3">
-    <div class="text-[10px] font-bold text-stone-400 mb-2">番組情報</div>
+  return sectionHead("番組情報") + `<div class="bg-white px-4 py-2">
     ${rows.map(([sid,k,v])=>`<div class="py-1.5">
       <div class="flex gap-3 items-start">
         <div class="w-16 shrink-0 text-[11px] font-bold text-stone-400 pt-0.5">${esc(k)}</div>
@@ -460,6 +459,14 @@ function metaInfoBlock(p){
       </div>
       ${cmtWrap(sid)}
     </div>`).join("")}
+  </div>`;
+}
+/* ロケ見出しと同じ帯（テーマ色＋ストライプ）。番組情報・冒頭フックもこれで目立たせる */
+function sectionHead(label, right){
+  return `<div class="flex items-stretch" style="background:var(--main);color:#fff">
+    <div class="w-4 shrink-0 stripe"></div>
+    <div class="px-3 py-2 font-bold tracking-wide text-[14px]">${esc(label)}</div>
+    ${right?`<div class="ml-auto self-center pr-3">${right}</div>`:""}
   </div>`;
 }
 /* 任意の対象（シーン以外＝番組情報・ハイライト等）にコメントを付けるボタン＋差し込み枠 */
@@ -659,11 +666,7 @@ function render(){
     </div>`}
     ${infoBlock || (m.highlight&&TAB==="script") ? `<div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
       ${infoBlock}
-      ${m.highlight&&TAB==="script"?`<div class="bg-white px-5 py-3 ${infoBlock?"border-t border-stone-100":""}">
-        <div class="flex items-start justify-between gap-3">
-          <div class="text-[10px] font-bold text-stone-400 mb-1">冒頭フック</div>
-          ${cmtBtn("metaHighlight", "ハイライト（冒頭フック）")}
-        </div>
+      ${m.highlight&&TAB==="script"?sectionHead("冒頭フック", cmtBtn("metaHighlight", "ハイライト（冒頭フック）"))+`<div class="bg-white px-4 py-3">
         <div class="script">${renderScript(accent, m.highlight)}</div>
         ${cmtWrap("metaHighlight")}</div>`:""}
     </div>` : ""}

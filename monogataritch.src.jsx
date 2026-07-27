@@ -102,6 +102,16 @@ const SHARE_API = (() => {
   return "https://mg-share.aki-surf89315.workers.dev";
 })();
 const shareUrl = (id, r) => location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id + (r ? "&r=" + encodeURIComponent(r) : "");
+/* 編集用リンク（?live=）に &tab=script が付いていたら、そのタブだけ触らせる。
+   ※UI上の絞り込み＝相手にどこを直してほしいか迷わせないためのもの。トークン自体は文書全体の編集権を持つ */
+const LIVE_ONLY_TABS = (() => {
+  try {
+    const sp = new URLSearchParams(location.search);
+    if (!sp.get("live") && !sp.get("ch")) return null;
+    const raw = (sp.get("tabs") || sp.get("tab") || "").split(",").map((s) => s.trim()).filter(Boolean);
+    return raw.length ? raw : null;
+  } catch (e) { return null; }
+})();
 
 /* ===== Googleログイン＋クラウド同期 =====
    未ログイン: window.storage = localStorage（index.htmlのshim）
@@ -3912,14 +3922,16 @@ export default function App() {
         lastRemoteRef.current = JSON.stringify(cleanProj(proj));
         if (m.t === "init") { setActiveId(liveId); inited = true; }
         setProject({ ...proj, live: true, liveId, liveToken: token });
+        // 「このタブだけ編集」リンクはそのタブに着地させる（他タブはtabItemsから消える）
+        if (m.t === "init" && LIVE_ONLY_TABS && LIVE_ONLY_TABS[0]) setTab(LIVE_ONLY_TABS[0]);
         if (m.t === "init") setLoaded(true);
       }
     };
     ws.onclose = () => { if (liveWS.current === ws) liveWS.current = null; if (!inited) { setView("home"); setLoaded(true); loadAll(); showToast("編集リンクが無効か、期限切れの可能性があります"); } };
     ws.onerror = () => {};
   };
-  // 編集用（リアルタイム）リンクを発行
-  const publishShareLive = async () => {
+  // 編集用（リアルタイム）リンクを発行。onlyTab を渡すとそのタブだけ触れる編集リンクになる
+  const publishShareLive = async (onlyTab) => {
     if (!project) return;
     setSharing(true);
     try {
@@ -3932,8 +3944,9 @@ export default function App() {
       const next = { ...project, liveId: data.liveId, liveToken: data.editToken };
       setProject(next);
       try { if (!next.collab && typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
-      const url = location.origin + location.pathname.replace(/[^/]*$/, "") + "index.html?live=" + data.liveId + "#k=" + data.editToken;
-      setShareModal({ id: data.liveId, url, updated: !!project.liveId, live: true });
+      const url = location.origin + location.pathname.replace(/[^/]*$/, "") + "index.html?live=" + data.liveId
+        + (onlyTab ? "&tab=" + encodeURIComponent(onlyTab) : "") + "#k=" + data.editToken;
+      setShareModal({ id: data.liveId, url, updated: !!project.liveId, live: true, tab: onlyTab || "" });
       try { await navigator.clipboard.writeText(url); } catch (e) {}
     } catch (e) { showToast("編集リンクの発行に失敗：" + (e.message || e)); }
     setSharing(false);
@@ -5307,7 +5320,10 @@ export default function App() {
   );
 
   // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
-  const tabItems = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
+  const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
+  const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
 
   return (
     <div className="min-h-screen" style={{ background: "#E9E8E3", fontFamily: sans, color: "#1C1C1E" }}>
@@ -5589,6 +5605,12 @@ export default function App() {
                   <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
                   全タブ共有<span className="text-[10px] text-stone-400 font-normal ml-auto">閲覧・全タブ</span>
                 </button>
+                {TAB_LABEL[tab] && (
+                  <button onClick={() => { setShareMenu(false); publishShareLive(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
+                    <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-500" />
+                    このタブだけ編集共有<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
+                  </button>
+                )}
                 <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
                   <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-500" />
                   全タブ編集共有<span className="text-[10px] text-stone-400 font-normal ml-auto">{project.liveId ? "更新・同時編集" : "同時編集"}</span>
