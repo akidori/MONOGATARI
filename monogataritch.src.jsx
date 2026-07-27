@@ -786,17 +786,17 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
 });
 
 /* 入力内容に応じて高さが伸びる textarea（全文が常に見える） */
-function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80 }) {
+function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title }) {
   const ref = useRef(null);
   const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
   // 親へは合成イベント({target:{value}})で渡す＝呼び出し側のe.target.value流儀を維持
   const [val, set, flush] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
   useEffect(() => { resize(ref.current); }, [val]);
   return (
-    <textarea ref={ref} value={val} placeholder={placeholder} className={className}
+    <textarea ref={ref} value={val} placeholder={placeholder} className={className} title={title}
       style={{ overflow: "hidden", resize: "none", minHeight }}
       onChange={(e) => { set(e.target.value); resize(e.target); }}
-      onBlur={flush} />
+      onBlur={(e) => { flush(e); if (onBlur) onBlur(e); }} />
   );
 }
 
@@ -2416,9 +2416,6 @@ export default function App() {
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
   const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
-  const [board, setBoard] = useState(null);                  // Flip Board(D1)全案件の進行ボード＝ホームの可視化。読み取り専用
-  const [boardAll, setBoardAll] = useState(false);           // 進行ボード：全件 ⇔ このチャンネルだけ
-  const [boardDone, setBoardDone] = useState(false);          // 進行ボード：納品済の折りたたみ
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("case");    // global | channel | case
 
@@ -4361,20 +4358,6 @@ export default function App() {
     return () => clearInterval(t);
   }, [project && project.shareId]);
 
-  // 進行ボード：ホーム表示時にFlip Board(D1)の全案件をまとめて引く（担当・工程・次の締切の可視化）
-  React.useEffect(() => {
-    if (view !== "home") return;
-    let live = true;
-    (async () => {
-      try {
-        const r = await fetch(SHARE_API + "/api/board");
-        const d = await r.json();
-        if (live) setBoard(d && Array.isArray(d.rows) ? d.rows : null);
-      } catch (_) { /* 取れなければ静かに非表示 */ }
-    })();
-    return () => { live = false; };
-  }, [view]);
-
   // 進行ストリップ：Flip Board(D1正本)から担当案件の日程スライスを引く。未公開(shareId無し)/未リンクは出さない（窓表示・読み取り専用）
   React.useEffect(() => {
     const id = project && project.shareId;
@@ -6131,19 +6114,19 @@ export default function App() {
                   <input className={metaInput} value={m.place} onChange={(e) => setMeta("place", e.target.value)} />
                 </div>
               </div>
-              {/* タイトル（企画・サムネタブと連携）＝ラベル下・改行可 */}
+              {/* タイトル（企画・サムネタブと連携）＝ラベル下・改行可。中身の行数ぶん自動で伸びる（切れて見えないようにする） */}
               <div className="border-b border-stone-100 px-3 py-2">
                 <div className="text-[11px] font-bold text-stone-400 mb-1">タイトル</div>
-                <textarea rows={2} value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路"
+                <AutoTextarea value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路"
                   onChange={(e) => setPlanField(0, "title", e.target.value)} onBlur={() => commitCaseName(activeId)} title="企画・サムネタブのタイトルと連携しています"
-                  className="block w-full bg-transparent text-[13px] leading-relaxed resize-y focus:outline-none placeholder:text-stone-300" />
+                  minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
               </div>
-              {/* サムネ文言 ＝ラベル下・改行可 */}
+              {/* サムネ文言 ＝ラベル下・改行可。空行込みで全文見えるように自動で伸ばす */}
               <div className="px-3 py-2">
                 <div className="text-[11px] font-bold text-stone-400 mb-1">サムネ文言</div>
-                <textarea rows={2} value={((project.plans || [])[0] && project.plans[0].thumbText) || ""} placeholder="例）人生、詰んだ。"
+                <AutoTextarea value={((project.plans || [])[0] && project.plans[0].thumbText) || ""} placeholder="例）人生、詰んだ。"
                   onChange={(e) => setPlanField(0, "thumbText", e.target.value)} title="企画・サムネタブのサムネ文言と連携しています"
-                  className="block w-full bg-transparent text-[13px] leading-relaxed resize-y focus:outline-none placeholder:text-stone-300" />
+                  minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
               </div>
             </section>
 
@@ -7637,57 +7620,6 @@ export default function App() {
                 <span><span className="font-bold">ログインすると</span>案件がクラウドに保存され、どの端末でも開けます。<button onClick={() => setShowAccount(true)} className="font-bold underline" style={{ color: theme.main }}>ログイン</button></span>
               </div>
             )}
-
-            {/* ===== 進行ボード（Flip Board D1の窓）：誰がどの案件のどの工程か・次の締切を一望。読み取り専用 ===== */}
-            {board && board.length > 0 && (() => {
-              const BALL = { editor: "編集", ak: "AK", client: "先方", talent: "演者" };
-              const rows = boardAll ? board : board.filter((r) => (r.client || "") === (curChannel || "") || (r.title || "").includes(curChannel || "＿＿"));
-              const shown = (boardAll || rows.length) ? rows : board; // チャンネル絞りで0件なら全件にフォールバック
-              const overdue = board.filter((r) => r.next && r.next.days != null && r.next.days < 0).length;
-              return (
-                <div className="mb-7">
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="text-[12px] font-bold flex items-center gap-2 text-stone-600">🗂 進行ボード<span className="text-stone-300 font-normal">{shown.length}</span>
-                      {overdue > 0 && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">超過 {overdue}</span>}
-                    </div>
-                    <button onClick={() => setBoardAll((v) => !v)} className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-stone-300 bg-white text-stone-500 hover:bg-stone-50">
-                      {boardAll ? "全部" : "このチャンネル"}
-                    </button>
-                    <span className="ml-auto text-[10px] text-stone-400">Flip Board連動・読み取り</span>
-                  </div>
-                  <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100">
-                    {(() => {
-                      const rr = (r, dim) => {
-                        const dl = r.next && r.next.days != null ? r.next.days : null;
-                        const dc = dl == null ? "text-stone-300" : dl < 0 ? "text-rose-600" : dl <= 3 ? "text-amber-600" : "text-stone-400";
-                        const dt = dl == null ? "—" : dl < 0 ? "-" + (-dl) + "d" : dl === 0 ? "今日" : "+" + dl + "d";
-                        const row = (
-                          <div className={"flex items-center gap-3 px-3.5 py-2 text-[12px]" + (dim ? " opacity-55" : "")}>
-                            <span className={"shrink-0 w-[46px] text-right font-mono tabular-nums font-bold text-[11px] " + dc}>{dt}</span>
-                            <span className="min-w-0 flex-1 truncate font-semibold text-stone-800">{r.title}</span>
-                            <span className="shrink-0 text-[10px] text-stone-400">{(r.phase || "—") + (r.editor ? "・" + r.editor : "")}</span>
-                          </div>
-                        );
-                        return r.mgId
-                          ? <a key={r.caseId} href={shareUrl(r.mgId)} target="_blank" rel="noreferrer" className="block hover:bg-stone-50">{row}</a>
-                          : <div key={r.caseId}>{row}</div>;
-                      };
-                      const act = shown.filter((r) => r.status !== "delivered");
-                      const done = shown.filter((r) => r.status === "delivered");
-                      return (<>
-                        {act.map((r) => rr(r, false))}
-                        {done.length > 0 && (
-                          <button onClick={() => setBoardDone((v) => !v)} className="w-full text-left px-3.5 py-2 text-[11px] font-bold text-stone-400 hover:bg-stone-50">
-                            {boardDone ? "▲ 納品済を隠す" : "▼ 納品済 " + done.length + "件"}
-                          </button>
-                        )}
-                        {boardDone && done.map((r) => rr(r, true))}
-                      </>);
-                    })()}
-                  </div>
-                </div>
-              );
-            })()}
 
             {/* ===== 最近触った（クイックアクセス）。タスク管理(今日やること/確認待ち/期限)はFlip Boardに集約 ===== */}
             {(() => {
