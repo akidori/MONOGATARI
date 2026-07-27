@@ -701,20 +701,41 @@ const STORY_FRAMEWORKS = {
 /* beat i（全M個）を、K ステップのフレームワークへ比例配分したときのステップ index */
 const phaseOf = (i, m, k) => Math.min(k - 1, Math.floor((i * k) / Math.max(m, 1)));
 /* project.rows → ロケブロック単位の beat 配列（原稿の埋まり具合と撮影完了で骨の状態を出す） */
+/* 背骨のノードに出す「話してる内容」＝シーンの内容見出し。無ければ原稿の頭を切って使う */
+const sceneGist = (r) => {
+  const lab = (r.label || "").trim();
+  if (lab) return lab;
+  const s = (r.script || "").replace(/\*\*/g, "").replace(/!!/g, "").replace(/^[◼■]\s*/gm, "").trim();
+  if (!s) return "";
+  const first = s.split("\n").map((x) => x.trim()).find(Boolean) || "";
+  return first.length > 18 ? first.slice(0, 18) + "…" : first;
+};
 const deriveSpineBeats = (rows) => {
   const beats = [];
   let cur = null;
   for (const r of rows || []) {
     if (r.kind === "location") {
-      cur = { id: r.id, label: r.label || "（無題ロケ）", locDone: !!r.done, scenes: 0, filled: 0 };
+      cur = { id: r.id, label: r.label || "（無題ロケ）", locDone: !!r.done, scenes: 0, filled: 0, items: [] };
       beats.push(cur);
     } else {
-      if (!cur) { cur = { id: null, label: "（冒頭）", locDone: false, scenes: 0, filled: 0 }; beats.push(cur); }
+      if (!cur) { cur = { id: null, label: "（冒頭）", locDone: false, scenes: 0, filled: 0, items: [] }; beats.push(cur); }
       cur.scenes++;
-      if (countChars(r.script) > 0) cur.filled++;
+      const has = countChars(r.script) > 0;
+      if (has) cur.filled++;
+      cur.items.push({ id: r.id, text: sceneGist(r) || "（無題）", filled: has });
     }
   }
   return beats;
+};
+/* ロケ行＋その配下シーンを1ブロックとして切り出す（背骨のD&D並べ替え用。beatsと1:1で対応） */
+const spineBlocks = (rows) => {
+  const blocks = [];
+  let cur = null;
+  for (const r of rows || []) {
+    if (r.kind === "location") { cur = { rows: [r] }; blocks.push(cur); }
+    else { if (!cur) { cur = { rows: [] }; blocks.push(cur); } cur.rows.push(r); }
+  }
+  return blocks;
 };
 const spineStatus = (b) => (b.scenes === 0 || b.filled === 0) ? "gap" : (b.filled === b.scenes ? "done" : "part");
 
@@ -2287,6 +2308,7 @@ export default function App() {
   }, []);
   const [spineFw, setSpineFwState] = useState(() => { try { return localStorage.getItem("mg:spineFw") || "spine"; } catch (e) { return "spine"; } });
   const setSpineFw = (k) => { setSpineFwState(k); try { localStorage.setItem("mg:spineFw", k); } catch (e) {} };
+  const [spineDrag, setSpineDrag] = useState(null);          // 背骨のD&D {from, over}（ロケブロックごと並べ替え）
   const [deliverBusy, setDeliverBusy] = useState(false);
   const [saveState, setSaveState] = useState("ok");   // ok | error（クラウド保存の状態。回線断のsilent lost可視化）
   const [showTheme, setShowTheme] = useState(false);
@@ -4713,6 +4735,16 @@ export default function App() {
   const insertBelow = (idx, row) => setRows((rows) => {
     const next = [...rows]; next.splice(idx + 1, 0, row); return next;
   });
+  /* 物語の背骨：ロケブロック（ロケ行＋配下シーン）ごとD&Dで並べ替え。from/to は beats のindex */
+  const moveSpineBlock = (from, to) => setRows((rows) => {
+    const blocks = spineBlocks(rows);
+    if (from == null || to == null || from === to) return rows;
+    if (from < 0 || from >= blocks.length || to < 0 || to > blocks.length) return rows;
+    const next = [...blocks];
+    const [b] = next.splice(from, 1);
+    next.splice(Math.max(0, Math.min(to, next.length)), 0, b);   // 落とした位置＝そのブロックの新しい並び順
+    return next.flatMap((x) => x.rows);
+  });
 
   /* ---- 複数選択 ---- */
   const isSelected = (id) => selectedIds.includes(id);
@@ -6080,16 +6112,32 @@ export default function App() {
                                     style={st === "gap" ? { background: "#fff", border: "2px dashed #C2BDB2" } : { background: st === "done" ? "#3E9C6A" : "#D89A2E", boxShadow: "0 0 0 3px #fff" }} />
                                 </div>); })}
                             </div>
-                            {/* 下段：ロケ名＋状態 */}
-                            <div className="flex">
-                              {beats.map((b, i) => { const st = spineStatus(b); return (
-                                <div key={i} className="w-[120px] shrink-0 px-1 text-center">
-                                  <button onClick={() => jump(b.id)} className="block w-full">
-                                    <div className="text-[11px] font-bold text-stone-700 truncate">{b.label}</div>
-                                    <div className="text-[10px]" style={{ color: st === "gap" ? "#C0392B" : (st === "done" ? "#2E7D50" : "#B8860B") }}>
-                                      {st === "gap" ? "未取材・穴" : "原稿 " + b.filled + "/" + b.scenes}{b.locDone ? "・撮影✓" : ""}
+                            {/* 下段：ロケ名＋話してる内容。カードごとD&Dでブロック（ロケ＋配下シーン）を並べ替え */}
+                            <div className="flex items-start">
+                              {beats.map((b, i) => { const st = spineStatus(b); const dragging = spineDrag && spineDrag.from === i; const over = spineDrag && spineDrag.over === i && spineDrag.from !== i; return (
+                                <div key={i} className="w-[120px] shrink-0 px-1"
+                                  draggable
+                                  onDragStart={(e) => { setSpineDrag({ from: i, over: i }); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(i)); } catch (_) {} }}
+                                  onDragOver={(e) => { if (spineDrag) { e.preventDefault(); if (spineDrag.over !== i) setSpineDrag((d) => (d ? { ...d, over: i } : d)); } }}
+                                  onDrop={(e) => { e.preventDefault(); if (spineDrag) moveSpineBlock(spineDrag.from, i); setSpineDrag(null); }}
+                                  onDragEnd={() => setSpineDrag(null)}>
+                                  <div className={"rounded-lg px-1 py-1 cursor-grab active:cursor-grabbing transition-colors " + (dragging ? "opacity-40 " : "") + (over ? "bg-stone-100 ring-2" : "hover:bg-stone-50")}
+                                    style={over ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}}>
+                                    <button onClick={() => jump(b.id)} className="block w-full text-center">
+                                      <div className="text-[10px] font-bold text-stone-500 truncate">{b.label}{b.locDone ? " ✓" : ""}</div>
+                                    </button>
+                                    <div className="mt-0.5 text-left">
+                                      {b.items.length === 0
+                                        ? <div className="text-[10px] font-bold" style={{ color: "#C0392B" }}>未取材・穴</div>
+                                        : b.items.slice(0, 5).map((it) => (
+                                          <button key={it.id} onClick={() => jump(it.id)} title={it.text}
+                                            className="block w-full text-left text-[10.5px] leading-snug truncate hover:underline"
+                                            style={{ color: it.filled ? "#44403c" : "#C0392B" }}>{it.text}</button>
+                                        ))}
+                                      {b.items.length > 5 && <div className="text-[9px] text-stone-300">＋{b.items.length - 5}</div>}
+                                      {b.items.length > 0 && st === "gap" && <div className="text-[9px] font-bold" style={{ color: "#C0392B" }}>原稿なし</div>}
                                     </div>
-                                  </button>
+                                  </div>
                                 </div>); })}
                             </div>
                           </div>
