@@ -571,7 +571,9 @@ ${qList}
           }
         }
         await env.SNAPS.put("snap:" + id, JSON.stringify({ project: slimmed, createdAt, updatedAt: now }));
-        await env.SNAPS.put("tok:" + id, token);
+        // tok: は値が変わらないのに毎回上書きしていた＝再発行1回あたりの書き込みが倍。
+        // KVは1,000書込/日（無料枠）で、自動再発行と合わせて昼過ぎに枯れる原因だった（2026-07-27）。新規発行時だけ書く。
+        if (isNew) await env.SNAPS.put("tok:" + id, token);
         // 編集者用アップロードトークン：大容量アップだけ許可（コメント削除等の管理権限は持たせない）。無ければ発行。
         let uptok = await env.SNAPS.get("uptok:" + id);
         if (!uptok) { uptok = rid(20); await env.SNAPS.put("uptok:" + id, uptok); }
@@ -605,7 +607,7 @@ ${qList}
         });
         const doc = { name: b.name, channelInfo: slimCI(b.channelInfo), cases, editable: !!b.edit, createdAt, updatedAt: nowt };
         await env.SNAPS.put("chan:" + id, JSON.stringify(doc));
-        await env.SNAPS.put("chtok:" + id, token);
+        if (isNew) await env.SNAPS.put("chtok:" + id, token);   // 値不変のトークンを毎回書かない（KV書込節約）
         return json({ id, token });
       }
 

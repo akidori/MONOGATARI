@@ -2435,6 +2435,13 @@ export default function App() {
   const [showComments, setShowComments] = useState(false);
   const saveTimer = useRef(null);
   const pendingSaveRef = useRef(null);   // クラウド保存に失敗したデータ。オンライン復帰で自動再送（silent lost根絶）
+  /* KV書込み枠（無料枠1,000回/日）の枯渇対策。2026-07-27に実際に枯れて、
+     その日の編集がまるごと保存されず消えた（矢内さん案件）。原因は
+     ①0.7秒デバウンスの案件保存 ②4秒デバウンスの共有自動再発行(1回2書込)
+     ③枯れた後も8秒毎に無限リトライして枠を焼き続ける、の3つ。 */
+  const lastSaveSigRef = useRef("");     // 直前に保存した内容の指紋。同じ内容は書かない
+  const quotaUntilRef = useRef(0);       // 上限に当たった→このtimestampまで書込を一切止める（UTC0時＝JST9時にリセット）
+  const retryDelayRef = useRef(8000);    // 保存リトライの間隔（失敗ごとに倍→最大10分）
   const liveWS = useRef(null);          // リアルタイム編集の WebSocket
   const lastRemoteRef = useRef("");     // 直近に受信した project JSON（自分の送信エコー抑止）
   const liveSendTimer = useRef(null);
@@ -2652,27 +2659,40 @@ export default function App() {
       return () => clearTimeout(liveSendTimer.current);
     }
     clearTimeout(saveTimer.current);
+    // 0.7秒→3秒。打鍵が0.7秒止まるたびに1書込していたのがKV枠枯渇の主因のひとつ。
+    // 案件切替/タブ閉じ/共有発行の直前には別途フラッシュ保存が走るので、遅くしても取りこぼさない。
     saveTimer.current = setTimeout(async () => {
       // クラウド保存の成否を握る。失敗したら pendingSaveRef に退避して「未保存」表示＋裏で再送し続ける。
+      const sig = JSON.stringify(cleanProj(project));
+      if (sig === lastSaveSigRef.current && !pendingSaveRef.current) return;   // 中身が変わってなければ書かない
+      if (Date.now() < quotaUntilRef.current) { pendingSaveRef.current = project; setSaveState("quota"); return; }
       const ok = await saveProjectData(project);
-      if (ok === false) { pendingSaveRef.current = project; setSaveState("error"); }
-      else { pendingSaveRef.current = null; setSaveState("ok"); }
-    }, 700);
+      if (ok === false) { pendingSaveRef.current = project; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
+      else { pendingSaveRef.current = null; lastSaveSigRef.current = sig; setSaveState("ok"); }
+    }, 3000);
     return () => clearTimeout(saveTimer.current);
   }, [project, loaded]);
 
-  /* クラウド保存の失敗を自動リトライ（8秒毎＋オンライン復帰イベントで即再送）。回線断でも黙って消えない。 */
+  /* クラウド保存の失敗を自動リトライ。失敗するたび間隔を倍にする（8秒→最大10分）。
+     旧実装は固定8秒の無限リトライで、KV上限に当たった後もリセットまで数千回叩き続けて枠を焼いていた。 */
   useEffect(() => {
-    const retry = async () => {
+    let stopped = false, timer = null;
+    const schedule = (ms) => { clearTimeout(timer); timer = setTimeout(run, ms); };
+    const run = async () => {
+      if (stopped) return;
       const p = pendingSaveRef.current;
-      if (!p) return;
-      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      if (!p) { retryDelayRef.current = 8000; return schedule(8000); }
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return schedule(8000);
+      if (Date.now() < quotaUntilRef.current) { setSaveState("quota"); return schedule(60000); } // 上限中は一切叩かない
       const ok = await saveProjectData(p);
-      if (ok !== false) { pendingSaveRef.current = null; setSaveState("ok"); }
+      if (ok !== false) { pendingSaveRef.current = null; setSaveState("ok"); retryDelayRef.current = 8000; return schedule(8000); }
+      retryDelayRef.current = Math.min(retryDelayRef.current * 2, 600000);
+      schedule(retryDelayRef.current);
     };
-    const id = setInterval(retry, 8000);
-    if (typeof window !== "undefined") window.addEventListener("online", retry);
-    return () => { clearInterval(id); if (typeof window !== "undefined") window.removeEventListener("online", retry); };
+    schedule(8000);
+    const onOnline = () => { retryDelayRef.current = 8000; schedule(500); };
+    if (typeof window !== "undefined") window.addEventListener("online", onOnline);
+    return () => { stopped = true; clearTimeout(timer); if (typeof window !== "undefined") window.removeEventListener("online", onOnline); };
   }, []);
 
   /* 共有スナップの自動再発行：素材/動画/構成などを変えたら、既存の共有リンクを裏で最新化する。
@@ -2690,7 +2710,12 @@ export default function App() {
     if (sig === lastPubSig.current) return;
     lastPubSig.current = sig;
     clearTimeout(republishTimer.current);
-    republishTimer.current = setTimeout(() => { publishShare(true).catch(() => {}); }, 4000); // サイレント＝AKは意識しない
+    // 4秒→60秒。旧設定だと編集中ずっと4秒おきに再発行し、1回2書込×15回/分でKV枠(1,000/日)を30分程度で焼き切っていた。
+    // 先方の共有ページへの反映が最大1分遅れるだけで、実害はない（手動の「共有」ボタンは即時発行のまま）。
+    republishTimer.current = setTimeout(() => {
+      if (Date.now() < quotaUntilRef.current) return;   // 保存上限中はスナップも叩かない
+      publishShare(true).catch(() => {});
+    }, 60000); // サイレント＝AKは意識しない
     return () => clearTimeout(republishTimer.current);
   }, [project, loaded]);
 
@@ -2766,15 +2791,25 @@ export default function App() {
   /* 案件を正しい保存先へ（collabはWorker collabストア、それ以外は個人ストレージ） */
   // 戻り値: クラウド(collab)へ確実に保存できたら true / 失敗してローカル退避に留まったら false。
   // 呼び出し側が保存成否をユーザーに知らせられるように（回線断のsilent fail対策）。既存の呼び出しは戻り値を使わないので後方互換。
+  /* Cloudflare KVの1日書込上限に当たったか判定し、当たっていたら次のリセット（UTC0時＝JST9時）まで書込を封じる。
+     ここで止めないと、失敗リトライ自体が枠を焼き続けて翌日も即死する。 */
+  const noteSaveError = (e) => {
+    const m = ((e && e.message) || "").toString();
+    if (!/limit exceeded|rate limit|429/i.test(m)) return false;
+    const d = new Date();
+    quotaUntilRef.current = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 0);
+    setSaveState("quota");
+    return true;
+  };
   const saveProjectData = async (data0) => {
     if (!data0) return true;
     const data = { ...data0, updatedAt: Date.now() };
     // collab かつログイン中のみクラウドへ。未ログイン(ログアウト後)は個人ストレージへフォールバック保存（silent fail防止）
     if (data.collab && MG_SESSION) {
       try { await authFetch("/api/collab/upsert", { id: data.id, project: data }); return true; }
-      catch (e) { console.error("collab保存", e); try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} return false; }
+      catch (e) { console.error("collab保存", e); if (!noteSaveError(e)) { try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} } return false; }
     } else {
-      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); return true; } catch (e) { console.error(e); return false; }
+      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); return true; } catch (e) { console.error(e); noteSaveError(e); return false; }
     }
   };
 
@@ -4672,6 +4707,12 @@ export default function App() {
   };
   const uploadVersionVideo = async (file, onProgress = null) => {
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
+    // 保存が通っていない状態で上げると、R2への転送は成功するのに版そのものが保存されず、
+    // 画面を切り替えた瞬間に消える（＝GB単位を上げ直すハメになる）。上げる前に必ず止める。
+    if (Date.now() < quotaUntilRef.current || pendingSaveRef.current) {
+      const go = window.confirm("いま案件の保存がサーバーに通っていません。\n\nこのまま動画を上げても、追加した版は保存されず、画面を切り替えた時点で消えます（アップロードの時間だけ無駄になります）。\n\nそれでも続けますか？");
+      if (!go) return;
+    }
     const sh = await ensureShare(); if (!sh) return;   // 確認用URLは動画アップの副産物として自動発行（先に手で発行させない）
     setMediaBusy("動画をアップロード中…"); setMediaProg(0);
     try {
@@ -5566,8 +5607,14 @@ export default function App() {
             共有・連携設定
           </a>
         </div>
-        <div className={"px-3 py-2 border-t border-white/10 text-[10px] " + (saveState === "error" ? "text-amber-400" : "text-white/40")}>
-          {index.length}件の案件・{saveState === "error" ? "未保存（電波待ち・自動で再送中）" : "自動保存"}
+        {/* 保存できていない事実を正直に出す。旧実装はKV書込上限で落ちていても「電波待ち」と表示していて、
+            回線のせいだと誤認したまま編集を続け、その日の作業が丸ごと消えた（2026-07-27 矢内さん案件）。 */}
+        <div className={"px-3 py-2 border-t border-white/10 text-[10px] " + (saveState === "quota" ? "text-rose-400 font-bold" : saveState === "error" ? "text-amber-400" : "text-white/40")}>
+          {saveState === "quota"
+            ? "保存できません（本日の書き込み上限）。朝9時まで回復しません。編集を続けても消えます — 台本コピーで退避を"
+            : saveState === "error"
+              ? index.length + "件の案件・未保存（再送中）。この状態でリロードすると消えます"
+              : index.length + "件の案件・自動保存"}
         </div>
       </aside>
 
