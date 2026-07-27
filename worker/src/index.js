@@ -646,7 +646,10 @@ ${qList}
         try {
           const rv = snap.project && snap.project.review && snap.project.review.versions;
           if (Array.isArray(rv) && env.STREAM_ACCOUNT_ID && env.STREAM_API_TOKEN) {
-            const stale = rv.filter((v) => v && v.type === "stream" && v.uid && (!v.ready || !v.hls) && !v.trashedAt).slice(0, 6);
+            // 24時間たっても変換が終わらない版は永久に終わらない。見切らないと、共有ページの20秒ポーリング
+            // × 開きっぱなしの人数ぶん、このGETがStream APIを延々と叩き続ける（先方のページも毎回そのぶん遅くなる）。
+            const stale = rv.filter((v) => v && v.type === "stream" && v.uid && (!v.ready || !v.hls) && !v.trashedAt
+              && (!v.createdAt || Date.now() - (+new Date(v.createdAt) || 0) < 86400000)).slice(0, 3);
             let changed = false;
             for (const v of stale) {
               const r = await fetch("https://api.cloudflare.com/client/v4/accounts/" + env.STREAM_ACCOUNT_ID + "/stream/" + v.uid,
@@ -654,9 +657,11 @@ ${qList}
               const d = await r.json().catch(() => null);
               const st = d && d.result && d.result.status && d.result.status.state;
               if (st === "ready") {
-                v.ready = true;
-                v.hls = (d.result.playback && d.result.playback.hls) || v.hls || "";
-                changed = true;
+                // 中身が本当に変わった時だけ書く。旧実装は st==="ready" なら無条件に changed=true にしていたので、
+                // 「ready=trueだがhlsが空」の版が1つでもあると、20秒ポーリングのたびにKV書込が発生していた
+                // （＝1ページ開きっぱなしで4,320書込/日。無料枠1,000/日を数時間で焼く）。
+                const hls = (d.result.playback && d.result.playback.hls) || v.hls || "";
+                if (v.ready !== true || v.hls !== hls) { v.ready = true; v.hls = hls; changed = true; }
               }
             }
             if (changed) await env.SNAPS.put("snap:" + parts[2], JSON.stringify(snap));

@@ -2440,6 +2440,7 @@ export default function App() {
      ①0.7秒デバウンスの案件保存 ②4秒デバウンスの共有自動再発行(1回2書込)
      ③枯れた後も8秒毎に無限リトライして枠を焼き続ける、の3つ。 */
   const lastSaveSigRef = useRef("");     // 直前に保存した内容の指紋。同じ内容は書かない
+  const lastChSaveRef = useRef("");      // チャンネル設定の直前保存内容（同上）
   const quotaUntilRef = useRef(0);       // 上限に当たった→このtimestampまで書込を一切止める（UTC0時＝JST9時にリセット）
   const retryDelayRef = useRef(8000);    // 保存リトライの間隔（失敗ごとに倍→最大10分）
   const liveWS = useRef(null);          // リアルタイム編集の WebSocket
@@ -2725,9 +2726,12 @@ export default function App() {
     if (!loaded) return;
     clearTimeout(chSaveTimer.current);
     chSaveTimer.current = setTimeout(async () => {
-      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_CHANNELS, JSON.stringify(channelInfo)); }
-      catch (e) { console.error("チャンネル保存エラー", e); }
-    }, 700);
+      const js = JSON.stringify(channelInfo);
+      if (js === lastChSaveRef.current) return;              // 中身が同じなら書かない
+      if (Date.now() < quotaUntilRef.current) return;        // KV書込上限中は叩かない
+      try { if (typeof window.storage !== "undefined") { await window.storage.set(STORE_CHANNELS, js); lastChSaveRef.current = js; } }
+      catch (e) { console.error("チャンネル保存エラー", e); noteSaveError(e); }
+    }, 3000);   // 0.7秒→3秒（案件保存と同じ理由）
     return () => clearTimeout(chSaveTimer.current);
   }, [channelInfo, loaded]);
 
@@ -4037,7 +4041,11 @@ export default function App() {
       const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken, shareUpToken: data.uptok || project.shareUpToken, shareReadToken: data.rtok || project.shareReadToken };
       shareTokenRef.current = next.shareToken || "";   // setProjectは非同期。直後のアップが最新tokenを引けるよう保持
       setProject(next);
-      try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
+      // ID/トークンが変わった時だけ即時保存する。旧実装は無条件だったので、自動再発行のたびに
+      // 「値が1つも変わっていない案件」をKVへ丸ごと書き直していた（再発行1回につき+1書込）。
+      const idsChanged = next.shareId !== project.shareId || next.shareToken !== project.shareToken
+        || next.shareUpToken !== project.shareUpToken || next.shareReadToken !== project.shareReadToken;
+      if (idsChanged) { try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {} }
       if (!silent) {
         const url = shareUrl(data.id, data.rtok || project.shareReadToken);
         setShareModal({ id: data.id, url, updated: !!project.shareId });
@@ -4408,11 +4416,17 @@ export default function App() {
       const sv = (((sn && sn.project) || {}).review || {}).versions || [];
       const cand = sv.filter((v) => v && !v.trashedAt && (v.key || v.uid));
       if (!cand.length) return;
+      // 回収するものが無い時は setVersions を呼ばない。呼ぶと中身が同じでも project の参照が毎回変わり、
+      // 45秒ごとの自己修復だけで案件保存が走っていた（＝案件を開いて放置するだけで1,920書込/日）。
+      const cur = reviewVersions();
+      const has = (v) => cur.some((x) => (v.uid && x.uid === v.uid) || (v.key && x.key === v.key));
+      const add = cand.filter((v) => !has(v));
+      if (!add.length) return;
+      console.log("[mg] snapから版を回収:", add.map((v) => v.label).join(","));
       setVersions((arr) => {
-        const has = (v) => arr.some((x) => (v.uid && x.uid === v.uid) || (v.key && x.key === v.key));
-        const add = cand.filter((v) => !has(v));
-        if (add.length) console.log("[mg] snapから版を回収:", add.map((v) => v.label).join(","));
-        return add.length ? [...arr, ...add.map((v) => ({ ...v }))] : arr;
+        const has2 = (v) => arr.some((x) => (v.uid && x.uid === v.uid) || (v.key && x.key === v.key));
+        const add2 = cand.filter((v) => !has2(v));
+        return add2.length ? [...arr, ...add2.map((v) => ({ ...v }))] : arr;
       });
     } catch (e) {}
   };
