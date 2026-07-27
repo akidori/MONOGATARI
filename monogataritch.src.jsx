@@ -6112,21 +6112,24 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      <div className="flex items-center gap-2 mb-1.5 text-[11px] flex-wrap">
-                        {gaps > 0
-                          ? <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: "#FDECEC", color: "#C0392B" }}>物語の穴 {gaps}</span>
-                          : <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: "#E6F4EC", color: "#2E7D50" }}>背骨がつながってる</span>}
-                        <span className="text-stone-400">ロケ{M}ブロックを「{fw.label}」の{K}ステップに対応</span>
-                        {ovCount > 0 && (
-                          <button onClick={() => clearSpinePhases(spineFw)} title="手で決めたステップを全部やめて、自動の割り振りに戻す"
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-stone-200 text-stone-500 hover:bg-stone-50">手動 {ovCount}・自動に戻す</button>
-                        )}
-                      </div>
+                      {/* 「背骨がつながってる」「ロケNブロックを…に対応」は行動できない情報なので出さない。
+                          穴（原稿ゼロのロケ）と手動リセットだけ、必要な時にだけ出す */}
+                      {(gaps > 0 || ovCount > 0) && (
+                        <div className="flex items-center gap-2 mb-1.5 text-[11px] flex-wrap">
+                          {gaps > 0 && (
+                            <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: "#FDECEC", color: "#C0392B" }}>物語の穴 {gaps}</span>
+                          )}
+                          {ovCount > 0 && (
+                            <button onClick={() => clearSpinePhases(spineFw)} title="手で決めたステップを全部やめて、自動の割り振りに戻す"
+                              className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-stone-200 text-stone-500 hover:bg-stone-50">手動 {ovCount}・自動に戻す</button>
+                          )}
+                        </div>
+                      )}
                       {M === 0 ? (
                         <div className="text-[12px] text-stone-400 py-2">ロケ・シーンを追加すると、ここに物語の背骨が出ます。</div>
                       ) : (
                         <div className="overflow-x-auto pb-1">
-                          <div className="min-w-max">
+                          <div style={{ minWidth: M * 120 }}>
                             {/* ステップの受け皿。カードをここに落とすと「このロケは転」と手で決められる。
                                 常に出しておく＝ドラッグ中に行が生えてレイアウトがズレるのを防ぐ＆操作を見つけてもらう。
                                 帯そのものを受け皿にしないのは、ブロックが0件のステップに落とせなくなるため。 */}
@@ -6148,7 +6151,7 @@ export default function App() {
                                 const s = ph.step;
                                 const lab = s ? (s.n === s.phrase ? s.phrase : s.n + " " + s.phrase) : "";
                                 return (
-                                  <div key={pi} style={{ width: ph.count * 120 }} className="shrink-0 px-1 text-center">
+                                  <div key={pi} style={{ flex: ph.count + " 0 " + (ph.count * 120) + "px" }} className="px-1 text-center">
                                     <div className="text-[11px] font-bold leading-tight truncate mb-0.5" style={{ color: theme.accent }}>{lab}</div>
                                     <div className="mx-3 h-2 rounded-t-md border-t-2 border-l-2 border-r-2" style={{ borderColor: theme.accent, opacity: 0.45 }} />
                                   </div>);
@@ -6158,7 +6161,7 @@ export default function App() {
                             <div className="relative flex items-center my-1.5">
                               <div className="absolute h-0.5 bg-stone-200" style={{ left: 60, right: 60, top: "50%" }} />
                               {beats.map((b, i) => { const st = spineStatus(b); const s = steps[pidx[i]]; return (
-                                <div key={i} className="relative w-[120px] shrink-0 flex justify-center">
+                                <div key={i} style={{ flex: "1 0 120px" }} className="relative flex justify-center">
                                   <button onClick={() => jump(b.id)} title={(s ? s.hint + " ／ " : "") + b.label}
                                     className="relative z-10 w-3.5 h-3.5 rounded-full transition-transform hover:scale-125"
                                     style={st === "gap" ? { background: "#fff", border: "2px dashed #C2BDB2" } : { background: st === "done" ? "#3E9C6A" : "#D89A2E", boxShadow: "0 0 0 3px #fff" }} />
@@ -6167,7 +6170,7 @@ export default function App() {
                             {/* 下段：ロケ名＋話してる内容。カードごとD&Dでブロック（ロケ＋配下シーン）を並べ替え */}
                             <div className="flex items-start">
                               {beats.map((b, i) => { const st = spineStatus(b); const dragging = spineDrag && spineDrag.from === i; const over = spineDrag && spineDrag.over === i && spineDrag.from !== i; return (
-                                <div key={i} className="w-[120px] shrink-0 px-1"
+                                <div key={i} style={{ flex: "1 0 120px" }} className="px-1"
                                   onDragOver={(e) => { if (spineDrag) { e.preventDefault(); if (spineDrag.over !== i) setSpineDrag((d) => (d ? { ...d, over: i } : d)); } }}
                                   onDrop={(e) => { e.preventDefault(); if (spineDrag) moveSpineBlock(spineDrag.from, i); setSpineDrag(null); }}>
                                   {/* どのステップ（起/承/転/結…）に置くか。既定は自動（比例配分）、選べば手動で固定 */}
