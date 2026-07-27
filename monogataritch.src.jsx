@@ -700,6 +700,21 @@ const STORY_FRAMEWORKS = {
 };
 /* beat i（全M個）を、K ステップのフレームワークへ比例配分したときのステップ index */
 const phaseOf = (i, m, k) => Math.min(k - 1, Math.floor((i * k) / Math.max(m, 1)));
+/* 各ロケブロックがどのステップ（起/承/転/結…）に属すか。
+   既定は比例配分だが、ロケ行の `spine[fwKey]` に手動割り当てがあればそれを優先する。
+   帯が飛び飛びにならないよう、前のブロックより手前のステップには戻さない（単調増加にクランプ）。 */
+const phaseSeq = (beats, K, fwKey, overrides) => {
+  const out = [];
+  let last = 0;
+  for (let i = 0; i < beats.length; i++) {
+    const ov = overrides ? overrides[beats[i].id] : null;
+    let p = (ov != null && ov >= 0 && ov < K) ? ov : phaseOf(i, beats.length, K);
+    if (p < last) p = last;
+    out.push(p);
+    last = p;
+  }
+  return out;
+};
 /* project.rows → ロケブロック単位の beat 配列（原稿の埋まり具合と撮影完了で骨の状態を出す） */
 /* 背骨のノードに出す「話してる内容」＝シーンの内容見出し。無ければ原稿の頭を切って使う */
 const sceneGist = (r) => {
@@ -4735,6 +4750,19 @@ export default function App() {
   const insertBelow = (idx, row) => setRows((rows) => {
     const next = [...rows]; next.splice(idx + 1, 0, row); return next;
   });
+  /* 物語の背骨：このロケブロックを起/承/転/結…のどのステップに置くかを手で決める（比例配分の上書き）。
+     step に null を渡すと自動（比例配分）に戻す。フレームワークごとに別々に覚える */
+  const setSpinePhase = (locId, fwKey, step) => setRows((rows) => rows.map((r) => {
+    if (r.id !== locId || r.kind !== "location") return r;
+    const sp = { ...(r.spine || {}) };
+    if (step == null) delete sp[fwKey]; else sp[fwKey] = step;
+    return { ...r, spine: sp };
+  }));
+  const clearSpinePhases = (fwKey) => setRows((rows) => rows.map((r) => {
+    if (r.kind !== "location" || !r.spine || r.spine[fwKey] == null) return r;
+    const sp = { ...r.spine }; delete sp[fwKey];
+    return { ...r, spine: sp };
+  }));
   /* 物語の背骨：ロケブロック（ロケ行＋配下シーン）ごとD&Dで並べ替え。from/to は beats のindex */
   const moveSpineBlock = (from, to) => setRows((rows) => {
     const blocks = spineBlocks(rows);
@@ -6051,10 +6079,15 @@ export default function App() {
               const gaps = beats.filter((b) => spineStatus(b) === "gap").length;
               const fw = STORY_FRAMEWORKS[spineFw] || STORY_FRAMEWORKS.spine;
               const steps = fw.steps, K = steps.length, M = beats.length;
+              // ロケ行に手で付けたステップ割り当て（フレームワーク別）。無いブロックは比例配分のまま
+              const spineOv = {};
+              (project.rows || []).forEach((r) => { if (r.kind === "location" && r.spine && r.spine[spineFw] != null) spineOv[r.id] = r.spine[spineFw]; });
+              const ovCount = beats.filter((b) => spineOv[b.id] != null).length;
+              const pidx = phaseSeq(beats, K, spineFw, spineOv);
               // 連続するロケブロックをフェーズ単位にまとめる（どこからどこまでが起/承/転/結かの「帯」）
               const phases = [];
               beats.forEach((b, i) => {
-                const p = phaseOf(i, M, K);
+                const p = pidx[i];
                 const last = phases[phases.length - 1];
                 if (last && last.p === p) last.count++;
                 else phases.push({ p, step: steps[p], start: i, count: 1 });
@@ -6084,12 +6117,31 @@ export default function App() {
                           ? <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: "#FDECEC", color: "#C0392B" }}>物語の穴 {gaps}</span>
                           : <span className="px-2 py-0.5 rounded-full font-bold" style={{ background: "#E6F4EC", color: "#2E7D50" }}>背骨がつながってる</span>}
                         <span className="text-stone-400">ロケ{M}ブロックを「{fw.label}」の{K}ステップに対応</span>
+                        {ovCount > 0 && (
+                          <button onClick={() => clearSpinePhases(spineFw)} title="手で決めたステップを全部やめて、自動の割り振りに戻す"
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full border border-stone-200 text-stone-500 hover:bg-stone-50">手動 {ovCount}・自動に戻す</button>
+                        )}
                       </div>
                       {M === 0 ? (
                         <div className="text-[12px] text-stone-400 py-2">ロケ・シーンを追加すると、ここに物語の背骨が出ます。</div>
                       ) : (
                         <div className="overflow-x-auto pb-1">
                           <div className="min-w-max">
+                            {/* ステップの受け皿。カードをここに落とすと「このロケは転」と手で決められる。
+                                常に出しておく＝ドラッグ中に行が生えてレイアウトがズレるのを防ぐ＆操作を見つけてもらう。
+                                帯そのものを受け皿にしないのは、ブロックが0件のステップに落とせなくなるため。 */}
+                            <div className="flex items-center gap-1.5 mb-2 sticky left-0">
+                              <span className="text-[10px] text-stone-400 shrink-0">カードをここに落とすと担当変更→</span>
+                              {steps.map((s, si) => { const on = spineDrag && spineDrag.step === si; return (
+                                <div key={si}
+                                  onDragOver={(e) => { if (spineDrag) { e.preventDefault(); if (spineDrag.step !== si) setSpineDrag((d) => (d ? { ...d, step: si } : d)); } }}
+                                  onDragLeave={() => setSpineDrag((d) => (d && d.step === si ? { ...d, step: null } : d))}
+                                  onDrop={(e) => { e.preventDefault(); if (spineDrag) { const b = beats[spineDrag.from]; if (b && b.id != null) setSpinePhase(b.id, spineFw, si); } setSpineDrag(null); }}
+                                  className={"text-[11px] font-bold px-2.5 py-1 rounded-full border border-dashed transition-colors shrink-0 " + (on ? "text-white border-transparent" : (spineDrag ? "text-stone-500 border-stone-300 bg-white" : "text-stone-300 border-stone-200"))}
+                                  style={on ? { background: theme.accent, borderStyle: "solid" } : {}}>
+                                  {s.n === s.phrase ? s.phrase : s.n + " " + s.phrase}
+                                </div>); })}
+                            </div>
                             {/* 上段：フェーズの帯（どこからどこまでが各ステップに属すか。全ブロックが必ずどれかの帯の下に入る） */}
                             <div className="flex">
                               {phases.map((ph, pi) => {
@@ -6105,7 +6157,7 @@ export default function App() {
                             {/* 中段：ノード＋背骨ライン */}
                             <div className="relative flex items-center my-1.5">
                               <div className="absolute h-0.5 bg-stone-200" style={{ left: 60, right: 60, top: "50%" }} />
-                              {beats.map((b, i) => { const st = spineStatus(b); const s = steps[phaseOf(i, M, K)]; return (
+                              {beats.map((b, i) => { const st = spineStatus(b); const s = steps[pidx[i]]; return (
                                 <div key={i} className="relative w-[120px] shrink-0 flex justify-center">
                                   <button onClick={() => jump(b.id)} title={(s ? s.hint + " ／ " : "") + b.label}
                                     className="relative z-10 w-3.5 h-3.5 rounded-full transition-transform hover:scale-125"
@@ -6116,12 +6168,23 @@ export default function App() {
                             <div className="flex items-start">
                               {beats.map((b, i) => { const st = spineStatus(b); const dragging = spineDrag && spineDrag.from === i; const over = spineDrag && spineDrag.over === i && spineDrag.from !== i; return (
                                 <div key={i} className="w-[120px] shrink-0 px-1"
-                                  draggable
-                                  onDragStart={(e) => { setSpineDrag({ from: i, over: i }); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(i)); } catch (_) {} }}
                                   onDragOver={(e) => { if (spineDrag) { e.preventDefault(); if (spineDrag.over !== i) setSpineDrag((d) => (d ? { ...d, over: i } : d)); } }}
-                                  onDrop={(e) => { e.preventDefault(); if (spineDrag) moveSpineBlock(spineDrag.from, i); setSpineDrag(null); }}
-                                  onDragEnd={() => setSpineDrag(null)}>
+                                  onDrop={(e) => { e.preventDefault(); if (spineDrag) moveSpineBlock(spineDrag.from, i); setSpineDrag(null); }}>
+                                  {/* どのステップ（起/承/転/結…）に置くか。既定は自動（比例配分）、選べば手動で固定 */}
+                                  {b.id != null && (
+                                    <select value={spineOv[b.id] != null ? String(spineOv[b.id]) : "auto"}
+                                      onChange={(e) => setSpinePhase(b.id, spineFw, e.target.value === "auto" ? null : Number(e.target.value))}
+                                      title={"このロケを「" + fw.label + "」のどこに置くか"}
+                                      className="block w-full text-[9px] font-bold bg-transparent text-center focus:outline-none cursor-pointer mb-0.5"
+                                      style={{ color: spineOv[b.id] != null ? theme.accent : "#a8a29e" }}>
+                                      <option value="auto">{"自動（" + ((steps[pidx[i]] || {}).n || "") + "）"}</option>
+                                      {steps.map((s, si) => <option key={si} value={si}>{s.n === s.phrase ? s.phrase : s.n + " " + s.phrase}</option>)}
+                                    </select>
+                                  )}
                                   <div className={"rounded-lg px-1 py-1 cursor-grab active:cursor-grabbing transition-colors " + (dragging ? "opacity-40 " : "") + (over ? "bg-stone-100 ring-2" : "hover:bg-stone-50")}
+                                    draggable
+                                    onDragStart={(e) => { setSpineDrag({ from: i, over: i, step: null }); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", String(i)); } catch (_) {} }}
+                                    onDragEnd={() => setSpineDrag(null)}
                                     style={over ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}}>
                                     <button onClick={() => jump(b.id)} className="block w-full text-center">
                                       <div className="text-[10px] font-bold text-stone-500 truncate">{b.label}{b.locDone ? " ✓" : ""}</div>
