@@ -1481,6 +1481,10 @@ function slim(p) {
     ),
     plans: (p.plans || []).map((pl) => ({
       id: pl.id, title: pl.title || "", thumbText: pl.thumbText || "", note: pl.note || "",
+      // 自作サムネ（dataURL・最大5枚）。ここに無いと share.html の番組情報/企画タブにサムネ画像が一切出ない
+      thumbImages: Array.isArray(pl.thumbImages)
+        ? pl.thumbImages.filter((s) => typeof s === "string" && s.startsWith("data:image/") && s.length <= 1200000).slice(0, 5)
+        : [],
       refs: (pl.refs || []).map((rf) => ({ vid: rf.vid || "", title: rf.title || "", channel: rf.channel || "", views: rf.views || 0, subs: rf.subs || 0, uploadDate: rf.uploadDate || "", duration: rf.duration || "" })),
       video: pl.video ? {
         type: pl.video.type === "youtube" ? "youtube" : "mp4",
@@ -1592,14 +1596,18 @@ const PARSE_SYSTEM = `あなたは一日密着ドキュメンタリーの構成�
 const BUILD_TOOL = {
   name: "build_project",
   description: "整形した構成台本データを返す",
+  // strict: 出力がスキーマに厳密準拠することをAPI側で強制（rowsが文字列で返る事故の根絶）
+  strict: true,
   input_schema: {
     type: "object",
+    additionalProperties: false,
     properties: {
       summary: { type: "string", description: "（アシスタント更新時のみ）今回の変更点を日本語で1〜3行" },
       name: { type: "string", description: "演者名｜案件名" },
       channel: { type: "string", description: "クライアント名" },
       meta: {
         type: "object",
+        additionalProperties: false,
         properties: {
           shootDate: { type: "string" },
           place: { type: "string" },
@@ -1613,6 +1621,7 @@ const BUILD_TOOL = {
         type: "array",
         items: {
           type: "object",
+          additionalProperties: false,
           properties: {
             kind: { type: "string", enum: ["location", "scene"] },
             label: { type: "string" },
@@ -1622,7 +1631,7 @@ const BUILD_TOOL = {
             sec: { type: "number" },
             script: { type: "string" },
           },
-          required: ["kind"],
+          required: ["kind", "label"],
         },
       },
     },
@@ -1630,35 +1639,87 @@ const BUILD_TOOL = {
   },
 };
 
+/* strict が通らない環境向けの保険：モデルが rows を JSON文字列で返した場合に配列へ戻す */
+function coerceRows(input) {
+  if (input && typeof input.rows === "string") {
+    try { const arr = JSON.parse(input.rows); if (Array.isArray(arr)) input.rows = arr; } catch (e) {}
+  }
+  return input;
+}
+
+/* Anthropic Messages をストリーミングで受け、非ストリーミングと同じ { content: [...] } に組み立てて返す。
+   台本まるごとの整形は出力が大きく、非ストリーミングだと生成100秒超で上流エッジに524で切られる */
+async function claudeMessages(payload, env) {
+  const t0 = Date.now();
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({ ...payload, stream: true }),
+  });
+  console.log("claudeMessages headers: status=" + res.status + " ttfb=" + (Date.now() - t0) + "ms model=" + payload.model);
+  if (!res.ok) {
+    const t = await res.text();
+    const err = new Error("Claude API " + res.status + ": " + t.slice(0, 300));
+    err.status = res.status;
+    throw err;
+  }
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  const content = [];
+  const jsonBuf = {}; // index → tool_use input の partial_json 蓄積
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const s = line.slice(5).trim();
+      if (!s) continue;
+      let ev; try { ev = JSON.parse(s); } catch (e) { continue; }
+      if (ev.type === "content_block_start") {
+        if (ev.content_block.type === "tool_use") { content[ev.index] = { type: "tool_use", name: ev.content_block.name, input: null }; jsonBuf[ev.index] = ""; }
+        else content[ev.index] = { type: "text", text: "" };
+      } else if (ev.type === "content_block_delta") {
+        if (ev.delta.type === "text_delta" && content[ev.index]) content[ev.index].text += ev.delta.text;
+        else if (ev.delta.type === "input_json_delta") jsonBuf[ev.index] = (jsonBuf[ev.index] || "") + ev.delta.partial_json;
+      } else if (ev.type === "content_block_stop") {
+        if (content[ev.index] && content[ev.index].type === "tool_use") {
+          try { content[ev.index].input = JSON.parse(jsonBuf[ev.index] || "{}"); } catch (e) { content[ev.index].input = null; }
+        }
+      } else if (ev.type === "error") {
+        throw new Error("Claude stream error: " + JSON.stringify(ev.error).slice(0, 300));
+      }
+    }
+  }
+  console.log("claudeMessages done: blocks=" + content.filter(Boolean).length + " total=" + (Date.now() - t0) + "ms");
+  return { content: content.filter(Boolean) };
+}
+
 async function parseWithClaude(raw, env) {
   const model = env.PARSE_MODEL || "claude-sonnet-4-6";
-  const body = JSON.stringify({
+  const payload = {
     model,
     max_tokens: 32000,
     system: PARSE_SYSTEM,
     tools: [BUILD_TOOL],
     tool_choice: { type: "tool", name: "build_project" },
     messages: [{ role: "user", content: "以下の素材を構成台本に整形して build_project で返してください。\n\n----- 素材ここから -----\n" + raw + "\n----- 素材ここまで -----" }],
-  });
+  };
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body,
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        // 429/5xx は一過性なのでリトライ、それ以外は即時失敗
-        if ((res.status === 429 || res.status >= 500) && attempt === 0) { lastErr = new Error("Claude API " + res.status); continue; }
-        throw new Error("Claude API " + res.status + ": " + t.slice(0, 300));
-      }
-      const data = await res.json();
+      const data = await claudeMessages(payload, env);
       const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
       if (!block || !block.input) { lastErr = new Error("tool_use が返りませんでした"); continue; }
-      return block.input;
-    } catch (e) { lastErr = e; }
+      return coerceRows(block.input);
+    } catch (e) {
+      lastErr = e;
+      // 4xx（キー不正・本文不正など）は繰り返しても同じなので即時失敗
+      if (e.status && e.status !== 429 && e.status < 500) throw e;
+    }
   }
   throw lastErr || new Error("整形に失敗しました");
 }
@@ -1687,23 +1748,17 @@ async function assistWithClaude(project, message, env) {
   const ctx = "----- 現在の構成台本(JSON) -----\n" + JSON.stringify(slim(project)) +
     "\n----- 現場から届いたメッセージ -----\n" + message +
     "\n----- ここまで -----\n\n上のメッセージを構成台本に反映して、更新後の完全な構成台本を build_project で返してください。";
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model,
-      max_tokens: 32000,
-      system: ASSIST_SYSTEM,
-      tools: [BUILD_TOOL],
-      tool_choice: { type: "tool", name: "build_project" },
-      messages: [{ role: "user", content: ctx }],
-    }),
-  });
-  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
-  const data = await res.json();
+  const data = await claudeMessages({
+    model,
+    max_tokens: 32000,
+    system: ASSIST_SYSTEM,
+    tools: [BUILD_TOOL],
+    tool_choice: { type: "tool", name: "build_project" },
+    messages: [{ role: "user", content: ctx }],
+  }, env);
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
-  return block.input;
+  return coerceRows(block.input);
 }
 
 /* ===== 構成台本の校正チェック（誤字脱字・質問と回答の逆転・未記入）===== */
@@ -1774,20 +1829,14 @@ async function reviewWithClaude(project, env) {
   const isTalk = project && project.format === "talk";
   const ctx = "----- 台本(JSON) -----\n" + JSON.stringify(slim(project)) +
     "\n----- ここまで -----\n\n上の台本を校正チェックして report_review で返してください。";
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model,
-      max_tokens: 8000,
-      system: isTalk ? TALK_REVIEW_SYSTEM : REVIEW_SYSTEM,
-      tools: [REVIEW_TOOL],
-      tool_choice: { type: "tool", name: "report_review" },
-      messages: [{ role: "user", content: ctx }],
-    }),
-  });
-  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
-  const data = await res.json();
+  const data = await claudeMessages({
+    model,
+    max_tokens: 8000,
+    system: isTalk ? TALK_REVIEW_SYSTEM : REVIEW_SYSTEM,
+    tools: [REVIEW_TOOL],
+    tool_choice: { type: "tool", name: "report_review" },
+    messages: [{ role: "user", content: ctx }],
+  }, env);
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
@@ -1850,20 +1899,14 @@ async function deliverWithClaude(project, env, transcript = null) {
     "\n----- ここまで -----\n" +
     (transcript && transcript.length ? "\n----- 完成動画の文字起こし（実尺TC付き・目次はこれを根拠に） -----\n" + transcriptForPrompt(transcript) + "\n----- ここまで -----\n" : "") +
     "\n上の台本" + (transcript && transcript.length ? "と文字起こし" : "") + "からYouTube投稿用の項目を作って report_deliver で返してください。";
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model,
-      max_tokens: 3000,
-      system: DELIVER_SYSTEM,
-      tools: [DELIVER_TOOL],
-      tool_choice: { type: "tool", name: "report_deliver" },
-      messages: [{ role: "user", content: ctx }],
-    }),
-  });
-  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
-  const data = await res.json();
+  const data = await claudeMessages({
+    model,
+    max_tokens: 3000,
+    system: DELIVER_SYSTEM,
+    tools: [DELIVER_TOOL],
+    tool_choice: { type: "tool", name: "report_deliver" },
+    messages: [{ role: "user", content: ctx }],
+  }, env);
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_deliver");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
@@ -1918,20 +1961,14 @@ async function fillHearingWithClaude(hearing, raw, env) {
   const ctx = "----- 埋めるヒアリング項目(JSON) -----\n" + JSON.stringify(struct) +
     "\n----- 文字起こし -----\n" + raw +
     "\n----- ここまで -----\n\n上の文字起こしから各項目を埋めて fill_hearing で返してください。";
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model,
-      max_tokens: 16000,
-      system: HEARING_SYSTEM,
-      tools: [HEARING_TOOL],
-      tool_choice: { type: "tool", name: "fill_hearing" },
-      messages: [{ role: "user", content: ctx }],
-    }),
-  });
-  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
-  const data = await res.json();
+  const data = await claudeMessages({
+    model,
+    max_tokens: 16000,
+    system: HEARING_SYSTEM,
+    tools: [HEARING_TOOL],
+    tool_choice: { type: "tool", name: "fill_hearing" },
+    messages: [{ role: "user", content: ctx }],
+  }, env);
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "fill_hearing");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
@@ -2010,7 +2047,7 @@ const PROPOSE_TOOL = {
             sec: { type: "number" },
             script: { type: "string" },
           },
-          required: ["kind"],
+          required: ["kind", "label"],
         },
       },
       talk: {
@@ -2043,19 +2080,13 @@ async function chatWithClaude(project, history, message, env) {
   // 最新ターン：現在の台本(JSON)＋依頼。台本は毎回最新を渡す
   const ctx = "現在の台本(format=" + fmt + "):\n```json\n" + JSON.stringify(slim(project)) + "\n```\n\n依頼：" + message;
   msgs.push({ role: "user", content: ctx });
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({
-      model,
-      max_tokens: 32000,
-      system: CHAT_SYSTEM,
-      tools: [PROPOSE_TOOL],
-      messages: msgs,
-    }),
-  });
-  if (!res.ok) { const t = await res.text(); throw new Error("Claude API " + res.status + ": " + t.slice(0, 300)); }
-  const data = await res.json();
+  const data = await claudeMessages({
+    model,
+    max_tokens: 32000,
+    system: CHAT_SYSTEM,
+    tools: [PROPOSE_TOOL],
+    messages: msgs,
+  }, env);
   const blocks = data.content || [];
   const reply = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
   const tu = blocks.find((b) => b.type === "tool_use" && b.name === "propose_changes");

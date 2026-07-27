@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://customer-clbb6903mpf6390m.cloudflarestream.com" crossorigin>
 <link rel="preconnect" href="https://mg-share.aki-surf89315.workers.dev" crossorigin>
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="tailwind.css?v=20260713b">
+<link rel="stylesheet" href="tailwind.css?v=20260727a">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
 <style>
   html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
@@ -431,6 +431,58 @@ function paneTalk(p, accent, main){
 }
 
 /* ── 企画・サムネペイン ── */
+/* ── 番組情報（アプリの構成台本タブにある「番組情報」カードと同じ中身）──
+   共有ページに出ていなかった＝撮影日/撮影場所/タイトル/サムネ文言/自作サムネが先方に届いていなかった。
+   plans[0] が正本（meta.titles/thumbs は自動ミラー）なので plans を優先し、旧スナップ用に meta をフォールバック。 */
+function metaInfoBlock(p){
+  const m = p.meta||{};
+  const p0 = (p.plans||[])[0] || {};
+  const title = p0.title || (m.titles||[])[0] || "";
+  const thumbText = p0.thumbText || (m.thumbs||[])[0] || "";
+  const imgs = planThumbs(p0);
+  // [コメントキー, ラベル, 値]。キーは行id（uid）と衝突しない固定文字列＝先方コメントの宛先になる
+  const rows = [];
+  if(m.shootDate) rows.push(["metaShootDate", "撮影日", m.shootDate]);
+  if(m.place) rows.push(["metaPlace", "撮影場所", m.place]);
+  if(title) rows.push(["metaTitle", "タイトル", title]);
+  if(thumbText || imgs.length) rows.push(["metaThumb", "サムネ", thumbText]);
+  if(!rows.length) return "";
+  return `<div class="bg-white px-5 py-3">
+    <div class="text-[10px] font-bold text-stone-400 mb-2">番組情報</div>
+    ${rows.map(([sid,k,v])=>`<div class="py-1.5">
+      <div class="flex gap-3 items-start">
+        <div class="w-16 shrink-0 text-[11px] font-bold text-stone-400 pt-0.5">${esc(k)}</div>
+        <div class="flex-1 min-w-0">
+          ${v?`<div class="text-[13px] leading-relaxed text-stone-800 whitespace-pre-wrap">${esc(v)}</div>`:""}
+          ${sid==="metaThumb"&&imgs.length?`<div class="${v?"mt-2":""}">${thumbGrid(imgs)}</div>`:""}
+        </div>
+        ${cmtBtn(sid, k)}
+      </div>
+      ${cmtWrap(sid)}
+    </div>`).join("")}
+  </div>`;
+}
+/* 任意の対象（シーン以外＝番組情報・ハイライト等）にコメントを付けるボタン＋差し込み枠 */
+function cmtBtn(sid, label){
+  if(CHMODE) return "";
+  const cs = commentsFor(sid);
+  const open = cs.some(c=>!c.resolved);
+  return `<button data-c="${esc(sid)}" data-l="${esc(label)}" class="cbtn shrink-0 text-[11px] font-bold pl-2 pr-2.5 py-1 rounded-full shadow-sm bg-white border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1" style="color:var(--main)">
+    ${icon("comment","w-3 h-3")}${cs.length?`<span class="mono">${cs.length}</span>`:"コメント"}${open?`<span class="inline-block w-1.5 h-1.5 rounded-full" style="background:var(--accent)"></span>`:""}
+  </button>`;
+}
+function cmtWrap(sid){
+  return CHMODE ? "" : `<div id="cwrap-${esc(sid)}" class="hidden mt-2 space-y-2"></div>`;
+}
+/* 自作サムネ（dataURL）。壊れた値・外部URLは弾く */
+function planThumbs(pl){
+  return ((pl&&pl.thumbImages)||[]).filter(s=>typeof s==="string" && /^data:image\//.test(s)).slice(0,5);
+}
+function thumbGrid(imgs){
+  return `<div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${imgs.map(src=>
+    `<img src="${esc(src)}" alt="サムネ" class="w-full aspect-video object-cover rounded-lg border border-stone-200">`).join("")}</div>`;
+}
+
 function panePlans(p){
   const plans = p.plans||[];
   if(!plans.length) return '<div class="text-stone-400 text-sm py-8 text-center">企画案はまだありません。</div>';
@@ -440,7 +492,8 @@ function panePlans(p){
       <div class="px-4 py-2 text-[12px] font-bold" style="background:var(--main);color:#fff">企画案 ${i+1}</div>
       <div class="p-4">
         ${pl.title?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">タイトル案</div><div class="text-[15px] font-bold">${esc(pl.title)}</div></div>`:""}
-        ${pl.thumbText?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">サムネ文言</div><div class="text-[14px] font-bold">${esc(pl.thumbText)}</div></div>`:""}
+        ${pl.thumbText?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">サムネ文言</div><div class="text-[14px] font-bold whitespace-pre-wrap">${esc(pl.thumbText)}</div></div>`:""}
+        ${planThumbs(pl).length?`<div class="mb-3"><div class="text-[10px] font-bold text-stone-400 mb-1.5">サムネ</div>${thumbGrid(planThumbs(pl))}</div>`:""}
         ${pl.note?`<div class="mb-3 text-[12px] text-stone-600 whitespace-pre-wrap">${esc(pl.note)}</div>`:""}
         ${refs.length?`<div class="text-[10px] font-bold text-stone-400 mb-1.5">参考動画</div>
         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${refs.map(rf=>{const sc=scoreVideo(rf);return `<a href="https://www.youtube.com/watch?v=${esc(rf.vid)}" target="_blank" rel="noreferrer" class="block border border-stone-200 rounded-lg overflow-hidden">
@@ -526,7 +579,8 @@ function render(){
   const theme = p.theme || {main:"#1F2430",accent:"#E63946"};
   const accent = theme.accent, main = theme.main;
   const m = p.meta||{};
-  const titles = (m.titles||[]).filter(Boolean);
+  // 見出しは plans[0].title（正本）優先。meta.titles はミラーなので発行タイミングによっては古い
+  const titles = [((p.plans||[])[0]||{}).title, ...(m.titles||[])].filter(Boolean);
   document.documentElement.style.setProperty("--main", main);
   document.documentElement.style.setProperty("--accent", accent);
 
@@ -575,6 +629,9 @@ function render(){
     : isTalk ? paneTalk(p, accent, main)
     : paneScript(p, accent, main);
 
+  // 構成台本ペインはアプリの構成台本タブと同じく「番組情報」を頭に出す（トーク系は番組情報カード自体が無い）
+  const infoBlock = (TAB==="script" && !isTalk) ? metaInfoBlock(p) : "";
+
   const appEl = document.getElementById("app");
   if(appEl) appEl.style.maxWidth = (TAB==="video") ? "1280px" : "820px";
   // 編集者URL専用：どのタブにいても右上から「動画を上げる」「確認URLをコピー」に届く固定バー
@@ -592,18 +649,24 @@ function render(){
       <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
     </div>
     ${tabBar}
-    <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
-      <div class="px-5 py-4" style="background:${main};color:#fff">
-        <div class="text-[18px] font-black leading-snug">${esc(titles[0]||p.name||"構成台本")}</div>
-        ${TAB!=="video" && (m.shootDate||m.place) ? `<div class="mt-1 text-[12px] opacity-80 flex flex-wrap gap-x-4">
-          ${m.shootDate?`<span>撮影日 ${esc(m.shootDate)}</span>`:""}
-          ${m.place?`<span>場所 ${esc(m.place)}</span>`:""}
-        </div>` : ""}
-      </div>
-      ${m.highlight&&TAB==="script"?`<div class="bg-white px-5 py-3 border-t border-stone-100">
-        <div class="text-[10px] font-bold text-stone-400 mb-1">冒頭フック</div>
-        <div class="script">${renderScript(accent, m.highlight)}</div></div>`:""}
-    </div>
+    ${/* 番組情報カードが出る時はそこにタイトル行があるので、大枠の見出しは出さない（AK指示: タイトルも普通の表示で） */""}
+    ${infoBlock ? "" : `<div class="mb-4">
+      <div class="text-[17px] font-black leading-snug text-stone-800">${esc(titles[0]||p.name||"構成台本")}</div>
+      ${TAB!=="video" && (m.shootDate||m.place) ? `<div class="mt-1 text-[12px] text-stone-500 flex flex-wrap gap-x-4">
+        ${m.shootDate?`<span>撮影日 ${esc(m.shootDate)}</span>`:""}
+        ${m.place?`<span>場所 ${esc(m.place)}</span>`:""}
+      </div>` : ""}
+    </div>`}
+    ${infoBlock || (m.highlight&&TAB==="script") ? `<div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
+      ${infoBlock}
+      ${m.highlight&&TAB==="script"?`<div class="bg-white px-5 py-3 ${infoBlock?"border-t border-stone-100":""}">
+        <div class="flex items-start justify-between gap-3">
+          <div class="text-[10px] font-bold text-stone-400 mb-1">冒頭フック</div>
+          ${cmtBtn("metaHighlight", "ハイライト（冒頭フック）")}
+        </div>
+        <div class="script">${renderScript(accent, m.highlight)}</div>
+        ${cmtWrap("metaHighlight")}</div>`:""}
+    </div>` : ""}
     <div>${pane}</div>
     <p class="text-center text-[11px] text-stone-400 mt-8 leading-relaxed">制作：ものがたりっち！</p>
   `;
@@ -709,7 +772,10 @@ function renderChannel(){
   if(!sub.some(s=>s[0]===CTAB)) CTAB="script";
   SNAP = { project: sel };   // paneVideo/mountVideo/fileGroups が参照（チャンネルはコメント無し=CHMODE）
   const subBar = `<div class="flex gap-1 mb-3 border-b border-stone-200 overflow-x-auto">${sub.map(([k,label])=>`<button data-ctab="${k}" class="ctabbtn text-[12px] font-bold px-3 py-1.5 whitespace-nowrap ${CTAB===k?'border-b-2':''}" style="${CTAB===k?`color:${mainC};border-color:${accentC}`:'color:#9ca3af'}">${label}</button>`).join("")}</div>`;
-  const pane = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):CTAB==="video"?paneVideo(sel,accentC,mainC):CTAB==="files"?paneFiles(sel,accentC,mainC):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
+  const paneBody = CTAB==="plan"?panePlans(sel):CTAB==="kouban"?paneKouban(sel):CTAB==="video"?paneVideo(sel,accentC,mainC):CTAB==="files"?paneFiles(sel,accentC,mainC):isTalk?paneTalk(sel,accentC,mainC):paneScript(sel,accentC,mainC);
+  // 構成台本サブタブでも番組情報（撮影日/場所/タイトル/サムネ文言/サムネ）を頭に出す＝案件共有と同じ見え方に
+  const chInfo = (CTAB==="script" && !isTalk) ? metaInfoBlock(sel) : "";
+  const pane = (chInfo ? `<div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-4">${chInfo}</div>` : "") + paneBody;
   document.getElementById("app").innerHTML = header
     + `<button id="backBtn" class="text-[12px] font-bold mb-3 pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5" style="color:${mainC}">${icon("back","w-3 h-3")}企画一覧へ戻る</button>`
     + `<div class="flex items-start justify-between gap-3 mb-3">`
@@ -786,7 +852,7 @@ function renderCommentBox(sid, label){
     <div class="space-y-1.5">${listHtml}</div>
     <div class="rounded-lg border border-stone-200 bg-white p-2">
       <input id="au-${sid}" value="${esc(AUTHOR)}" placeholder="お名前（任意）" class="w-full text-[12px] px-2 py-1.5 mb-1.5 bg-stone-50 rounded focus:outline-none">
-      <textarea id="tx-${sid}" rows="2" placeholder="このシーンへのコメント・修正依頼…" class="w-full text-[13px] px-2 py-1.5 border border-stone-200 rounded focus:outline-none resize-y"></textarea>
+      <textarea id="tx-${sid}" rows="2" placeholder="${esc(label?label+"へのコメント・修正依頼…":"コメント・修正依頼…")}" class="w-full text-[13px] px-2 py-1.5 border border-stone-200 rounded focus:outline-none resize-y"></textarea>
       <div class="flex justify-end mt-1.5">
         <button id="sb-${sid}" class="text-[11px] font-bold text-white pl-3 pr-4 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5" style="background:var(--main)">${icon("send","w-3 h-3")}送信</button>
       </div>
