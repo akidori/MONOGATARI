@@ -2309,6 +2309,7 @@ export default function App() {
   const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
   const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
   const [prepView, setPrepView] = useState("hearing"); // 取材メモタブ内の切替：聞き取りシート / 質問ウィザード
+  const [hearingTocOpen, setHearingTocOpen] = useState(true);
   const [collapsedFolders, setCollapsedFolders] = useState({}); // 素材管理：フォルダ(シーン)ごとの開閉
   const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
   const toggleHighlight = () => setHighlightCollapsed((v) => { const nv = !v; try { localStorage.setItem("mg:hlCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
@@ -2348,6 +2349,10 @@ export default function App() {
   const [user, setUser] = useState(null);                   // ログイン中のGoogleユーザー（null=未ログイン）
   const [showAccount, setShowAccount] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
+  const [cfStream, setCfStream] = useState({ loading: false, connected: false, accountName: "", legacyAllowed: false });
+  const [cfBusy, setCfBusy] = useState(false);
+  const [connections, setConnections] = useState(null);
+  const [connectionsOpen, setConnectionsOpen] = useState(true);
   const gbtnRef = useRef(null);
   const [showAssistant, setShowAssistant] = useState(false);
   const [assistantText, setAssistantText] = useState("");
@@ -2609,6 +2614,44 @@ export default function App() {
     showToast("ログアウトしました（この端末のローカルデータに戻りました）");
   };
 
+  const loadCfStreamStatus = async () => {
+    if (!MG_SESSION) { setCfStream({ loading: false, connected: false, accountName: "", legacyAllowed: false }); return; }
+    setCfStream((s) => ({ ...s, loading: true }));
+    try {
+      const [r, ar] = await Promise.all([
+        fetch(SHARE_API + "/api/cf/status", { headers: { Authorization: "Bearer " + MG_SESSION } }),
+        fetch(SHARE_API + "/api/account/connections", { headers: { Authorization: "Bearer " + MG_SESSION } }),
+      ]);
+      const d = await r.json();
+      setCfStream({ loading: false, connected: !!d.connected, accountName: d.accountName || "", legacyAllowed: !!d.legacyAllowed });
+      if (ar.ok) setConnections(await ar.json());
+    } catch (e) { setCfStream((s) => ({ ...s, loading: false })); }
+  };
+  const connectCloudflare = async () => {
+    if (!MG_SESSION) { showToast("先にGoogleでログインしてください"); return; }
+    setCfBusy(true);
+    try {
+      const r = await fetch(SHARE_API + "/api/cf/connect/start", {
+        method: "POST", headers: { Authorization: "Bearer " + MG_SESSION, "Content-Type": "application/json" }, body: "{}",
+      });
+      const d = await r.json();
+      if (!r.ok || !d.url) throw new Error(d.error || "接続を開始できません");
+      location.href = d.url;
+    } catch (e) { showToast("Cloudflare接続：" + (e.message || e)); setCfBusy(false); }
+  };
+  const disconnectCloudflare = async () => {
+    if (!window.confirm("自分のCloudflare Streamとの接続を解除しますか？\n既にアップロード済みの動画はCloudflare側に残ります。")) return;
+    setCfBusy(true);
+    try {
+      const r = await fetch(SHARE_API + "/api/cf/connect", { method: "DELETE", headers: { Authorization: "Bearer " + MG_SESSION } });
+      if (!r.ok) throw new Error("解除に失敗しました");
+      setCfStream({ loading: false, connected: false, accountName: "", legacyAllowed: false });
+      setConnections((c) => c ? { ...c, video: { ...(c.video || {}), connected: false, owner: "未接続", accountName: "" } } : c);
+      showToast("Cloudflare Streamの接続を解除しました");
+    } catch (e) { showToast(e.message || String(e)); }
+    setCfBusy(false);
+  };
+
   /* 初期読み込み：保存済みログインを復元してから読み込む */
   useEffect(() => {
     (async () => {
@@ -2616,6 +2659,12 @@ export default function App() {
         const t = localStorage.getItem(AUTH_TOKEN_KEY), us = localStorage.getItem(AUTH_USER_KEY);
         if (t && us) { MG_SESSION = t; setUser(JSON.parse(us)); setActiveStorage(true); }
       } catch (e) {}
+      const cfResult = new URLSearchParams(location.search).get("cf");
+      if (cfResult) {
+        const clean = new URL(location.href); clean.searchParams.delete("cf"); clean.searchParams.delete("message");
+        history.replaceState(null, "", clean.pathname + clean.search + clean.hash);
+        setTimeout(() => showToast(cfResult === "connected" ? "自分のCloudflare Streamを接続しました" : "Cloudflare Streamを接続できませんでした"), 100);
+      }
       // 編集用リンク（?live=）はライブセッションに直行（loadAllしない）
       const sp = new URLSearchParams(location.search);
       const liveId = sp.get("live");
@@ -2630,6 +2679,11 @@ export default function App() {
       await loadAll();
     })();
   }, []);
+
+  useEffect(() => {
+    if (user && MG_SESSION) loadCfStreamStatus();
+    else { setCfStream({ loading: false, connected: false, accountName: "", legacyAllowed: false }); setConnections(null); }
+  }, [user && user.sub]);
 
   /* アカウントモーダルを開いたら Googleボタンを描画 */
   useEffect(() => {
@@ -3410,6 +3464,15 @@ export default function App() {
   const addHearingSection = () => setHearing((secs) => [...secs, { id: uid(), title: "新しいセクション", items: [hearingItem("項目")] }]);
   const removeHearingSection = (secId) => { if (window.confirm("このセクションを削除しますか？")) setHearing((secs) => secs.filter((s) => s.id !== secId)); };
   const resetHearing = () => { if (window.confirm("ヒアリング項目を初期テンプレに戻しますか？（入力した内容は消えます）")) setHearing(HEARING_TEMPLATE()); };
+  const jumpToHearing = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    el.classList.add("ring-2", "ring-offset-2");
+    el.style.setProperty("--tw-ring-color", theme.accent);
+    setTimeout(() => { el.classList.remove("ring-2", "ring-offset-2"); el.style.removeProperty("--tw-ring-color"); }, 1200);
+    if (isNarrow) setHearingTocOpen(false);
+  };
   /* 文字起こし→AIで各項目を埋める。既存の入力は残し、空欄＆AIが内容を返した項目だけ埋める */
   const runHearingFill = async () => {
     const raw = (hearingImport && hearingImport.raw || "").trim();
@@ -4142,7 +4205,7 @@ export default function App() {
       body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
     });
     const cd = await cr.json();
-    if (!cd.uploadId) throw new Error(cd.error || "開始に失敗");
+    if (!cd.uploadId || !cd.uploadCap) throw new Error(cd.error || "開始に失敗");
     const total = Math.max(1, Math.ceil(file.size / CHUNK));
     const parts = [];
     for (let i = 0; i < total; i++) {
@@ -4154,7 +4217,7 @@ export default function App() {
         try {
           etag = await new Promise((res, rej) => {
             const xhr = new XMLHttpRequest();
-            xhr.open("PUT", SHARE_API + "/api/file/mpu/part?key=" + encodeURIComponent(cd.key) + "&uploadId=" + encodeURIComponent(cd.uploadId) + "&part=" + (i + 1));
+            xhr.open("PUT", SHARE_API + "/api/file/mpu/part?key=" + encodeURIComponent(cd.key) + "&uploadId=" + encodeURIComponent(cd.uploadId) + "&part=" + (i + 1) + "&cap=" + encodeURIComponent(cd.uploadCap));
             xhr.timeout = 180000;
             xhr.upload.onprogress = (e) => { if (e.lengthComputable) (onProgress || setMediaProg)(Math.min(100, Math.round((start + e.loaded) / file.size * 100))); };
             xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) { try { res(JSON.parse(xhr.responseText).etag); } catch (_) { rej(new Error("part応答不正")); } } else rej(new Error("part失敗(" + xhr.status + ")")); };
@@ -4170,7 +4233,7 @@ export default function App() {
     }
     const fr = await fetch(SHARE_API + "/api/file/mpu/complete", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snap: sid, key: cd.key, uploadId: cd.uploadId, parts, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
+      body: JSON.stringify({ snap: sid, key: cd.key, uploadId: cd.uploadId, uploadCap: cd.uploadCap, parts, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
     });
     const fd = await fr.json();
     if (!fd.file) throw new Error(fd.error || "確定に失敗");
@@ -4498,7 +4561,8 @@ export default function App() {
       if (v && v.type === "stream" && !v.ready && v.uid && (force || (!streamResumeRef.current[v.uid] && !v.streamFailed))) {
         if (force) { streamResumeRef.current[v.uid] = 0; setVersions((arr) => arr.map((x) => (x.uid === v.uid ? { ...x, streamFailed: false } : x))); }
         streamResumeRef.current[v.uid] = 1;
-        pollStreamReady(v.uid);
+        if (v.streamOwner === "user" && MG_SESSION) pollOwnStreamReady(v.uid);
+        else pollStreamReady(v.uid);
       }
     }
   };
@@ -4699,7 +4763,7 @@ export default function App() {
       // 採番は「配列長+1」だと削除や競合でv3が2個できる（2026-07-07 近川さんで実発生）→既存最大番号+1
       const maxN = arr.reduce((mx, v) => { const m = /^v(\d+)$/.exec(v.label || ""); return m ? Math.max(mx, +m[1]) : mx; }, 0);
       const label = "v" + (maxN + 1);
-      const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
+      const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", streamOwner: vobj.streamOwner || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
       // 素材管理の「確認用動画」にもミラー（DLは元のR2マスター）
       setAssets((as) => [newAsset("確認用動画", { type: vobj.type === "youtube" ? "youtube" : "mp4", key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id }), ...as]);
       return [...arr, v];
@@ -4719,6 +4783,71 @@ export default function App() {
     } catch (e) {}
     setTimeout(() => pollStreamReady(sid, tries + 1), 5000);
   };
+  /* 利用者自身のCloudflare Streamを確認。OAuth tokenはWorker内だけで使い、ブラウザへ出さない。 */
+  const pollOwnStreamReady = async (sid, tries = 0) => {
+    if (tries > 100) { setVersions((arr) => arr.map((x) => (x.uid === sid && !x.ready ? { ...x, streamFailed: true } : x))); return; }
+    try {
+      const r = await fetch(SHARE_API + "/api/cf/stream/" + encodeURIComponent(sid), { headers: { Authorization: "Bearer " + MG_SESSION } });
+      const d = await r.json();
+      if (d.ready && d.hls) {
+        setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, ready: true, hls: d.hls, pct: 100, streamFailed: false, streamOwner: "user" } : x)));
+        return;
+      }
+      if (d.state === "error") { setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, streamFailed: true } : x))); return; }
+      setVersions((arr) => arr.map((x) => (x.uid === sid ? { ...x, pct: d.pct || x.pct } : x)));
+    } catch (e) {}
+    setTimeout(() => pollOwnStreamReady(sid, tries + 1), 5000);
+  };
+  /* TUS: 動画本体はブラウザ→利用者自身のStreamへ直送。Worker/R2の容量・帯域を消費しない。 */
+  const uploadToOwnStream = async (file, onProgress = null) => {
+    const r = await fetch(SHARE_API + "/api/cf/stream/upload", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + MG_SESSION, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: file.name, size: file.size, mime: file.type || "video/mp4" }),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.uploadUrl || !d.uid) throw new Error(d.error || "Streamアップロードを開始できません");
+    const CHUNK = 50 * 1024 * 1024; // Cloudflare推奨50MiB。256KiBの倍数。
+    let offset = 0;
+    while (offset < file.size) {
+      const blob = file.slice(offset, Math.min(file.size, offset + CHUNK));
+      let nextOffset = null, lastErr = null;
+      for (let attempt = 0; attempt < 6; attempt++) {
+        try {
+          nextOffset = await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("PATCH", d.uploadUrl);
+            xhr.timeout = 180000;
+            xhr.setRequestHeader("Tus-Resumable", "1.0.0");
+            xhr.setRequestHeader("Upload-Offset", String(offset));
+            xhr.setRequestHeader("Content-Type", "application/offset+octet-stream");
+            xhr.upload.onprogress = (e) => {
+              if (e.lengthComputable) (onProgress || setMediaProg)(Math.min(100, Math.round((offset + e.loaded) / file.size * 100)));
+            };
+            xhr.onload = () => {
+              if (xhr.status >= 200 && xhr.status < 300) resolve(+(xhr.getResponseHeader("Upload-Offset") || offset + blob.size));
+              else reject(new Error("Stream送信失敗(" + xhr.status + ")"));
+            };
+            xhr.onerror = () => reject(new Error("Streamへの通信エラー"));
+            xhr.ontimeout = () => reject(new Error("Streamへの送信が止まりました"));
+            xhr.send(blob);
+          });
+          break;
+        } catch (e) {
+          lastErr = e;
+          // 現在offsetをHEADで取り直して、成功済みチャンクを二重送信しない。
+          try {
+            const hr = await fetch(d.uploadUrl, { method: "HEAD", headers: { "Tus-Resumable": "1.0.0" } });
+            if (hr.ok) offset = +(hr.headers.get("Upload-Offset") || offset);
+          } catch (_) {}
+          if (attempt < 5) await new Promise((ok) => setTimeout(ok, Math.min(30000, 2000 * Math.pow(2, attempt))));
+        }
+      }
+      if (nextOffset == null) throw lastErr || new Error("Stream送信に失敗しました");
+      offset = nextOffset;
+    }
+    return { type: "stream", uid: d.uid, key: "", ready: false, streamOwner: "user" };
+  };
   const uploadVersionVideo = async (file, onProgress = null) => {
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
     // 保存が通っていない状態で上げると、R2への転送は成功するのに版そのものが保存されず、
@@ -4730,6 +4859,20 @@ export default function App() {
     const sh = await ensureShare(); if (!sh) return;   // 確認用URLは動画アップの副産物として自動発行（先に手で発行させない）
     setMediaBusy("動画をアップロード中…"); setMediaProg(0);
     try {
+      // 接続済みユーザーは自分のStreamへ直接送る。AKのR2/Streamには一切保存しない。
+      if (user && cfStream.connected) {
+        const own = await uploadToOwnStream(file, onProgress);
+        await addVersionFromVideo(own, file.name);
+        pollOwnStreamReady(own.uid);
+        showToast("自分のCloudflare Streamへアップしました。軽量版を準備中…");
+        setMediaBusy("");
+        return;
+      }
+      // 一般利用者をAKのR2/Streamへ暗黙フォールバックさせない。費用分離を必ず守る。
+      if (!cfStream.legacyAllowed) {
+        setShowAccount(true);
+        throw new Error(user ? "先にアカウント画面で自分のCloudflare Streamを接続してください" : "動画アップロードにはGoogleログインと自分のCloudflare Stream接続が必要です");
+      }
       // 確認用バージョン＝納品URLにもなる金看板。保存期限で消えると先方に渡したURLが死ぬため無期限固定
       const meta = await uploadToR2(file, "", onProgress, sh.id, sh.token, { retention: 0 });
       // Streamへ取り込み（自動で軽量化）。無効/失敗ならR2直再生にフォールバック
@@ -7053,10 +7196,50 @@ export default function App() {
                 <Icon name="download" className="w-3.5 h-3.5" />CSVで書き出し
               </button>
             </div>
+            <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
+              {/* ChatGPT風の目次：セクションと入力済み項目を一覧し、クリックで該当箇所へ */}
+              <aside className="lg:sticky lg:top-16 rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+                <button onClick={() => setHearingTocOpen((v) => !v)}
+                  className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-stone-50">
+                  <Icon name="menu" className="w-4 h-4 text-stone-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[12px] font-bold text-stone-700">取材メモの目次</div>
+                    <div className="text-[10px] text-stone-400">{(project.hearing || []).length}セクション・クリックで移動</div>
+                  </div>
+                  <span className="text-[10px] text-stone-400">{hearingTocOpen ? "▲" : "▼"}</span>
+                </button>
+                {hearingTocOpen && (
+                  <nav className="border-t border-stone-100 max-h-[62vh] overflow-y-auto p-2 space-y-1">
+                    {(project.hearing || []).map((sec, si) => {
+                      const items = sec.items || [];
+                      const filled = items.filter((it) => (hearingPlain(it.value) || "").trim()).length;
+                      return (
+                        <div key={sec.id} className="rounded-lg hover:bg-stone-50">
+                          <button onClick={() => jumpToHearing("hearing-sec-" + sec.id)}
+                            className="w-full text-left px-2 py-1.5 flex items-start gap-2">
+                            <span className="text-[10px] font-bold tabular-nums mt-0.5" style={{ color: theme.accent }}>{String(si + 1).padStart(2, "0")}</span>
+                            <span className="flex-1 min-w-0 text-[11px] font-bold text-stone-700 leading-snug">{sec.title || "無題のセクション"}</span>
+                            <span className={"text-[9px] shrink-0 rounded-full px-1.5 py-0.5 " + (filled === items.length && items.length ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500")}>{filled}/{items.length}</span>
+                          </button>
+                          {items.some((it) => (hearingPlain(it.value) || "").trim()) && (
+                            <div className="pb-1 pl-7 pr-2 space-y-0.5">
+                              {items.filter((it) => (hearingPlain(it.value) || "").trim()).map((it) => (
+                                <button key={it.id} onClick={() => jumpToHearing("hearing-item-" + it.id)}
+                                  className="block w-full text-left truncate text-[10px] text-stone-400 hover:text-stone-700 py-0.5"
+                                  title={it.label || "無題の項目"}>・{it.label || "無題の項目"}</button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </nav>
+                )}
+              </aside>
             {/* ドキュメント風の1枚シート：全セクションを1枚に流し込む。箱枠なし・見出し＋罫線区切り・入力欄はボーダーレス */}
             <div className="rounded-2xl border border-stone-200 bg-white px-5 sm:px-8 py-6 sm:py-8 shadow-sm">
               {(project.hearing || []).map((sec) => (
-                <div key={sec.id} className="group/sec mt-7 first:mt-0">
+                <div key={sec.id} id={"hearing-sec-" + sec.id} className="group/sec mt-7 first:mt-0 scroll-mt-20 rounded-lg transition-shadow">
                   <div className="flex items-center gap-2 mb-2 pb-1.5 border-b-2 border-stone-100">
                     <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)}
                       className="flex-1 min-w-0 text-[15px] font-bold text-stone-800 bg-transparent focus:outline-none py-0.5" />
@@ -7064,7 +7247,7 @@ export default function App() {
                   </div>
                   <div className="divide-y divide-stone-100">
                     {sec.items.map((it) => (
-                      <div key={it.id} className="group py-2">
+                      <div key={it.id} id={"hearing-item-" + it.id} className="group py-2 scroll-mt-24 rounded-md transition-shadow">
                         <div className="flex items-center gap-2">
                           <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)}
                             className="flex-1 min-w-0 text-[11px] font-bold text-stone-400 bg-transparent focus:outline-none" />
@@ -7081,6 +7264,7 @@ export default function App() {
                 </div>
               ))}
               <button onClick={addHearingSection} className="mt-8 text-[12px] font-bold text-stone-400 hover:text-stone-700 inline-flex items-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
+            </div>
             </div>
           </div>
             )}
@@ -7680,12 +7864,12 @@ export default function App() {
       {/* ===== アカウント / ログイン モーダル ===== */}
       {showAccount && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAccount(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="user" className="w-4 h-4" />アカウント</h3>
               <button onClick={() => setShowAccount(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
-            <div className="p-5">
+            <div className="p-5 overflow-y-auto">
               {user ? (
                 <div>
                   <div className="flex items-center gap-3">
@@ -7699,6 +7883,97 @@ export default function App() {
                   </div>
                   <div className="mt-3 text-[12px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-1.5">
                     <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5" /><span><span className="font-bold">クラウド同期中</span>。案件はこのアカウントに保存され、スマホ・PC どの端末でも同じ案件を開けます。</span>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-stone-200 p-3">
+                    <div className="flex items-start gap-2">
+                      <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] font-bold">自分のCloudflare Stream</div>
+                        {cfStream.loading ? (
+                          <div className="text-[11px] text-stone-400 mt-1">接続状態を確認中…</div>
+                        ) : cfStream.connected ? (
+                          <>
+                            <div className="text-[11px] text-emerald-700 mt-1 truncate">接続済み：{cfStream.accountName}</div>
+                            <div className="text-[10px] text-stone-400 mt-1">確認動画はこのアカウントへ直接保存され、料金・容量もこのアカウント側になります。</div>
+                          </>
+                        ) : (
+                          <div className="text-[11px] text-stone-500 mt-1">接続すると、確認動画をあなた自身のStreamへ保存して高速再生できます。</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2 flex justify-end">
+                      {cfStream.connected
+                        ? <button onClick={disconnectCloudflare} disabled={cfBusy} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">接続を解除</button>
+                        : <button onClick={connectCloudflare} disabled={cfBusy || cfStream.loading} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40">{cfBusy ? "接続中…" : "Cloudflareを接続"}</button>}
+                    </div>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-stone-200 overflow-hidden">
+                    <button onClick={() => setConnectionsOpen((v) => !v)} className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-stone-50">
+                      <Icon name="share" className="w-4 h-4 text-stone-500 shrink-0" />
+                      <div className="flex-1">
+                        <div className="text-[12px] font-bold">ログイン情報の連携先</div>
+                        <div className="text-[10px] text-stone-400">保存先・用途・費用負担を確認</div>
+                      </div>
+                      <span className="text-stone-400 text-xs">{connectionsOpen ? "▲" : "▼"}</span>
+                    </button>
+                    {connectionsOpen && (
+                      <div className="border-t border-stone-100 px-3 py-3">
+                        {!connections ? (
+                          <div className="text-[11px] text-stone-400 text-center py-3">連携情報を読み込み中…</div>
+                        ) : (() => {
+                          const rows = [
+                            ["本人確認", connections.identity, "user"],
+                            ["ログイン状態", connections.session, "checkCircle"],
+                            ["案件・台本", connections.projectStorage, "file"],
+                            ["確認動画", connections.video, "video"],
+                            ["Google Drive", connections.googleDrive, "folder"],
+                            ["AI機能", connections.ai, "sparkle"],
+                            ["YouTube調査", connections.youtube, "search"],
+                            ["共同編集・コメント", connections.collaboration, "user"],
+                          ];
+                          return (
+                            <div className="space-y-2">
+                              <div className="rounded-lg bg-stone-50 px-3 py-2 text-[10px] text-stone-500 leading-relaxed">
+                                <span className="font-bold text-stone-700">Googleログイン</span>
+                                <span className="mx-1.5 text-stone-300">→</span>
+                                ものがたりっちの本人確認
+                                <span className="mx-1.5 text-stone-300">→</span>
+                                各サービスをユーザー単位で識別
+                              </div>
+                              {rows.map(([label, item, ico]) => {
+                                if (!item) return null;
+                                const connected = item.connected !== false;
+                                const owner = item.owner || (label === "本人確認" ? "自分" : "");
+                                const own = owner === "自分";
+                                return (
+                                  <div key={label} className="rounded-lg border border-stone-100 px-2.5 py-2">
+                                    <div className="flex items-center gap-2">
+                                      <div className={"w-6 h-6 rounded-md grid place-items-center shrink-0 " + (connected ? "bg-emerald-50 text-emerald-600" : "bg-stone-100 text-stone-400")}>
+                                        <Icon name={ico} className="w-3.5 h-3.5" />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-[11px] font-bold">{label}</span>
+                                          <span className={"text-[9px] font-bold px-1.5 py-0.5 rounded-full " + (connected ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500")}>{connected ? "接続中" : "未接続"}</span>
+                                          {owner && <span className={"text-[9px] font-bold px-1.5 py-0.5 rounded-full " + (own ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{owner}の契約</span>}
+                                        </div>
+                                        <div className="text-[10px] text-stone-500 truncate">{item.provider}{item.accountName ? " / " + item.accountName : ""}</div>
+                                      </div>
+                                    </div>
+                                    <div className="text-[10px] text-stone-400 leading-relaxed mt-1 pl-8">{item.purpose}</div>
+                                    {label === "本人確認" && connections.identity.email && <div className="text-[10px] text-stone-500 mt-1 pl-8 truncate">連携メール：{connections.identity.email}</div>}
+                                    {label === "ログイン状態" && item.expiresAt && <div className="text-[10px] text-stone-500 mt-1 pl-8">有効期限：{new Date(item.expiresAt).toLocaleString("ja-JP")}</div>}
+                                  </div>
+                                );
+                              })}
+                              <div className="pt-1 text-[9px] text-stone-400 leading-relaxed">
+                                APIキー・OAuthトークンそのものは安全のため表示しません。接続先と用途のみ表示しています。
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                   <div className="mt-4 flex justify-end">
                     <button onClick={logout} disabled={authBusy} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">ログアウト</button>

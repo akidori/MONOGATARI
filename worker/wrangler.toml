@@ -10,6 +10,17 @@ GOOGLE_CLIENT_ID = "177151250196-ta2k23m2fe1ac9bras75ajk6ia79h88k.apps.googleuse
 # Cloudflare Stream（確認用動画の自動トランスコード）。トークンは秘密： wrangler secret put STREAM_API_TOKEN
 STREAM_ACCOUNT_ID = "fa27b051015cf14d2a1af3acc35c4d0f"
 
+# 利用者自身のCloudflare Stream接続（BYOC）。
+# OAuth clientを公開化して値を設定するまで、UIは「運営設定未完了」と安全に停止する。
+# secret: npx wrangler secret put CF_OAUTH_CLIENT_SECRET
+APP_ORIGIN = "https://monogataritch.pages.dev"
+CF_OAUTH_CLIENT_ID = ""
+CF_OAUTH_REDIRECT_URI = "https://mg-share.aki-surf89315.workers.dev/api/cf/oauth/callback"
+# OAuth client作成画面で選択した Stream Read / Stream Write のscope IDを空白区切りで設定
+CF_OAUTH_SCOPES = ""
+# 既存のAK用R2/Streamへフォールバックできる唯一のアカウント
+LEGACY_STREAM_OWNER_EMAIL = "aki.surf89315@gmail.com"
+
 # 共有スナップショット＋コメント保存用 KV
 # 初回: wrangler kv namespace create SNAPS で id を発行して下記に貼る
 [[kv_namespaces]]

@@ -793,6 +793,224 @@ ${qList}
         return json({ token, user });
       }
 
+      // ===== 利用者自身の Cloudflare Stream（OAuth / BYOC） =====
+      // 必須: CF_OAUTH_CLIENT_ID, CF_OAUTH_CLIENT_SECRET(secret), CF_OAUTH_REDIRECT_URI,
+      //       CF_OAUTH_SCOPES（OAuth client作成時に選んだ Stream Read/Write scope ID）
+      // OAuth tokenは暗号化してユーザー別KVへ保存し、ブラウザには返さない。
+      if (request.method === "POST" && parts[1] === "cf" && parts[2] === "connect" && parts[3] === "start") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "Googleログインが必要です" }, 401);
+        if (!env.CF_OAUTH_CLIENT_ID || !env.CF_OAUTH_REDIRECT_URI || !env.CF_OAUTH_SCOPES)
+          return json({ error: "Cloudflare OAuthはまだ運営設定が完了していません" }, 503);
+        const ts = Math.floor(Date.now() / 1000);
+        const state = await mintSession({
+          purpose: "cf-oauth", sub: u.sub, iat: ts, exp: ts + 10 * 60,
+        }, sessionSecret(env));
+        const q = new URLSearchParams({
+          response_type: "code",
+          client_id: env.CF_OAUTH_CLIENT_ID,
+          redirect_uri: env.CF_OAUTH_REDIRECT_URI,
+          scope: env.CF_OAUTH_SCOPES,
+          state,
+        });
+        return json({ url: "https://dash.cloudflare.com/oauth2/auth?" + q.toString() });
+      }
+
+      // Cloudflareからのredirect。stateにGoogle user subを署名してあるためCookie不要。
+      if (request.method === "GET" && parts[1] === "cf" && parts[2] === "oauth" && parts[3] === "callback") {
+        const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+        const fail = (m) => Response.redirect(appOrigin + "/?cf=error&message=" + encodeURIComponent(m), 302);
+        const state = await verifySession(url.searchParams.get("state") || "", sessionSecret(env));
+        if (!state || state.purpose !== "cf-oauth" || !state.sub) return fail("接続の有効期限が切れました");
+        if (url.searchParams.get("error")) return fail(url.searchParams.get("error_description") || "Cloudflare接続がキャンセルされました");
+        const code = url.searchParams.get("code") || "";
+        if (!code || !env.CF_OAUTH_CLIENT_ID || !env.CF_OAUTH_CLIENT_SECRET || !env.CF_OAUTH_REDIRECT_URI)
+          return fail("Cloudflare OAuth設定が不足しています");
+        const basic = btoa(env.CF_OAUTH_CLIENT_ID + ":" + env.CF_OAUTH_CLIENT_SECRET);
+        const tr = await fetch("https://dash.cloudflare.com/oauth2/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + basic },
+          body: new URLSearchParams({
+            grant_type: "authorization_code", code, redirect_uri: env.CF_OAUTH_REDIRECT_URI,
+          }),
+        });
+        const td = await tr.json().catch(() => ({}));
+        if (!tr.ok || !td.access_token) return fail(td.error_description || td.error || "Cloudflareトークン交換に失敗しました");
+        const ar = await fetch("https://api.cloudflare.com/client/v4/accounts?per_page=50", {
+          headers: { Authorization: "Bearer " + td.access_token },
+        });
+        const ad = await ar.json().catch(() => ({}));
+        const accounts = Array.isArray(ad.result) ? ad.result : [];
+        if (!ar.ok || !accounts.length) return fail("利用できるCloudflareアカウントがありません");
+        // OAuth同意画面で許可されたアカウントだけが列挙される。初期版は先頭を使用。
+        const account = accounts[0];
+        const expiresAt = Date.now() + Math.max(60, +td.expires_in || 3600) * 1000;
+        const secret = await encryptPrivate({
+          accessToken: td.access_token,
+          refreshToken: td.refresh_token || "",
+          tokenType: td.token_type || "Bearer",
+          expiresAt,
+          scope: td.scope || env.CF_OAUTH_SCOPES,
+        }, sessionSecret(env));
+        await env.SNAPS.put("cf:" + state.sub, JSON.stringify({
+          accountId: account.id, accountName: account.name || "Cloudflare",
+          secret, connectedAt: now(), updatedAt: now(),
+        }));
+        return Response.redirect(appOrigin + "/?cf=connected", 302);
+      }
+
+      if (request.method === "GET" && parts[1] === "cf" && parts[2] === "status") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ connected: false, loginRequired: true }, 401);
+        const c = await env.SNAPS.get("cf:" + u.sub, "json");
+        const legacyAllowed = !!env.LEGACY_STREAM_OWNER_EMAIL && lc(u.email) === lc(env.LEGACY_STREAM_OWNER_EMAIL);
+        return json(c
+          ? { connected: true, accountId: c.accountId, accountName: c.accountName, connectedAt: c.connectedAt, legacyAllowed }
+          : { connected: false, legacyAllowed });
+      }
+
+      // アカウント画面用の安全な連携一覧。token/key/内部IDの全値は絶対に返さない。
+      if (request.method === "GET" && parts[1] === "account" && parts[2] === "connections") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const cf = await env.SNAPS.get("cf:" + u.sub, "json");
+        const legacyAllowed = !!env.LEGACY_STREAM_OWNER_EMAIL && lc(u.email) === lc(env.LEGACY_STREAM_OWNER_EMAIL);
+        const mask = (s) => s ? "••••" + String(s).slice(-4) : "";
+        return json({
+          identity: {
+            provider: "Google",
+            email: u.email || "",
+            name: u.name || "",
+            purpose: "本人確認・アカウント識別",
+          },
+          session: {
+            provider: "ものがたりっち Worker",
+            connected: true,
+            owner: "自分",
+            purpose: "ログイン状態の維持（30日。ログアウトで端末から削除）",
+            expiresAt: u.exp ? new Date(u.exp * 1000).toISOString() : null,
+            browserStorage: "このブラウザのlocalStorage",
+          },
+          projectStorage: {
+            provider: "運営Cloudflare KV",
+            connected: true,
+            owner: "運営",
+            purpose: "案件・台本・チャンネル設定のクラウド同期",
+          },
+          video: cf ? {
+            provider: "Cloudflare Stream",
+            connected: true,
+            owner: "自分",
+            accountName: cf.accountName || "Cloudflare",
+            accountIdMasked: mask(cf.accountId),
+            purpose: "確認動画の保存・変換・高速再生",
+          } : {
+            provider: "Cloudflare Stream",
+            connected: false,
+            owner: legacyAllowed ? "運営（既存管理者のみ）" : "未接続",
+            purpose: legacyAllowed ? "既存の運営Streamを使用可能" : "動画利用前に自分のStream接続が必要",
+          },
+          googleDrive: {
+            provider: "Google Drive",
+            connected: false,
+            owner: "自分",
+            purpose: "未実装（現在、案件・動画の保存先には使っていません）",
+          },
+          ai: {
+            provider: "Anthropic Claude",
+            connected: !!env.ANTHROPIC_API_KEY,
+            owner: "運営",
+            purpose: "台本生成・校正・相談",
+          },
+          youtube: {
+            provider: "YouTube Data API",
+            connected: !!env.YT_API_KEY,
+            owner: "運営",
+            purpose: "競合動画・チャンネル調査",
+          },
+          collaboration: {
+            provider: "運営Cloudflare Durable Objects / KV",
+            connected: true,
+            owner: "運営",
+            purpose: "共同編集・共有スナップ・コメント",
+          },
+          updatedAt: now(),
+        });
+      }
+
+      if (request.method === "DELETE" && parts[1] === "cf" && parts[2] === "connect") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const c = await env.SNAPS.get("cf:" + u.sub, "json");
+        if (c && c.secret) {
+          try {
+            const s = await decryptPrivate(c.secret, sessionSecret(env));
+            if (s.refreshToken || s.accessToken) {
+              await fetch("https://dash.cloudflare.com/oauth2/revoke", {
+                method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                body: new URLSearchParams({ token: s.refreshToken || s.accessToken, client_id: env.CF_OAUTH_CLIENT_ID || "" }),
+              });
+            }
+          } catch (e) {}
+        }
+        await env.SNAPS.delete("cf:" + u.sub);
+        return json({ ok: true });
+      }
+
+      // TUSの一回限りupload URLを、利用者自身のStream契約から発行する。
+      if (request.method === "POST" && parts[1] === "cf" && parts[2] === "stream" && parts[3] === "upload") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "Googleログインが必要です" }, 401);
+        const b = await request.json().catch(() => ({}));
+        const size = Math.max(0, +b.size || 0);
+        if (!size || size > 30 * 1024 * 1024 * 1024) return json({ error: "動画は30GBまでです" }, 413);
+        const cf = await cloudflareConnection(u.sub, env);
+        if (!cf) return json({ error: "Cloudflare Streamを接続してください", needConnect: true }, 409);
+        const name = (b.name || "video").toString().slice(0, 120);
+        const enc = (s) => {
+          const bytes = new TextEncoder().encode(s);
+          let bin = ""; for (const byte of bytes) bin += String.fromCharCode(byte);
+          return btoa(bin);
+        };
+        const expiry = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+        const metadata = [
+          "name " + enc(name),
+          "maxDurationSeconds " + enc(String(Math.min(36000, Math.max(60, +b.maxDurationSeconds || 14400)))),
+          "expiry " + enc(expiry),
+        ].join(",");
+        const r = await fetch("https://api.cloudflare.com/client/v4/accounts/" + cf.accountId + "/stream?direct_user=true", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer " + cf.accessToken,
+            "Tus-Resumable": "1.0.0",
+            "Upload-Length": String(size),
+            "Upload-Metadata": metadata,
+            "Upload-Creator": u.sub.slice(0, 64),
+          },
+        });
+        if (!r.ok) {
+          const d = await r.json().catch(() => ({}));
+          return json({ error: (d.errors && d.errors[0] && d.errors[0].message) || "Streamアップロード枠を作れませんでした" }, r.status === 403 ? 403 : 502);
+        }
+        const uploadUrl = r.headers.get("location"), uid = r.headers.get("stream-media-id");
+        if (!uploadUrl || !uid) return json({ error: "Streamからアップロード情報を取得できませんでした" }, 502);
+        return json({ uploadUrl, uid, accountName: cf.accountName });
+      }
+
+      if (request.method === "GET" && parts[1] === "cf" && parts[2] === "stream" && parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const cf = await cloudflareConnection(u.sub, env);
+        if (!cf) return json({ error: "not connected" }, 409);
+        const r = await fetch("https://api.cloudflare.com/client/v4/accounts/" + cf.accountId + "/stream/" + parts[3], {
+          headers: { Authorization: "Bearer " + cf.accessToken },
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok || !d.success) return json({ error: "not found" }, 404);
+        const v = d.result, st = v.status || {};
+        return json({ ready: !!v.readyToStream, pct: st.pctComplete || null, state: st.state || null, err: st.errorReasonText || st.errorReasonCode || null, hls: v.playback && v.playback.hls, thumbnail: v.thumbnail, duration: v.duration, provider: "user-cloudflare" });
+      }
+
       // ===== ユーザー別ストレージ（要ログイン）。KVは SNAPS を u:<sub>: で間借り =====
       // POST /api/kv/{get|set|delete|list}
       if (request.method === "POST" && parts[1] === "kv") {
@@ -956,7 +1174,18 @@ ${qList}
         const mpu = await env.FILES.createMultipartUpload(key, {
           httpMetadata: { contentType: (b.mime || "application/octet-stream").toString().slice(0, 120) },
         });
-        return json({ key, uploadId: mpu.uploadId });
+        // uploadId/key だけではパートを投入できないよう、短命の署名付き capability を発行する。
+        // これがないと第三者が推測・漏えいした uploadId を使って容量制限を迂回できる。
+        const uploadCap = await mintSession({
+          purpose: "r2-mpu",
+          snap,
+          key,
+          uploadId: mpu.uploadId,
+          maxSize: isUploader ? OWNER_MAX_SIZE : GUEST_MAX_SIZE,
+          declaredSize: size,
+          exp: Math.floor(Date.now() / 1000) + 24 * 3600,
+        }, sessionSecret(env));
+        return json({ key, uploadId: mpu.uploadId, uploadCap });
       }
 
       // PUT /api/file/mpu/part?key=&uploadId=&part=N   (body=チャンク) → { partNumber, etag }
@@ -964,9 +1193,16 @@ ${qList}
         const key = url.searchParams.get("key") || "";
         const uploadId = url.searchParams.get("uploadId") || "";
         const partNumber = +(url.searchParams.get("part") || 0);
-        if (!key || !uploadId || !partNumber) return json({ error: "パラメータ不足" }, 400);
+        const uploadCap = url.searchParams.get("cap") || "";
+        if (!key || !uploadId || !partNumber || !uploadCap) return json({ error: "パラメータ不足" }, 400);
+        const cap = await verifySession(uploadCap, sessionSecret(env));
+        if (!cap || cap.purpose !== "r2-mpu" || cap.key !== key || cap.uploadId !== uploadId)
+          return json({ error: "アップロード認証が無効です" }, 403);
+        const contentLength = +(request.headers.get("content-length") || 0);
+        if (contentLength > 100 * 1024 * 1024) return json({ error: "パートが大きすぎます" }, 413);
         const mpu = env.FILES.resumeMultipartUpload(key, uploadId);
         const body = await request.arrayBuffer();
+        if (body.byteLength > 100 * 1024 * 1024) return json({ error: "パートが大きすぎます" }, 413);
         const uploaded = await mpu.uploadPart(partNumber, body);
         return json({ partNumber, etag: uploaded.etag });
       }
@@ -977,6 +1213,9 @@ ${qList}
         const snap = (b.snap || "").toString().slice(0, 16);
         const key = (b.key || "").toString();
         if (!snap || !key || !key.startsWith("f/" + snap + "/")) return json({ error: "不正なキーです" }, 400);
+        const cap = await verifySession((b.uploadCap || "").toString(), sessionSecret(env));
+        if (!cap || cap.purpose !== "r2-mpu" || cap.snap !== snap || cap.key !== key || cap.uploadId !== (b.uploadId || "").toString())
+          return json({ error: "アップロード認証が無効です" }, 403);
         const tok = await env.SNAPS.get("tok:" + snap);
         const isOwner = !!tok && tok === (b.token || "");
         const uptok = await env.SNAPS.get("uptok:" + snap);
@@ -984,12 +1223,19 @@ ${qList}
         const mpu = env.FILES.resumeMultipartUpload(key, (b.uploadId || "").toString());
         const partList = (Array.isArray(b.parts) ? b.parts : []).map((p) => ({ partNumber: +p.partNumber, etag: (p.etag || "").toString() }));
         await mpu.complete(partList);
+        const stored = await env.FILES.head(key);
+        const actualSize = stored ? stored.size : 0;
+        // クライアント申告値は信用せず、R2実体で上限を再検査する。
+        if (!stored || actualSize > +cap.maxSize || actualSize !== +cap.declaredSize) {
+          await env.FILES.delete(key);
+          return json({ error: "アップロード容量の検証に失敗しました" }, 413);
+        }
         const ret = +b.retention; // 30 | 90 | 0(無期限)
         const days = ret === 30 || ret === 90 ? ret : 0;
         const meta = {
           key,
           name: (b.name || "file").toString().slice(0, 255),
-          size: Math.max(0, +b.size || 0),
+          size: actualSize,
           mime: (b.mime || "application/octet-stream").toString().slice(0, 120),
           uploadedAt: now(),
           expiresAt: days ? new Date(Date.now() + days * 86400000).toISOString() : null,
@@ -1406,6 +1652,62 @@ async function requireUser(request, env) {
   const m = (request.headers.get("Authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
   return verifySession(m[1], sessionSecret(env));
+}
+
+/* OAuth refresh token等のユーザー秘密をKVへ平文で置かないためのAES-GCM封印。
+   鍵はSESSION_SECRETからSHA-256で導出し、暗号文ごとにランダムIVを使う。 */
+async function privateKey(secret) {
+  const raw = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("monogataritch:private:v1:" + secret));
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+async function encryptPrivate(value, secret) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new TextEncoder().encode(JSON.stringify(value));
+  const cipher = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await privateKey(secret), plain);
+  return { v: 1, iv: b64urlBytes(iv), data: b64urlBytes(new Uint8Array(cipher)) };
+}
+function b64urlToBytes(s) {
+  s = (s || "").replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(s + "=".repeat((4 - s.length % 4) % 4));
+  return Uint8Array.from(bin, (c) => c.charCodeAt(0));
+}
+async function decryptPrivate(box, secret) {
+  if (!box || box.v !== 1 || !box.iv || !box.data) throw new Error("secret format");
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: b64urlToBytes(box.iv) },
+    await privateKey(secret),
+    b64urlToBytes(box.data),
+  );
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+async function cloudflareConnection(sub, env) {
+  const key = "cf:" + sub;
+  const c = await env.SNAPS.get(key, "json");
+  if (!c || !c.secret || !c.accountId) return null;
+  let s = await decryptPrivate(c.secret, sessionSecret(env));
+  // 失効5分前からrefresh。refresh tokenがない場合は現在のtokenをそのまま使う。
+  if (s.refreshToken && +s.expiresAt < Date.now() + 5 * 60 * 1000 && env.CF_OAUTH_CLIENT_ID && env.CF_OAUTH_CLIENT_SECRET) {
+    const basic = btoa(env.CF_OAUTH_CLIENT_ID + ":" + env.CF_OAUTH_CLIENT_SECRET);
+    const r = await fetch("https://dash.cloudflare.com/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: "Basic " + basic },
+      body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: s.refreshToken }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.access_token) throw new Error("Cloudflareの接続期限が切れました。再接続してください");
+    s = {
+      accessToken: d.access_token,
+      refreshToken: d.refresh_token || s.refreshToken,
+      tokenType: d.token_type || "Bearer",
+      expiresAt: Date.now() + Math.max(60, +d.expires_in || 3600) * 1000,
+      scope: d.scope || s.scope,
+    };
+    c.secret = await encryptPrivate(s, sessionSecret(env));
+    c.updatedAt = now();
+    await env.SNAPS.put(key, JSON.stringify(c));
+  }
+  return { accountId: c.accountId, accountName: c.accountName, accessToken: s.accessToken };
 }
 
 /* ===== 期限切れファイルの掃除（cron から呼ぶ） ===== */
