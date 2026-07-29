@@ -5987,6 +5987,30 @@ export default function App() {
               <span className="truncate">{label}</span>
             </button>
           ))}
+          {(tab === "hearing" || tab === "wizard") && prepView === "hearing" && (
+            <div className="mt-5 pt-3" aria-label="取材メモの目次">
+              <div className="text-[9px] font-bold tracking-[0.18em] text-stone-300 text-center mb-1.5">目次</div>
+              <div className="flex flex-col items-center gap-0.5">
+                {(project.hearing || []).map((sec, si) => {
+                  const active = hearingTocActive === sec.id;
+                  const lineWidth = 22 + ((si * 13) % 39);
+                  return (
+                    <button key={sec.id}
+                      onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
+                      className="group relative w-full h-6 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
+                      aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
+                      <span className="block h-[3px] rounded-full transition-all group-hover:scale-x-110"
+                        style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#b9b7b3" }} />
+                      <span role="tooltip"
+                        className="pointer-events-none absolute left-[calc(50%+36px)] top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-stone-800 px-2.5 py-1.5 text-[10px] font-bold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                        {si + 1}. {sec.title || "無題のセクション"}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </nav>
       <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
 
@@ -7196,7 +7220,7 @@ export default function App() {
               </button>
             </div>
             {/* タブの下に置く横型目次。背景や枠を使わず、本文幅を狭めない */}
-            <aside className="relative w-full" aria-label="取材メモの目次">
+            <aside className="relative w-full sm:hidden" aria-label="取材メモの目次">
               <nav className="flex flex-wrap items-center gap-1.5 min-h-7 py-0.5">
                 <span className="text-[9px] font-bold tracking-widest text-stone-300 mr-1">目次</span>
                   {(project.hearing || []).map((sec, si) => {
