@@ -2309,7 +2309,7 @@ export default function App() {
   const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
   const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
   const [prepView, setPrepView] = useState("hearing"); // 取材メモタブ内の切替：聞き取りシート / 質問ウィザード
-  const [hearingTocOpen, setHearingTocOpen] = useState(true);
+  const [hearingTocActive, setHearingTocActive] = useState(null);
   const [collapsedFolders, setCollapsedFolders] = useState({}); // 素材管理：フォルダ(シーン)ごとの開閉
   const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
   const toggleHighlight = () => setHighlightCollapsed((v) => { const nv = !v; try { localStorage.setItem("mg:hlCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
@@ -3471,7 +3471,6 @@ export default function App() {
     el.classList.add("ring-2", "ring-offset-2");
     el.style.setProperty("--tw-ring-color", theme.accent);
     setTimeout(() => { el.classList.remove("ring-2", "ring-offset-2"); el.style.removeProperty("--tw-ring-color"); }, 1200);
-    if (isNarrow) setHearingTocOpen(false);
   };
   /* 文字起こし→AIで各項目を埋める。既存の入力は残し、空欄＆AIが内容を返した項目だけ埋める */
   const runHearingFill = async () => {
@@ -7196,45 +7195,25 @@ export default function App() {
                 <Icon name="download" className="w-3.5 h-3.5" />CSVで書き出し
               </button>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
-              {/* ChatGPT風の目次：セクションと入力済み項目を一覧し、クリックで該当箇所へ */}
-              <aside className="lg:sticky lg:top-16 rounded-xl border border-stone-200 bg-white shadow-sm overflow-hidden">
-                <button onClick={() => setHearingTocOpen((v) => !v)}
-                  className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-stone-50">
-                  <Icon name="menu" className="w-4 h-4 text-stone-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-bold text-stone-700">取材メモの目次</div>
-                    <div className="text-[10px] text-stone-400">{(project.hearing || []).length}セクション・クリックで移動</div>
-                  </div>
-                  <span className="text-[10px] text-stone-400">{hearingTocOpen ? "▲" : "▼"}</span>
-                </button>
-                {hearingTocOpen && (
-                  <nav className="border-t border-stone-100 max-h-[62vh] overflow-y-auto p-2 space-y-1">
-                    {(project.hearing || []).map((sec, si) => {
-                      const items = sec.items || [];
-                      const filled = items.filter((it) => (hearingPlain(it.value) || "").trim()).length;
-                      return (
-                        <div key={sec.id} className="rounded-lg hover:bg-stone-50">
-                          <button onClick={() => jumpToHearing("hearing-sec-" + sec.id)}
-                            className="w-full text-left px-2 py-1.5 flex items-start gap-2">
-                            <span className="text-[10px] font-bold tabular-nums mt-0.5" style={{ color: theme.accent }}>{String(si + 1).padStart(2, "0")}</span>
-                            <span className="flex-1 min-w-0 text-[11px] font-bold text-stone-700 leading-snug">{sec.title || "無題のセクション"}</span>
-                            <span className={"text-[9px] shrink-0 rounded-full px-1.5 py-0.5 " + (filled === items.length && items.length ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500")}>{filled}/{items.length}</span>
-                          </button>
-                          {items.some((it) => (hearingPlain(it.value) || "").trim()) && (
-                            <div className="pb-1 pl-7 pr-2 space-y-0.5">
-                              {items.filter((it) => (hearingPlain(it.value) || "").trim()).map((it) => (
-                                <button key={it.id} onClick={() => jumpToHearing("hearing-item-" + it.id)}
-                                  className="block w-full text-left truncate text-[10px] text-stone-400 hover:text-stone-700 py-0.5"
-                                  title={it.label || "無題の項目"}>・{it.label || "無題の項目"}</button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </nav>
-                )}
+            <div className="grid grid-cols-1 lg:grid-cols-[48px_minmax(0,1fr)] gap-2 lg:gap-3 items-start">
+              {/* 幅を取らない縦型目次。線をクリックすると該当セクションへ移動する */}
+              <aside className="lg:sticky lg:top-16 w-full lg:w-12 overflow-x-auto lg:overflow-visible" aria-label="取材メモの目次">
+                <nav className="flex lg:flex-col items-center gap-1 p-1.5 rounded-lg bg-white/80 border border-stone-200 shadow-sm">
+                  {(project.hearing || []).map((sec, si) => {
+                    const active = hearingTocActive === sec.id;
+                    const lineWidth = 18 + ((si * 11) % 23);
+                    return (
+                      <button key={sec.id}
+                        onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
+                        className="group shrink-0 w-10 h-4 lg:h-[18px] flex items-center justify-center rounded hover:bg-stone-100 focus:outline-none focus-visible:ring-2"
+                        title={(si + 1) + ". " + (sec.title || "無題のセクション")}
+                        aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
+                        <span className="block h-[3px] rounded-full transition-all"
+                          style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#c9c9c7" }} />
+                      </button>
+                    );
+                  })}
+                </nav>
               </aside>
             {/* ドキュメント風の1枚シート：全セクションを1枚に流し込む。箱枠なし・見出し＋罫線区切り・入力欄はボーダーレス */}
             <div className="rounded-2xl border border-stone-200 bg-white px-5 sm:px-8 py-6 sm:py-8 shadow-sm">
