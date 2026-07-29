@@ -534,8 +534,21 @@ function paneManual(p, accent, main){
       <div class="text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">${esc(m.body||"")}</div></div>`;
   const sections = groups.filter(([,arr])=>arr.length).map(([label,arr])=>`
     <div class="mb-5"><div class="text-[12px] font-bold mb-2" style="color:${main}">${esc(label)}</div>${arr.map(card).join("")}</div>`).join("");
+  // 全体の編集マニュアル（Flip-LABが毎朝6時に自動更新／無認証で読める公開ページ）。
+  // 案件別・チャンネル別より先に「共通のやり方」を置く。編集者リンク(&up=)の時だけ出す
+  // ＝先方や演者に渡したURLでは内部の編集ルールを見せない（2026-07-29）。
+  const guide = UP_TOKEN ? `
+    <a href="https://flip-lens.aki-surf89315.workers.dev/m/%E7%B7%A8%E9%9B%86%E3%83%9E%E3%83%8B%E3%83%A5%E3%82%A2%E3%83%AB"
+       target="_blank" rel="noopener"
+       class="flex items-center gap-2 rounded-xl border border-stone-200 bg-white p-3 mb-5 hover:bg-stone-50">
+      <div class="flex-1">
+        <div class="text-[12.5px] font-bold text-stone-700">編集マニュアル（全体）</div>
+        <div class="text-[11px] text-stone-400">Bird Flipの編集の考え方とやり方。迷ったらここ</div>
+      </div>
+      <div class="text-[11px] font-bold" style="color:${main}">開く →</div>
+    </a>` : "";
   // Flip-LABのチャンネル編集ルール（編集者リンクのみ・mountLabManualが非同期で埋める）
-  return `<div id="lab-manual"></div>` + (sections || '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>');
+  return guide + `<div id="lab-manual"></div>` + (sections || (guide ? "" : '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>'));
 }
 /* Flip-LABの編集ルールを取得して表示。機密（NGワード等）が乗るため編集者トークン(&up=)がある時だけ。 */
 let LABMAN;
@@ -611,7 +624,8 @@ function render(){
   if(hasFilesAny || hasScript || videoOptions(p).length) tabs.push(["files","ファイル"]);
   const manualCount = ((p.manuals||[]).length) + (((p.channelInfo&&p.channelInfo.manuals)||[]).length) + ((p.manualsGlobal||[]).length);
   // 編集者リンクはFlip-LABの編集ルールも出すので、ローカルのマニュアルが空でもタブを出す
-  if(manualCount || (UP_TOKEN && p.channel)) tabs.push(["manual","マニュアル"]);
+  // 編集者リンクなら常に出す。channel未設定の案件でも全体マニュアルへの入口は要る
+  if(manualCount || UP_TOKEN) tabs.push(["manual","マニュアル"]);
   // 複数タブ束ね共有：許可タブだけに絞る（タブバーは出す＝相手は許可タブ内で切替できる）
   if(ALLOW_TABS.length){
     // 編集者URL(UP_TOKEN)なら、旧プリセットでtabsにvideoが無くても動画タブは必ず通す（アップ入口を消さない）

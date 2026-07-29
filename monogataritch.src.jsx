@@ -157,7 +157,7 @@ const DEFAULT_CHANNEL = "未分類";
 const HANDOFF_KEY = "mg:handoff";
 const HANDOFF_DEFAULTS = [
   { id: "editor", emoji: "✂️", label: "編集へ", tabs: ["script", "kouban", "assets", "review"], start: "script", upload: true,
-    msg: "{name}、構成・香盤・素材まとめました！編集よろしくお願いします🙏\n完成動画は「動画」タブから直接アップできます（大容量OK）。\n{url}" },
+    msg: "{name}、構成・香盤・素材まとめました！編集よろしくお願いします🙏\n完成動画は「動画」タブから直接アップできます（大容量OK）。\n{url}\n\n編集の決め事はページ内の「マニュアル」タブにまとめてあります。初めての方は先に目を通してください。" },
   { id: "client", emoji: "🎬", label: "先方へ", tabs: ["review"], start: "review",
     msg: "{name} の動画が上がりました。ご確認お願いします（再生しながら時間指定でコメント頂けます）\n{url}" },
   { id: "talent", emoji: "🎤", label: "演者へ", tabs: ["review", "script"], start: "review",
