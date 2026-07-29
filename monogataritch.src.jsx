@@ -5977,10 +5977,11 @@ export default function App() {
 
       <div className="max-w-[1500px] mx-auto flex">
         {/* PC：工程タブの縦レール（Google Docs風・左）。モバイルはヘッダーの横バーを使う。案件サイドバーはハンバーガーで別レイヤー */}
-        <nav className="hidden sm:flex flex-col gap-0.5 shrink-0 w-[188px] px-2 pt-5 pb-8 self-start sticky" style={{ top: headerH }}>
+        <nav className="hidden sm:flex flex-col gap-0.5 shrink-0 w-[188px] px-2 pt-5 pb-3 self-start sticky overflow-visible"
+          style={{ top: headerH, height: "calc(100vh - " + headerH + "px)" }}>
           {tabItems.map(([k, ic, label]) => (
             <button key={k} onClick={() => setTab(k)}
-              className={"inline-flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-bold text-left transition-colors " + (tab === k ? "bg-white shadow-sm" : "text-stone-500 hover:bg-white/70")}
+              className={"shrink-0 inline-flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-bold text-left transition-colors " + (tab === k ? "bg-white shadow-sm" : "text-stone-500 hover:bg-white/70")}
               style={tab === k ? { color: "#1C1C1E" } : {}}>
               <span className="w-1 h-4 rounded-full shrink-0" style={{ background: tab === k ? theme.accent : "transparent" }} />
               <Icon name={ic} className="w-4 h-4 shrink-0" style={tab === k ? { color: theme.accent } : {}} />
@@ -5988,16 +5989,16 @@ export default function App() {
             </button>
           ))}
           {(tab === "hearing" || tab === "wizard") && prepView === "hearing" && (
-            <div className="mt-5 pt-3" aria-label="取材メモの目次">
-              <div className="text-[9px] font-bold tracking-[0.18em] text-stone-300 text-center mb-1.5">目次</div>
-              <div className="flex flex-col items-center gap-0.5">
+            <div className="mt-3 pt-2 flex-1 min-h-0 flex flex-col" aria-label="取材メモの目次">
+              <div className="shrink-0 text-[9px] font-bold tracking-[0.18em] text-stone-300 text-center mb-1">目次</div>
+              <div className="flex-1 min-h-0 flex flex-col items-center justify-evenly">
                 {(project.hearing || []).map((sec, si) => {
                   const active = hearingTocActive === sec.id;
                   const lineWidth = 22 + ((si * 13) % 39);
                   return (
                     <button key={sec.id}
                       onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
-                      className="group relative w-full h-6 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
+                      className="group relative w-full min-h-[14px] max-h-6 flex-1 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
                       aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
                       <span className="block h-[3px] rounded-full transition-all group-hover:scale-x-110"
                         style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#b9b7b3" }} />
