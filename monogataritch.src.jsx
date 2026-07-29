@@ -7195,26 +7195,29 @@ export default function App() {
                 <Icon name="download" className="w-3.5 h-3.5" />CSVで書き出し
               </button>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-[48px_minmax(0,1fr)] gap-2 lg:gap-3 items-start">
-              {/* 幅を取らない縦型目次。線をクリックすると該当セクションへ移動する */}
-              <aside className="lg:sticky lg:top-16 w-full lg:w-12 overflow-x-auto lg:overflow-visible" aria-label="取材メモの目次">
-                <nav className="flex lg:flex-col items-center gap-1 p-1.5 rounded-lg bg-white/80 border border-stone-200 shadow-sm">
+            {/* タブの下に置く横型目次。背景や枠を使わず、本文幅を狭めない */}
+            <aside className="relative w-full" aria-label="取材メモの目次">
+              <nav className="flex flex-wrap items-center gap-1.5 min-h-7 py-0.5">
+                <span className="text-[9px] font-bold tracking-widest text-stone-300 mr-1">目次</span>
                   {(project.hearing || []).map((sec, si) => {
                     const active = hearingTocActive === sec.id;
                     const lineWidth = 18 + ((si * 11) % 23);
                     return (
                       <button key={sec.id}
                         onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
-                        className="group shrink-0 w-10 h-4 lg:h-[18px] flex items-center justify-center rounded hover:bg-stone-100 focus:outline-none focus-visible:ring-2"
-                        title={(si + 1) + ". " + (sec.title || "無題のセクション")}
+                        className="group relative shrink-0 w-10 h-5 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
                         aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
                         <span className="block h-[3px] rounded-full transition-all"
                           style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#c9c9c7" }} />
+                        <span role="tooltip"
+                          className="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-stone-800 px-2 py-1 text-[10px] font-bold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                          {si + 1}. {sec.title || "無題のセクション"}
+                        </span>
                       </button>
                     );
                   })}
-                </nav>
-              </aside>
+              </nav>
+            </aside>
             {/* ドキュメント風の1枚シート：全セクションを1枚に流し込む。箱枠なし・見出し＋罫線区切り・入力欄はボーダーレス */}
             <div className="rounded-2xl border border-stone-200 bg-white px-5 sm:px-8 py-6 sm:py-8 shadow-sm">
               {(project.hearing || []).map((sec) => (
@@ -7243,7 +7246,6 @@ export default function App() {
                 </div>
               ))}
               <button onClick={addHearingSection} className="mt-8 text-[12px] font-bold text-stone-400 hover:text-stone-700 inline-flex items-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
-            </div>
             </div>
           </div>
             )}
