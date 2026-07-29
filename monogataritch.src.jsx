@@ -5989,27 +5989,24 @@ export default function App() {
             </button>
           ))}
           {(tab === "hearing" || tab === "wizard") && prepView === "hearing" && (
-            <div className="mt-3 pt-2 flex-1 min-h-0 flex flex-col" aria-label="取材メモの目次">
-              <div className="shrink-0 text-[9px] font-bold tracking-[0.18em] text-stone-300 text-center mb-1">目次</div>
-              <div className="flex-1 min-h-0 flex flex-col items-center justify-evenly">
+            <div className="mt-4 flex flex-col items-center gap-0.5" aria-label="取材メモの目次">
                 {(project.hearing || []).map((sec, si) => {
                   const active = hearingTocActive === sec.id;
-                  const lineWidth = 22 + ((si * 13) % 39);
+                  const lineWidth = 10 + ((si * 7) % 19);
                   return (
                     <button key={sec.id}
                       onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
-                      className="group relative w-full min-h-[14px] max-h-6 flex-1 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
+                      className="group relative w-10 h-[11px] shrink-0 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
                       aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
-                      <span className="block h-[3px] rounded-full transition-all group-hover:scale-x-110"
+                      <span className="block h-[2px] rounded-full transition-all group-hover:scale-x-110"
                         style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#b9b7b3" }} />
                       <span role="tooltip"
-                        className="pointer-events-none absolute left-[calc(50%+36px)] top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded-md bg-stone-800 px-2.5 py-1.5 text-[10px] font-bold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                        className="pointer-events-none absolute left-[calc(50%+18px)] top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded bg-stone-800 px-2 py-1 text-[9px] font-bold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                         {si + 1}. {sec.title || "無題のセクション"}
                       </span>
                     </button>
                   );
                 })}
-              </div>
             </div>
           )}
         </nav>
