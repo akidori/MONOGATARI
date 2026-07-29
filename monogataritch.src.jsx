@@ -5988,27 +5988,6 @@ export default function App() {
               <span className="truncate">{label}</span>
             </button>
           ))}
-          {(tab === "hearing" || tab === "wizard") && prepView === "hearing" && (
-            <div className="mt-4 flex flex-col items-center gap-0.5" aria-label="取材メモの目次">
-                {(project.hearing || []).map((sec, si) => {
-                  const active = hearingTocActive === sec.id;
-                  const lineWidth = 10 + ((si * 7) % 19);
-                  return (
-                    <button key={sec.id}
-                      onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
-                      className="group relative w-10 h-[11px] shrink-0 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
-                      aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
-                      <span className="block h-[2px] rounded-full transition-all group-hover:scale-x-110"
-                        style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#b9b7b3" }} />
-                      <span role="tooltip"
-                        className="pointer-events-none absolute left-[calc(50%+18px)] top-1/2 z-50 ml-2 -translate-y-1/2 whitespace-nowrap rounded bg-stone-800 px-2 py-1 text-[9px] font-bold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                        {si + 1}. {sec.title || "無題のセクション"}
-                      </span>
-                    </button>
-                  );
-                })}
-            </div>
-          )}
         </nav>
       <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
 
@@ -7570,6 +7549,28 @@ export default function App() {
         })()}
 
       </main>
+      {(tab === "hearing" || tab === "wizard") && prepView === "hearing" && (
+        <aside className="hidden sm:flex shrink-0 sticky w-10 h-fit mt-5 flex-col items-center gap-0.5"
+          style={{ top: headerH + 20 }} aria-label="取材メモの目次">
+          {(project.hearing || []).map((sec, si) => {
+            const active = hearingTocActive === sec.id;
+            const lineWidth = 10 + ((si * 7) % 19);
+            return (
+              <button key={sec.id}
+                onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
+                className="group relative w-10 h-[11px] shrink-0 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
+                aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
+                <span className="block h-[2px] rounded-full transition-all group-hover:scale-x-110"
+                  style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#b9b7b3" }} />
+                <span role="tooltip"
+                  className="pointer-events-none absolute right-[calc(50%+18px)] top-1/2 z-50 mr-2 -translate-y-1/2 whitespace-nowrap rounded bg-stone-800 px-2 py-1 text-[9px] font-bold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  {si + 1}. {sec.title || "無題のセクション"}
+                </span>
+              </button>
+            );
+          })}
+        </aside>
+      )}
       </div>{/* /工程タブ縦レール＋本文の flex */}
       </div>{/* /content wrapper */}
 
