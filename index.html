@@ -59,10 +59,39 @@ html,body{margin:0;padding:0;background:#E9E8E3;overscroll-behavior:none}
 <body>
 <div id="root"></div>
 <noscript><p style="text-align:center;font-family:sans-serif;padding:2rem">ものがたりっち！の利用には JavaScript を有効にしてください。</p></noscript>
-<script src="app.js?v=20260729h" defer></script>
+<script src="app.js?v=20260731e" defer></script>
 
 <script>
-if ("serviceWorker" in navigator) { window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(()=>{})); }
+/* Service Worker 登録＋更新の検知（2026-07-31）。
+   デスクトップアプリ(PWA)の窓は何日も開きっぱなしになるので、こちらが本番に出しても
+   窓がリロードされない限り古いJSが動き続ける＝「直したのに反映されない」。
+   新版を検知したら右下に更新ボタンを出す。勝手にリロードはしない（入力中の文章を飛ばさないため）。 */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      const check = () => { try { reg.update(); } catch (e) {} };
+      setInterval(check, 30 * 60 * 1000);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
+      const notify = () => {
+        if (document.getElementById("mg-upd")) return;
+        const b = document.createElement("button");
+        b.id = "mg-upd";
+        b.textContent = "新しいバージョンがあります — 更新";
+        b.style.cssText = "position:fixed;right:14px;bottom:14px;z-index:9999;background:#E63946;color:#fff;border:0;border-radius:999px;padding:10px 16px;font-size:12px;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.25);cursor:pointer";
+        b.onclick = () => location.reload();
+        document.body.appendChild(b);
+      };
+      if (reg.waiting && navigator.serviceWorker.controller) notify();
+      reg.addEventListener("updatefound", () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener("statechange", () => {
+          if (nw.state === "installed" && navigator.serviceWorker.controller) notify();
+        });
+      });
+    }).catch(()=>{});
+  });
+}
 </script>
 </body>
 </html>

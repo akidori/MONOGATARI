@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://customer-clbb6903mpf6390m.cloudflarestream.com" crossorigin>
 <link rel="preconnect" href="https://mg-share.aki-surf89315.workers.dev" crossorigin>
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="tailwind.css?v=20260727b">
+<link rel="stylesheet" href="tailwind.css?v=20260731a">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
 <style>
   html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
@@ -461,12 +461,14 @@ function metaInfoBlock(p){
     </div>`).join("")}
   </div>`;
 }
-/* ロケ見出しと同じ帯（テーマ色＋ストライプ）。番組情報・冒頭フックもこれで目立たせる */
+/* 番組情報・冒頭フックの見出し。本体アプリの cardHead と同じ見た目に揃える（2026-07-31）。
+   以前はロケ見出しと同じ濃色帯にしていたが、アプリを見慣れた目には共有ページだけ古く重く見えた。
+   ロケ見出し（濃色＋ストライプ）はシーンの区切りとして従来通り。 */
 function sectionHead(label, right){
-  return `<div class="flex items-stretch" style="background:var(--main);color:#fff">
-    <div class="w-4 shrink-0 stripe"></div>
-    <div class="px-3 py-2 font-bold tracking-wide text-[14px]">${esc(label)}</div>
-    ${right?`<div class="ml-auto self-center pr-3">${right}</div>`:""}
+  return `<div class="flex items-center gap-2 px-4 py-2 bg-white border-b border-stone-100">
+    <span class="w-1.5 h-4 rounded-full shrink-0" style="background:var(--accent)"></span>
+    <h2 class="text-[12px] font-bold tracking-wider text-stone-600 flex-1">${esc(label)}</h2>
+    ${right?`<div class="shrink-0">${right}</div>`:""}
   </div>`;
 }
 /* 任意の対象（シーン以外＝番組情報・ハイライト等）にコメントを付けるボタン＋差し込み枠 */
@@ -678,7 +680,7 @@ function render(){
         ${m.place?`<span>場所 ${esc(m.place)}</span>`:""}
       </div>` : ""}
     </div>`}
-    ${infoBlock || (m.highlight&&TAB==="script") ? `<div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
+    ${infoBlock || (m.highlight&&TAB==="script") ? `<div class="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden mb-5">
       ${infoBlock}
       ${m.highlight&&TAB==="script"?sectionHead("冒頭フック", cmtBtn("metaHighlight", "ハイライト（冒頭フック）"))+`<div class="bg-white px-4 py-3">
         <div class="script">${renderScript(accent, m.highlight)}</div>
@@ -723,7 +725,7 @@ function renderChannel(){
     : "";
   const header = `
     <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400 mb-2">CHANNEL / チャンネル資料</div>
-    <div class="rounded-2xl overflow-hidden shadow-sm border border-stone-200 mb-5">
+    <div class="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden mb-5">
       <div class="px-5 py-4" style="background:${mainC};color:#fff"><div class="text-[18px] font-black">${esc((ci.name)||ch.name||"チャンネル")}</div>${ci.url?`<a href="${safeUrl(ci.url)}" target="_blank" rel="noreferrer" class="text-[11px] opacity-80 mono break-all">${esc(ci.url)}</a>`:""}</div>
     </div>`
     + (editable ? `<div class="rounded-xl border px-4 py-2.5 mb-4 text-[12px] flex items-start gap-2" style="border-color:${accentC};background:#fff;color:#57534e"><span style="color:${accentC}">${icon("edit","w-3.5 h-3.5")}</span><span><span class="font-bold" style="color:${accentC}">編集できる共有です。</span>各案件を開いて「この案件を編集」から、企画・サムネ・構成台本を直接直せます（ログイン不要・直したらすぐ反映）。</span></div>` : "");

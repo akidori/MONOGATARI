@@ -826,10 +826,10 @@ function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80,
   const ref = useRef(null);
   const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
   // 親へは合成イベント({target:{value}})で渡す＝呼び出し側のe.target.value流儀を維持
-  const [val, set, flush] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
+  const [val, set, flush, ime] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
   useEffect(() => { resize(ref.current); }, [val]);
   return (
-    <textarea ref={ref} value={val} placeholder={placeholder} className={className} title={title}
+    <textarea ref={ref} {...ime} value={val} placeholder={placeholder} className={className} title={title}
       style={{ overflow: "hidden", resize: "none", minHeight }}
       onChange={(e) => { set(e.target.value); resize(e.target); }}
       onBlur={(e) => { flush(e); if (onBlur) onBlur(e); }} />
@@ -846,17 +846,28 @@ function useBufferedField(value, onChange, delay = 220) {
   const sent = useRef(norm);      // 直近で親へ送った値
   const pending = useRef(null);   // 未送信のローカル値
   const timer = useRef(null);
+  const composing = useRef(false); // IME変換中（日本語入力の未確定文字列がある）
   const cbRef = useRef(onChange);
   cbRef.current = onChange;
-  // 外部から値が変わった（自分の送信エコー以外）ら取り込む
+  const valRef = useRef(norm);
+  valRef.current = val;
+  // 外部から値が変わったら取り込む。ただし**打鍵中のユーザー入力より外部値を優先しない**。
+  // ここが「入力してる間に文章が消える」の主犯だった（2026-07-31）：
+  //   IME変換中／未送信の打鍵がある最中に、共同編集の全文ブロードキャストや自動再発行の
+  //   再レンダーが古い value を運んでくると、pending を捨てて setVal で上書きしていた＝
+  //   打っている本人の文字が目の前で消える。変換中と未送信中は外部値を無視し、
+  //   flush 後（pending=null）に改めて取り込む。
   useEffect(() => {
-    if (norm !== sent.current && norm !== val) {
-      setVal(norm); sent.current = norm; pending.current = null;
-      if (timer.current) { clearTimeout(timer.current); timer.current = null; }
-    }
+    if (norm === sent.current) return;   // 自分が送った値のエコー
+    if (composing.current) return;       // 変換確定前に value を差し替えると変換ごと壊れる
+    if (pending.current != null) return; // 打鍵中＝本人の入力が最新。外部値は捨てる
+    if (norm === valRef.current) return;
+    setVal(norm); sent.current = norm;
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
   }, [norm]);
   const flush = () => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    if (composing.current) return;       // 未確定文字列を親へ流さない（確定時に改めて流す）
     if (pending.current != null && pending.current !== sent.current) {
       const nv = pending.current;
       sent.current = nv;
@@ -868,22 +879,34 @@ function useBufferedField(value, onChange, delay = 220) {
   const set = (nv) => {
     setVal(nv); pending.current = nv;
     if (timer.current) clearTimeout(timer.current);
+    if (composing.current) return;       // 変換中はdebounceを回さない（確定後にまとめて送る）
     timer.current = setTimeout(flush, delay);
   };
-  useEffect(() => () => { flush(); }, []); // アンマウント時に未送信分を確定
-  return [val, set, flush];
+  // IMEハンドラ。入力要素に {...ime} で挿すこと（textarea/input 全部）。
+  const ime = {
+    onCompositionStart: () => { composing.current = true; if (timer.current) { clearTimeout(timer.current); timer.current = null; } },
+    onCompositionEnd: (e) => {
+      composing.current = false;
+      const nv = e && e.target ? e.target.value : null;
+      if (nv != null) { setVal(nv); pending.current = nv; }
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(flush, delay);
+    },
+  };
+  useEffect(() => () => { composing.current = false; flush(); }, []); // アンマウント時に未送信分を確定
+  return [val, set, flush, ime];
 }
 
 function BufferedTextarea({ value, onChange, onBlur, ...rest }) {
-  const [val, set, flush] = useBufferedField(value, onChange);
-  return <textarea {...rest} value={val}
+  const [val, set, flush, ime] = useBufferedField(value, onChange);
+  return <textarea {...rest} {...ime} value={val}
     onChange={(e) => set(e.target.value)}
     onBlur={(e) => { flush(); if (onBlur) onBlur(e); }} />;
 }
 
 function BufferedInput({ value, onChange, onBlur, ...rest }) {
-  const [val, set, flush] = useBufferedField(value, onChange);
-  return <input {...rest} value={val}
+  const [val, set, flush, ime] = useBufferedField(value, onChange);
+  return <input {...rest} {...ime} value={val}
     onChange={(e) => set(e.target.value)}
     onBlur={(e) => { flush(); if (onBlur) onBlur(e); }} />;
 }
@@ -1054,7 +1077,7 @@ const cellPropsEqual = (a, b) =>
 const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
-  const [val, set, flush] = useBufferedField(value, onChange);
+  const [val, set, flush, ime] = useBufferedField(value, onChange);
   const textStyle = {
     fontFamily: "inherit",
     fontSize,
@@ -1141,6 +1164,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
       </div>
       <textarea
         ref={taRef}
+        {...ime}
         value={val}
         onChange={(e) => set(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -1160,7 +1184,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
 const RichCell = React.memo(function RichCell({ value, onChange, placeholder, className = "", minHeight = 44, fontSize = 13 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
-  const [val, set, flush] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
+  const [val, set, flush, ime] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
   const textStyle = { fontFamily: "inherit", fontSize, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" };
   const wrap = (mk) => {
     const ta = taRef.current; if (!ta) return;
@@ -1212,7 +1236,7 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
         {val ? nodes : <span className="text-stone-300">{placeholder}</span>}
         {"​"}
       </div>
-      <textarea ref={taRef} value={val}
+      <textarea ref={taRef} {...ime} value={val}
         onChange={(e) => set(e.target.value)} onKeyDown={handleKeyDown}
         onFocus={() => setFocused(true)} onBlur={() => { setFocused(false); flush(); }}
         spellCheck={false}
@@ -2328,7 +2352,8 @@ export default function App() {
   const [deliverBusy, setDeliverBusy] = useState(false);
   const [saveState, setSaveState] = useState("ok");   // ok | error（クラウド保存の状態。回線断のsilent lost可視化）
   const [showTheme, setShowTheme] = useState(false);
-  const [tab, setTab] = useState("overview"); // overview | plan | script | kouban | assets | review | deliver | concept
+  // 選択ページはリロードしても保持（ツリービューの「現在地が消えない」ため）。共有/ライブの?tab=指定が最優先。
+  const [tab, setTab] = useState(() => { try { return localStorage.getItem("mg:tab") || "overview"; } catch (_) { return "overview"; } }); // overview | plan | script | kouban | assets | review | deliver | concept
   // タブ切替時にmainへ入場フェードを付け直す（remountなし＝状態・スクロール副作用ゼロ）
   const mainRef = useRef(null);
   useEffect(() => {
@@ -2414,6 +2439,34 @@ export default function App() {
   const [caseMenu, setCaseMenu] = useState(null);          // 案件行の右クリックメニュー {id, channel, x, y}
   const [rowMenu, setRowMenu] = useState(null);             // 構成テーブル行の右クリックメニュー {id, idx, kind, sceneType, x, y}
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
+  /* ===== サイドバーのツリービュー化（2026-07-31）=====
+     案件一覧と工程タブが左右2本のレールに分かれていて、現在地を掴むのに視線を横移動させられていた。
+     チャンネル → 案件 → 案件内ページ を1本のツリーに畳んで、本文の幅も広げる。
+     展開状態・選択ページ・サイドバー幅はリロードしても残す（毎回開き直す手間を消す）。 */
+  const [treeOpen, setTreeOpen] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:treeOpen") || "{}") || {}; } catch (_) { return {}; } });
+  const [sidebarW, setSidebarW] = useState(() => { const n = parseInt(localStorage.getItem("mg:sidebarW") || "", 10); return (n >= 220 && n <= 420) ? n : 280; });
+  const [caseQuery, setCaseQuery] = useState("");           // 案件名の絞り込み（案件が増えても探せる）
+  const resizingRef = useRef(false);
+  useEffect(() => { try { localStorage.setItem("mg:treeOpen", JSON.stringify(treeOpen)); } catch (_) {} }, [treeOpen]);
+  useEffect(() => { try { localStorage.setItem("mg:tab", tab); } catch (_) {} }, [tab]);
+  /* 保存した選択ページが今の案件に存在しない場合の正規化。
+     例：密着案件で「取材メモ」を開いたままトーク案件を開くと、その案件に取材メモは無い＝
+     ツリーのどこも選ばれておらず本文も空、という迷子になる（縦レールを廃止したので逃げ道が無い）。 */
+  useEffect(() => {
+    if (!project) return;
+    const talk = project.format === "talk";
+    const valid = ["overview", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
+      .filter((k) => !LIVE_ONLY_TABS || LIVE_ONLY_TABS.includes(k));
+    if (!valid.includes(tab)) setTab(valid[0] || "overview");
+  }, [project && project.format, project && project.id, tab]);
+  useEffect(() => { try { localStorage.setItem("mg:sidebarW", String(sidebarW)); } catch (_) {} }, [sidebarW]);
+  // サイドバー幅のドラッグ。ポインタイベントをwindowで拾う＝速く動かしても外れない
+  useEffect(() => {
+    const onMove = (e) => { if (!resizingRef.current) return; e.preventDefault(); setSidebarW(Math.max(220, Math.min(420, e.clientX))); };
+    const onUp = () => { if (!resizingRef.current) return; resizingRef.current = false; document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+    window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+  }, []);
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
   const [dragIds, setDragIds] = useState(null);             // 複数行ドラッグ中のid配列
@@ -4025,6 +4078,75 @@ export default function App() {
     const { live, liveId, liveToken, collab, collabRole, members, ownerEmail, role, aiChat, ...rest } = p;
     return rest;
   };
+  /* ライブ編集の3方向マージ（2026-07-31）。
+     旧実装は受信した全文で setProject を丸ごと置き換えていた＝相手の送信が届いた瞬間、
+     自分が直前に打った内容（相手がまだ知らない分）が巻き戻って消えていた。AKの
+     「入力してる間に文章が消える」の主因のひとつ。
+     base=前回受信した相手の状態／local=今の自分／remote=今届いた相手 で突き合わせ、
+       ・自分だけが変えた項目 → 自分を残す
+       ・相手だけが変えた項目 → 相手を取る
+       ・両方が同じ項目を変えた → 相手を取る（真の衝突のみ従来通りlast-write-wins）
+     配列は id を持つ要素だけ id で対応付ける（行の並べ替え・追加・削除も拾う）。 */
+  const merge3 = (base, local, remote) => {
+    if (local === remote) return remote;
+    if (JSON.stringify(local) === JSON.stringify(remote)) return remote;
+    const isObj = (x) => x && typeof x === "object" && !Array.isArray(x);
+    const hasId = (a) => Array.isArray(a) && a.length > 0 && a.every((x) => isObj(x) && x.id != null);
+    const same = (x, y) => JSON.stringify(x) === JSON.stringify(y);
+    if (Array.isArray(local) && Array.isArray(remote) && hasId(local) && hasId(remote)) {
+      const bA = Array.isArray(base) ? base : [];
+      const bm = new Map(bA.filter((x) => isObj(x) && x.id != null).map((x) => [x.id, x]));
+      const lm = new Map(local.map((x) => [x.id, x]));
+      const rm = new Map(remote.map((x) => [x.id, x]));
+      const out = [];
+      // 相手の並び順を土台にする（並べ替えは相手優先＝last-write-wins）
+      for (const r of remote) {
+        const l = lm.get(r.id);
+        if (l === undefined) {
+          // 自分の手元に無い行。baseにあった＝自分が消した行なので、相手が触っていなければ削除を維持する。
+          // （ここを無条件に採用すると、消した行が受信のたびに蘇って送り返される）
+          if (bm.has(r.id) && same(r, bm.get(r.id))) continue;
+          out.push(r); continue;                       // 相手が足した/変えた行は採用
+        }
+        out.push(merge3(bm.get(r.id), l, r));
+      }
+      // 自分がこのセッションで足した行（相手にはまだ無い）は消さずに末尾へ残す
+      for (const l of local) if (!rm.has(l.id) && !bm.has(l.id)) out.push(l);
+      return out;
+    }
+    // id を持たない配列（titles/thumbs/目次など位置に意味がある配列）。
+    // 丸ごと remote 採用にすると、別の要素を触っただけで自分の編集が消える。
+    if (Array.isArray(local) && Array.isArray(remote)) {
+      if (same(remote, base) && !same(local, base)) return local;   // 変えたのは自分だけ
+      if (same(local, base)) return remote;                          // 変えたのは相手だけ
+      const bA = Array.isArray(base) ? base : [];
+      if (local.length === remote.length) {                          // 長さが同じなら位置ごとに突き合わせる
+        return remote.map((rv, i) => merge3(bA[i], local[i], rv));
+      }
+      return remote;                                                 // 増減している＝並び自体が変わったので相手を採用
+    }
+    if (isObj(local) && isObj(remote)) {
+      const b = isObj(base) ? base : {};
+      const out = {};
+      for (const k of new Set([...Object.keys(local), ...Object.keys(remote)])) {
+        const lv = local[k], rv = remote[k], bv = b[k];
+        if (!(k in remote)) { // 相手には無いキー
+          if (k in b) continue;            // 相手が消した → 消えたまま
+          out[k] = lv; continue;           // 自分が足した → 残す
+        }
+        if (!(k in local)) {
+          // 自分に無いキー。baseにあった＝自分が消したので、相手が変えていなければ削除を維持
+          if (k in b && same(rv, bv)) continue;
+          out[k] = rv; continue;
+        }
+        out[k] = merge3(bv, lv, rv);
+      }
+      return out;
+    }
+    // スカラー（文字列・数値・null等）
+    if (same(remote, base) && !same(local, base)) return local;  // 変えたのは自分だけ
+    return remote;                                               // それ以外は相手を採用
+  };
   /* チャンネル編集リンク（index.html?ch=…）：ログイン不要で当該クライアントの案件一覧を出し、クリックで該当案件のライブ編集へ直行 */
   const startChannelLive = async (chId) => {
     try {
@@ -4054,9 +4176,18 @@ export default function App() {
       let m; try { m = JSON.parse(e.data); } catch (_) { return; }
       if (m.t === "init" || (m.t === "full" && m.project)) {
         const proj = m.project ? migrateProject(m.project) : newProjectData("共同編集");
+        const base = lastRemoteRef.current;               // 前回受信＝両者が知っていた状態
         lastRemoteRef.current = JSON.stringify(cleanProj(proj));
         if (m.t === "init") { setActiveId(liveId); inited = true; }
-        setProject({ ...proj, live: true, liveId, liveToken: token });
+        // init（接続直後）は自分の状態が無いのでそのまま採用。以降の full は3方向マージ＝
+        // 自分の直前の打鍵を相手のブロードキャストで巻き戻さない。
+        if (m.t === "init") setProject({ ...proj, live: true, liveId, liveToken: token });
+        else setProject((cur) => {
+          if (!cur) return { ...proj, live: true, liveId, liveToken: token };
+          let b = null; try { b = base ? JSON.parse(base) : null; } catch (_) { b = null; }
+          const merged = merge3(b, cleanProj(cur), cleanProj(proj));
+          return { ...merged, live: true, liveId, liveToken: token };
+        });
         // 「このタブだけ編集」リンクはそのタブに着地させる（他タブはtabItemsから消える）
         if (m.t === "init" && LIVE_ONLY_TABS && LIVE_ONLY_TABS[0]) setTab(LIVE_ONLY_TABS[0]);
         if (m.t === "init") setLoaded(true);
@@ -5564,6 +5695,23 @@ export default function App() {
   // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
   const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
   const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
+  /* ツリー用：案件（index行）の中のページ一覧。開いている案件は実データの format を使い、
+     まだ開いていない案件は index の format（無ければ密着）で組む＝開く前でも中身が見える。 */
+  const pagesFor = (row) => {
+    if (row && row.id === activeId) return tabItems;
+    const talk = row && row.format === "talk";
+    const list = tabItemsAll.filter(([k]) => !talk || (k !== "hearing" && k !== "kouban"));
+    // 「このタブだけ編集」リンク中は、どの案件の枝でも許可タブ以外を出さない（制限の抜け道を作らない）
+    return LIVE_ONLY_TABS ? list.filter(([k]) => LIVE_ONLY_TABS.includes(k)) : list;
+  };
+  // ツリーからページを選ぶ：別案件なら開いてからそのページへ着地
+  const openPage = async (id, key) => {
+    if (id !== activeId) await switchProject(id);
+    setTab(key);
+    setView("editor");
+  };
+  const toggleCaseOpen = (id) => setTreeOpen((o) => ({ ...o, [id]: !(o[id] !== undefined ? o[id] : id === activeId) }));
+  const isCaseOpen = (id) => (treeOpen[id] !== undefined ? !!treeOpen[id] : id === activeId);
 
   return (
     <div className="min-h-screen" style={{ background: "#E9E8E3", fontFamily: sans, color: "#1C1C1E" }}>
@@ -5577,11 +5725,11 @@ export default function App() {
       <aside
         className="fixed top-0 left-0 h-full z-40 flex flex-col"
         style={{
-          width: 292,
+          width: sidebarW,
           background: "#15181D",
           color: "#fff",
           display: (() => { try { return window.self !== window.top ? "none" : ""; } catch (e) { return ""; } })(),  // Fボード埋め込み時はサイドバー自体を出さない（左タブ二重防止）
-          transform: sidebarOpen ? "translateX(0)" : "translateX(-292px)",
+          transform: sidebarOpen ? "translateX(0)" : "translateX(-" + sidebarW + "px)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
           willChange: "transform",
         }}>
@@ -5624,6 +5772,14 @@ export default function App() {
         </div>
         </>)}
 
+        {/* 案件の絞り込み（件数が増えてもスクロールで探さない） */}
+        {!chanLive && index.length > 6 && (
+          <div className="px-3 pb-2">
+            <input value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件を検索"
+              className="w-full bg-white/10 text-[11.5px] text-white placeholder-white/35 rounded-lg px-2.5 py-1.5 focus:outline-none focus:bg-white/15" />
+          </div>
+        )}
+
         {/* チャンネル名サジェスト用 */}
         <datalist id="mg-channels">
           {channelOptions.map((c) => <option key={c} value={c} />)}
@@ -5649,10 +5805,15 @@ export default function App() {
                 );
               })}
             </div>
-          ) : channelGroups.map(({ channel, items }) => {
+          ) : channelGroups.map(({ channel, items: allItems }) => {
+            // 検索中は一致した案件だけ／一致ゼロのチャンネルは畳まず消す（探し物だけが残る）
+            const q = caseQuery.trim().toLowerCase();
+            const items = q ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
+            if (q && !items.length && !channel.toLowerCase().includes(q)) return null;
             const hasActive = items.some((x) => x.id === activeId);
             // 既定はすべて畳む（開いている案件のチャンネルだけ自動展開）。タップで開閉（アコーディオン＝1つだけ開く）
-            const isCollapsed = collapsed[channel] !== undefined ? !!collapsed[channel] : !hasActive;
+            // 検索中は畳まない（ヒットしたのに見えない、を防ぐ）
+            const isCollapsed = caseQuery.trim() ? false : (collapsed[channel] !== undefined ? !!collapsed[channel] : !hasActive);
             const toggleChannel = () => setCollapsed(() => {
               const next = {};
               channelGroups.forEach((g) => { next[g.channel] = true; });
@@ -5693,7 +5854,8 @@ export default function App() {
                 {!isCollapsed && items.map((p) => {
                   const active = p.id === activeId;
                   return (
-                    <div key={p.id}
+                    <div key={p.id}>
+                    <div
                       draggable
                       onDragStart={(e) => { e.stopPropagation(); setDragCaseId(p.id); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", p.id); } catch (_) {} }}
                       onDragOver={(e) => { if (dragCaseId && dragCaseId !== p.id) { e.preventDefault(); e.stopPropagation(); setDragOverCaseId(p.id); } }}
@@ -5710,6 +5872,11 @@ export default function App() {
                       title="右クリックで操作（名前変更・複製・移動・削除）">
                       <div className="flex items-center gap-2">
                         <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-white/60 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
+                        {/* 開閉：この案件の中のページ（概要〜納品完了）を出し入れする */}
+                        <button title={isCaseOpen(p.id) ? "ページを隠す" : "ページを表示"}
+                          onClick={(e) => { e.stopPropagation(); toggleCaseOpen(p.id); }}
+                          className="w-3.5 shrink-0 text-white/40 text-[10px] grid place-items-center hover:text-white/80 transition-transform"
+                          style={{ transform: isCaseOpen(p.id) ? "none" : "rotate(-90deg)" }}>▾</button>
                         <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? theme.accent : "rgba(255,255,255,0.3)" }} />
                         {renamingId === p.id ? (
                           <input
@@ -5740,6 +5907,24 @@ export default function App() {
                         )}
                         {/* 操作(名前変更・複製・移動・削除)は行の右クリック → caseMenu に集約 */}
                       </div>
+                    </div>
+                    {/* 案件内ページ（ツリーの葉）。ここが工程タブの新しい住所＝右の縦レールは廃止した */}
+                    {isCaseOpen(p.id) && (
+                      <div className="ml-[26px] mb-1.5 pl-1.5 border-l border-white/10">
+                        {pagesFor(p).map(([k, ic, label]) => {
+                          const on = active && tab === k;
+                          return (
+                            <button key={k} onClick={(e) => { e.stopPropagation(); openPage(p.id, k); }} title={label}
+                              className={"w-full text-left rounded-md px-2 py-1 mb-px flex items-center gap-1.5 text-[11.5px] transition-colors " + (on ? "font-bold" : "text-white/55 hover:bg-white/5 hover:text-white/85")}
+                              style={on ? { background: "rgba(255,255,255,0.14)", color: "#fff" } : {}}>
+                              <span className="w-0.5 h-3.5 rounded-full shrink-0" style={{ background: on ? theme.accent : "transparent" }} />
+                              <Icon name={ic} className="w-3.5 h-3.5 shrink-0" style={on ? { color: theme.accent } : {}} />
+                              <span className="truncate">{label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                     </div>
                   );
                 })}
@@ -5772,6 +5957,12 @@ export default function App() {
               ? index.length + "件の案件・未保存（再送中）。この状態でリロードすると消えます"
               : index.length + "件の案件・自動保存"}
         </div>
+        {/* 幅を変える取っ手（220〜420px・記憶する）。案件名が長いクライアントで広げられるように */}
+        <div
+          onPointerDown={(e) => { e.preventDefault(); resizingRef.current = true; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
+          onDoubleClick={() => setSidebarW(280)}
+          title="ドラッグで幅を変更（ダブルクリックで既定に戻す）"
+          className="hidden sm:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-white/20 active:bg-white/30" />
       </aside>
 
       {/* サイドバー開閉オーバーレイ（モバイル・フェード） */}
@@ -5780,7 +5971,7 @@ export default function App() {
         onClick={() => setSidebarOpen(false)} />
 
       {/* ===== コンテンツ（サイドバー分シフト） ===== */}
-      <div className="pb-28" style={{ marginLeft: (() => { try { if (window.self !== window.top) return 0; } catch (e) {} return sidebarOpen && !isNarrow ? 292 : 0; })(), transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
+      <div className="pb-28" style={{ marginLeft: (() => { try { if (window.self !== window.top) return 0; } catch (e) {} return sidebarOpen && !isNarrow ? sidebarW : 0; })(), transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
 
       {/* ===== ツールバー ===== */}
       <header ref={headerRef} className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
@@ -5976,19 +6167,9 @@ export default function App() {
       </header>
 
       <div className="max-w-[1500px] mx-auto flex">
-        {/* PC：工程タブの縦レール（Google Docs風・左）。モバイルはヘッダーの横バーを使う。案件サイドバーはハンバーガーで別レイヤー */}
-        <nav className="hidden sm:flex flex-col gap-0.5 shrink-0 w-[188px] px-2 pt-5 pb-3 self-start sticky overflow-visible"
-          style={{ top: headerH, height: "calc(100vh - " + headerH + "px)" }}>
-          {tabItems.map(([k, ic, label]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={"shrink-0 inline-flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-bold text-left transition-colors " + (tab === k ? "bg-white shadow-sm" : "text-stone-500 hover:bg-white/70")}
-              style={tab === k ? { color: "#1C1C1E" } : {}}>
-              <span className="w-1 h-4 rounded-full shrink-0" style={{ background: tab === k ? theme.accent : "transparent" }} />
-              <Icon name={ic} className="w-4 h-4 shrink-0" style={tab === k ? { color: theme.accent } : {}} />
-              <span className="truncate">{label}</span>
-            </button>
-          ))}
-        </nav>
+        {/* 工程タブの縦レールは廃止（2026-07-31）。案件一覧と工程が左右2本に分かれていたのを
+            サイドバーのツリー1本に統合した＝視線の横移動が消え、本文の幅がレール分(188px)広がる。
+            モバイルは従来どおりヘッダーの横バーで切り替える。 */}
       <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}

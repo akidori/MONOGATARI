@@ -618,6 +618,26 @@ ${qList}
         return json(doc);
       }
 
+      // GET /api/editor-link?id=<snapId> ＋ ヘッダ `Authorization: Bearer <MG_EDITOR_KEY>`
+      //   → 編集者用アップロードトークンを返す。
+      // 鍵はURLに載せない：クエリ文字列はCFのログ・監視・中間プロキシに残りやすく、漏れると
+      // 既知のsnap IDすべてに永続のアップロード権限を渡すことになる（Codex指摘 2026-07-31）。
+      // server-to-server 専用（Flip BoardのAccess認証済みサーバからのみ）。ブラウザに鍵は出さない。
+      // 狙い＝編集者に共有URLを配る運用の廃止。AKが閲覧用リンク(&up=無し)を渡すと相手側でアップ枠が
+      // 消えるが理由が出ない、という事故の根治（2026-07-31 足立さん・金澤さん初稿が丸1日止まった）。
+      // uptokが無ければここで発行＝publish未経由の案件にも配れる。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "editor-link" && !parts[2]) {
+        const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!env.MG_EDITOR_KEY || bearer !== env.MG_EDITOR_KEY) return json({ error: "forbidden" }, 403);
+        const id = (url.searchParams.get("id") || "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ error: "id不正" }, 400);
+        const snap = await env.SNAPS.get("snap:" + id, "json");
+        if (!snap) return json({ error: "not found" }, 404);
+        let uptok = await env.SNAPS.get("uptok:" + id);
+        if (!uptok) { uptok = rid(20); await env.SNAPS.put("uptok:" + id, uptok); }
+        return json({ id, up: uptok, name: (snap.project && snap.project.name) || "" });
+      }
+
       // GET /api/snaps?key=<MG_LIST_KEY> → 公開スナップ一覧 [{id,name,channel}]
       // Flip Board の自動リンク(cron)用。token保護。案件名だけ返す（低機密）。
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "snaps" && !parts[2]) {

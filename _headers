@@ -1,0 +1,18 @@
+# Cloudflare Pages のキャッシュ制御。
+# 2026-07-31：本番に出したのに古いままになる事象が index.html / sw.js / share.html で再発したため明示。
+# バージョン付きの app.js?v= / tailwind.css?v= は中身が変わればURLが変わるので長期キャッシュでよいが、
+# その「URLを指示する側」(HTML) と「更新を検知する側」(sw.js) が古いと、いつまでも新版に切り替わらない。
+/sw.js
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/share.html
+  Cache-Control: no-cache
+
+/settings.html
+  Cache-Control: no-cache
+
+/
+  Cache-Control: no-cache
