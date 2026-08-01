@@ -638,6 +638,53 @@ ${qList}
         return json({ id, up: uptok, name: (snap.project && snap.project.name) || "" });
       }
 
+      // GET /api/share-links?id=<snapId> ＋ ヘッダ `Authorization: Bearer <MG_EDITOR_KEY>`
+      //   → その案件で配れる共有URLを種類ごとに全部返す。server-to-server専用（Flip Boardから）。
+      // 狙い＝AKが「どのリンクを渡すか」をものがたりっちを開かずにFボードで選べるようにする。
+      // 種類はURLパラメータの組み合わせでできている（share.html が解釈する）:
+      //   r  = 閲覧トークン（新方式snapでは閲覧に必須。旧snapは無くてもgraceで読める）
+      //   up = アップロードトークン（大容量アップ＋動画タブ。コメント削除等の管理権限は持たない）
+      //   tab/tabs = 見せる範囲の限定（指定タブ以外は出さない＝権限を絞った共有）
+      // 生存確認も兼ねる：snapが無ければ404を返すので、Flip Board側で「リンク切れ」を検知できる。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "share-links" && !parts[2]) {
+        const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!env.MG_EDITOR_KEY || bearer !== env.MG_EDITOR_KEY) return json({ error: "forbidden" }, 403);
+        const id = (url.searchParams.get("id") || "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ error: "id不正" }, 400);
+        const snap = await env.SNAPS.get("snap:" + id, "json");
+        if (!snap) return json({ error: "not found", alive: false }, 404);
+        let uptok = await env.SNAPS.get("uptok:" + id);
+        if (!uptok) { uptok = rid(20); await env.SNAPS.put("uptok:" + id, uptok); }
+        // rtok は「無ければ発行」にしない。旧snapは rtok 無しで配布済みリンクが生きており、
+        // ここで発行すると閲覧必須化が走って既存リンクを壊す可能性があるため、あるものだけ使う。
+        const rtok = await env.SNAPS.get("rtok:" + id);
+        // APP_ORIGIN は運用者設定だが、誤設定で全共有リンクが他ドメインを向く事故を防ぐ：
+        // https 以外・URLとして壊れている値は既定オリジンに落とす。末尾スラも除去。
+        let origin = "https://monogataritch.pages.dev";
+        try {
+          const o = new URL(env.APP_ORIGIN || origin);
+          if (o.protocol === "https:") origin = o.origin;
+        } catch (_e) {}
+        const base = origin + "/share?id=" + encodeURIComponent(id);
+        const q = (extra) => base + (rtok ? "&r=" + encodeURIComponent(rtok) : "") + (extra || "");
+        // トークン入りURLを返すので、中間キャッシュに残さない
+        const body = {
+          id, alive: true, name: (snap.project && snap.project.name) || "",
+          has_read_token: !!rtok,
+          links: {
+            view:     { label: "全体共有（閲覧）",   url: q(),                              note: "全タブ。先方に見せる用" },
+            editor:   { label: "編集者用",           url: q("&up=" + encodeURIComponent(uptok)), note: "アップ枠つき。編集者に渡す用" },
+            upload:   { label: "アップ用",           url: q("&up=" + encodeURIComponent(uptok) + "&tab=video"), note: "動画アップだけ。他は見せない" },
+            script:   { label: "構成台本だけ",       url: q("&tab=script"),                 note: "台本以外は見せない" },
+            plan:     { label: "企画・サムネだけ",   url: q("&tab=plan"),                   note: "企画以外は見せない" },
+            review:   { label: "確認用（動画＋台本）", url: q("&tabs=video,script&start=video"), note: "確認だけ頼む用" },
+          },
+        };
+        const r = json(body);
+        r.headers.set("Cache-Control", "private, no-store");
+        return r;
+      }
+
       // GET /api/snaps?key=<MG_LIST_KEY> → 公開スナップ一覧 [{id,name,channel}]
       // Flip Board の自動リンク(cron)用。token保護。案件名だけ返す（低機密）。
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "snaps" && !parts[2]) {
@@ -1031,30 +1078,81 @@ ${qList}
         return json({ ready: !!v.readyToStream, pct: st.pctComplete || null, state: st.state || null, err: st.errorReasonText || st.errorReasonCode || null, hls: v.playback && v.playback.hls, thumbnail: v.thumbnail, duration: v.duration, provider: "user-cloudflare" });
       }
 
-      // ===== ユーザー別ストレージ（要ログイン）。KVは SNAPS を u:<sub>: で間借り =====
+      // ===== ユーザー別ストレージ（要ログイン）。保存先は D1 birdflip_ledger.mg_kv =====
       // POST /api/kv/{get|set|delete|list}
+      // 旧実装は KV SNAPS を u:<sub>: で間借りしていたが、KV無料枠の put 1,000回/日を
+      // 07-27に焼き切って矢内さん案件の編集が消えた。D1は書込10万/日枠なので構造的に起きない。
+      // 移行期：読みは D1 →無ければ旧KVを見に行き、見つかったらD1へ昇格させる（lazy migration）。
+      // 書きは D1 のみ。KVへはもう書かない＝ここがクォータを食わなくなる。
       if (request.method === "POST" && parts[1] === "kv") {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
         const pre = "u:" + u.sub + ":";
         const b = await request.json();
         const op = parts[2];
+        // 案件行だけ一覧用の列を抜き出す。正本はあくまで value 側で、これは検索と
+        // Flip Board 連携のための影。壊れたJSONでも保存自体は落とさない。
+        const facets = (key, value) => {
+          const m = /^monogataritch-proj-(.+)$/.exec(key || "");
+          if (!m) return { proj_id: null, name: null, channel: null };
+          let p = null;
+          try { p = JSON.parse(value || "null"); } catch (e) {}
+          return { proj_id: m[1], name: (p && p.name) || null, channel: (p && p.channel) || null };
+        };
+        const upsert = async (key, value) => {
+          const f = facets(key, value);
+          // case_id は Flip Board cases との紐付け。保存のたびに shareId → cases.mg_project_id で
+          // 逆引きして埋める（Flip Board 側は shareId を mg_project_id 列に持っている）。
+          // これが無いと初回バックフィル以降の新規案件が永遠に「未連携」のままになる（Codex指摘 2026-08-01）。
+          // 逆引きが失敗しても保存は絶対に落とさない＝紐付けは付加情報で、本文の保存が主。
+          let caseId = null;
+          if (f.proj_id) {
+            try {
+              let shareId = null;
+              try { shareId = (JSON.parse(value || "null") || {}).shareId || null; } catch (_e) {}
+              if (shareId) {
+                const row = await env.DB.prepare(
+                  "SELECT id FROM cases WHERE mg_project_id=? AND status!='dropped' ORDER BY id LIMIT 1"
+                ).bind(shareId).first();
+                if (row) caseId = row.id;
+              }
+            } catch (_e) {}
+          }
+          await env.DB.prepare(
+            "INSERT INTO mg_kv (sub,key,value,proj_id,case_id,name,channel,bytes,updated_at)" +
+            " VALUES (?,?,?,?,?,?,?,?,datetime('now','+9 hours'))" +
+            " ON CONFLICT(sub,key) DO UPDATE SET value=excluded.value, proj_id=excluded.proj_id," +
+            " case_id=COALESCE(excluded.case_id, mg_kv.case_id)," +   // 逆引き失敗時は既存の紐付けを消さない
+            " name=excluded.name, channel=excluded.channel, bytes=excluded.bytes, updated_at=excluded.updated_at"
+          ).bind(u.sub, key, value, f.proj_id, caseId, f.name, f.channel, value.length).run();
+        };
+
         if (op === "get") {
-          const v = await env.SNAPS.get(pre + (b.key || ""));
+          const key = b.key || "";
+          const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE sub=? AND key=?").bind(u.sub, key).first();
+          if (row) return json({ value: row.value });
+          // まだD1に無いキー＝旧KVに残っている分。読んだついでにD1へ移す。
+          const v = await env.SNAPS.get(pre + key);
+          if (v != null) await upsert(key, v);
           return json({ value: v });
         }
         if (op === "set") {
           if (!b.key) return json({ error: "key がありません" }, 400);
-          await env.SNAPS.put(pre + b.key, (b.value == null ? "" : b.value).toString());
+          await upsert(b.key, (b.value == null ? "" : b.value).toString());
           return json({ ok: true });
         }
         if (op === "delete") {
-          await env.SNAPS.delete(pre + (b.key || ""));
+          const key = b.key || "";
+          await env.DB.prepare("DELETE FROM mg_kv WHERE sub=? AND key=?").bind(u.sub, key).run();
+          await env.SNAPS.delete(pre + key);   // 旧KVの残骸も消す（低頻度なので枠に影響しない）
           return json({ ok: true });
         }
         if (op === "list") {
-          const out = await env.SNAPS.list({ prefix: pre + (b.prefix || ""), limit: 1000 });
-          return json({ keys: out.keys.map((k) => k.name.slice(pre.length)) });
+          // 旧実装は KV list()。list も 1,000回/日枠で07-07に事故った経路なので使わない。
+          const out = await env.DB.prepare(
+            "SELECT key FROM mg_kv WHERE sub=? AND key LIKE ? ORDER BY key LIMIT 1000"
+          ).bind(u.sub, (b.prefix || "") + "%").all();
+          return json({ keys: (out.results || []).map((r) => r.key) });
         }
         return json({ error: "unknown kv op" }, 400);
       }
