@@ -1328,7 +1328,29 @@ function paneFiles(p, accent, main){
       </div>`}
     </div>`;
 }
-async function guestUploadMany(files, p, accent, main){ for(const f of (files||[])){ await guestUpload(f, p, accent, main); } }
+// 同名ファイルの二重アップ防止（2026-08-02 AK指示）。既にプロジェクトにある名前はスキップし、
+// アップし直したい時だけ confirm で通す。46GB級の素材を誤って二重に上げる事故と容量浪費を塞ぐ。
+function existingNames(p){
+  const s=new Set();
+  (p.assets||[]).forEach(a=>{ if(a&&a.name) s.add(a.name); });
+  (UPLOADS||[]).forEach(u=>{ if(u&&u.name) s.add(u.name); });   // このセッションで上げた分も対象
+  return s;
+}
+async function guestUploadMany(files, p, accent, main){
+  const names=existingNames(p);
+  const dups=(files||[]).filter(f=>names.has(f.name));
+  let allowDup=false;
+  if(dups.length){
+    allowDup=confirm(`同じ名前のファイルが既に ${dups.length}件あります：\n`+dups.slice(0,8).map(f=>"・"+f.name).join("\n")+(dups.length>8?`\n…ほか${dups.length-8}件`:"")+
+      "\n\nOK＝重複してもアップし直す ／ キャンセル＝重複ぶんはスキップして他だけアップ");
+  }
+  let skipped=0;
+  for(const f of (files||[])){
+    if(!allowDup&&names.has(f.name)){ skipped++; continue; }
+    await guestUpload(f, p, accent, main);
+  }
+  if(skipped){ const pct=document.getElementById("fl-pct"); if(pct){ pct.style.color="#9ca3af"; pct.textContent=`同名の${skipped}件はスキップしました（アップ済み）`; } }
+}
 function mountFiles(p, accent, main){
   renderFileList(p, accent, main);
   const fsel=document.getElementById("fl-folder");
