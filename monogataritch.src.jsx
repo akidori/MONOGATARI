@@ -4471,7 +4471,7 @@ export default function App() {
     setAssetUp({ cat: category, name: file.name, pct: 0 });
     try {
       // 素材管理（撮影素材・テンプレ素材）は無期限固定。90日で勝手に消えると後日の再編集・編集者の後追いDLで素材ロストになるため（確認用動画と同じ思想）。
-      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token, { retention: 0 });
+      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token, { retention: 90 });
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
       // フォルダごとドロップした素材はフォルダ階層を folder に保持（シーン区分）。平置き＝構造消失を防ぐ。
       const folder = (file._folder || "").toString().slice(0, 160);
@@ -5004,7 +5004,7 @@ export default function App() {
         throw new Error(user ? "先にアカウント画面で自分のCloudflare Streamを接続してください" : "動画アップロードにはGoogleログインと自分のCloudflare Stream接続が必要です");
       }
       // 確認用バージョン＝納品URLにもなる金看板。保存期限で消えると先方に渡したURLが死ぬため無期限固定
-      const meta = await uploadToR2(file, "", onProgress, sh.id, sh.token, { retention: 0 });
+      const meta = await uploadToR2(file, "", onProgress, sh.id, sh.token, { retention: 90 });
       // Streamへ取り込み（自動で軽量化）。無効/失敗ならR2直再生にフォールバック
       let v = null;
       try {

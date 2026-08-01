@@ -1349,7 +1349,8 @@ ${qList}
           return json({ error: "アップロード容量の検証に失敗しました" }, 413);
         }
         const ret = +b.retention; // 30 | 90 | 0(無期限)
-        const days = ret === 30 || ret === 90 ? ret : 0;
+        // 既定=90日（2026-08-02 AK決定「90日間保存でいい」）。無期限は明示的に retention:0 を送った時だけ。
+        const days = ret === 30 || ret === 90 ? ret : (b.retention === 0 || b.retention === "0" ? 0 : 90);
         const meta = {
           key,
           name: (b.name || "file").toString().slice(0, 255),
@@ -2076,12 +2077,32 @@ function coerceRows(input) {
 
 /* Anthropic Messages をストリーミングで受け、非ストリーミングと同じ { content: [...] } に組み立てて返す。
    台本まるごとの整形は出力が大きく、非ストリーミングだと生成100秒超で上流エッジに524で切られる */
+/* prompt caching：tools→system の順で描画されるため、system末尾の1ブレークポイントで
+   tools+system が丸ごとキャッシュ対象になる。会話履歴がある呼び出しは直近履歴末尾にも
+   ブレークポイントを置き、ターンをまたいで履歴プレフィックスを再利用する。
+   （キャッシュ最小トークン数未満のプレフィックスは無害にスキップされる） */
+function withPromptCache(payload) {
+  const p = { ...payload };
+  if (typeof p.system === "string" && p.system) {
+    p.system = [{ type: "text", text: p.system, cache_control: { type: "ephemeral" } }];
+  }
+  if (Array.isArray(p.messages) && p.messages.length >= 2) {
+    const idx = p.messages.length - 2;
+    const m = p.messages[idx];
+    if (m && typeof m.content === "string" && m.content) {
+      p.messages = p.messages.slice();
+      p.messages[idx] = { role: m.role, content: [{ type: "text", text: m.content, cache_control: { type: "ephemeral" } }] };
+    }
+  }
+  return p;
+}
+
 async function claudeMessages(payload, env) {
   const t0 = Date.now();
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ ...payload, stream: true }),
+    body: JSON.stringify({ ...withPromptCache(payload), stream: true }),
   });
   console.log("claudeMessages headers: status=" + res.status + " ttfb=" + (Date.now() - t0) + "ms model=" + payload.model);
   if (!res.ok) {
@@ -2106,7 +2127,10 @@ async function claudeMessages(payload, env) {
       const s = line.slice(5).trim();
       if (!s) continue;
       let ev; try { ev = JSON.parse(s); } catch (e) { continue; }
-      if (ev.type === "content_block_start") {
+      if (ev.type === "message_start" && ev.message && ev.message.usage) {
+        const u = ev.message.usage;
+        console.log("claudeMessages usage: in=" + u.input_tokens + " cache_read=" + (u.cache_read_input_tokens || 0) + " cache_write=" + (u.cache_creation_input_tokens || 0));
+      } else if (ev.type === "content_block_start") {
         if (ev.content_block.type === "tool_use") { content[ev.index] = { type: "tool_use", name: ev.content_block.name, input: null }; jsonBuf[ev.index] = ""; }
         else content[ev.index] = { type: "text", text: "" };
       } else if (ev.type === "content_block_delta") {

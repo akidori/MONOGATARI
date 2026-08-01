@@ -1532,7 +1532,7 @@ async function guestUpload(file, p, accent, main){
   if(prog) prog.classList.remove("hidden");
   if(bar) bar.style.background=accent; if(pct){ pct.style.color="#9ca3af"; pct.textContent="アップロード準備中…"; }
   try{
-    const meta = await mpuUpload(file, { planId: target==="project"?"":target, folder }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target, folder, retention: 90 }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
     UPLOADS.push(meta);
     if(bar){ bar.style.width="100%"; } if(pct){ pct.style.color="#15803D"; pct.textContent="✓ 「"+(file.name||"ファイル")+"」を送信しました"; }
     const inp=document.getElementById("fl-input"); if(inp) inp.value="";
