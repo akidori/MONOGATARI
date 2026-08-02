@@ -789,6 +789,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
     case "map": return (<svg {...c}><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z" /><path d="M9 4v14M15 6v14" /></svg>);
     case "download": return (<svg {...c}><path d="M12 4v10m0 0 4-4m-4 4-4-4" /><path d="M5 18h14" /></svg>);
     case "file": return (<svg {...c}><path d="M14 3H7a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8l-5-5z" /><path d="M14 3v5h5" /></svg>);
+    case "copy": return (<svg {...c}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>);
     case "user": return (<svg {...c}><circle cx="12" cy="8" r="3.4" /><path d="M5.5 19a6.5 6.5 0 0 1 13 0" /></svg>);
     case "robot": return (<svg {...c}><rect x="4" y="8" width="16" height="11" rx="2.5" /><path d="M12 4v4M9 13h.01M15 13h.01M9.5 16h5" /><path d="M2 12v3M22 12v3" /></svg>);
     case "cloud": return (<svg {...c}><path d="M7 18a4 4 0 0 1-.5-7.97 5.5 5.5 0 0 1 10.6 1.02A3.5 3.5 0 0 1 17 18H7z" /></svg>);
@@ -3084,6 +3085,8 @@ export default function App() {
       } else {
         const r = await window.storage.get(STORE_PROJ(id));
         const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData("案件");
+        // 一覧の名前が正（ユーザーが見て付けた名前）。過去のリネームで本体だけ旧名の案件を開いた時に治す
+        if (entry && entry.name && data.name !== entry.name) data.name = entry.name;
         setActiveId(id); setProject(data); setTab("script");
       }
     } catch (e) {
@@ -3887,6 +3890,16 @@ export default function App() {
     const idx = index.map((x) => (x.id === id ? { ...x, name } : x));
     setIndex(idx); persistIndex(idx);
     if (id === activeId && project) setProject((p) => ({ ...p, name }));
+    else {
+      // 非アクティブ案件は本体データにも書き戻す。indexだけ変えると本体が旧名のまま残り、
+      // 書き出しファイル名が旧名（複製元）で出る＝「別案件が出力される」ように見える事故になる
+      (async () => {
+        try {
+          const r = await window.storage.get(STORE_PROJ(id));
+          if (r && r.value) await window.storage.set(STORE_PROJ(id), JSON.stringify({ ...JSON.parse(r.value), name }));
+        } catch (e) {}
+      })();
+    }
   };
 
   /* 案件のチャンネル（クライアント）を変更 */
@@ -5434,6 +5447,24 @@ export default function App() {
     dlFile((project.name || "構成台本") + "_台本.txt", L.join("\n").trim(), "text/plain;charset=utf-8");
     showToast("構成台本をtxtで保存しました");
   };
+  /* 構成表まるごとをプレーンテキストでクリップボードへ（時間・内容・シーン・原稿）。ファイル保存を挟まず即貼り付け用 */
+  const copyKouseiText = async () => {
+    if (project.format === "talk") { await exportTalkText(); return; }
+    const L = [];
+    let acc = 0, prevDay = null;
+    for (const r of project.rows) {
+      if (r.kind === "location") { const d = dayOf(r); if (maxDay > 1 && d !== prevDay) L.push("\n=== " + d + "日目 ==="); prevDay = d; L.push("\n■ " + (r.label || "")); }
+      else {
+        const t = sectionOf(r.type), chars = countChars(r.script), dur = chars / project.rate;
+        L.push("\n" + fmt(acc) + "　" + (r.label || "") + "（" + t.full + "）");
+        const sc = scriptClean(r.script);
+        if (sc) L.push(sc);
+        acc += chars > 0 ? dur : targetOf(r);
+      }
+    }
+    try { await navigator.clipboard.writeText(L.join("\n").trim()); showToast("構成をコピーしました"); }
+    catch (e) { showToast("コピーに失敗しました"); }
+  };
 
   const exportKoubanTSV = async () => {
     const esc = (s) => {
@@ -6058,6 +6089,10 @@ export default function App() {
                     アップだけ<span className="text-[10px] text-stone-400 font-normal ml-auto">編集者が上げる用</span>
                   </button>
                 )}
+                <button onClick={() => { setShareMenu(false); copyKouseiText(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-t border-stone-100">
+                  <Icon name="copy" className="w-4 h-4 shrink-0 text-stone-500" />
+                  構成をコピー<span className="text-[10px] text-stone-400 font-normal ml-auto">テキスト・貼り付け用</span>
+                </button>
                 <div className="flex items-stretch border-t border-b border-stone-100">
                   <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5"><Icon name="file" className="w-4 h-4 shrink-0 text-stone-500" />台本コピー<span className="text-[10px] text-stone-400 font-normal ml-auto">CSV</span></button>
                   <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 py-3 hover:bg-stone-50 text-[12px] font-bold text-stone-500 border-l border-stone-100">txt</button>
