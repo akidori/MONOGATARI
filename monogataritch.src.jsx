@@ -5382,16 +5382,21 @@ export default function App() {
     </select>
   );
 
-  /* 日の区切りバナー（複数日のときだけ台本・香盤表に出す） */
-  const dayBannerEl = (d) => (
-    <div className="flex items-center gap-2.5 my-1">
-      <div className="flex-1 h-px" style={{ background: theme.accent, opacity: 0.3 }} />
-      <span className="text-[12px] font-bold tracking-[0.16em] px-3 py-1.5 rounded-lg whitespace-nowrap inline-flex items-center gap-1.5 shadow-sm" style={{ background: theme.accent, color: accentText }}>
-        <Icon name="video" className="w-3.5 h-3.5" />撮影 {d}日目
-      </span>
-      <div className="flex-1 h-px" style={{ background: theme.accent, opacity: 0.3 }} />
-    </div>
-  );
+  /* 日の区切りバナー（複数日のときだけ台本・香盤表に出す）。
+     どこからどこまでが同じ撮影日かを一目にする＝フルワイド帯。1日目=メイン色/2日目以降=アクセント色で色から区別 */
+  const dayBannerEl = (d) => {
+    const dayLocs = locations.filter((l) => l.dayNo === d);
+    const secs = dayLocs.reduce((a, l) => a + l.dur, 0);
+    const first = d === 1;
+    return (
+      <div className="rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-md" style={{ background: first ? theme.main : theme.accent, color: first ? mainText : accentText }}>
+        <Icon name="video" className="w-4 h-4 shrink-0" />
+        <span className="text-[15px] font-black tracking-[0.2em] whitespace-nowrap">撮影 {d}日目</span>
+        <span className="text-[11px] font-bold opacity-75 whitespace-nowrap">{dayLocs.length}ロケ・{fmtJP(secs)}</span>
+        <div className="flex-1 h-0.5 rounded-full" style={{ background: "currentColor", opacity: 0.25 }} />
+      </div>
+    );
+  };
 
   /* ---------- TSV書き出し ---------- */
   /* トーク系台本をプレーンテキストでコピー */

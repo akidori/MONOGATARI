@@ -47,6 +47,15 @@ const UP_TOKEN = params.get("up") || "";  // 編集者用アップロードト�
 const CAN_RESOLVE = !!UP_TOKEN;  // 同トークンで「対応済み」チェックも可（直した本人がその場でチェック）
 let CHANNEL = null, CASE_SEL = null, CTAB = "script", CHMODE = false;
 const esc = (s) => (s||"").replace(/[&<>"]/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[m]));
+/* 背景色に対して読める文字色（本体エディタの textOn と同式） */
+const textOn = (hex) => {
+  try {
+    const h = (hex||"").replace("#","");
+    const f = h.length === 3 ? h.split("").map((c)=>c+c).join("") : h;
+    const r = parseInt(f.slice(0,2),16), g = parseInt(f.slice(2,4),16), b = parseInt(f.slice(4,6),16);
+    return 0.299*r + 0.587*g + 0.114*b > 160 ? "#1A1A1A" : "#FFFFFF";
+  } catch { return "#FFFFFF"; }
+};
 const CMT_CATS = ["編集","構成","サムネ","BGM","SE","テロップ","色味","演出","その他"];
 const CMT_STATUS_COL = {"未対応":["#FBE5EA","#DC2645"],"対応中":["#FCF0DC","#D97706"],"確認待ち":["#E3EBFC","#2563EB"],"完了":["#E7F6EC","#15803D"]};
 const CMT_PRIO_COL = {"高":["#DC2645","#fff"],"中":["#E8A33D","#fff"],"低":["#E5E5E5","#57534E"]};
@@ -261,7 +270,7 @@ function paneScript(p, accent, main){
     if(r.kind === "location"){
       const d = dayD(r);
       if(d !== prevDay){
-        if(maxDay > 1) rowsHtml += `<div class="mt-6 mb-1 flex items-center gap-2"><span class="mono text-[11px] font-bold px-2.5 py-1 rounded-md text-white" style="background:var(--accent);letter-spacing:.2em">${d}日目</span><div class="flex-1" style="height:1px;background:var(--accent);opacity:.35"></div></div>`;
+        if(maxDay > 1){ const bg = d===1 ? main : accent; rowsHtml += `<div class="mt-6 mb-2 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-md" style="background:${bg};color:${textOn(bg)}"><span class="text-[15px] font-black" style="letter-spacing:.2em">撮影 ${d}日目</span><div class="flex-1 rounded-full" style="height:2px;background:currentColor;opacity:.25"></div></div>`; }
         if(prevDay !== null) anchorClock = null; /* 日をまたいだら実時刻の積み上げをリセット */
       }
       prevDay = d;
@@ -353,7 +362,9 @@ function paneKouban(p){
     if(dayStart) noInDay = 0;
     noInDay++;
     if(maxDay > 1 && dayStart){
-      html += `<div class="mb-3 ${i>0?"mt-2":""} flex items-center gap-2"><span class="mono text-[11px] font-bold px-2.5 py-1 rounded-md text-white" style="background:var(--accent);letter-spacing:.2em">${dArr[i]}日目</span><div class="flex-1" style="height:1px;background:var(--accent);opacity:.35"></div></div>`;
+      const th = p.theme || {main:"#1F2430",accent:"#E63946"};
+      const dbg = dArr[i]===1 ? th.main : th.accent;
+      html += `<div class="mb-3 ${i>0?"mt-4":""} rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-md" style="background:${dbg};color:${textOn(dbg)}"><span class="text-[15px] font-black" style="letter-spacing:.2em">撮影 ${dArr[i]}日目</span><div class="flex-1 rounded-full" style="height:2px;background:currentColor;opacity:.25"></div></div>`;
     }
     /* 前ロケ→このロケの移動ストリップ（区間・手段・交通費・経路リンク）。日をまたぐ区間は出さない */
     let travelHtml = "";
