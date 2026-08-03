@@ -439,13 +439,15 @@ function metaInfoBlock(p){
   const p0 = (p.plans||[])[0] || {};
   const title = p0.title || (m.titles||[])[0] || "";
   const thumbText = p0.thumbText || (m.thumbs||[])[0] || "";
+  const thumbText2 = p0.thumbText2 || "";
   const imgs = planThumbs(p0);
   // [コメントキー, ラベル, 値]。キーは行id（uid）と衝突しない固定文字列＝先方コメントの宛先になる
   const rows = [];
   if(m.shootDate) rows.push(["metaShootDate", "撮影日", m.shootDate]);
   if(m.place) rows.push(["metaPlace", "撮影場所", m.place]);
   if(title) rows.push(["metaTitle", "タイトル", title]);
-  if(thumbText || imgs.length) rows.push(["metaThumb", "サムネ", thumbText]);
+  if(thumbText || imgs.length) rows.push(["metaThumb", thumbText2?"サムネ①":"サムネ", thumbText]);
+  if(thumbText2) rows.push(["metaThumb2", "サムネ②", thumbText2]);
   if(!rows.length) return "";
   return sectionHead("番組情報") + `<div class="bg-white px-4 py-2">
     ${rows.map(([sid,k,v])=>`<div class="py-1.5">
@@ -501,7 +503,8 @@ function panePlans(p){
       <div class="px-4 py-2 text-[12px] font-bold" style="background:var(--main);color:#fff">企画案 ${i+1}</div>
       <div class="p-4">
         ${pl.title?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">タイトル案</div><div class="text-[15px] font-bold">${esc(pl.title)}</div></div>`:""}
-        ${pl.thumbText?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">サムネ文言</div><div class="text-[14px] font-bold whitespace-pre-wrap">${esc(pl.thumbText)}</div></div>`:""}
+        ${pl.thumbText?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">サムネ文言${pl.thumbText2?"①":""}</div><div class="text-[14px] font-bold whitespace-pre-wrap">${esc(pl.thumbText)}</div></div>`:""}
+        ${pl.thumbText2?`<div class="mb-2"><div class="text-[10px] font-bold text-stone-400">サムネ文言②</div><div class="text-[14px] font-bold whitespace-pre-wrap">${esc(pl.thumbText2)}</div></div>`:""}
         ${planThumbs(pl).length?`<div class="mb-3"><div class="text-[10px] font-bold text-stone-400 mb-1.5">サムネ</div>${thumbGrid(planThumbs(pl))}</div>`:""}
         ${pl.note?`<div class="mb-3 text-[12px] text-stone-600 whitespace-pre-wrap">${esc(pl.note)}</div>`:""}
         ${refs.length?`<div class="text-[10px] font-bold text-stone-400 mb-1.5">参考動画</div>
@@ -738,6 +741,7 @@ function renderChannel(){
       const title = caseTitle(c,i);
       const p0 = (c.plans||[])[0] || {};
       const thumbText = p0.thumbText||"";
+      const thumbText2 = p0.thumbText2||"";
       const note = p0.note||"";
       const refs = (c.plans||[]).flatMap(pl=>(pl.refs||[])).filter(r=>r.vid);
       const cards = refs.length ? refs.map(rf=>{ const sc=scoreVideo(rf); return `
@@ -755,7 +759,8 @@ function renderChannel(){
         <div class="caseopen lg:w-72 shrink-0 p-3 cursor-pointer hover:bg-stone-50 border-b lg:border-b-0 lg:border-r border-stone-100" data-case="${i}">
           <div class="flex items-center gap-2 mb-1.5"><span class="shrink-0 w-6 h-6 grid place-items-center rounded-lg text-[11px] font-bold tabular-nums" style="background:#f5f5f4;color:#78716c">#${i+1}</span><span class="text-[9px] font-bold tracking-wider text-stone-400">タイトル案</span></div>
           <div class="text-[13.5px] font-bold leading-snug mb-2" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(title)}</div>
-          ${thumbText?`<div class="text-[9px] font-bold tracking-wider text-stone-400">サムネ文言</div><div class="text-[12px] font-bold text-stone-700 mb-2">${esc(thumbText)}</div>`:""}
+          ${thumbText?`<div class="text-[9px] font-bold tracking-wider text-stone-400">サムネ文言${thumbText2?"①":""}</div><div class="text-[12px] font-bold text-stone-700 mb-2">${esc(thumbText)}</div>`:""}
+          ${thumbText2?`<div class="text-[9px] font-bold tracking-wider text-stone-400">サムネ文言②</div><div class="text-[12px] font-bold text-stone-700 mb-2">${esc(thumbText2)}</div>`:""}
           ${note?`<div class="text-[11px] text-stone-500 whitespace-pre-wrap mb-2" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden">${esc(note)}</div>`:""}
           <div class="flex items-center gap-2 mt-1">
             ${editBtn(c, title, "text-[11px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5 text-white", "background:"+accentC)}

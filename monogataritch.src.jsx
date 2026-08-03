@@ -366,7 +366,7 @@ const migrateProject = (p) => {
 
 /* ===== 企画・サムネ：YouTube参考動画まわりのヘルパー ===== */
 const emptyRef = () => ({ url: "", vid: "", title: "", channel: "", views: 0, subs: 0, likes: 0, uploadDate: "", duration: "" });
-const newPlan = () => ({ id: uid(), title: "", thumbText: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], thumbImages: [], video: null, files: [], shareId: null, shareToken: null });
+const newPlan = () => ({ id: uid(), title: "", thumbText: "", thumbText2: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], thumbImages: [], video: null, files: [], shareId: null, shareToken: null });
 const ytIdFromUrl = (url) => { const m = (url || "").match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/); return m ? m[1] : ((url || "").trim().match(/^[a-zA-Z0-9_-]{11}$/) ? url.trim() : null); };
 const parseDur = (iso) => { const m = (iso || "").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if (!m) return ""; const h = +(m[1] || 0), mi = +(m[2] || 0), s = +(m[3] || 0); return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(s).padStart(2, "0"); };
 const fmtNum = (n) => { n = Number(n) || 0; if (n >= 1e8) return (n / 1e8).toFixed(1) + "億"; if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + "万"; return n.toLocaleString(); };
@@ -3374,7 +3374,7 @@ export default function App() {
     const channel = (d && d.channel) || fallbackChannel || DEFAULT_CHANNEL;
     const plans = (d && d.plans) || [];
     const plansDisplay = (plans[0] && (plans[0].title || plans[0].thumbText)) || name;
-    const plansLC = plans.map((p) => (p.title || "") + " " + (p.thumbText || "")).join(" ").toLowerCase();
+    const plansLC = plans.map((p) => (p.title || "") + " " + (p.thumbText || "") + " " + (p.thumbText2 || "")).join(" ").toLowerCase();
     const rows = ((d && d.rows) || []).map((r) => {
       const text = (r.kind === "location" ? (r.label || "") : (r.script || "")) + "";
       return { id: r.id, kind: r.kind, text, textLC: text.toLowerCase() };
@@ -6655,12 +6655,20 @@ export default function App() {
                   onChange={(e) => setPlanField(0, "title", e.target.value)} onBlur={() => commitCaseName(activeId)} title="企画・サムネタブのタイトルと連携しています"
                   minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
               </div>
-              {/* サムネ文言 ＝ラベル下・改行可。空行込みで全文見えるように自動で伸ばす */}
-              <div className="px-3 py-2">
-                <div className="text-[11px] font-bold text-stone-400 mb-1">サムネ文言</div>
-                <AutoTextarea value={((project.plans || [])[0] && project.plans[0].thumbText) || ""} placeholder="例）人生、詰んだ。"
-                  onChange={(e) => setPlanField(0, "thumbText", e.target.value)} title="企画・サムネタブのサムネ文言と連携しています"
-                  minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
+              {/* サムネ文言 ＝2パターン。ラベル下・改行可。空行込みで全文見えるように自動で伸ばす */}
+              <div className="grid sm:grid-cols-2">
+                <div className="px-3 py-2 sm:border-r border-stone-100">
+                  <div className="text-[11px] font-bold text-stone-400 mb-1">サムネ文言 ①</div>
+                  <AutoTextarea value={((project.plans || [])[0] && project.plans[0].thumbText) || ""} placeholder="例）人生、詰んだ。"
+                    onChange={(e) => setPlanField(0, "thumbText", e.target.value)} title="企画・サムネタブのサムネ文言と連携しています"
+                    minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
+                </div>
+                <div className="px-3 py-2 border-t sm:border-t-0 border-stone-100">
+                  <div className="text-[11px] font-bold text-stone-400 mb-1">サムネ文言 ②</div>
+                  <AutoTextarea value={((project.plans || [])[0] && project.plans[0].thumbText2) || ""} placeholder="もう1パターン（任意）"
+                    onChange={(e) => setPlanField(0, "thumbText2", e.target.value)} title="企画・サムネタブのサムネ文言②と連携しています"
+                    minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
+                </div>
               </div>
             </section>
 
@@ -7242,6 +7250,7 @@ export default function App() {
                 const hasMulti = !!(data && data.plans && data.plans.length > 1);
                 const title = p0 ? p0.title : "";
                 const thumbText = p0 ? p0.thumbText : "";
+                const thumbText2 = p0 ? p0.thumbText2 || "" : "";
                 const firstVid = p0 && p0.refs ? (p0.refs.find((r) => r.vid) || {}).vid : "";
                 return (
                   <section key={entry.id} className={"rounded-xl border bg-white overflow-hidden " + (isActive ? "border-stone-400 shadow-sm" : "border-stone-200")}>
@@ -7269,9 +7278,14 @@ export default function App() {
                         <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-rose-500">{entry.name}（本体データ無し → 右のゴミ箱で削除）</span>
                       ) : <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-stone-400">{entry.name}（読み込み中…）</span>}
                       {data && (
-                        <input value={thumbText} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "thumbText", e.target.value)}
-                          placeholder="サムネ文言"
-                          className="hidden md:block w-44 shrink-0 text-[12px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1.5" />
+                        <div className="hidden md:flex flex-col gap-1 w-44 shrink-0 -my-0.5" onClick={(e) => e.stopPropagation()}>
+                          <input value={thumbText} onChange={(e) => updateBoardTitle(entry.id, "thumbText", e.target.value)}
+                            placeholder="サムネ文言①"
+                            className="w-full text-[12px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
+                          <input value={thumbText2} onChange={(e) => updateBoardTitle(entry.id, "thumbText2", e.target.value)}
+                            placeholder="サムネ文言②"
+                            className="w-full text-[12px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
+                        </div>
                       )}
                       <button onClick={(e) => { e.stopPropagation(); goScript(entry.id); }} title="この企画の構成台本を書く"
                         className="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white" style={{ background: theme.main }}>
