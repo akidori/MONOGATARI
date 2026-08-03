@@ -19,6 +19,17 @@ const newScene = (type = "解説系", label = "") => ({ id: uid(), kind: "scene"
 const newLocation = (name = "") => ({ id: uid(), kind: "location", label: name, address: "", time: "", note: "", travelBy: "", travelCost: null });
 /* ロケの撮影日（1=1日目）。未設定は1日目扱い（既存データ互換） */
 const dayOf = (r) => { const d = Number(r && r.day); return Number.isFinite(d) && d >= 1 ? Math.floor(d) : 1; };
+/* ロケ名先頭の撮影日マーカーを抽出。「2日目」「【2日目】品川駅」「2日目：東京」「DAY2 会場」→ {day, rest}。
+   「2日目の振り返り」のような普通の語は区切り文字が無いので拾わない。無ければ null */
+const parseDayMarker = (s) => {
+  const t = (s || "").trim();
+  const m = t.match(/^[【\[（(]\s*(?:DAY\s*(\d+)|(\d+)\s*日目)\s*[】\]）)]\s*[:：・、\/／\-—]?\s*(.*)$/i)
+    || t.match(/^(?:DAY\s*(\d+)|(\d+)\s*日目)(?:[\s:：・、\/／\-—]+|$)(.*)$/i);
+  if (!m) return null;
+  const day = Number(m[1] || m[2]);
+  if (!(day >= 1)) return null;
+  return { day: Math.floor(day), rest: (m[3] || "").trim() };
+};
 
 const templateRows = () => [
   newLocation("ご自宅（朝）"),
@@ -576,11 +587,22 @@ const normalizeImport = (obj) => {
     theme: obj.theme && obj.theme.main ? { ...DEFAULT_THEME, ...obj.theme } : { ...DEFAULT_THEME },
     rate: Number(obj.rate) || 5,
     timeFormat: obj.timeFormat === "jp" ? "jp" : "tc",
-    rows: (obj.rows || []).map((r) =>
-      r.kind === "location"
-        ? { id: uid(), kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", travelBy: r.travelBy || "", travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null, ...(Number(r.day) >= 1 ? { day: Math.floor(Number(r.day)) } : {}) }
-        : { id: uid(), kind: "scene", label: r.label || "", type: TYPE_KEYS.includes(r.type) ? r.type : (typeFromText(r.type) || "解説系"), sec: r.sec === 0 || r.sec ? Number(r.sec) : null, script: r.script || "" }
-    ),
+    // ロケの撮影日：明示の day > ロケ名先頭の「【2日目】」等マーカー > 直前ロケの日を引き継ぎ（密着は日単位で連続するため）。
+    // 名前がマーカーだけのロケ行（「2日目」等）は区切りとして扱い、行自体は残さない（TSV経路と同じ挙動）
+    rows: (() => {
+      let curDay = 1;
+      return (obj.rows || []).map((r) => {
+        if (r.kind === "location") {
+          const dm = parseDayMarker(r.label);
+          let day = Number(r.day) >= 1 ? Math.floor(Number(r.day)) : (dm ? dm.day : null);
+          if (day >= 1) curDay = day; else day = curDay;
+          if (dm && !dm.rest) return null;
+          const label = dm ? dm.rest : (r.label || "");
+          return { id: uid(), kind: "location", label, address: r.address || "", time: r.time || "", note: r.note || "", travelBy: r.travelBy || "", travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null, day };
+        }
+        return { id: uid(), kind: "scene", label: r.label || "", type: TYPE_KEYS.includes(r.type) ? r.type : (typeFromText(r.type) || "解説系"), sec: r.sec === 0 || r.sec ? Number(r.sec) : null, script: r.script || "" };
+      }).filter(Boolean);
+    })(),
   };
 };
 
@@ -640,9 +662,13 @@ const parseImportText = (text) => {
     // ロケーション行：種別が無く名前がある（col0=時刻 のスプシ形式にも対応）
     const locName = ((cols && cols.loc >= 0 ? trimAt(cells, cols.loc) : c1) || "").trim();
     const locTime = ((cols && cols.time >= 0 ? trimAt(cells, cols.time) : c0) || "").trim();
-    // 「2日目」だけの行 = 撮影日の区切りマーカー（以降のロケに day を付ける）
-    const dm = locName.match(/^(\d+)日目$/);
-    if (inTable && dm) { curDay = Number(dm[1]) || 1; continue; }
+    // 撮影日マーカー：「2日目」だけの行（区切り行）、または「【2日目】品川駅」のようにロケ名の頭に付いた形。以降のロケに day を付ける
+    const dm = inTable && locName ? parseDayMarker(locName) : null;
+    if (dm) {
+      curDay = dm.day;
+      if (dm.rest) rows.push({ kind: "location", label: dm.rest, time: /\d/.test(locTime) ? locTime : "", day: curDay });
+      continue;
+    }
     if (inTable && locName) { rows.push({ kind: "location", label: locName, time: /\d/.test(locTime) ? locTime : "", day: curDay }); continue; }
   }
   if (!rows.length) return null;
