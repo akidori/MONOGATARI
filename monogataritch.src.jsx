@@ -5251,6 +5251,56 @@ export default function App() {
     on(); mq.addEventListener("change", on);
     return () => mq.removeEventListener("change", on);
   }, []);
+  /* ===== 目次レール（全タブ共通） =====
+     見出しに付けた data-toc と、素の <h2> を本文からかき集めて右端の細い縦レールにする。
+     タブごとに目次を作り込まない＝カードやタブを足しても勝手に目次へ載る（作り忘れが起きない）。
+     幅は10px相当のレールだけ。ラベルはホバー時にオーバーレイで出す＝本文を狭めない。 */
+  const [tocItems, setTocItems] = useState([]);
+  const [tocActive, setTocActive] = useState(null);
+  const tocSig = useRef("");
+  useEffect(() => {
+    const scan = () => {
+      const root = mainRef.current;
+      if (!root) return;
+      const items = [];
+      Array.prototype.forEach.call(root.querySelectorAll("[data-toc], h2"), (el, i) => {
+        const attr = el.getAttribute("data-toc");
+        // data-toc を持つ見出しの中の <h2> は同じ場所なので二重に数えない
+        if (attr == null && el.closest("[data-toc]")) return;
+        const label = (attr != null ? attr : (el.textContent || "")).trim().replace(/\s+/g, " ").slice(0, 30);
+        if (!label) return;
+        if (!el.id) el.id = "toc-anchor-" + i;
+        items.push({ id: el.id, label, group: el.hasAttribute("data-toc-group") });
+      });
+      const sig = items.map((x) => x.id + ":" + x.label + (x.group ? "*" : "")).join("|");
+      if (sig === tocSig.current) return;
+      tocSig.current = sig;
+      setTocItems(items);
+    };
+    const t = setTimeout(scan, 150);
+    return () => clearTimeout(t);
+  }, [tab, prepView, project, isNarrow]);
+  useEffect(() => {
+    if (!tocItems.length) { setTocActive(null); return; }
+    let raf = 0;
+    const sync = () => {
+      raf = 0;
+      let cur = null;
+      tocItems.forEach((it) => { const el = document.getElementById(it.id); if (el && el.getBoundingClientRect().top <= headerH + 60) cur = it.id; });
+      setTocActive((p) => (p === cur ? p : cur));
+    };
+    const on = () => { if (!raf) raf = requestAnimationFrame(sync); };
+    window.addEventListener("scroll", on, { passive: true });
+    sync();
+    return () => { window.removeEventListener("scroll", on); if (raf) cancelAnimationFrame(raf); };
+  }, [tocItems, headerH]);
+  const jumpToToc = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    window.scrollTo({ top: Math.max(0, window.scrollY + el.getBoundingClientRect().top - (headerH + 16)), behavior: "smooth" });
+    setTocActive(id);
+  };
+
   /* スマホ：スワイプでサイドバー（案件一覧）を開閉。左端から右スワイプで表示／左スワイプで非表示 */
   useEffect(() => {
     if (!isNarrow || typeof window === "undefined") return;
@@ -5389,7 +5439,8 @@ export default function App() {
     const secs = dayLocs.reduce((a, l) => a + l.dur, 0);
     const first = d === 1;
     return (
-      <div className="rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-md" style={{ background: first ? theme.main : theme.accent, color: first ? mainText : accentText }}>
+      <div data-toc={"撮影 " + d + "日目"} data-toc-group="1"
+        className="rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-md" style={{ background: first ? theme.main : theme.accent, color: first ? mainText : accentText }}>
         <Icon name="video" className="w-4 h-4 shrink-0" />
         <span className="text-[15px] font-black tracking-[0.2em] whitespace-nowrap">撮影 {d}日目</span>
         <span className="text-[11px] font-bold opacity-75 whitespace-nowrap">{dayLocs.length}ロケ・{fmtJP(secs)}</span>
@@ -5743,8 +5794,10 @@ export default function App() {
   const metaInput = "block w-full bg-transparent text-[13px] px-3 py-2 focus:outline-none placeholder:text-stone-300";
   const opBtn = "w-6 h-6 grid place-items-center rounded-md text-stone-400 hover:bg-stone-200 hover:text-stone-700 text-[11px] leading-none transition-colors";
   const cardCls = "bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden";
+  /* data-toc＝右端の目次レールが拾う目印。カード見出しは全タブ共通なので、ここに付ければ
+     どのタブでも自動で目次が生える（個別タブに目次を作り込まない＝増改築でズレない） */
   const cardHead = (label, right, onClick) => (
-    <div onClick={onClick}
+    <div onClick={onClick} data-toc={typeof label === "string" ? label : undefined}
       className={"px-4 py-2 flex items-center gap-2 border-b border-stone-100 " + (onClick ? "cursor-pointer select-none hover:bg-stone-50 transition-colors" : "")}>
       <span className="w-1.5 h-4 rounded-full" style={{ background: theme.accent }} />
       <h2 className="text-[12px] font-bold tracking-wider text-stone-600 flex-1">{label}</h2>
@@ -6749,7 +6802,7 @@ export default function App() {
                             <td colSpan={6} className="pt-4 pb-1 px-1">{dayBannerEl(dayStarts[r.id])}</td>
                           </tr>
                         )}
-                        <tr id={"row-" + r.id} {...dropZoneProps(idx)}
+                        <tr id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(idx)}
                           onPointerEnter={() => paintSelectTo(idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "location", x: e.clientX, y: e.clientY }); }}
                           style={{
@@ -6921,7 +6974,7 @@ export default function App() {
                     {maxDay > 1 && dayStarts[r.id] != null && (
                       <div className="mt-4 mb-0.5">{dayBannerEl(dayStarts[r.id])}</div>
                     )}
-                    <div id={"row-" + r.id}
+                    <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"}
                       className="flex items-stretch overflow-hidden rounded-lg mt-3 mb-1.5 shadow-sm"
                       style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1, ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
                       <div className="w-1.5 shrink-0" style={{ background: stripe }} />
@@ -7094,7 +7147,7 @@ export default function App() {
                   {maxDay > 1 && dayStarts[loc.id] != null && (
                     <div className={"mb-3 " + (i > 0 ? "mt-2" : "")}>{dayBannerEl(dayStarts[loc.id])}</div>
                   )}
-                  <div className="relative flex gap-2.5 sm:gap-4 group/loc">
+                  <div className="relative flex gap-2.5 sm:gap-4 group/loc" data-toc={loc.label || "（ロケ名未入力）"}>
                     {/* 左：時刻レール */}
                     <div className="flex flex-col items-center w-[46px] sm:w-[72px] shrink-0 pt-0.5">
                       <input
@@ -7284,7 +7337,7 @@ export default function App() {
                 const thumbText2 = p0 ? p0.thumbText2 || "" : "";
                 const firstVid = p0 && p0.refs ? (p0.refs.find((r) => r.vid) || {}).vid : "";
                 return (
-                  <section key={entry.id} className={"rounded-xl border bg-white overflow-hidden " + (isActive ? "border-stone-400 shadow-sm" : "border-stone-200")}>
+                  <section key={entry.id} data-toc={title || entry.name || ("企画 #" + (pi + 1))} className={"rounded-xl border bg-white overflow-hidden " + (isActive ? "border-stone-400 shadow-sm" : "border-stone-200")}>
                     {/* コンパクト1行ヘッダ：#N ＋ タイトル ＋ サムネ文言 ＋ 操作 */}
                     <div className="flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-stone-50" onClick={() => openBoardCase(entry.id)}>
                       <div className="shrink-0 flex flex-col -my-1" onClick={(e) => e.stopPropagation()}>
@@ -7483,7 +7536,7 @@ export default function App() {
             {/* ドキュメント風の1枚シート：全セクションを1枚に流し込む。箱枠なし・見出し＋罫線区切り・入力欄はボーダーレス */}
             <div className="rounded-2xl border border-stone-200 bg-white px-5 sm:px-8 py-6 sm:py-8 shadow-sm">
               {(project.hearing || []).map((sec) => (
-                <div key={sec.id} id={"hearing-sec-" + sec.id} className="group/sec mt-7 first:mt-0 scroll-mt-20 rounded-lg transition-shadow">
+                <div key={sec.id} id={"hearing-sec-" + sec.id} data-toc={sec.title || "無題のセクション"} className="group/sec mt-7 first:mt-0 scroll-mt-20 rounded-lg transition-shadow">
                   <div className="flex items-center gap-2 mb-2 pb-1.5 border-b-2 border-stone-100">
                     <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)}
                       className="flex-1 min-w-0 text-[15px] font-bold text-stone-800 bg-transparent focus:outline-none py-0.5" />
@@ -7810,26 +7863,37 @@ export default function App() {
         })()}
 
       </main>
-      {(tab === "hearing" || tab === "wizard") && prepView === "hearing" && (
-        <aside className="hidden sm:flex shrink-0 sticky w-10 h-fit mt-5 flex-col items-center gap-0.5"
-          style={{ top: headerH + 20 }} aria-label="取材メモの目次">
-          {(project.hearing || []).map((sec, si) => {
-            const active = hearingTocActive === sec.id;
-            const lineWidth = 10 + ((si * 7) % 19);
-            return (
-              <button key={sec.id}
-                onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
-                className="group relative w-10 h-[11px] shrink-0 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
-                aria-label={(si + 1) + ". " + (sec.title || "無題のセクション")}>
-                <span className="block h-[2px] rounded-full transition-all group-hover:scale-x-110"
-                  style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#b9b7b3" }} />
-                <span role="tooltip"
-                  className="pointer-events-none absolute right-[calc(50%+18px)] top-1/2 z-50 mr-2 -translate-y-1/2 whitespace-nowrap rounded bg-stone-800 px-2 py-1 text-[9px] font-bold text-white opacity-0 shadow-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                  {si + 1}. {sec.title || "無題のセクション"}
-                </span>
-              </button>
-            );
-          })}
+      {/* 目次レール（全タブ）：普段は細い線だけ＝場所を取らない。触るとラベルが本文の上に浮いて出る */}
+      {!isNarrow && tocItems.length >= 3 && (
+        <aside className="hidden sm:block shrink-0 sticky w-10 h-fit mt-5" style={{ top: headerH + 20 }} aria-label="このページの目次">
+          <div className="group relative flex flex-col items-center gap-0.5">
+            {tocItems.map((it, si) => {
+              const active = tocActive === it.id;
+              const lineWidth = it.group ? 26 : 10 + ((si * 7) % 15);
+              return (
+                <button key={it.id} onClick={() => jumpToToc(it.id)} title={it.label}
+                  className="relative w-10 h-[11px] shrink-0 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
+                  aria-label={it.label}>
+                  <span className="block rounded-full transition-all hover:scale-x-110"
+                    style={{ width: lineWidth, height: it.group ? 3 : 2, backgroundColor: active ? theme.accent : (it.group ? "#8c8880" : "#b9b7b3") }} />
+                </button>
+              );
+            })}
+            {/* ホバーで開く一覧。absolute＝本文の幅を1pxも削らない */}
+            <div className="pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity absolute right-9 top-0 w-56 max-h-[70vh] overflow-y-auto rounded-xl border border-stone-200 bg-white/95 backdrop-blur shadow-xl p-1.5 z-50">
+              <div className="text-[9px] font-bold tracking-widest text-stone-300 px-2 pb-1">目次</div>
+              {tocItems.map((it) => {
+                const active = tocActive === it.id;
+                return (
+                  <button key={it.id} onClick={() => jumpToToc(it.id)}
+                    className={"block w-full text-left text-[11.5px] leading-snug px-2 py-1 rounded-lg hover:bg-stone-100 " + (it.group ? "font-bold mt-1 " : "") + (active ? "font-bold text-stone-900 bg-stone-50" : "text-stone-500")}
+                    style={active || it.group ? { color: it.group && !active ? theme.accent : undefined } : {}}>
+                    {it.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </aside>
       )}
       </div>{/* /工程タブ縦レール＋本文の flex */}
