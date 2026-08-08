@@ -2512,6 +2512,17 @@ export default function App() {
   const [selectedIds, setSelectedIds] = useState([]);       // 複数選択中の行id
   const [painting, setPainting] = useState(false);          // チェック欄ドラッグ選択中
   const [isNarrow, setIsNarrow] = useState(false);          // スマホ幅（操作列を隠す等）
+  /* 構成台本の見せ方。"stack"＝上下積み（原稿が全幅・既定）／"table"＝旧・横並びテーブル。
+     表は左5列で520px使って原稿が右半分に寄り、縦に長い行ほど左が空白になって読みづらかった。 */
+  const [scriptLayout, setScriptLayout] = useState(() => {
+    try { return localStorage.getItem("mg:scriptLayout") === "table" ? "table" : "stack"; } catch (e) { return "stack"; }
+  });
+  const stacked = isNarrow || scriptLayout === "stack";
+  const toggleScriptLayout = () => setScriptLayout((v) => {
+    const nx = v === "table" ? "stack" : "table";
+    try { localStorage.setItem("mg:scriptLayout", nx); } catch (e) {}
+    return nx;
+  });
   const lastSelRef = useRef(null);                          // shift範囲選択の起点
   /* ヒアリング：文字起こし取込 */
   const [hearingImport, setHearingImport] = useState(null); // { raw } モーダル開いてる時 or null
@@ -6824,7 +6835,18 @@ export default function App() {
 
             {/* 構成テーブル（PC：横並びテーブル）。overflow-clip＝角丸クリップは維持しつつ
                 スクロールコンテナ化しない→theadのstickyが効く（列名がスクロールで消えない） */}
+            {/* 見せ方の切替（PCのみ）。スマホは上下積み固定なので出さない */}
             {!isNarrow && (
+              <div className="flex justify-end -mb-1">
+                <button onClick={toggleScriptLayout}
+                  title={scriptLayout === "stack" ? "横並びの表に戻す" : "原稿を全幅で読む（上下積み）"}
+                  className="text-[11px] text-stone-400 hover:text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors">
+                  {scriptLayout === "stack" ? "表示：上下積み（原稿全幅）" : "表示：横並びの表"}
+                </button>
+              </div>
+            )}
+
+            {!stacked && (
             <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-clip">
              <div className="overflow-x-clip">
               <table className="w-full border-collapse table-fixed" style={{ minWidth: isNarrow ? 600 : undefined }}>
@@ -7018,8 +7040,10 @@ export default function App() {
             </section>
             )}
 
-            {/* 構成台本（スマホ：上下積みカード。原稿を全幅で読めるように） */}
-            {isNarrow && (
+            {/* 構成台本（上下積みカード。原稿を全幅で読めるように）。
+                スマホは常にこれ。PCも既定でこれ（2026-08-08 AK指示：表だと左半分が空いて原稿が読みづらい）。
+                表に戻したい時はヘッダーの表示切替で戻せる。 */}
+            {stacked && (
             <section className="flex flex-col">
               {project.rows.map((r, idx) => {
                 if (r.kind === "location") {
@@ -7108,7 +7132,7 @@ export default function App() {
                         value={r.type}
                         onChange={(e) => updateRow(r.id, { type: e.target.value, sec: null })}
                         className="flex-1 min-w-0 text-[11px] font-bold rounded-full px-2.5 py-1 cursor-pointer focus:outline-none appearance-none text-center"
-                        style={{ background: t.bg, color: t.color }}>
+                        style={{ background: t.bg, color: t.color, maxWidth: isNarrow ? undefined : 240 }}>
                         {TYPE_KEYS.map((k) => <option key={k} value={k}>{SECTION_TYPES[k].full}</option>)}
                       </select>
                       <input
