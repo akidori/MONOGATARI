@@ -105,6 +105,34 @@ const STORE_CHANNELS = "monogataritch-channels-v1"; // チャンネル(クライ
 /* 離脱時にまだ書けていなかった案件の退避先（1案件ぶんだけ持つ）。次回ロードで本体より新しければ復元する。
    自動保存は3秒デバウンス＋クラウド往復なので、直前の打鍵は「まだどこにも無い」瞬間が必ずある。 */
 const UNSAVED_KEY = "mg:unsaved-v1";
+/* 変更履歴。案件本体とは別キーに置く＝本体を太らせない（本体は素材やサムネのdataURLで既に重い）。
+   「直したのに前の値に戻ってる」が起きた時に、いつ何が何から何へ変わったかを後から追えるようにする。 */
+const STORE_HIST = (id) => "monogataritch-hist-" + id;
+const HIST_MAX = 300;
+/* 履歴を取る対象のフラット化。key＝安定した識別子（行はid基準なので並べ替えでズレない） */
+const histSnapshot = (p) => {
+  const o = {};
+  if (!p) return o;
+  const put = (k, label, v) => { o[k] = { label, v: v == null ? "" : String(v) }; };
+  put("name", "案件名", p.name);
+  const plans = p.plans || [];
+  plans.forEach((pl, i) => {
+    const sfx = plans.length > 1 ? "（企画案" + (i + 1) + "）" : "";
+    put("plan" + i + ".title", "タイトル" + sfx, pl.title);
+    put("plan" + i + ".thumbText", "サムネ文言①" + sfx, pl.thumbText);
+    put("plan" + i + ".thumbText2", "サムネ文言②" + sfx, pl.thumbText2);
+  });
+  put("meta.highlight", "ハイライト（冒頭フック）", (p.meta || {}).highlight);
+  (p.rows || []).forEach((r) => {
+    if (!r || !r.id) return;
+    const nm = (r.label || "").trim();
+    const tag = nm ? "（" + (nm.length > 18 ? nm.slice(0, 18) + "…" : nm) + "）" : "";
+    if (r.kind === "location") { put("row." + r.id + ".label", "ロケ名" + tag, r.label); return; }
+    put("row." + r.id + ".label", "内容" + tag, r.label);
+    put("row." + r.id + ".script", "原稿" + tag, r.script);
+  });
+  return o;
+};
 const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], icon: "", clientNotes: "", manuals: [] });
 /* チャンネルアイコンに選べる絵文字 */
 const CHANNEL_ICONS = ["📁","🎬","🎥","🎙️","🎤","📺","🎮","📷","🎨","💡","🔥","⭐","🚀","💼","🏆","⚽","🏀","🍳","💪","🐦","🐱","🐶","🌸","🌙","🎯","💰","📚","🧠","❤️","✨","🎸","🍜","🧳","👑","🛠️","🌍"];
@@ -2546,6 +2574,10 @@ export default function App() {
      ①0.7秒デバウンスの案件保存 ②4秒デバウンスの共有自動再発行(1回2書込)
      ③枯れた後も8秒毎に無限リトライして枠を焼き続ける、の3つ。 */
   const lastSaveSigRef = useRef("");     // 直前に保存した内容の指紋。同じ内容は書かない
+  const histBaseRef = useRef(null);      // 履歴の比較基準（直近に保存した時点のスナップショット）
+  const histCacheRef = useRef({ id: "", entries: null }); // 現案件の履歴（毎回読みに行かない）
+  const [histOpen, setHistOpen] = useState(false);
+  const [histList, setHistList] = useState([]);
   const lastChSaveRef = useRef("");      // チャンネル設定の直前保存内容（同上）
   const quotaUntilRef = useRef(0);       // 上限に当たった→このtimestampまで書込を一切止める（UTC0時＝JST9時にリセット）
   const retryDelayRef = useRef(8000);    // 保存リトライの間隔（失敗ごとに倍→最大10分）
@@ -2824,7 +2856,7 @@ export default function App() {
       if (Date.now() < quotaUntilRef.current) { pendingSaveRef.current = project; setSaveState("quota"); return; }
       const ok = await saveProjectData(project);
       if (ok === false) { pendingSaveRef.current = project; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
-      else { pendingSaveRef.current = null; lastSaveSigRef.current = sig; setSaveState("ok"); }
+      else { pendingSaveRef.current = null; lastSaveSigRef.current = sig; setSaveState("ok"); recordHistory(project); }
     }, 3000);
     return () => clearTimeout(saveTimer.current);
   }, [project, loaded]);
@@ -3012,6 +3044,68 @@ export default function App() {
     } else {
       try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); return true; } catch (e) { console.error(e); noteSaveError(e); return false; }
     }
+  };
+
+  /* 保存が通るたびに、前回保存時点との差分を履歴へ積む。
+     ここに置くのは「保存できた内容」だけを履歴にするため（打鍵の途中経過は残さない）。 */
+  const recordHistory = async (p) => {
+    if (!p || !p.id) return;
+    const prev = histBaseRef.current;
+    const snap = histSnapshot(p);
+    histBaseRef.current = { id: p.id, snap };
+    if (!prev || prev.id !== p.id) return;      // 案件を開いた直後は基準を作るだけ
+    const a = prev.snap, at = Date.now(), add = [];
+    Object.keys(snap).forEach((k) => {
+      const before = a[k] ? a[k].v : null;
+      if (before == null) return;               // 新しく増えた行＝変更ではない
+      if (before === snap[k].v) return;
+      if (!before.trim()) return;               // 空→入力は履歴にしない（ノイズ）
+      add.push({ at, key: k, label: snap[k].label, before, after: snap[k].v });
+    });
+    Object.keys(a).forEach((k) => {             // 消えた行は before だけ残す＝原稿ごと消えたのを追える
+      if (snap[k] || !a[k].v.trim()) return;
+      add.push({ at, key: k, label: a[k].label + "／行ごと削除", before: a[k].v, after: "" });
+    });
+    if (!add.length) return;
+    try {
+      let cur = histCacheRef.current.id === p.id ? histCacheRef.current.entries : null;
+      if (!cur) cur = await loadHistory(p.id);
+      const next = [...add, ...cur].slice(0, HIST_MAX);   // 新しいものが先頭
+      histCacheRef.current = { id: p.id, entries: next };
+      setHistList(next);
+      await window.storage.set(STORE_HIST(p.id), JSON.stringify({ v: 1, entries: next }));
+    } catch (e) { console.error("履歴の保存", e); }
+  };
+  const loadHistory = async (id) => {
+    try { const r = await window.storage.get(STORE_HIST(id)); const d = JSON.parse(r.value); return (d && d.entries) || []; }
+    catch (e) { return []; }
+  };
+  const openHistory = async () => {
+    setHistOpen(true);
+    if (histCacheRef.current.id === activeId && histCacheRef.current.entries) { setHistList(histCacheRef.current.entries); return; }
+    const e = await loadHistory(activeId);
+    histCacheRef.current = { id: activeId, entries: e };
+    setHistList(e);
+  };
+  /* 履歴の1件を「変更前」に戻す。key から場所を復元する（行はidで引くので並べ替え後でも当たる） */
+  const restoreHistory = (h) => {
+    if (!h || !project) return;
+    const k = h.key;
+    let m;
+    if (k === "name") { renameProject(project.id, h.before); }
+    else if ((m = /^plan(\d+)\.(title|thumbText|thumbText2)$/.exec(k))) {
+      const i = Number(m[1]);
+      setPlanField(i, m[2], h.before);
+      if (m[2] === "title" && i === 0) renameProject(project.id, h.before);   // 案件名はplans[0].titleに追随する
+    }
+    else if (k === "meta.highlight") setMeta("highlight", h.before);
+    else if ((m = /^row\.(.+)\.(label|script)$/.exec(k))) {
+      if (!(project.rows || []).some((r) => r.id === m[1])) { showToast("この行はもう無いので戻せない（本文はコピーできる）"); return; }
+      updateRow(m[1], { [m[2]]: h.before });
+    }
+    else { showToast("この項目は自動で戻せない"); return; }
+    setHistOpen(false);
+    showToast(h.label + " を戻した");
   };
 
   /* 共同編集案件の一覧を取得（ログイン時のみ） */
@@ -6786,7 +6880,12 @@ export default function App() {
 
             {/* 番組情報 */}
             <section className={cardCls + " mb-4"}>
-              {cardHead("番組情報")}
+              {cardHead("番組情報", (
+                <button onClick={openHistory} title="タイトル・サムネ文言・内容・原稿の変更履歴。変更前に戻せる"
+                  className="text-[10px] font-bold text-stone-400 hover:text-stone-700 px-2 py-1 rounded-md hover:bg-stone-100 transition-colors">
+                  変更履歴
+                </button>
+              ))}
               <div className="grid sm:grid-cols-2 border-b border-stone-100">
                 <div className="flex sm:border-r border-stone-100">
                   <div className="w-20 shrink-0 px-3 py-2 text-[11px] font-bold text-stone-400">撮影日</div>
@@ -8263,6 +8362,44 @@ export default function App() {
                 style={{ background: theme.accent, color: accentText }}>
                 <Icon name="refresh" className="w-3.5 h-3.5" />{reviewBusy ? "チェック中…" : "もう一度チェック"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 変更履歴 モーダル =====
+          保存が通るたびに差分を積んでいる。「直したのに前の値に戻ってる」を後から追えるようにするのが目的なので、
+          変更前の全文をそのまま出す（切らない）。1クリックで戻せる。 */}
+      {histOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setHistOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[88vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold tracking-wider">変更履歴</h3>
+              <button onClick={() => setHistOpen(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 overflow-y-auto">
+              {!histList.length ? (
+                <p className="text-[12px] text-stone-400 py-8 text-center">
+                  まだ履歴がない。これ以降の変更（タイトル・サムネ文言・内容・原稿・ロケ名）が保存されるたびにここへ積まれる。
+                </p>
+              ) : histList.map((h, i) => (
+                <div key={i} className="border border-stone-200 rounded-xl mb-2 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-50 border-b border-stone-100">
+                    <span className="text-[10px] tabular-nums text-stone-400 shrink-0" style={{ fontFamily: mono }}>
+                      {new Date(h.at).toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span className="text-[11px] font-bold text-stone-600 truncate flex-1">{h.label}</span>
+                    <button onClick={() => { try { navigator.clipboard.writeText(h.before); showToast("変更前をコピーした"); } catch (e) {} }}
+                      className="shrink-0 text-[10px] text-stone-400 hover:text-stone-700 px-2 py-0.5 rounded hover:bg-stone-200">コピー</button>
+                    <button onClick={() => restoreHistory(h)}
+                      className="shrink-0 text-[10px] font-bold px-2.5 py-0.5 rounded-md text-white" style={{ background: theme.accent, color: accentText }}>これに戻す</button>
+                  </div>
+                  <div className="px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-stone-700 bg-emerald-50/40">{h.before}</div>
+                  <div className="px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-stone-400 border-t border-stone-100">
+                    {h.after ? h.after : <span className="italic">（空になった）</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
