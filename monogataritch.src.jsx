@@ -102,6 +102,9 @@ const IS_EMBED = (() => { try { return window.self !== window.top; } catch (e) {
 const STORE_INDEX = "monogataritch-index-v1";   // 案件の並び順とメタ
 const STORE_PROJ = (id) => "monogataritch-proj-" + id; // 各案件の本体
 const STORE_CHANNELS = "monogataritch-channels-v1"; // チャンネル(クライアント)単位のコンセプト情報 {name:{...}}
+/* 離脱時にまだ書けていなかった案件の退避先（1案件ぶんだけ持つ）。次回ロードで本体より新しければ復元する。
+   自動保存は3秒デバウンス＋クラウド往復なので、直前の打鍵は「まだどこにも無い」瞬間が必ずある。 */
+const UNSAVED_KEY = "mg:unsaved-v1";
 const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], icon: "", clientNotes: "", manuals: [] });
 /* チャンネルアイコンに選べる絵文字 */
 const CHANNEL_ICONS = ["📁","🎬","🎥","🎙️","🎤","📺","🎮","📷","🎨","💡","🔥","⭐","🚀","💼","🏆","⚽","🏀","🍳","💪","🐦","🐱","🐶","🌸","🌙","🎯","💰","📚","🧠","❤️","✨","🎸","🍜","🧳","👑","🛠️","🌍"];
@@ -874,6 +877,7 @@ function useBufferedField(value, onChange, delay = 220) {
   const pending = useRef(null);   // 未送信のローカル値
   const timer = useRef(null);
   const composing = useRef(false); // IME変換中（日本語入力の未確定文字列がある）
+  const echoUntil = useRef(0);     // 親へ流した値が返ってくるのを待つ期限。この間は外部値で巻き戻さない
   const cbRef = useRef(onChange);
   cbRef.current = onChange;
   const valRef = useRef(norm);
@@ -885,9 +889,14 @@ function useBufferedField(value, onChange, delay = 220) {
   //   打っている本人の文字が目の前で消える。変換中と未送信中は外部値を無視し、
   //   flush 後（pending=null）に改めて取り込む。
   useEffect(() => {
-    if (norm === sent.current) return;   // 自分が送った値のエコー
+    if (norm === sent.current) { echoUntil.current = 0; return; }   // 自分が送った値のエコー＝親が追いついた
     if (composing.current) return;       // 変換確定前に value を差し替えると変換ごと壊れる
     if (pending.current != null) return; // 打鍵中＝本人の入力が最新。外部値は捨てる
+    // 親へ流した直後（=pendingはもう空）だが、親のstateはまだ古いまま届くことがある。
+    // 親への反映は startTransition の低優先度レンダーなので、重い案件では数百ms〜遅れる。
+    // その隙に古い norm を採用すると、打ち終わった文字が目の前で巻き戻る（2026-08-08 AK報告）。
+    // 親が新しい値を返してくるまで（最長3秒）は外部値を採らない。
+    if (Date.now() < echoUntil.current) return;
     if (norm === valRef.current) return;
     setVal(norm); sent.current = norm;
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -898,6 +907,7 @@ function useBufferedField(value, onChange, delay = 220) {
     if (pending.current != null && pending.current !== sent.current) {
       const nv = pending.current;
       sent.current = nv;
+      echoUntil.current = Date.now() + 3000;   // 親が追いつくまで外部値を無視（上限3秒＝AI反映等は3秒後に必ず入る）
       // 親(巨大state)への反映は低優先度レンダーで＝打鍵再開時にコミット描画へ割り込める
       startTransition(() => cbRef.current(nv));
     }
@@ -2807,6 +2817,48 @@ export default function App() {
     }, 3000);
     return () => clearTimeout(saveTimer.current);
   }, [project, loaded]);
+
+  /* 離脱時フラッシュ（2026-08-08）。
+     自動保存は3秒デバウンス＋クラウド往復なので、打鍵直後に ⌘Q／タブを閉じる／アプリを隠す をやると
+     その編集はどこにも書かれず消える。無言で消えるので「直したのに前の値に戻ってる」に見える
+     （森川さん案件でタイトルの修正が1件消失）。beforeunload等のハンドラは今まで1つも無かった。
+     ・visibilitychange(hidden) / pagehide で即書込
+     ・fetch は keepalive＝ページが破棄されたあともブラウザが送り切る
+     ・送る前に localStorage へも退避し、次回ロードで本体より新しければ復元（ネットが死んでても残す） */
+  const projectLiveRef = useRef(null);
+  projectLiveRef.current = project;
+  useEffect(() => {
+    const flush = () => {
+      const p = projectLiveRef.current;
+      if (!p || p.live) return;                                  // live編集中はDOが正本なので触らない
+      let sig;
+      try { sig = JSON.stringify(cleanProj(p)); } catch (e) { return; }
+      if (sig === lastSaveSigRef.current) return;                // 保存済みと同じ内容なら何もしない
+      lastSaveSigRef.current = sig;
+      clearTimeout(saveTimer.current);
+      const data = { ...p, updatedAt: Date.now() };
+      const json = JSON.stringify(data);
+      try { localStorage.setItem(UNSAVED_KEY, JSON.stringify({ id: data.id, at: data.updatedAt, project: data })); } catch (e) {}
+      const done = () => { try { localStorage.removeItem(UNSAVED_KEY); } catch (e) {} };
+      if (MG_SESSION) {
+        const path = data.collab ? "/api/collab/upsert" : "/api/kv/set";
+        const body = data.collab ? { id: data.id, project: data } : { key: STORE_PROJ(data.id), value: json };
+        try {
+          fetch(SHARE_API + path, {
+            method: "POST", keepalive: true,
+            headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
+            body: JSON.stringify(body),
+          }).then((r) => { if (r && r.ok) done(); }, () => {});
+        } catch (e) {}
+      } else {
+        try { localStorage.setItem("mg:" + STORE_PROJ(data.id), json); done(); } catch (e) {}
+      }
+    };
+    const onVis = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVis);
+    return () => { window.removeEventListener("pagehide", flush); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
 
   /* クラウド保存の失敗を自動リトライ。失敗するたび間隔を倍にする（8秒→最大10分）。
      旧実装は固定8秒の無限リトライで、KV上限に当たった後もリセットまで数千回叩き続けて枠を焼いていた。 */
