@@ -6101,9 +6101,11 @@ export default function App() {
           <input
             value={project.name}
             onChange={(e) => renameProject(project.id, e.target.value)}
-            className="bg-transparent font-bold tracking-wide text-[14px] focus:outline-none focus:bg-white/10 rounded px-1.5 py-1 min-w-0 max-w-[200px]"
-            style={{ color: mainText }}
-            title="案件名（クリックで編集）"
+            className="bg-transparent font-bold tracking-wide text-[14px] focus:outline-none focus:bg-white/10 rounded px-1.5 py-1 min-w-0"
+            /* 200px固定だと長いタイトルが「…」も出ずに頭だけ表示され、リネームが効いてないように見えた（2026-08-08）。
+               幅を広げ、あふれ分は省略記号にする（サイドバーの truncate と同じ見え方に揃える） */
+            style={{ color: mainText, width: "min(46vw, 420px)", textOverflow: "ellipsis" }}
+            title={project.name || "案件名（クリックで編集）"}
           />
           {/* カテゴリ（チャンネル）チップはヘッダーから撤去（2026-07-23 AK指示）。変更は左の案件ツリー側で行う */}
           {/* Googleアカウント（チャンネル名の右横） */}
