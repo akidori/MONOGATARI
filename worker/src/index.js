@@ -29,6 +29,24 @@ const INLINE_OK = /^(video\/|audio\/|image\/(?!svg)|application\/pdf$)/i;
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...CORS } });
 
+// 2026-08-12 最小修正（Studio OS統合の実装前レポートOPEN_QUESTIONS.md Q5で発見・AK承認）。
+// GET /api/snap/{id} は管理者以外（rtok共有・AI用JSON共有・grace読み取り）にも project を丸ごと返しており、
+// Story Spineの内部オーバーライド・内部クライアントメモ・Flip-LAB内部マニュアル本文が
+// share.htmlが単に描画していないだけで無フィルタのまま漏れていた。
+// ここでは「絶対にクライアントへ見せてはいけない」と指示書で名指しされた最小限のフィールドだけを
+// 除外する（安全側の最小修正。hearing/plans等の共有前提で見せているデータは対象外＝挙動を変えない）。
+function redactForNonAdmin(snap) {
+  if (!snap || !snap.project) return snap;
+  const out = JSON.parse(JSON.stringify(snap)); // 直前のStream自己治癒でputした元snapは触らない
+  const p = out.project;
+  if (p.manualsGlobal !== undefined) delete p.manualsGlobal;
+  if (p.meta && p.meta.note !== undefined) delete p.meta.note;
+  if (Array.isArray(p.rows)) {
+    for (const row of p.rows) { if (row && row.spine !== undefined) delete row.spine; }
+  }
+  return out;
+}
+
 const lc = (s) => (s || "").toString().trim().toLowerCase();
 const now = () => new Date().toISOString();
 const rid = (n = 8) => {
@@ -701,10 +719,17 @@ ${qList}
       // GET /api/snap/{id}?r=<rtok>
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "snap" && parts[2] && !parts[3]) {
         const rtok = await env.SNAPS.get("rtok:" + parts[2]);
+        const tParam = url.searchParams.get("token") || "";
+        let isAdmin = false;
         if (rtok) { // rtok有り=新方式snap→ ?r= 必須（管理token所持のAK本人も可）。rtok無し=旧snapはgraceで従来通り読める。
-          const r = url.searchParams.get("r") || "", t = url.searchParams.get("token") || "";
-          const admin = t ? await env.SNAPS.get("tok:" + parts[2]) : null;
-          if (r !== rtok && !(admin && t === admin)) return json({ error: "unauthorized", auth_required: true }, 401);
+          const r = url.searchParams.get("r") || "";
+          const admin = tParam ? await env.SNAPS.get("tok:" + parts[2]) : null;
+          isAdmin = !!(admin && tParam === admin);
+          if (r !== rtok && !isAdmin) return json({ error: "unauthorized", auth_required: true }, 401);
+        } else if (tParam) {
+          // 旧snap（rtok未発行）でも token= が渡されたら管理者判定だけは行う（内部データを見せてよいか判定するため）。
+          const admin = await env.SNAPS.get("tok:" + parts[2]);
+          isAdmin = !!(admin && tParam === admin);
         }
         const snap = await env.SNAPS.get("snap:" + parts[2], "json");
         if (!snap) return json({ error: "not found" }, 404);
@@ -734,7 +759,7 @@ ${qList}
             if (changed) await env.SNAPS.put("snap:" + parts[2], JSON.stringify(snap));
           }
         } catch (e) {}
-        return json(snap);
+        return json(isAdmin ? snap : redactForNonAdmin(snap));
       }
 
       // GET /api/snap/{id}/comments

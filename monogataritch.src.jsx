@@ -9,11 +9,11 @@ import dagre from "dagre";
    ============================================================ */
 
 const SECTION_TYPES = {
-  "インサート": { full: "インサート（3~5秒）",   target: 5,   color: "#71717A", bg: "#F0F0F2" },
-  "ブリッジ":   { full: "ブリッジ（5~10秒）",    target: 10,  color: "#0D9488", bg: "#E0F2EF" },
-  "VLOG":      { full: "VLOG（15~30秒）",       target: 30,  color: "#D97706", bg: "#FCF0DC" },
-  "解説系":     { full: "解説系（30秒~1分）",    target: 60,  color: "#2563EB", bg: "#E3EBFC" },
-  "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#DC2645", bg: "#FBE5EA" },
+  "インサート": { full: "インサート（3~5秒）",   target: 5,   color: "#71717A", bg: "#FFFFFF", borderColor: "#E4E4E7" },
+  "ブリッジ":   { full: "ブリッジ（5~10秒）",    target: 10,  color: "#0D9488", bg: "#FFFFFF", borderColor: "#CCEDE9" },
+  "VLOG":      { full: "VLOG（15~30秒）",       target: 30,  color: "#D97706", bg: "#FFFFFF", borderColor: "#FCE8C7" },
+  "解説系":     { full: "解説系（30秒~1分）",    target: 60,  color: "#2563EB", bg: "#FFFFFF", borderColor: "#D5E1F7" },
+  "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#DC2645", bg: "#FFFFFF", borderColor: "#F7D1DB" },
 };
 const TYPE_KEYS = Object.keys(SECTION_TYPES);
 
@@ -6333,7 +6333,7 @@ export default function App() {
           {newMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setNewMenu(false)} />
-              <div className="mg-pop absolute left-3 right-3 top-full mt-1 z-50 bg-[#1f242c] border border-white/15 rounded-xl shadow-2xl overflow-hidden" style={{ transformOrigin: "top left" }}>
+              <div className="mg-pop absolute left-3 right-3 top-full mt-1 z-50 bg-white border border-stone-200 rounded-xl shadow-2xl overflow-hidden" style={{ transformOrigin: "top left" }}>
                 <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-white/40">どのタイプの台本？</div>
                 <button onClick={() => createProject(true, DEFAULT_CHANNEL, "documentary")} className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-start gap-2">
                   <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-white/60" />
@@ -7523,8 +7523,8 @@ export default function App() {
                 const sceneDone = !!r.done;
                 return (
                   <div key={r.id} id={"row-" + r.id}
-                    className="rounded-xl border border-stone-200 overflow-hidden mb-2"
-                    style={{ borderLeft: "3px solid " + t.color, background: sceneDone ? "#F5F5F4" : t.color + "0c", ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
+                    className="rounded-xl border overflow-hidden mb-2"
+                    style={{ borderColor: t.borderColor || "#E4E4E7", borderLeft: "3px solid " + t.color, background: sceneDone ? "#F5F5F4" : "#FFFFFF", ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
                     {/* メタ：撮影完了・番号・時刻・所要 */}
                     <div className="flex items-center gap-2 px-3 pt-2">
                       <button
