@@ -2629,6 +2629,36 @@ export default function App() {
       try { const r = await window.storage.get(STORE_INDEX); idx = r && r.value ? JSON.parse(r.value) : null; }
       catch (e) { if (e && e.code === 401) throw e; }
 
+      // Studio OS連携: 新規案件の自動作成（?new=1&title=...&token=...）。既存indexの有無を問わず
+      // 最優先で処理する（indexが空＝初回起動のブラウザでも動く必要があるため、この後の
+      // 「indexが無ければ初期案件を作る」分岐より前に置く）。
+      // Studio OS側に未紐付けのDeliverableがある時、Studio OSがこのURLを新規タブで開く。
+      // ここで案件を作成し、Studio OSへ新規案件idを一方向Webhookで報告する（Studio OSはこの結果を
+      // 受けてdeliverables.mgProjectIdを更新するだけ・ものがたりっち側の認証を肩代わりする経路は
+      // 作らない設計）。報告後はURLを?case=<新id>へ置き換え、以後は通常の?case=経路で開ける。
+      let urlNew = null;
+      try { urlNew = new URLSearchParams(location.search).get("new"); } catch (e) {}
+      if (urlNew === "1") {
+        const sp = new URLSearchParams(location.search);
+        const title = (sp.get("title") || "新規案件").slice(0, 200);
+        const token = sp.get("token") || "";
+        const data = newProjectData(title);
+        try {
+          await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
+          const newIdx = [...(idx || []).map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL })), { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
+          setIndex(newIdx); await persistIndex(newIdx);
+          setActiveId(data.id); setProject(data); setTab("overview"); setView("editor"); setLoaded(true);
+          try { history.replaceState(null, "", location.pathname + "?case=" + encodeURIComponent(data.id)); } catch (e) {}
+          if (token) {
+            fetch("https://studio-os-5dm.pages.dev/api/v1/public/mg-link", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ token, mgProjectId: data.id }),
+            }).catch((e) => console.error("Studio OSへの紐付け報告に失敗", e));
+          }
+        } catch (e) { showToast("案件を作成できませんでした（通信）。回線を確認してもう一度お試しください"); setLoaded(true); }
+        return;
+      }
+
       if (!idx || !idx.length) {
         // 旧単一データがあれば1案件として移行
         let migrated = null;
