@@ -1078,6 +1078,40 @@ ${qList}
         return json({ ready: !!v.readyToStream, pct: st.pctComplete || null, state: st.state || null, err: st.errorReasonText || st.errorReasonCode || null, hls: v.playback && v.playback.hls, thumbnail: v.thumbnail, duration: v.duration, provider: "user-cloudflare" });
       }
 
+      // ===== Studio OS連携: 公開サマリーAPI（Q10 Phase4・2026-08-15）=====
+      // GET /api/public/summary/{projId} — 認証不要。Studio OSが構成台本タブ表示時に都度取得する
+      // 読み取り専用サマリー。安全な集計値のみ返し、本文・タイトル・サムネ文言・取材メモ等の
+      // クリエイティブ内容は一切含めない（redactForNonAdminと同じ「絶対に漏らさない」原則）。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "public" && parts[2] === "summary" && parts[3]) {
+        const projId = parts[3];
+        const row = await env.DB.prepare(
+          "SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1"
+        ).bind(projId).first();
+        if (!row) return json({ error: "not found" }, 404);
+        let p = null;
+        try { p = JSON.parse(row.value); } catch (e) {}
+        if (!p) return json({ error: "invalid project data" }, 500);
+        // フロント（monogataritch.src.jsx）のTOTAL尺(totalEst)と同じ式をそのまま踏襲する
+        // （台本にscriptが入っていれば文字数÷読み上げ速度、無ければ種別の目安秒数にフォールバック）。
+        // 独自の簡易式を作らず、実際に画面へ表示されている数値と一致させる。
+        const SECTION_TARGET_SEC = { "インサート": 5, "ブリッジ": 10, "VLOG": 30, "解説系": 60, "訴求": 180 };
+        const rate = (p && p.rate) ? p.rate : 5;
+        const countChars = (s) => (s || "").replace(/\s/g, "").length;
+        const sceneRows = (Array.isArray(p.rows) ? p.rows : []).filter((r) => r && r.kind === "scene");
+        const totalDurationSec = sceneRows.reduce((sum, r) => {
+          const target = (r.sec != null && r.sec !== "") ? Number(r.sec) : (SECTION_TARGET_SEC[r.type] || 0);
+          const chars = countChars(r.script);
+          const d = chars > 0 ? chars / rate : target;
+          return sum + (Number.isFinite(d) ? d : 0);
+        }, 0);
+        return json({
+          sceneCount: sceneRows.length,
+          totalDurationSec: Math.round(totalDurationSec),
+          status: p.status || null,
+          updatedAt: p.updatedAt || null,
+        });
+      }
+
       // ===== ユーザー別ストレージ（要ログイン）。保存先は D1 birdflip_ledger.mg_kv =====
       // POST /api/kv/{get|set|delete|list}
       // 旧実装は KV SNAPS を u:<sub>: で間借りしていたが、KV無料枠の put 1,000回/日を
