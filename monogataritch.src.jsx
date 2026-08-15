@@ -2700,6 +2700,7 @@ export default function App() {
   const [importTarget, setImportTarget] = useState("new"); // "new" = 新規案件 / "current" = 開いている案件を更新
   const [importFileName, setImportFileName] = useState("");
   const importFileRef = useRef(null);
+  const [importValidation, setImportValidation] = useState(null); // { isValid: bool, error: string, format: 'json' | 'text' | null }
   const [sidebarOpen, setSidebarOpen] = useState(() => { try { return window.self === window.top; } catch (e) { return true; } });  // Fボード埋め込み時は初期閉じ（左ツリーとダブらせない）
   const [user, setUser] = useState(null);                   // ログイン中のGoogleユーザー（null=未ログイン）
   const [showAccount, setShowAccount] = useState(false);
@@ -2874,6 +2875,44 @@ export default function App() {
     link.href = "https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap";
     document.head.appendChild(link);
   }, []);
+
+  /* インポートテキストのリアルタイムバリデーション */
+  useEffect(() => {
+    const text = fullImportText.trim();
+    if (!text) {
+      setImportValidation(null);
+      return;
+    }
+    // JSONとして試す
+    if (text.startsWith("{") || text.startsWith("[")) {
+      try {
+        JSON.parse(text);
+        setImportValidation({ isValid: true, format: "json", error: null });
+        return;
+      } catch (e) {
+        setImportValidation({ isValid: false, format: "json", error: `JSON形式エラー: ${e.message}` });
+        return;
+      }
+    }
+    // TSV/プレーンテキスト（自動判定で処理可能）
+    setImportValidation({ isValid: true, format: "text", error: null });
+  }, [fullImportText]);
+
+  /* インポートダイアログのドラッグ&ドロップ対応 */
+  const handleImportDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  };
+  const handleImportDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = e.dataTransfer && e.dataTransfer.files;
+    if (files && files.length > 0) {
+      importFileRef.current = { files };
+      onPickImportFile({ target: { files } });
+    }
+  };
 
   /* 開いている案件＋タブを記憶（次回ロードで復元）。ホームに居る時は消す＝ホームでの⌘Rはホーム維持 */
   useEffect(() => {
@@ -8516,14 +8555,14 @@ export default function App() {
             </div>
             <div className="p-5">
               {/* 取込先の選択：新規案件 / 開いている案件を更新 */}
-              <div className="flex items-center gap-1 p-1 mb-3 rounded-xl bg-stone-100 text-[12px] font-bold">
+              <div className="flex items-center gap-1.5 p-1.5 mb-3 rounded-xl bg-stone-100 text-[12px] font-bold">
                 <button onClick={() => setImportTarget("new")}
-                  className={"flex-1 px-3 py-2 rounded-lg transition inline-flex items-center justify-center gap-1 " + (importTarget === "new" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
-                  <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件として取り込む
+                  className={"flex-1 px-4 py-2.5 rounded-lg transition inline-flex items-center justify-center gap-2 " + (importTarget === "new" ? "bg-white shadow-md text-stone-800" : "text-stone-400 hover:text-stone-600 hover:bg-stone-50/50")}>
+                  <Icon name="plus" className="w-4 h-4" /> 新規案件として取り込む
                 </button>
                 <button onClick={() => setImportTarget("current")} disabled={!project}
-                  className={"flex-1 px-3 py-2 rounded-lg transition disabled:opacity-40 inline-flex items-center justify-center gap-1 " + (importTarget === "current" ? "bg-white shadow text-stone-800" : "text-stone-400 hover:text-stone-600")}>
-                  <Icon name="refresh" className="w-3.5 h-3.5" /> この案件を更新{project ? "（" + project.name + "）" : ""}
+                  className={"flex-1 px-4 py-2.5 rounded-lg transition disabled:opacity-40 inline-flex items-center justify-center gap-2 " + (importTarget === "current" ? "bg-white shadow-md text-stone-800" : "text-stone-400 hover:text-stone-600 hover:bg-stone-50/50")}>
+                  <Icon name="refresh" className="w-4 h-4" /> この案件を更新{project ? "（" + project.name + "）" : ""}
                 </button>
               </div>
               <p className="text-[12px] text-stone-500 mb-2">
@@ -8540,17 +8579,48 @@ export default function App() {
                 </button>
                 <span className="text-[11px] text-stone-400">TXT・CSV・Excel(.xlsx) 対応{importFileName ? "　／　" : ""}<span className="font-bold text-stone-500">{importFileName}</span></span>
               </div>
-              <textarea
-                value={fullImportText}
-                onChange={(e) => setFullImportText(e.target.value)}
-                placeholder={'{\n  "name": "永田晃聖さん｜オリックス不動産",\n  "channel": "オリックス不動産",\n  "meta": { "highlight": "…" },\n  "rows": [\n    { "kind": "location", "label": "出社", "time": "8:50" },\n    { "kind": "scene", "type": "訴求", "sec": 180, "label": "自己紹介", "script": "◼ …" }\n  ]\n}'}
-                className="w-full h-72 text-[12px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
-                style={{ fontFamily: mono }}
-              />
+              <div
+                onDragOver={handleImportDragOver}
+                onDrop={handleImportDrop}
+                className="relative mb-2 rounded-xl border-2 border-dashed border-stone-300 transition hover:border-stone-400 hover:bg-stone-50/30"
+              >
+                <textarea
+                  value={fullImportText}
+                  onChange={(e) => setFullImportText(e.target.value)}
+                  placeholder={'ここにファイルをドラッグ＆ドロップするか、JSON/TSV/テキストを貼り付けてください\n\n例）\n{\n  "name": "永田晃聖さん｜オリックス不動産",\n  "channel": "オリックス不動産",\n  "meta": { "highlight": "…" },\n  "rows": [\n    { "kind": "location", "label": "出社", "time": "8:50" },\n    { "kind": "scene", "type": "訴求", "sec": 180, "label": "自己紹介", "script": "◼ …" }\n  ]\n}'}
+                  className={"w-full h-72 text-[12px] leading-relaxed border-0 rounded-xl p-3 focus:outline-none resize-y " + (importValidation && importValidation.error ? "bg-red-50" : "bg-stone-50")}
+                  style={{ fontFamily: mono }}
+                />
+                <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/5 pointer-events-none opacity-0 hover:opacity-100 transition">
+                  <div className="text-center text-stone-500">
+                    <Icon name="fileAdd" className="w-8 h-8 mx-auto mb-1" />
+                    <div className="text-[12px] font-bold">ファイルをドロップ</div>
+                  </div>
+                </div>
+              </div>
+              {/* バリデーション結果の表示 */}
+              {fullImportText.trim() && importValidation && (
+                <div className={"mt-2 text-[12px] px-3 py-2 rounded-lg flex items-start gap-2 " + (importValidation.error ? "bg-red-50 text-red-800 border border-red-100" : "bg-emerald-50 text-emerald-800 border border-emerald-100")}>
+                  <Icon name={importValidation.error ? "warn" : "checkCircle"} className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    {importValidation.error ? (
+                      <>
+                        <div className="font-bold mb-1">❌ {importValidation.error}</div>
+                        <div className="text-[11px] opacity-75">JSON形式で提供する場合は、`{` で始まり `}` で終わる有効なJSONである必要があります。または、プレーンテキスト・TSV形式で貼り付けると自動整形します。</div>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold">✓ 準備完了</span>
+                        <span className="text-[11px] opacity-75">({importValidation.format === "json" ? "JSON形式" : "テキスト形式"})</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="mt-3 flex justify-end items-center gap-2">
                 <button onClick={() => setShowFullImport(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 mr-auto">キャンセル</button>
-                <button onClick={() => smartImport()} disabled={!fullImportText.trim() || aiParsing}
-                  title="中身を自動判定して取り込む（生原稿はAI整形・JSON/台本コピーはそのまま）"
+                <button onClick={() => smartImport()} disabled={!fullImportText.trim() || aiParsing || (importValidation && importValidation.error)}
+                  title={importValidation && importValidation.error ? "JSON形式を修正してください" : "中身を自動判定して取り込む（生原稿はAI整形・JSON/台本コピーはそのまま）"}
                   className="text-xs font-bold px-5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1"
                   style={{ background: theme.accent, color: accentText }}>
                   {aiParsing ? "取り込み中…" : <><Icon name="sparkle" className="w-3.5 h-3.5" />{importTarget === "current" ? "取り込んで更新" : "取り込む"}</>}
