@@ -1,4 +1,7 @@
-import React, { useState, useEffect, useRef, useMemo, startTransition } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback, startTransition } from "react";
+import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, useReactFlow, BackgroundVariant, Handle, Position } from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import dagre from "dagre";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -810,6 +813,154 @@ const spineBlocks = (rows) => {
   return blocks;
 };
 const spineStatus = (b) => (b.scenes === 0 || b.filled === 0) ? "gap" : (b.filled === b.scenes ? "done" : "part");
+
+/* ============================================================
+   マインドマップ（Studio OS Phase 1実装の移植、2026-08-15）
+   構成台本タブの「物語の背骨」帯と同じデータ（deriveSpineBeats/phaseSeq/STORY_FRAMEWORKS）を
+   使い、Section=スパインの各ステップ、Scene=そのステップに属するシーン、として木構造で可視化する。
+   表示専用（このReact側で新たにビジネスロジックを実装しない。フィルタ・尺計算は既存関数を再利用）。
+   ============================================================ */
+const MM_SECTION_ACCENTS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EC4899", "#06B6D4", "#DC2645", "#71717A"];
+
+// project.rows + 選択中のフレームワークから、ステップ単位のsections配列を組み立てる。
+// シーンの尺は既存のtotalEst計算式（文字数÷読み上げ速度、無ければ種別の目安秒数）をそのまま使う
+// （worker/src/index.jsのGET /api/public/summary/:projIdへ移植済みのものと同じ式）。
+function buildMindmapSections(rows, spineFw, rate) {
+  const beats = deriveSpineBeats(rows);
+  const blocks = spineBlocks(rows);
+  const fw = STORY_FRAMEWORKS[spineFw] || STORY_FRAMEWORKS.spine;
+  const K = fw.steps.length;
+  const overrides = {};
+  (rows || []).forEach((r) => { if (r.kind === "location" && r.spine && r.spine[spineFw] != null) overrides[r.id] = r.spine[spineFw]; });
+  const phases = phaseSeq(beats, K, spineFw, overrides);
+  const sections = fw.steps.map((step, i) => ({ id: "phase" + i, label: step.phrase, rows: [] }));
+  let sceneNo = 0;
+  const r = rate || 5;
+  beats.forEach((beat, i) => {
+    const phaseIdx = phases[i] ?? 0;
+    const block = blocks[i];
+    (block ? block.rows : []).forEach((row) => {
+      if (row.kind !== "scene") return;
+      sceneNo++;
+      const target = (row.sec != null && row.sec !== "") ? Number(row.sec) : ((SECTION_TYPES[row.type] || SECTION_TYPES["解説系"]).target);
+      const chars = countChars(row.script);
+      const durSec = chars > 0 ? chars / r : target;
+      sections[phaseIdx].rows.push({
+        id: row.id, label: sceneGist(row) || "（無題）", kind: "scene",
+        sceneType: row.type || "解説系", sceneNo, durSec,
+      });
+    });
+  });
+  const filled = sections.filter((s) => s.rows.length > 0);
+  const totalScenes = sceneNo;
+  const totalEstSec = filled.reduce((a, s) => a + s.rows.reduce((aa, rr) => aa + rr.durSec, 0), 0);
+  return { sections: filled, totalScenes, totalEstSec };
+}
+
+function mmContentSignature({ totalScenes, sections }) {
+  return totalScenes + "|" + sections.map((s) => s.id + ":" + s.label + ":" + s.rows.map((rr) => rr.id + "." + rr.label + "." + rr.sceneType + "." + Math.round(rr.durSec)).join(",")).join("||");
+}
+
+const mmFmtSec = (sec) => { const s = Math.round(sec || 0); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
+
+function MmProjectNode({ data }) {
+  return (
+    <div className="rounded-xl px-3 py-2.5 min-w-[150px]" style={{ background: "#13233a", color: "#fff" }}>
+      <div className="text-[11.5px] font-bold line-clamp-2">{data.title || "（無題）"}</div>
+      <div className="text-[9px] mt-1" style={{ color: "rgba(255,255,255,.7)" }}>総尺 {mmFmtSec(data.totalEstSec)} ・ シーン数 {data.totalScenes}</div>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+function MmSectionNode({ data }) {
+  return (
+    <div className="rounded-xl px-3 py-2.5 bg-white min-w-[140px] border" style={{ borderColor: "#dde3ec", borderLeftWidth: 3, borderLeftColor: data.accent }}>
+      <Handle type="target" position={Position.Left} />
+      <div className="text-[11.5px] font-bold text-stone-700 line-clamp-2">{data.label || "未分類"}</div>
+      <div className="text-[9px] text-stone-400 mt-1">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
+      <Handle type="source" position={Position.Right} />
+    </div>
+  );
+}
+function MmSceneNode({ data }) {
+  return (
+    <div className="rounded-xl px-3 py-2.5 bg-white cursor-pointer border transition-colors min-w-[170px] max-w-[240px] hover:border-stone-400"
+      style={{ borderColor: "#dde3ec" }} onClick={() => data.onNodeClick && data.onNodeClick(data.id)}>
+      <Handle type="target" position={Position.Left} />
+      <div className="text-[11.5px] font-bold text-stone-700 line-clamp-2 flex items-center gap-1">
+        {data.sceneNo != null && <span className="text-[9px] font-bold text-stone-400 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
+        <span>{data.label}</span>
+      </div>
+      <div className="text-[9px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
+    </div>
+  );
+}
+const MM_NODE_TYPES = { mmProjectNode: MmProjectNode, mmSectionNode: MmSectionNode, mmSceneNode: MmSceneNode };
+
+function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) {
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: "LR", nodesep: 20, ranksep: 90 });
+  g.setDefaultEdgeLabel(() => ({}));
+  const nodes = [], edges = [];
+  const ROOT_ID = "project";
+  const rootDim = { width: 190, height: 76 };
+  g.setNode(ROOT_ID, rootDim);
+  nodes.push({ id: ROOT_ID, type: "mmProjectNode", position: { x: 0, y: 0 }, width: rootDim.width, height: rootDim.height, data: { title: deliverableTitle, totalEstSec, totalScenes } });
+  sections.forEach((sec, i) => {
+    const secId = "section:" + sec.id;
+    const secDim = { width: 168, height: 64 };
+    g.setNode(secId, secDim);
+    g.setEdge(ROOT_ID, secId);
+    nodes.push({ id: secId, type: "mmSectionNode", position: { x: 0, y: 0 }, width: secDim.width, height: secDim.height, data: { ...sec, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
+    edges.push({ id: "e-" + ROOT_ID + "-" + secId, source: ROOT_ID, target: secId });
+    sec.rows.forEach((row) => {
+      const rowId = "row:" + row.id;
+      const rowDim = { width: 220, height: 78 };
+      g.setNode(rowId, rowDim);
+      g.setEdge(secId, rowId);
+      nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
+      edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId });
+    });
+  });
+  dagre.layout(g);
+  nodes.forEach((n) => { const pos = g.node(n.id); if (pos) n.position = { x: pos.x - pos.width / 2, y: pos.y - pos.height / 2 }; });
+  return { nodes, edges };
+}
+
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick }) {
+  const { fitView } = useReactFlow();
+  const prevSigRef = useRef(null);
+  const signature = useMemo(() => mmContentSignature({ totalScenes, sections }), [totalScenes, sections]);
+  const { nodes, edges } = useMemo(() => {
+    const graph = mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections });
+    graph.nodes.forEach((n) => { if (n.type === "mmSceneNode") n.data.onNodeClick = onNodeClick; });
+    return graph;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signature]);
+  useEffect(() => {
+    if (prevSigRef.current !== signature) {
+      prevSigRef.current = signature;
+      requestAnimationFrame(() => fitView({ duration: 300, padding: 0.15 }));
+    }
+  }, [signature, fitView]);
+  return (
+    <ReactFlow nodes={nodes} edges={edges} nodeTypes={MM_NODE_TYPES} fitView minZoom={0.25} maxZoom={2.5}
+      proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "bezier", style: { strokeWidth: 1.5, opacity: 0.8 } }}>
+      <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
+      <Controls showInteractive={false} position="top-left" />
+      <MiniMap pannable zoomable position="top-right" style={{ background: "#fff" }} />
+    </ReactFlow>
+  );
+}
+function MindmapView(props) {
+  const hasContent = (props.sections || []).some((s) => s.rows.length > 0);
+  if (!hasContent) return <div className="text-[12px] text-stone-400 py-2">まだシーンがありません（台本にシーンを追加すると表示されます）</div>;
+  return (
+    <div style={{ height: 480 }}>
+      <ReactFlowProvider><MmCanvas {...props} /></ReactFlowProvider>
+    </div>
+  );
+}
 
 const textOn = (hex) => {
   try {
@@ -2504,10 +2655,17 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
   const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
+  // マインドマップ（Studio OS Phase 1実装の移植・2026-08-15）。Studio OS内では構成台本タブの
+  // 独自編集UI廃止（Q10）に伴い表示先を失い退役していたが、AK「理想はものがたりっち内に入れて
+  // アプデしたい」の方針により、こちらの構成台本タブへ「物語の背骨」の下の折りたたみセクションとして
+  // 移植する。データは既存のdeliverableSpineBeats/phaseSeq/STORY_FRAMEWORKSをそのまま使い、
+  // マインドマップ専用のコピーは持たない（表示専用、Business LogicはReact側に新規実装しない）。
+  const [mmOpen, setMmOpen] = useState(() => { try { return localStorage.getItem("mg:mmOpen") === "1"; } catch (e) { return false; } });
   const [prepView, setPrepView] = useState("hearing"); // 取材メモタブ内の切替：聞き取りシート / 質問ウィザード
   const [hearingTocActive, setHearingTocActive] = useState(null);
   const [collapsedFolders, setCollapsedFolders] = useState({}); // 素材管理：フォルダ(シーン)ごとの開閉
   const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
+  const toggleMm = () => setMmOpen((v) => { const nv = !v; try { localStorage.setItem("mg:mmOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
   const toggleHighlight = () => setHighlightCollapsed((v) => { const nv = !v; try { localStorage.setItem("mg:hlCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
   // PC縦タブレールの sticky 追従用にヘッダー実高さを測る（flex-wrapで高さ可変のため固定値にしない）
   const headerRef = useRef(null);
@@ -7019,6 +7177,26 @@ export default function App() {
                           </div>
                         </div>
                       )}
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
+
+            {/* マインドマップ（Studio OS Phase 1実装の移植、2026-08-15）: 物語の背骨と同じデータを
+                木構造で可視化。Pan/Zoom/MiniMap、ノードクリックで該当シーンへスクロール。 */}
+            {(() => {
+              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5);
+              return (
+                <section className={cardCls + " mb-4"}>
+                  {cardHead("マインドマップ", (
+                    <span className="w-6 h-6 shrink-0 grid place-items-center text-stone-400" title={mmOpen ? "畳む" : "開く"}>
+                      <span className="text-[10px] transition-transform inline-block" style={{ transform: mmOpen ? "none" : "rotate(-90deg)" }}>▾</span>
+                    </span>
+                  ), toggleMm)}
+                  {mmOpen && (
+                    <div className="px-3 sm:px-4 py-3">
+                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} />
                     </div>
                   )}
                 </section>
