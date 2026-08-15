@@ -1722,10 +1722,17 @@ function QaEvidencePanel({ projId, accent, accentText }) {
       const r = await authFetch("/api/qa-evidence/candidates", { projId });
       const cs = r.candidates || [];
       setCandidates(cs);
-      setChecked(Object.fromEntries(cs.map((c) => [c.commentId, true])));
+      // 2026-08-15 QA中に発見: 全件デフォルト選択＋一覧がスクロール式だと、見えていない項目まで
+      // まとめて確定してしまう事故が起きた（実案件で47件を誤確定）。「人間が確認してから記録する」
+      // というPhase Aの設計意図にも反するため、初期状態は何も選択しない（明示的な選択を必須にする）。
+      setChecked({});
     } catch (e) { setMsg("取得できませんでした：" + e.message); }
     finally { setLoading(false); }
   };
+
+  const selectedCount = (candidates || []).filter((c) => checked[c.commentId]).length;
+  const selectAll = () => setChecked(Object.fromEntries((candidates || []).map((c) => [c.commentId, true])));
+  const selectNone = () => setChecked({});
 
   const confirm = async () => {
     const items = (candidates || []).filter((c) => checked[c.commentId]);
@@ -1762,6 +1769,13 @@ function QaEvidencePanel({ projId, accent, accentText }) {
             <p className="text-[11px] text-stone-400">読み込み中…</p>
           ) : (candidates && candidates.length) ? (
             <>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] text-stone-400">対応完了・未確定 {candidates.length}件（記録するものだけ選んでください）</span>
+                <span className="flex items-center gap-2">
+                  <button onClick={selectAll} className="text-[10px] font-bold text-stone-500 underline">全選択</button>
+                  <button onClick={selectNone} className="text-[10px] font-bold text-stone-500 underline">全解除</button>
+                </span>
+              </div>
               <div className="space-y-1.5 max-h-64 overflow-y-auto">
                 {candidates.map((c) => (
                   <label key={c.commentId} className="flex items-start gap-2 text-[11px] p-1.5 rounded-lg hover:bg-stone-50 cursor-pointer">
@@ -1776,9 +1790,9 @@ function QaEvidencePanel({ projId, accent, accentText }) {
                 ))}
               </div>
               <div className="flex items-center gap-2 mt-2">
-                <button onClick={confirm} disabled={loading}
+                <button onClick={confirm} disabled={loading || !selectedCount}
                   className="h-7 px-3 rounded-lg text-[11px] font-bold text-white disabled:opacity-50" style={{ background: accent, color: accentText }}>
-                  {loading ? "保存中…" : "選択した項目を証跡として確定"}
+                  {loading ? "保存中…" : `選択した${selectedCount}件を証跡として確定`}
                 </button>
                 <button onClick={() => setOpen(false)} className="h-7 px-3 rounded-lg text-[11px] font-bold text-stone-500 border border-stone-200">閉じる</button>
               </div>

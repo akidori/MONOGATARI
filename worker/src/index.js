@@ -1078,6 +1078,22 @@ ${qList}
         return json({ ready: !!v.readyToStream, pct: st.pctComplete || null, state: st.state || null, err: st.errorReasonText || st.errorReasonCode || null, hls: v.playback && v.playback.hls, thumbnail: v.thumbnail, duration: v.duration, provider: "user-cloudflare" });
       }
 
+      // 動画確認のコメントは project.review.comments ではなく、案件＋各企画のスナップ単位で
+      // env.SNAPS（cmt:{snapId}）に保存されている（フロント側 fetchComments() と同じ集約ロジックを
+      // ここでも踏襲。2026-08-15 Q7改定Phase A実装中に発見：project.review.comments は常に空で、
+      // これを参照していたPhase4/6のcommentCount/openCommentCountも常に0を返す不具合があった）。
+      const collectSnapComments = async (p) => {
+        const snapIds = [];
+        if (p && p.shareId) snapIds.push(p.shareId);
+        (Array.isArray(p && p.plans) ? p.plans : []).forEach((pl) => { if (pl && pl.shareId) snapIds.push(pl.shareId); });
+        const seen = new Set(), all = [];
+        for (const sid of snapIds) {
+          const list = (await env.SNAPS.get("cmt:" + sid, "json")) || [];
+          for (const c of list) { if (c && !seen.has(c.id)) { seen.add(c.id); all.push(c); } }
+        }
+        return all;
+      };
+
       // ===== Studio OS連携: 公開サマリーAPI（Q10 Phase4・2026-08-15）=====
       // GET /api/public/summary/{projId} — 認証不要。Studio OSが構成台本タブ表示時に都度取得する
       // 読み取り専用サマリー。安全な集計値のみ返し、本文・タイトル・サムネ文言・取材メモ等の
@@ -1114,7 +1130,7 @@ ${qList}
 
         // ===== 動画確認サマリー =====
         const reviewVersions = Array.isArray(p.review && p.review.versions) ? p.review.versions : [];
-        const reviewComments = Array.isArray(p.review && p.review.comments) ? p.review.comments : [];
+        const reviewComments = await collectSnapComments(p);
         const reviewOpenCommentCount = reviewComments.filter((c) => (c && c.status ? c.status : "未対応") !== "完了").length;
 
         // ===== 納品サマリー =====
@@ -1164,7 +1180,7 @@ ${qList}
         if (!row) return json({ error: "not found" }, 404);
         let p = null;
         try { p = JSON.parse(row.value); } catch (e) {}
-        const comments = (p && p.review && Array.isArray(p.review.comments)) ? p.review.comments : [];
+        const comments = await collectSnapComments(p);
         const resolved = comments.filter((c) => c && c.status === "完了" && (c.text || "").trim());
         const { results: existing } = await env.DB.prepare(
           "SELECT comment_id FROM mg_qa_evidence WHERE proj_id=?"
