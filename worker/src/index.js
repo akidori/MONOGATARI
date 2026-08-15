@@ -1104,11 +1104,34 @@ ${qList}
           const d = chars > 0 ? chars / rate : target;
           return sum + (Number.isFinite(d) ? d : 0);
         }, 0);
+
+        // ===== 香盤表サマリー（Q10 Phase6・2026-08-15）=====
+        // rows中のkind==='location'行から集計。dayOf()はmonogataritch.src.jsxの同名関数と同じ規則
+        // （day未設定は1日目扱い）。
+        const dayOf = (r) => { const d = Number(r && r.day); return Number.isFinite(d) && d >= 1 ? Math.floor(d) : 1; };
+        const locationRows = (Array.isArray(p.rows) ? p.rows : []).filter((r) => r && r.kind === "location");
+        const shootDays = new Set(locationRows.map(dayOf)).size;
+
+        // ===== 動画確認サマリー =====
+        const reviewVersions = Array.isArray(p.review && p.review.versions) ? p.review.versions : [];
+        const reviewComments = Array.isArray(p.review && p.review.comments) ? p.review.comments : [];
+        const reviewOpenCommentCount = reviewComments.filter((c) => (c && c.status ? c.status : "未対応") !== "完了").length;
+
+        // ===== 納品サマリー =====
+        // フロント（deliverタブ）のチェックリスト構成（monogataritch.src.jsx `dv`配列）と同じキー・判定式。
+        const m = p.meta || {};
+        const deliverThumbFilled = (Array.isArray(m.deliverThumbImages) && m.deliverThumbImages.length > 0) || !!m.deliverThumbImage;
+        const DELIVER_TEXT_KEYS = ["deliverVideoUrl", "deliverShorts", "deliverTitle", "deliverDescription", "deliverHashtags", "deliverChapters"];
+        const deliverDoneCount = DELIVER_TEXT_KEYS.filter((k) => !!(m[k] || "").toString().trim()).length + (deliverThumbFilled ? 1 : 0);
+
         return json({
           sceneCount: sceneRows.length,
           totalDurationSec: Math.round(totalDurationSec),
           status: p.status || null,
           updatedAt: p.updatedAt || null,
+          kouban: { locationCount: locationRows.length, doneCount: locationRows.filter((r) => !!r.done).length, shootDays },
+          review: { versionCount: reviewVersions.length, commentCount: reviewComments.length, openCommentCount: reviewOpenCommentCount },
+          deliver: { doneCount: deliverDoneCount, totalCount: DELIVER_TEXT_KEYS.length + 1 },
         });
       }
 

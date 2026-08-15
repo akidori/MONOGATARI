@@ -2704,7 +2704,17 @@ export default function App() {
         if (hitId) {
           const rr = await window.storage.get(STORE_PROJ(hitId));
           const data = rr && rr.value ? migrateProject(JSON.parse(rr.value)) : null;
-          if (data) { setActiveId(hitId); setProject(data); setView("editor"); setLoaded(true); return; }
+          if (data) {
+            setActiveId(hitId); setProject(data); setView("editor");
+            // Studio OS連携: ?tab=でタブ直接指定（香盤表/動画確認/納品等への1クリック遷移用）
+            // 不正値は下の「保存した選択ページの正規化」useEffectがoverviewへ補正するので、
+            // ここでは軽くホワイトリスト検証するのみ
+            const wantTab = new URLSearchParams(location.search).get("tab");
+            if (wantTab && ["overview", "plan", "hearing", "script", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
+              setTab(wantTab);
+            }
+            setLoaded(true); return;
+          }
         }
       }
       // 直前に開いていた案件＋タブを復元（⌘R/リロードでホームに戻さない）
