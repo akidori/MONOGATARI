@@ -1700,6 +1700,99 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent }) {
   );
 }
 
+/* Q&A分解機能（Q7改定 Phase A・2026-08-15）: 動画確認の完了済みコメントを証跡として記録するUI。
+   AIによる要約・パターン抽出はまだ無い（AK確認: 今回は証跡層のみ）。手動ボタン起点、resolved済みのみ対象。 */
+function QaEvidencePanel({ projId, accent, accentText }) {
+  const [open, setOpen] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+  const [candidates, setCandidates] = React.useState(null); // null=未取得
+  const [checked, setChecked] = React.useState({});
+  const [savedCount, setSavedCount] = React.useState(null);
+  const [msg, setMsg] = React.useState("");
+
+  const loadSavedCount = async () => {
+    try { const r = await authFetch("/api/qa-evidence/list", { projId }); setSavedCount((r.evidence || []).length); }
+    catch (e) {}
+  };
+  React.useEffect(() => { if (projId) loadSavedCount(); }, [projId]);
+
+  const openPanel = async () => {
+    setOpen(true); setLoading(true); setMsg("");
+    try {
+      const r = await authFetch("/api/qa-evidence/candidates", { projId });
+      const cs = r.candidates || [];
+      setCandidates(cs);
+      setChecked(Object.fromEntries(cs.map((c) => [c.commentId, true])));
+    } catch (e) { setMsg("取得できませんでした：" + e.message); }
+    finally { setLoading(false); }
+  };
+
+  const confirm = async () => {
+    const items = (candidates || []).filter((c) => checked[c.commentId]);
+    if (!items.length) { setMsg("選択されていません"); return; }
+    setLoading(true); setMsg("");
+    try {
+      await authFetch("/api/qa-evidence/confirm", { projId, items });
+      setMsg(items.length + "件を証跡として確定しました");
+      setCandidates((cs) => (cs || []).filter((c) => !checked[c.commentId]));
+      await loadSavedCount();
+    } catch (e) { setMsg("保存できませんでした：" + e.message); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="mt-4 rounded-2xl border border-stone-200 p-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <div className="text-[12px] font-bold text-stone-700">ナレッジ化（Q&A証跡）</div>
+          <p className="text-[11px] text-stone-400 mt-0.5">
+            対応完了のコメントをQ&A証跡として記録します（AI要約は無く、コメント本文と返信をそのまま記録）。
+            {savedCount != null && <span> 確定済み {savedCount}件</span>}
+          </p>
+        </div>
+        <button onClick={openPanel} disabled={loading}
+          className="h-8 px-3 rounded-lg text-[11px] font-bold text-white shadow disabled:opacity-50"
+          style={{ background: accent, color: accentText }}>
+          このレビューをナレッジ化
+        </button>
+      </div>
+      {open && (
+        <div className="mt-2.5 border-t border-stone-100 pt-2.5">
+          {loading && candidates == null ? (
+            <p className="text-[11px] text-stone-400">読み込み中…</p>
+          ) : (candidates && candidates.length) ? (
+            <>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto">
+                {candidates.map((c) => (
+                  <label key={c.commentId} className="flex items-start gap-2 text-[11px] p-1.5 rounded-lg hover:bg-stone-50 cursor-pointer">
+                    <input type="checkbox" className="mt-0.5" checked={!!checked[c.commentId]}
+                      onChange={(e) => setChecked((m) => ({ ...m, [c.commentId]: e.target.checked }))} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 inline-block mb-0.5">{c.category}</div>
+                      <div className="text-stone-700">Q: {c.question}</div>
+                      <div className="text-stone-400">A: {c.answer}</div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-2">
+                <button onClick={confirm} disabled={loading}
+                  className="h-7 px-3 rounded-lg text-[11px] font-bold text-white disabled:opacity-50" style={{ background: accent, color: accentText }}>
+                  {loading ? "保存中…" : "選択した項目を証跡として確定"}
+                </button>
+                <button onClick={() => setOpen(false)} className="h-7 px-3 rounded-lg text-[11px] font-bold text-stone-500 border border-stone-200">閉じる</button>
+              </div>
+            </>
+          ) : candidates && !candidates.length ? (
+            <p className="text-[11px] text-stone-400">対応完了かつ未確定のコメントはありません</p>
+          ) : null}
+          {msg && <p className="text-[11px] text-stone-500 mt-1.5">{msg}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
   trashedVersions = trashedVersions || [];
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
@@ -7956,6 +8049,7 @@ export default function App() {
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
               onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)} onRestoreVersion={(id) => restoreVersion(id)}
               onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />
+            <QaEvidencePanel projId={project.id} accent={theme.accent} accentText={accentText} />
           </div>
           );
         })()}

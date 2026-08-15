@@ -1135,6 +1135,80 @@ ${qList}
         });
       }
 
+      // ===== Q&A分解機能（Q7改定 Phase A・2026-08-15）=====
+      // 動画確認の完了済みコメントを「証跡」として記録する。Q=コメント本文、A=返信（無ければ
+      // 「対応済み（詳細記録なし）」と正直に記録、捏造しない）。AI要約・パターン抽出はまだ無い
+      // （AK確認: 今回は証跡層のみ）。手動ボタン起点・resolved済みのみ対象、自動処理はしない。
+      const qaCommentToEvidence = (c) => {
+        const replies = Array.isArray(c.replies) ? c.replies : [];
+        const last = replies.length ? replies[replies.length - 1] : null;
+        return {
+          commentId: c.id,
+          category: c.category || "その他",
+          question: (c.text || "").trim(),
+          answer: last && (last.text || "").trim() ? last.text.trim() : "対応済み（詳細記録なし）",
+          timecode: (typeof c.timecode === "number") ? c.timecode : null,
+        };
+      };
+      // POST /api/qa-evidence/candidates { projId } — resolved済みコメントのうち未確定のものをドラフト提示（保存しない）。
+      // このWorkerの認証済みAPIは全てPOST+Authorization:Bearer統一（authFetch()規約）のためGETにしない。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "qa-evidence" && parts[2] === "candidates") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const b = await request.json();
+        const projId = (b && b.projId || "").toString();
+        if (!projId) return json({ error: "projIdが必要です" }, 400);
+        const row = await env.DB.prepare(
+          "SELECT value FROM mg_kv WHERE sub=? AND proj_id=? ORDER BY updated_at DESC LIMIT 1"
+        ).bind(u.sub, projId).first();
+        if (!row) return json({ error: "not found" }, 404);
+        let p = null;
+        try { p = JSON.parse(row.value); } catch (e) {}
+        const comments = (p && p.review && Array.isArray(p.review.comments)) ? p.review.comments : [];
+        const resolved = comments.filter((c) => c && c.status === "完了" && (c.text || "").trim());
+        const { results: existing } = await env.DB.prepare(
+          "SELECT comment_id FROM mg_qa_evidence WHERE proj_id=?"
+        ).bind(projId).all();
+        const existingIds = new Set((existing || []).map((r) => r.comment_id));
+        const candidates = resolved.filter((c) => !existingIds.has(c.id)).map(qaCommentToEvidence);
+        return json({ candidates });
+      }
+      // POST /api/qa-evidence/confirm { projId, items:[{commentId,category,question,answer,timecode}] }
+      // 人間が確認した項目だけを証跡として確定保存する。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "qa-evidence" && parts[2] === "confirm") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const b = await request.json();
+        const projId = (b && b.projId || "").toString();
+        const items = Array.isArray(b && b.items) ? b.items : [];
+        if (!projId || !items.length) return json({ error: "projId/itemsが必要です" }, 400);
+        const owned = await env.DB.prepare("SELECT 1 FROM mg_kv WHERE sub=? AND proj_id=? LIMIT 1").bind(u.sub, projId).first();
+        if (!owned) return json({ error: "not found" }, 404);
+        let saved = 0;
+        for (const it of items) {
+          if (!it || !it.commentId || !it.question) continue;
+          await env.DB.prepare(
+            "INSERT INTO mg_qa_evidence (id, sub, proj_id, comment_id, category, question, answer, timecode)" +
+            " VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(proj_id, comment_id) DO NOTHING"
+          ).bind(rid(12), u.sub, projId, it.commentId, it.category || null, it.question, it.answer || "対応済み（詳細記録なし）", (typeof it.timecode === "number") ? it.timecode : null).run();
+          saved++;
+        }
+        return json({ ok: true, saved });
+      }
+      // POST /api/qa-evidence/list { projId } — 確定済み証跡の一覧（案件内での確認用。Vault起票はPhase B）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "qa-evidence" && parts[2] === "list") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const b = await request.json();
+        const projId = (b && b.projId || "").toString();
+        if (!projId) return json({ error: "projIdが必要です" }, 400);
+        const { results } = await env.DB.prepare(
+          "SELECT id, comment_id as commentId, category, question, answer, timecode, created_at as createdAt" +
+          " FROM mg_qa_evidence WHERE sub=? AND proj_id=? ORDER BY created_at DESC"
+        ).bind(u.sub, projId).all();
+        return json({ evidence: results || [] });
+      }
+
       // ===== ユーザー別ストレージ（要ログイン）。保存先は D1 birdflip_ledger.mg_kv =====
       // POST /api/kv/{get|set|delete|list}
       // 旧実装は KV SNAPS を u:<sub>: で間借りしていたが、KV無料枠の put 1,000回/日を
