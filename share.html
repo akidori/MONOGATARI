@@ -1029,9 +1029,9 @@ async function postComment(sid, label){
 /* ───────── 動画確認タブ（Frame.io風） ───────── */
 function fmtTC(s){ s=Math.max(0,+s||0); const m=Math.floor(s/60), sec=Math.floor(s%60), cs=Math.floor((s*100)%100); return `${m}:${String(sec).padStart(2,"0")}.${String(cs).padStart(2,"0")}`; }
 function ytId(u){ const m=(u||"").match(/(?:youtu\.be\/|[?&]v=|embed\/|shorts\/)([A-Za-z0-9_-]{11})/); return m?m[1]:""; }
-function rateButtons(type){
+function rateButtons(type, main){
   const rates = type==="youtube" ? [0.5,1,1.5,2] : [0.5,1,1.5,2,3,4];
-  return rates.map(r=>`<button data-rate="${r}" class="vc-rate text-[11px] mono px-2.5 py-1 rounded-full border border-stone-200 ${r===1?'bg-stone-100':'bg-white'}">${r}x</button>`).join("");
+  return rates.map(r=>`<button data-rate="${r}" class="vc-rate text-[11px] mono px-2.5 py-1 rounded-full border ${r===1?'text-white':'border-stone-200 bg-white text-stone-500'}" style="${r===1?`background:${main};border-color:${main}`:''}">${r}x</button>`).join("");
 }
 /* 動画の選択肢（案件全体＋企画ごと） */
 function vidKey(v){ return v ? (v.uid || v.key || v.url || "") : ""; }
@@ -1092,7 +1092,7 @@ function paneVideo(p, accent, main){
         </div>
         <div class="flex items-center gap-2 flex-wrap mb-3">
           <span class="text-[11px] text-stone-400">再生速度</span>
-          <div class="flex gap-1">${rateButtons(v.type)}</div>
+          <div class="flex gap-1">${rateButtons(v.type, main)}</div>
           <div id="vc-tc" class="ml-auto mono text-[13px] font-bold" style="color:${main}">0:00.00</div>
           ${(v.key||v.url)?`<a href="${v.key?(API+'/api/file/'+v.key+'?dl=1'):safeUrl(v.url)}" class="text-[12px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5" title="この動画をダウンロード">${icon("download","w-3 h-3")}動画をDL</a>`:""}
           ${CHMODE?"":`<button id="vc-add" class="text-[12px] font-bold text-white pl-2.5 pr-3 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5" style="background:${accent}">${icon("plus","w-3 h-3")}ここにコメント</button>`}
@@ -1251,8 +1251,9 @@ function mountVideo(p, accent, main){
   }
   document.querySelectorAll(".vc-rate").forEach(b=>b.addEventListener("click", ()=>{
     setRate(+b.dataset.rate);
-    document.querySelectorAll(".vc-rate").forEach(x=>x.classList.remove("bg-stone-100"));
-    b.classList.add("bg-stone-100");
+    document.querySelectorAll(".vc-rate").forEach(x=>{ x.classList.remove("text-white"); x.classList.add("bg-white","text-stone-500","border-stone-200"); x.style.background=""; x.style.borderColor=""; });
+    b.classList.remove("bg-white","text-stone-500","border-stone-200"); b.classList.add("text-white");
+    b.style.background=main; b.style.borderColor=main;
   }));
   if(!CHMODE){ const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main)); renderVideoList(accent, main); }
   if(UP_TOKEN && !CHMODE) wireVideoUpload(p, accent, main);
