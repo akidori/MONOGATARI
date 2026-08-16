@@ -1503,7 +1503,7 @@ function PlanVideoReview({ video, comments, canComment, onPost, onResolve, main,
   const isMp4 = video.type !== "youtube";
   const fmtTC = (s) => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60), sec = Math.floor(s % 60), cs = Math.floor((s * 100) % 100); return m + ":" + String(sec).padStart(2, "0") + "." + String(cs).padStart(2, "0"); };
   const list = (comments || []).slice().sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
-  const seek = (t) => { if (isMp4 && vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); } };
+  const seek = (t) => { if (isMp4 && vref.current) { vref.current.currentTime = +t || 0; vref.current.pause(); setCur(+t || 0); } };
   const startComment = () => { setAtSec(isMp4 && vref.current ? vref.current.currentTime : 0); setText(""); setOpen(true); };
   const submit = async () => { const ok = await onPost(isMp4 ? atSec : null, text); if (ok) { setText(""); setOpen(false); } };
   const rates = [0.5, 1, 1.5, 2, 3, 4];
@@ -1997,8 +1997,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const verComments = comments.filter(belongs);
   const counts = CMT_STATUSES.reduce((o, s) => { o[s] = verComments.filter((c) => cstat(c) === s).length; return o; }, {});
   const seek = (t) => {
-    if (sel && sel.type === "youtube") { const p = ytPlayerRef.current; if (p && p.seekTo) { p.seekTo(+t || 0, true); if (p.playVideo) p.playVideo(); } return; }
-    if (vref.current) { vref.current.currentTime = +t || 0; const p = vref.current.play(); if (p && p.catch) p.catch(() => {}); }
+    if (sel && sel.type === "youtube") { const p = ytPlayerRef.current; if (p && p.seekTo) { p.seekTo(+t || 0, true); if (p.pauseVideo) p.pauseVideo(); setCur(+t || 0); } return; }
+    if (vref.current) { vref.current.currentTime = +t || 0; vref.current.pause(); setCur(+t || 0); }
   };
   const isMp4 = sel && sel.type !== "youtube";
   // 再生方針：keyかurl(生データ)があれば常に観られる。HLS(軽量版)はreadyになったら昇格。
@@ -2241,6 +2241,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               return (
                 <div key={c.id} className="rounded-xl border border-stone-200 bg-white p-2.5">
                   <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                    <button onClick={() => onUpdate(c.id, { status: st === "完了" ? "未対応" : "完了" })} title={st === "完了" ? "対応済みを解除" : "対応済みにする"} className={"w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 text-[11px] font-bold leading-none " + (st === "完了" ? "text-white" : "border-stone-300 text-transparent hover:border-emerald-400 hover:text-emerald-400")} style={st === "完了" ? { background: "#16A34A", borderColor: "#16A34A" } : {}}>✓</button>
                     {typeof c.timecode === "number" && <button onClick={() => seek(c.timecode)} className="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded text-white" style={{ background: main, fontFamily: mono }}>▶ {fmtTC(c.timecode)}</button>}
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "#F0F0F2", color: "#57534E" }}>{c.category || "その他"}</span>
                     {c.priority && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: (CMT_PRIO_COLOR[c.priority] || {}).bg, color: (CMT_PRIO_COLOR[c.priority] || {}).fg }}>{c.priority}</span>}
