@@ -405,6 +405,7 @@ const migrateProject = (p) => {
     liveId: p.liveId || null,
     liveToken: p.liveToken || null,
     aiChat: Array.isArray(p.aiChat) ? p.aiChat : [],
+    mindmapNotes: (p.mindmapNotes && typeof p.mindmapNotes === "object") ? p.mindmapNotes : {},
     updatedAt: p.updatedAt || p.createdAt || Date.now(),
   };
 };
@@ -825,7 +826,7 @@ const MM_SECTION_ACCENTS = ["#3B82F6", "#8B5CF6", "#10B981", "#F59E0B", "#EC4899
 // project.rows + 選択中のフレームワークから、ステップ単位のsections配列を組み立てる。
 // シーンの尺は既存のtotalEst計算式（文字数÷読み上げ速度、無ければ種別の目安秒数）をそのまま使う
 // （worker/src/index.jsのGET /api/public/summary/:projIdへ移植済みのものと同じ式）。
-function buildMindmapSections(rows, spineFw, rate) {
+function buildMindmapSections(rows, spineFw, rate, notes) {
   const beats = deriveSpineBeats(rows);
   const blocks = spineBlocks(rows);
   const fw = STORY_FRAMEWORKS[spineFw] || STORY_FRAMEWORKS.spine;
@@ -833,7 +834,8 @@ function buildMindmapSections(rows, spineFw, rate) {
   const overrides = {};
   (rows || []).forEach((r) => { if (r.kind === "location" && r.spine && r.spine[spineFw] != null) overrides[r.id] = r.spine[spineFw]; });
   const phases = phaseSeq(beats, K, spineFw, overrides);
-  const sections = fw.steps.map((step, i) => ({ id: "phase" + i, label: step.phrase, rows: [] }));
+  // 各ステップは常に表示（シーン0件でも）＝台本を書く前の「ここで何を話すか」メモ入力先として使えるように
+  const sections = fw.steps.map((step, i) => ({ id: "phase" + i, label: step.phrase, hint: step.hint || "", note: (notes && notes[spineFw + ":phase" + i]) || "", rows: [] }));
   let sceneNo = 0;
   const r = rate || 5;
   beats.forEach((beat, i) => {
@@ -851,10 +853,9 @@ function buildMindmapSections(rows, spineFw, rate) {
       });
     });
   });
-  const filled = sections.filter((s) => s.rows.length > 0);
   const totalScenes = sceneNo;
-  const totalEstSec = filled.reduce((a, s) => a + s.rows.reduce((aa, rr) => aa + rr.durSec, 0), 0);
-  return { sections: filled, totalScenes, totalEstSec };
+  const totalEstSec = sections.reduce((a, s) => a + s.rows.reduce((aa, rr) => aa + rr.durSec, 0), 0);
+  return { sections, totalScenes, totalEstSec };
 }
 
 function mmContentSignature({ totalScenes, sections }) {
@@ -874,10 +875,13 @@ function MmProjectNode({ data }) {
 }
 function MmSectionNode({ data }) {
   return (
-    <div className="rounded-xl px-3 py-2.5 bg-white min-w-[140px] border" style={{ borderColor: "#dde3ec", borderLeftWidth: 3, borderLeftColor: data.accent }}>
+    <div className="rounded-xl px-3 py-2.5 bg-white w-[220px] border" style={{ borderColor: "#dde3ec", borderLeftWidth: 3, borderLeftColor: data.accent }}>
       <Handle type="target" position={Position.Left} />
       <div className="text-[11.5px] font-bold text-stone-700 line-clamp-2">{data.label || "未分類"}</div>
       <div className="text-[9px] text-stone-400 mt-1">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
+      <BufferedTextarea value={data.note || ""} onChange={(v) => data.onNoteChange && data.onNoteChange(data.id, v)}
+        placeholder={data.hint ? "ここで何を話すか…（例：" + data.hint + "）" : "ここで何を話すか…"} rows={2}
+        className="nodrag nowheel mt-1.5 w-full text-[10.5px] leading-snug text-stone-600 bg-stone-50 border border-stone-200 rounded-md px-1.5 py-1 resize-y focus:outline-none focus:border-stone-400 placeholder:text-stone-300" />
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -927,16 +931,20 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   return { nodes, edges };
 }
 
-function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick }) {
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange }) {
   const { fitView } = useReactFlow();
   const prevSigRef = useRef(null);
   const signature = useMemo(() => mmContentSignature({ totalScenes, sections }), [totalScenes, sections]);
-  const { nodes, edges } = useMemo(() => {
+  const { nodes: builtNodes, edges } = useMemo(() => {
     const graph = mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections });
     graph.nodes.forEach((n) => { if (n.type === "mmSceneNode") n.data.onNodeClick = onNodeClick; });
     return graph;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
+  // ノート本文はここで毎レンダー最新値を差し込む（signatureに含めない＝入力中にdagre再配置してノードが動かないように）
+  const noteById = useMemo(() => { const m = {}; sections.forEach((s) => { m[s.id] = s.note || ""; }); return m; }, [sections]);
+  const nodes = useMemo(() => builtNodes.map((n) => n.type === "mmSectionNode"
+    ? { ...n, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange } } : n), [builtNodes, noteById, onNoteChange]);
   useEffect(() => {
     if (prevSigRef.current !== signature) {
       prevSigRef.current = signature;
@@ -953,8 +961,7 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   );
 }
 function MindmapView(props) {
-  const hasContent = (props.sections || []).some((s) => s.rows.length > 0);
-  if (!hasContent) return <div className="text-[12px] text-stone-400 py-2">まだシーンがありません（台本にシーンを追加すると表示されます）</div>;
+  if (!(props.sections || []).length) return <div className="text-[12px] text-stone-400 py-2">物語の背骨でフレームワークを選ぶと表示されます</div>;
   return (
     <div style={{ height: 480 }}>
       <ReactFlowProvider><MmCanvas {...props} /></ReactFlowProvider>
@@ -2701,6 +2708,10 @@ export default function App() {
   }, []);
   const [spineFw, setSpineFwState] = useState(() => { try { return localStorage.getItem("mg:spineFw") || "spine"; } catch (e) { return "spine"; } });
   const setSpineFw = (k) => { setSpineFwState(k); try { localStorage.setItem("mg:spineFw", k); } catch (e) {} };
+  // マインドマップの各ステップに「ここで何を話すか」を書けるメモ（フレームワーク別にキー分離、台本の行はまだ作らない＝Phase1）
+  const setMindmapNote = (sectionId, text) => {
+    setProject((p) => ({ ...p, mindmapNotes: { ...(p.mindmapNotes || {}), [spineFw + ":" + sectionId]: text } }));
+  };
   const [spineDrag, setSpineDrag] = useState(null);          // 背骨のD&D {from, over}（ロケブロックごと並べ替え）
   const [deliverBusy, setDeliverBusy] = useState(false);
   const [saveState, setSaveState] = useState("ok");   // ok | error（クラウド保存の状態。回線断のsilent lost可視化）
@@ -8034,7 +8045,7 @@ export default function App() {
             {/* マインドマップ（2026-08-15 Studio OSから移植／2026-08-17 構成台本タブから取材メモタブへ移動）:
                 物語の背骨と同じデータを木構造で可視化。Pan/Zoom/MiniMap、ノードクリックで該当シーンへスクロール。 */}
             {(() => {
-              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5);
+              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
               return (
                 <section className={cardCls + " mb-4"}>
                   {cardHead("マインドマップ", (
@@ -8044,7 +8055,8 @@ export default function App() {
                   ), toggleMm)}
                   {mmOpen && (
                     <div className="px-3 sm:px-4 py-3">
-                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} />
+                      <p className="text-[11px] text-stone-400 mb-2">各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます（台本の行はまだ作られません）。</p>
+                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} />
                     </div>
                   )}
                 </section>
