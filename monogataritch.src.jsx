@@ -921,7 +921,7 @@ function MmSceneNode({ data }) {
       onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.id); }}
       onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.id); }}>
       <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color={data.accent} minWidth={200} maxWidth={560}
-        style={{ borderColor: data.accent }} className="nodrag"
+        style={{ borderColor: data.accent }} className="nodrag opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.nodeId, Math.round(params.width))} />
       <Handle type="target" position={Position.Left} />
       <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + data.accent }}>
@@ -954,7 +954,7 @@ function MmQANode({ data }) {
       onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.qaId); }}
       onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.qaId); }}>
       <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color="#F0B93A" minWidth={180} maxWidth={480}
-        style={{ borderColor: "#F0B93A" }} className="nodrag"
+        style={{ borderColor: "#F0B93A" }} className="nodrag opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.qaId, Math.round(params.width))} />
       <Handle type="target" position={Position.Left} />
       <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + "#F0B93A" }}>
@@ -971,7 +971,10 @@ function MmQANode({ data }) {
           <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ"
             className="nodrag shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 text-[11px] leading-none px-0.5 transition-opacity">→</button>
         </div>
-        {data.a && <div className="text-[10px] text-stone-500 mt-1">{data.a}</div>}
+        <BufferedTextarea value={data.a || ""} onChange={(v) => data.onAnswerChange && data.onAnswerChange(data.rowId, data.qi, v)}
+          placeholder="回答（セリフ）を入力…" rows={2}
+          className="nodrag nowheel w-full mt-1 text-[10px] leading-snug text-stone-500 bg-transparent border-0 focus:outline-none resize-none placeholder:text-stone-300"
+          onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
       </div>
     </div>
   );
@@ -1028,7 +1031,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   return { nodes, edges };
 }
 
-function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter, onEditQuestion, posMap, onPosChange, onClearPos, widthMap, onWidthChange, onDeleteScene, onDeleteQuestion, onAddQuestion, onUndo, onRedo }) {
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter, onEditQuestion, onEditAnswer, posMap, onPosChange, onClearPos, widthMap, onWidthChange, onDeleteScene, onDeleteQuestion, onAddQuestion, onUndo, onRedo }) {
   const { fitView } = useReactFlow();
   const prevSigRef = useRef(null);
   const skipNextFitRef = useRef(false);
@@ -1106,10 +1109,10 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
     const width = (widthMap && widthMap[n.id]) || n.width;
     if (n.type === "mmSectionNode") return { ...n, position: pos, width, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } };
     if (n.type === "mmSceneNode") return { ...n, position: pos, width, data: { ...n.data, selected: n.data.id === selId, editing: n.data.id === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit, onResizeWidth } };
-    if (n.type === "mmQANode") return { ...n, position: pos, width, data: { ...n.data, selected: n.data.qaId === selId, editing: n.data.qaId === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit, onResizeWidth } };
+    if (n.type === "mmQANode") return { ...n, position: pos, width, data: { ...n.data, selected: n.data.qaId === selId, editing: n.data.qaId === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit, onResizeWidth, onAnswerChange: onEditAnswer } };
     return { ...n, position: pos, width };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal, posMap, widthMap, onResizeWidth]);
+  }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal, posMap, widthMap, onResizeWidth, onEditAnswer]);
   // ドラッグ中の見た目はReact Flow内のローカルstateで持ち、ドロップ確定時にonPosChangeで親（プロジェクトデータ）へ永続化する
   const [liveNodes, setLiveNodes] = useState(nodes);
   useEffect(() => { setLiveNodes(nodes); }, [nodes]);
@@ -6028,6 +6031,20 @@ export default function App() {
     lines[targetLine] = "◼︎ " + newQ;
     updateRow(rowId, { script: lines.join("\n") });
   };
+  /* マインドマップのQ&Aサブノード：qi番目の質問に続く回答（セリフ）部分を丸ごと1行に置き換える */
+  const patchAnswer = (rowId, qi, newA) => {
+    const row = (project.rows || []).find((r) => r.id === rowId);
+    if (!row) return;
+    const lines = (row.script || "").split("\n");
+    const qLineIdxs = [];
+    lines.forEach((l, i) => { if (/^\s*[◼■]/.test(l)) qLineIdxs.push(i); });
+    const start = qLineIdxs[qi];
+    if (start == null) return;
+    const end = qLineIdxs[qi + 1] != null ? qLineIdxs[qi + 1] : lines.length;
+    pushMmUndo();
+    const next = [...lines.slice(0, start + 1), newA, ...lines.slice(end)];
+    updateRow(rowId, { script: next.join("\n") });
+  };
   // マインドマップからのシーン削除（Delete/Backspaceキー）
   const deleteSceneFromMindmap = (rowId) => { pushMmUndo(); deleteRow(rowId); };
   /* マインドマップからのQ&A削除：qi番目の「◼︎ 質問」行から次の◼︎行の手前（無ければ末尾）までを丸ごと除去 */
@@ -7728,7 +7745,7 @@ export default function App() {
                   const posPrefix = spineFw + ":";
                   const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
                   const widthMap = {}; Object.keys(project.mindmapWidth || {}).forEach((k) => { if (k.startsWith(posPrefix)) widthMap[k.slice(posPrefix.length)] = project.mindmapWidth[k]; });
-                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />;
+                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} onEditAnswer={patchAnswer} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />;
                 })()}
               </section>
             ) : (<>
@@ -8101,7 +8118,7 @@ export default function App() {
               return (
                 <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
                   <p className="text-[11px] text-stone-400 mb-2">構成台本と同じデータを見ています。ここでの編集は台本にもそのまま反映されます。各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
-                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />
+                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} onEditAnswer={patchAnswer} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />
                 </section>
               );
             })()}
