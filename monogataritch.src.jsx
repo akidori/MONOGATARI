@@ -9912,7 +9912,7 @@ export default function App() {
                   : shareModal.ai
                   ? <>このURLを<span className="font-bold">Claude や ChatGPT に貼り付け</span>てください。構成台本の中身（JSON）をそのまま読み込めます。編集者向けの構成づくりや校正・変更点まとめを頼めます。<span className="text-stone-400">※ share.html ではなく中身データのリンク。内容を直したら押し直せば最新に。</span></>
                   : shareModal.live
-                  ? <>このURLを渡すと、先方が<span className="font-bold">構成台本をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
+                  ? <>このURLを渡すと、先方が<span className="font-bold">{shareModal.tab ? `「${TAB_LABEL[shareModal.tab] || shareModal.tab}」` : "全タブ"}をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。{shareModal.tab && <>他のタブは表示されません。</>}<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
                   : shareModal.planShare
                   ? <>このURLは<span className="font-bold">この企画の動画・素材・コメントだけ</span>の専用ページです。先方は動画を見て（0.5〜4倍速）、時間を指定してコメントできます。コメントは右上💬とアプリ内の企画カードに届きます。</>
                   : shareModal.channel && shareModal.editable
