@@ -2164,13 +2164,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           <span key={s} className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: CMT_STATUS_COLOR[s].bg, color: CMT_STATUS_COLOR[s].fg }}>{s} {counts[s]}</span>
         ))}
         <div className="flex-1" />
-        {sel.key && (
-          <a href={SHARE_API + "/api/file/" + sel.key + "?dl=1"} target="_blank" rel="noreferrer"
-            title="この版のオリジナルmp4（アップした元データそのまま）をダウンロード"
-            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
-            ⬇ 元mp4をDL
-          </a>
-        )}
         <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（7日間はゴミ箱から復元できます。コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
       </div>
       <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
@@ -2234,7 +2227,14 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                   className={"text-[11px] px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")} style={rate === r ? { background: main, borderColor: main, fontFamily: mono } : { fontFamily: mono }}>{r}x</button>
               ))}
               {isYT && <span className="text-[10px] text-stone-400">（YouTubeは2倍まで）</span>}
-              <span className="text-[10px] text-stone-400 ml-auto">Enter/Space=再生停止　←→=5秒（Shiftで1秒）</span>
+              <span className="text-[10px] text-stone-400 ml-2">Enter/Space=再生停止　←→=5秒（Shiftで1秒）</span>
+              {sel.key && (
+                <a href={SHARE_API + "/api/file/" + sel.key + "?dl=1"} target="_blank" rel="noreferrer"
+                  title="この版のオリジナルmp4（アップした元データそのまま）をダウンロード"
+                  className="ml-auto text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1 shrink-0">
+                  ⬇ 元mp4をDL
+                </a>
+              )}
             </div>
           )}
           {/* 新規修正コメント */}
@@ -6845,7 +6845,6 @@ export default function App() {
                 {reportingUp ? "報告中…" : "✅ あがり報告"}
               </button>
             )}
-            <span className={(sched.canReportUp ? "" : "ml-auto ") + "text-[10px] text-stone-400 shrink-0"}>日程 = Flip Board連動</span>
           </div>
         )}
 
