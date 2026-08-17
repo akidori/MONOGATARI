@@ -2055,6 +2055,8 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent }) {
   const [busy, setBusy] = React.useState(false);
   const [jobs, setJobs] = React.useState([]);
   const [items, setItems] = React.useState([]);
+  // ダウンロードしないと中身が見えないのは非効率との指摘（2026-08-17）：クリックでその場再生できるプレビューを追加
+  const [previewIdx, setPreviewIdx] = React.useState(null);
   const pollList = async (snap, token, tries = 0) => {
     if (tries > 80) return;
     try {
@@ -2101,11 +2103,39 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent }) {
           {jobs.filter((j) => j.status === "error").map((j) => <div key={j.id} className="text-[11px] text-rose-500">⚠️ {j.error || "生成に失敗しました"}</div>)}
           {items.length > 0 && (
             <ul className="flex flex-wrap gap-2 mt-1.5">
-              {items.map((f) => (
-                <li key={f.key}><a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">🎬 {f.name}</a></li>
+              {items.map((f, i) => (
+                <li key={f.key}>
+                  <button onClick={() => setPreviewIdx(i)}
+                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
+                    🎬 {f.name}
+                  </button>
+                </li>
               ))}
             </ul>
           )}
+        </div>
+      )}
+      {previewIdx != null && items[previewIdx] && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setPreviewIdx(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-2.5 flex items-center justify-between border-b border-stone-100">
+              <span className="text-[12px] font-bold text-stone-700 truncate">{items[previewIdx].name}</span>
+              <button onClick={() => setPreviewIdx(null)} className="shrink-0 w-6 h-6 rounded-lg grid place-items-center text-stone-400 hover:bg-stone-100"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <video key={items[previewIdx].key} controls autoPlay className="w-full max-h-[70vh] bg-black" src={SHARE_API + "/api/file/" + items[previewIdx].key} />
+            <div className="px-4 py-2.5 flex items-center justify-between gap-2 border-t border-stone-100">
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => setPreviewIdx((i) => Math.max(0, i - 1))} disabled={previewIdx === 0}
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 disabled:opacity-30">← 前</button>
+                <button onClick={() => setPreviewIdx((i) => Math.min(items.length - 1, i + 1))} disabled={previewIdx === items.length - 1}
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 disabled:opacity-30">次 →</button>
+              </div>
+              <a href={SHARE_API + "/api/file/" + items[previewIdx].key + "?dl=1"} target="_blank" rel="noreferrer"
+                className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white inline-flex items-center gap-1" style={{ background: accent }}>
+                <Icon name="download" className="w-3.5 h-3.5" />ダウンロード
+              </a>
+            </div>
+          </div>
         </div>
       )}
     </div>
