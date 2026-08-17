@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, startTransition } from "react";
-import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, useReactFlow, BackgroundVariant, Handle, Position } from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, useReactFlow, BackgroundVariant, Handle, Position, applyNodeChanges } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 
@@ -409,6 +409,7 @@ const migrateProject = (p) => {
     liveToken: p.liveToken || null,
     aiChat: Array.isArray(p.aiChat) ? p.aiChat : [],
     mindmapNotes: (p.mindmapNotes && typeof p.mindmapNotes === "object") ? p.mindmapNotes : {},
+    mindmapPos: (p.mindmapPos && typeof p.mindmapPos === "object") ? p.mindmapPos : {},
     updatedAt: p.updatedAt || p.createdAt || Date.now(),
   };
 };
@@ -883,7 +884,7 @@ const mmFmtSec = (sec) => { const s = Math.round(sec || 0); return String(Math.f
 function MmProjectNode({ data }) {
   return (
     <div className="rounded-xl px-3 py-2.5 min-w-[150px]" style={{ background: "#13233a", color: "#fff" }}>
-      <div className="text-[11.5px] font-bold line-clamp-2">{data.title || "（無題）"}</div>
+      <div className="text-[11.5px] font-bold">{data.title || "（無題）"}</div>
       <div className="text-[9px] mt-1" style={{ color: "rgba(255,255,255,.7)" }}>総尺 {mmFmtSec(data.totalEstSec)} ・ シーン数 {data.totalScenes}</div>
       <Handle type="source" position={Position.Right} />
     </div>
@@ -893,7 +894,7 @@ function MmSectionNode({ data }) {
   return (
     <div className="rounded-xl px-3 py-2.5 bg-white w-[220px] border" style={{ borderColor: "#dde3ec", borderLeftWidth: 3, borderLeftColor: data.accent }}>
       <Handle type="target" position={Position.Left} />
-      <div className="text-[11.5px] font-bold text-stone-700 line-clamp-2">{data.label || "未分類"}</div>
+      <div className="text-[11.5px] font-bold text-stone-700">{data.label || "未分類"}</div>
       <div className="text-[9px] text-stone-400 mt-1">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
       <BufferedTextarea value={data.note || ""} onChange={(v) => data.onNoteChange && data.onNoteChange(data.id, v)}
         placeholder={data.hint ? "ここで何を話すか…（例：" + data.hint + "）" : "ここで何を話すか…"} rows={2}
@@ -925,7 +926,7 @@ function MmSceneNode({ data }) {
             onBlur={() => data.onCommitEdit && data.onCommitEdit()}
             onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
         ) : (
-          <span className="text-[11.5px] font-bold text-stone-700 line-clamp-2">{data.label || "（無題）"}</span>
+          <span className="text-[11.5px] font-bold text-stone-700">{data.label || "（無題）"}</span>
         )}
         <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.id); }} title="台本のこのシーンへ"
           className="nodrag ml-auto shrink-0 text-stone-300 hover:text-stone-600 text-[11px] leading-none px-0.5">→</button>
@@ -954,20 +955,29 @@ function MmQANode({ data }) {
             onBlur={() => data.onCommitEdit && data.onCommitEdit()}
             onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
         ) : (
-          <span className="text-[10.5px] font-bold line-clamp-2 flex-1 min-w-0" style={{ color: "#B8860B" }}>{data.q}</span>
+          <span className="text-[10.5px] font-bold flex-1 min-w-0" style={{ color: "#B8860B" }}>{data.q}</span>
         )}
         <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ"
           className="nodrag shrink-0 text-stone-300 hover:text-stone-600 text-[11px] leading-none px-0.5">→</button>
       </div>
-      {data.a && <div className="text-[10px] text-stone-500 mt-1 line-clamp-2">{data.a}</div>}
+      {data.a && <div className="text-[10px] text-stone-500 mt-1">{data.a}</div>}
     </div>
   );
 }
 const MM_NODE_TYPES = { mmProjectNode: MmProjectNode, mmSectionNode: MmSectionNode, mmSceneNode: MmSceneNode, mmQANode: MmQANode };
 
+// テキスト量からノードの行数を見積もる（マインドマップのノードは原稿の長さに応じて縦に伸ばしたいので、
+// dagreに渡す高さもここで概算する。ピクセル完全一致は狙わず、詰まって重ならない程度の余裕を持たせる）
+function mmEstLines(text, charsPerLine) {
+  const s = String(text || "");
+  if (!s) return 1;
+  let total = 0;
+  s.split("\n").forEach((line) => { total += Math.max(1, Math.ceil(line.length / charsPerLine)); });
+  return Math.max(1, total);
+}
 function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "LR", nodesep: 20, ranksep: 90 });
+  g.setGraph({ rankdir: "LR", nodesep: 26, ranksep: 90 });
   g.setDefaultEdgeLabel(() => ({}));
   const nodes = [], edges = [];
   const ROOT_ID = "project";
@@ -983,14 +993,17 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
     edges.push({ id: "e-" + ROOT_ID + "-" + secId, source: ROOT_ID, target: secId });
     sec.rows.forEach((row) => {
       const rowId = "row:" + row.id;
-      const rowDim = { width: 220, height: 78 };
+      const labelLines = mmEstLines(row.label, 12);
+      const rowDim = { width: 220, height: 78 + Math.max(0, labelLines - 2) * 15 };
       g.setNode(rowId, rowDim);
       g.setEdge(secId, rowId);
       nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
       edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId });
       (row.qa || []).forEach((pair, qi) => {
         const qaId = "qa:" + row.id + ":" + qi;
-        const qaDim = { width: 200, height: 70 };
+        const qLines = mmEstLines(pair.q, 12);
+        const aLines = mmEstLines(pair.a, 16);
+        const qaDim = { width: 200, height: 70 + Math.max(0, qLines - 2) * 13 + Math.max(0, aLines - 2) * 12 };
         g.setNode(qaId, qaDim);
         g.setEdge(rowId, qaId);
         nodes.push({ id: qaId, type: "mmQANode", position: { x: 0, y: 0 }, width: qaDim.width, height: qaDim.height, data: { ...pair, rowId: row.id, qi, qaId } });
@@ -1003,7 +1016,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   return { nodes, edges };
 }
 
-function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter, onEditQuestion }) {
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter, onEditQuestion, posMap, onPosChange, onClearPos }) {
   const { fitView } = useReactFlow();
   const prevSigRef = useRef(null);
   const skipNextFitRef = useRef(false);
@@ -1060,12 +1073,22 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selId, editId, editVal, labelById, qaQById, onAddSceneAfter, onRenameScene, onEditQuestion]);
   const nodes = useMemo(() => builtNodes.map((n) => {
-    if (n.type === "mmSectionNode") return { ...n, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } };
-    if (n.type === "mmSceneNode") return { ...n, data: { ...n.data, selected: n.data.id === selId, editing: n.data.id === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
-    if (n.type === "mmQANode") return { ...n, data: { ...n.data, selected: n.data.qaId === selId, editing: n.data.qaId === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
-    return n;
+    const pos = (posMap && posMap[n.id]) || n.position;
+    if (n.type === "mmSectionNode") return { ...n, position: pos, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } };
+    if (n.type === "mmSceneNode") return { ...n, position: pos, data: { ...n.data, selected: n.data.id === selId, editing: n.data.id === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
+    if (n.type === "mmQANode") return { ...n, position: pos, data: { ...n.data, selected: n.data.qaId === selId, editing: n.data.qaId === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
+    return { ...n, position: pos };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal]);
+  }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal, posMap]);
+  // ドラッグ中の見た目はReact Flow内のローカルstateで持ち、ドロップ確定時にonPosChangeで親（プロジェクトデータ）へ永続化する
+  const [liveNodes, setLiveNodes] = useState(nodes);
+  useEffect(() => { setLiveNodes(nodes); }, [nodes]);
+  const onNodesChange = useCallback((changes) => { setLiveNodes((nds) => applyNodeChanges(changes, nds)); }, []);
+  const onNodeDragStop = useCallback((e, node) => { onPosChange && onPosChange(node.id, node.position); }, [onPosChange]);
+  const handleAlign = useCallback(() => {
+    if (onClearPos) onClearPos(builtNodes.map((n) => n.id));
+    requestAnimationFrame(() => fitView({ duration: 300, padding: 0.15 }));
+  }, [onClearPos, builtNodes, fitView]);
   useEffect(() => {
     if (prevSigRef.current !== signature) {
       prevSigRef.current = signature;
@@ -1075,11 +1098,19 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
     }
   }, [signature, fitView]);
   return (
-    <ReactFlow nodes={nodes} edges={edges} nodeTypes={MM_NODE_TYPES} fitView minZoom={0.25} maxZoom={2.5}
+    <ReactFlow nodes={liveNodes} edges={edges} nodeTypes={MM_NODE_TYPES} fitView minZoom={0.25} maxZoom={2.5}
+      onNodesChange={onNodesChange} onNodeDragStop={onNodeDragStop}
+      panOnScroll zoomOnScroll={false} panOnScrollMode="free" zoomOnPinch
       onPaneClick={() => { setSelId(null); setEditId(null); }}
       proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "bezier", style: { strokeWidth: 1.5, opacity: 0.8 } }}>
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
       <Controls showInteractive={false} position="top-left" />
+      <Panel position="top-left" style={{ marginTop: 132 }}>
+        <button onClick={handleAlign} title="ドラッグで動かした位置をリセットして自動整列に戻す"
+          className="nodrag bg-white border border-stone-200 rounded-lg shadow-sm text-[10.5px] font-bold text-stone-500 hover:text-stone-800 hover:border-stone-400 px-2 py-1.5 transition-colors">
+          整列
+        </button>
+      </Panel>
       <MiniMap pannable zoomable position="top-right" style={{ background: "#fff" }} />
     </ReactFlow>
   );
@@ -2835,6 +2866,17 @@ export default function App() {
   // マインドマップの各ステップに「ここで何を話すか」を書けるメモ（フレームワーク別にキー分離、台本の行はまだ作らない＝Phase1）
   const setMindmapNote = (sectionId, text) => {
     setProject((p) => ({ ...p, mindmapNotes: { ...(p.mindmapNotes || {}), [spineFw + ":" + sectionId]: text } }));
+  };
+  // マインドマップのノード手動配置（D&D）。フレームワーク別にキー分離してmindmapNotesと同じ規約に揃える
+  const setMindmapPos = (nodeId, pos) => {
+    setProject((p) => ({ ...p, mindmapPos: { ...(p.mindmapPos || {}), [spineFw + ":" + nodeId]: pos } }));
+  };
+  const clearMindmapPos = (nodeIds) => {
+    setProject((p) => {
+      const next = { ...(p.mindmapPos || {}) };
+      nodeIds.forEach((id) => { delete next[spineFw + ":" + id]; });
+      return { ...p, mindmapPos: next };
+    });
   };
   const [spineDrag, setSpineDrag] = useState(null);          // 背骨のD&D {from, over}（ロケブロックごと並べ替え）
   const [deliverBusy, setDeliverBusy] = useState(false);
@@ -7532,7 +7574,9 @@ export default function App() {
               <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
                 {(() => {
                   const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
-                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} />;
+                  const posPrefix = spineFw + ":";
+                  const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
+                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} />;
                 })()}
               </section>
             ) : (<>
@@ -7899,10 +7943,12 @@ export default function App() {
           <div className="max-w-[1700px] mx-auto px-1 sm:px-0 py-1">
             {(() => {
               const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
+              const posPrefix = spineFw + ":";
+              const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
               return (
                 <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
                   <p className="text-[11px] text-stone-400 mb-2">構成台本と同じデータを見ています。ここでの編集は台本にもそのまま反映されます。各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
-                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} />
+                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} />
                 </section>
               );
             })()}
