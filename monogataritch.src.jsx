@@ -7584,6 +7584,7 @@ export default function App() {
                       <div className="mt-4 mb-0.5">{dayBannerEl(dayStarts[r.id])}</div>
                     )}
                     <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"}
+                      onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "location", x: e.clientX, y: e.clientY }); }}
                       className="flex items-stretch overflow-hidden rounded-lg mt-3 mb-1.5 shadow-sm"
                       style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1, ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
                       <div className="w-1.5 shrink-0" style={{ background: stripe }} />
