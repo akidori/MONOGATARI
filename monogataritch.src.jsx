@@ -888,14 +888,14 @@ function MmProjectNode({ data }) {
     <div className="rounded-xl px-3 py-2.5 min-w-[150px]" style={{ background: "#13233a", color: "#fff" }}>
       <div className="text-[11.5px] font-bold">{data.title || "（無題）"}</div>
       <div className="text-[9px] mt-1" style={{ color: "rgba(255,255,255,.7)" }}>総尺 {mmFmtSec(data.totalEstSec)} ・ シーン数 {data.totalScenes}</div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
 }
 function MmSectionNode({ data }) {
   return (
     <div className="w-full cursor-default">
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} style={{ top: 32, opacity: 0 }} />
       <div className="pb-1" style={{ borderBottom: "3px solid " + data.accent }}>
         <div className="text-[12px] font-bold text-stone-700">{data.label || "未分類"}</div>
         <div className="text-[9px] text-stone-400 mt-0.5">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
@@ -907,7 +907,7 @@ function MmSectionNode({ data }) {
         className="nodrag mt-1.5 text-[10px] font-bold text-stone-400 hover:text-stone-700 border-b border-dashed border-stone-300 hover:border-stone-400 transition-colors">
         ＋シーン追加
       </button>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} style={{ top: 32, opacity: 0 }} />
     </div>
   );
 }
@@ -923,7 +923,7 @@ function MmSceneNode({ data }) {
       <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color={data.accent} minWidth={200} maxWidth={560}
         style={{ borderColor: data.accent }} className="nodrag opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.nodeId, Math.round(params.width))} />
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} style={{ top: 34, opacity: 0 }} />
       <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + data.accent }}>
         <div className="flex items-center gap-1">
           {data.sceneNo != null && <span className="text-[9px] font-bold text-stone-400 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
@@ -940,7 +940,7 @@ function MmSceneNode({ data }) {
         </div>
         <div className="text-[9px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
       </div>
-      <Handle type="source" position={Position.Right} />
+      <Handle type="source" position={Position.Right} style={{ top: 34, opacity: 0 }} />
     </div>
   );
 }
@@ -956,7 +956,7 @@ function MmQANode({ data }) {
       <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color="#F0B93A" minWidth={180} maxWidth={480}
         style={{ borderColor: "#F0B93A" }} className="nodrag opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.qaId, Math.round(params.width))} />
-      <Handle type="target" position={Position.Left} />
+      <Handle type="target" position={Position.Left} style={{ top: 16, opacity: 0 }} />
       <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + "#F0B93A" }}>
         <div className="flex items-start gap-1">
           <span className="text-[10.5px] font-bold shrink-0" style={{ color: "#B8860B" }}>◼︎</span>
@@ -1003,7 +1003,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
     const secId = "section:" + sec.id;
     const accent = MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length];
     // MindNode風：ルートから枝分かれした瞬間からセクションの色を引き継ぎ、配下のシーン・Q&Aまで同じ色の線でつなぐ
-    const edgeStyle = { stroke: accent, strokeWidth: 1.75, opacity: 0.55 };
+    const edgeStyle = { stroke: accent, strokeWidth: 2.5, opacity: 0.7 };
     const secDim = { width: 220, height: 64 };
     g.setNode(secId, secDim);
     g.setEdge(ROOT_ID, secId);
