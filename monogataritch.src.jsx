@@ -895,8 +895,8 @@ function MmProjectNode({ data }) {
 function MmSectionNode({ data }) {
   return (
     <div className="w-full cursor-default">
-      <Handle type="target" position={Position.Left} style={{ top: 32, opacity: 0 }} />
-      <div className="pb-1" style={{ borderBottom: "3px solid " + data.accent }}>
+      <Handle type="target" position={Position.Left} style={{ top: 36, opacity: 0 }} />
+      <div className="pb-2" style={{ borderBottom: "3px solid " + data.accent }}>
         <div className="text-[12px] font-bold text-stone-700">{data.label || "未分類"}</div>
         <div className="text-[9px] text-stone-400 mt-0.5">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
       </div>
@@ -907,7 +907,7 @@ function MmSectionNode({ data }) {
         className="nodrag mt-1.5 text-[10px] font-bold text-stone-400 hover:text-stone-700 border-b border-dashed border-stone-300 hover:border-stone-400 transition-colors">
         ＋シーン追加
       </button>
-      <Handle type="source" position={Position.Right} style={{ top: 32, opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ top: 36, opacity: 0 }} />
     </div>
   );
 }
@@ -923,8 +923,8 @@ function MmSceneNode({ data }) {
       <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color={data.accent} minWidth={200} maxWidth={560}
         style={{ borderColor: data.accent }} className="nodrag opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.nodeId, Math.round(params.width))} />
-      <Handle type="target" position={Position.Left} style={{ top: 34, opacity: 0 }} />
-      <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + data.accent }}>
+      <Handle type="target" position={Position.Left} style={{ top: 38, opacity: 0 }} />
+      <div className="pb-2 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + data.accent }}>
         <div className="flex items-center gap-1">
           {data.sceneNo != null && <span className="text-[9px] font-bold text-stone-400 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
           {editing ? (
@@ -940,7 +940,7 @@ function MmSceneNode({ data }) {
         </div>
         <div className="text-[9px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
       </div>
-      <Handle type="source" position={Position.Right} style={{ top: 34, opacity: 0 }} />
+      <Handle type="source" position={Position.Right} style={{ top: 38, opacity: 0 }} />
     </div>
   );
 }
@@ -956,8 +956,8 @@ function MmQANode({ data }) {
       <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color="#F0B93A" minWidth={180} maxWidth={480}
         style={{ borderColor: "#F0B93A" }} className="nodrag opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.qaId, Math.round(params.width))} />
-      <Handle type="target" position={Position.Left} style={{ top: 16, opacity: 0 }} />
-      <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + "#F0B93A" }}>
+      <Handle type="target" position={Position.Left} style={{ top: 20, opacity: 0 }} />
+      <div className="pb-2 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + "#F0B93A" }}>
         <div className="flex items-start gap-1">
           <span className="text-[10.5px] font-bold shrink-0" style={{ color: "#B8860B" }}>◼︎</span>
           {editing ? (
@@ -971,10 +971,16 @@ function MmQANode({ data }) {
           <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ"
             className="nodrag shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 text-[11px] leading-none px-0.5 transition-opacity">→</button>
         </div>
-        <BufferedTextarea value={data.a || ""} onChange={(v) => data.onAnswerChange && data.onAnswerChange(data.rowId, data.qi, v)}
-          placeholder="回答（セリフ）を入力…" rows={2}
-          className="nodrag nowheel w-full mt-1 text-[10px] leading-snug text-stone-500 bg-transparent border-0 focus:outline-none resize-none placeholder:text-stone-300"
-          onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
+        {selected ? (
+          <BufferedTextarea value={data.a || ""} onChange={(v) => data.onAnswerChange && data.onAnswerChange(data.rowId, data.qi, v)}
+            placeholder="回答（セリフ）を入力…" rows={3}
+            className="nodrag nowheel w-full mt-1 text-[10px] leading-snug text-stone-500 bg-transparent border-0 focus:outline-none resize-none placeholder:text-stone-300"
+            onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
+        ) : (
+          <div className="mt-1 text-[10px] leading-snug text-stone-500 line-clamp-2 min-h-[2.4em]">
+            {data.a || <span className="text-stone-300">回答（セリフ）未入力</span>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -992,7 +998,8 @@ function mmEstLines(text, charsPerLine) {
 }
 function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "LR", nodesep: 26, ranksep: 100 });
+  // P0（2026-08-17 MindNode風UI改修）：親子・兄弟の間隔をコンパクト化。ranksep=世代間の横距離、nodesep=兄弟の縦距離
+  g.setGraph({ rankdir: "LR", nodesep: 56, ranksep: 52 });
   g.setDefaultEdgeLabel(() => ({}));
   const nodes = [], edges = [];
   const ROOT_ID = "project";
@@ -1020,8 +1027,8 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
       (row.qa || []).forEach((pair, qi) => {
         const qaId = "qa:" + row.id + ":" + qi;
         const qLines = mmEstLines(pair.q, 19);
-        const aLines = mmEstLines(pair.a, 23);
-        const qaDim = { width: 280, height: 70 + Math.max(0, qLines - 2) * 13 + Math.max(0, aLines - 2) * 12 };
+        // P1（2026-08-17）：回答は未選択時2行クランプ固定＝高さのランダムなばらつきを避ける（選択時は展開して編集可）
+        const qaDim = { width: 280, height: 70 + Math.max(0, qLines - 2) * 13 };
         g.setNode(qaId, qaDim);
         g.setEdge(rowId, qaId);
         nodes.push({ id: qaId, type: "mmQANode", position: { x: 0, y: 0 }, width: qaDim.width, height: qaDim.height, data: { ...pair, rowId: row.id, qi, qaId } });
@@ -1145,7 +1152,7 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
       onNodesChange={onNodesChange} onNodeDragStop={onNodeDragStop}
       panOnScroll zoomOnScroll={false} panOnScrollMode="free" zoomOnPinch
       onPaneClick={() => { setSelId(null); setEditId(null); }}
-      proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "smoothstep", pathOptions: { borderRadius: 8 } }}>
+      proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "smoothstep", pathOptions: { borderRadius: 14 } }}>
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
       <Panel position="top-left">
         <button onClick={handleAddNode} disabled={!selId || isQA(selId)} title={selId && !isQA(selId) ? "選択中のシーンに質問ノードを追加" : "先にシーンを選んでください"}
