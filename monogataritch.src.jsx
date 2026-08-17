@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, startTransition } from "react";
-import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, useReactFlow, BackgroundVariant, Handle, Position, applyNodeChanges } from "@xyflow/react";
+import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, useReactFlow, BackgroundVariant, Handle, Position, applyNodeChanges, NodeResizeControl, ResizeControlVariant } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 
@@ -410,6 +410,7 @@ const migrateProject = (p) => {
     aiChat: Array.isArray(p.aiChat) ? p.aiChat : [],
     mindmapNotes: (p.mindmapNotes && typeof p.mindmapNotes === "object") ? p.mindmapNotes : {},
     mindmapPos: (p.mindmapPos && typeof p.mindmapPos === "object") ? p.mindmapPos : {},
+    mindmapWidth: (p.mindmapWidth && typeof p.mindmapWidth === "object") ? p.mindmapWidth : {},
     updatedAt: p.updatedAt || p.createdAt || Date.now(),
   };
 };
@@ -892,15 +893,17 @@ function MmProjectNode({ data }) {
 }
 function MmSectionNode({ data }) {
   return (
-    <div className="rounded-xl px-3 py-2.5 bg-white w-[220px] border" style={{ borderColor: "#dde3ec", borderLeftWidth: 3, borderLeftColor: data.accent }}>
+    <div className="w-full cursor-default">
       <Handle type="target" position={Position.Left} />
-      <div className="text-[11.5px] font-bold text-stone-700">{data.label || "未分類"}</div>
-      <div className="text-[9px] text-stone-400 mt-1">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
+      <div className="pb-1" style={{ borderBottom: "3px solid " + data.accent }}>
+        <div className="text-[12px] font-bold text-stone-700">{data.label || "未分類"}</div>
+        <div className="text-[9px] text-stone-400 mt-0.5">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
+      </div>
       <BufferedTextarea value={data.note || ""} onChange={(v) => data.onNoteChange && data.onNoteChange(data.id, v)}
         placeholder={data.hint ? "ここで何を話すか…（例：" + data.hint + "）" : "ここで何を話すか…"} rows={2}
-        className="nodrag nowheel mt-1.5 w-full text-[10.5px] leading-snug text-stone-600 bg-stone-50 border border-stone-200 rounded-md px-1.5 py-1 resize-y focus:outline-none focus:border-stone-400 placeholder:text-stone-300" />
+        className="nodrag nowheel mt-1.5 w-full text-[10.5px] leading-snug text-stone-600 bg-transparent border-0 border-b border-stone-200 rounded-none px-0 py-1 resize-y focus:outline-none focus:border-stone-400 placeholder:text-stone-300" />
       <button onClick={() => data.onAddScene && data.onAddScene(data.id)} title="このメモを元に構成台本へシーンを作る"
-        className="nodrag mt-1.5 w-full text-[10px] font-bold text-stone-400 hover:text-stone-700 border border-dashed border-stone-300 hover:border-stone-400 rounded-md py-1 transition-colors">
+        className="nodrag mt-1.5 text-[10px] font-bold text-stone-400 hover:text-stone-700 border-b border-dashed border-stone-300 hover:border-stone-400 transition-colors">
         ＋シーン追加
       </button>
       <Handle type="source" position={Position.Right} />
@@ -913,25 +916,29 @@ function MmSceneNode({ data }) {
   const inputRef = useRef(null);
   useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, [editing]);
   return (
-    <div className="rounded-xl px-3 py-2.5 bg-white cursor-pointer border transition-colors min-w-[220px] max-w-[320px] hover:border-stone-400"
-      style={{ borderColor: selected ? data.accent : "#dde3ec", boxShadow: selected ? "0 0 0 2px " + data.accent + "40" : "none" }}
+    <div className="w-full cursor-pointer group"
       onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.id); }}
       onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.id); }}>
+      <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color={data.accent} minWidth={200} maxWidth={560}
+        style={{ borderColor: data.accent }} className="nodrag"
+        onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.nodeId, Math.round(params.width))} />
       <Handle type="target" position={Position.Left} />
-      <div className="flex items-center gap-1">
-        {data.sceneNo != null && <span className="text-[9px] font-bold text-stone-400 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
-        {editing ? (
-          <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[11.5px] font-bold text-stone-700 border-b border-stone-300 focus:outline-none bg-transparent"
-            value={data.editVal} onChange={(e) => data.onEditChange && data.onEditChange(e.target.value)}
-            onBlur={() => data.onCommitEdit && data.onCommitEdit()}
-            onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
-        ) : (
-          <span className="text-[11.5px] font-bold text-stone-700">{data.label || "（無題）"}</span>
-        )}
-        <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.id); }} title="台本のこのシーンへ"
-          className="nodrag ml-auto shrink-0 text-stone-300 hover:text-stone-600 text-[11px] leading-none px-0.5">→</button>
+      <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + data.accent }}>
+        <div className="flex items-center gap-1">
+          {data.sceneNo != null && <span className="text-[9px] font-bold text-stone-400 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
+          {editing ? (
+            <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[11.5px] font-bold text-stone-700 focus:outline-none bg-transparent"
+              value={data.editVal} onChange={(e) => data.onEditChange && data.onEditChange(e.target.value)}
+              onBlur={() => data.onCommitEdit && data.onCommitEdit()}
+              onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
+          ) : (
+            <span className="text-[11.5px] font-bold" style={{ color: selected ? data.accent : "#44403c" }}>{data.label || "（無題）"}</span>
+          )}
+          <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.id); }} title="台本のこのシーンへ"
+            className="nodrag ml-auto shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 text-[11px] leading-none px-0.5 transition-opacity">→</button>
+        </div>
+        <div className="text-[9px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
       </div>
-      <div className="text-[9px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -942,25 +949,29 @@ function MmQANode({ data }) {
   const inputRef = useRef(null);
   useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, [editing]);
   return (
-    <div className="rounded-xl px-3 py-2 bg-white cursor-pointer border transition-colors w-[280px] hover:border-stone-400"
-      style={{ borderColor: "#F0B93A", boxShadow: selected ? "0 0 0 2px #F0B93A40" : "none" }}
+    <div className="w-full cursor-pointer group"
       onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.qaId); }}
       onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.qaId); }}>
+      <NodeResizeControl position="right" variant={ResizeControlVariant.Line} color="#F0B93A" minWidth={180} maxWidth={480}
+        style={{ borderColor: "#F0B93A" }} className="nodrag"
+        onResizeEnd={(e, params) => data.onResizeWidth && data.onResizeWidth(data.qaId, Math.round(params.width))} />
       <Handle type="target" position={Position.Left} />
-      <div className="flex items-start gap-1">
-        <span className="text-[10.5px] font-bold shrink-0" style={{ color: "#B8860B" }}>◼︎</span>
-        {editing ? (
-          <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[10.5px] font-bold border-b border-stone-300 focus:outline-none bg-transparent"
-            style={{ color: "#B8860B" }} value={data.editVal} onChange={(e) => data.onEditChange && data.onEditChange(e.target.value)}
-            onBlur={() => data.onCommitEdit && data.onCommitEdit()}
-            onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
-        ) : (
-          <span className="text-[10.5px] font-bold flex-1 min-w-0" style={{ color: "#B8860B" }}>{data.q}</span>
-        )}
-        <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ"
-          className="nodrag shrink-0 text-stone-300 hover:text-stone-600 text-[11px] leading-none px-0.5">→</button>
+      <div className="pb-1 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + "#F0B93A" }}>
+        <div className="flex items-start gap-1">
+          <span className="text-[10.5px] font-bold shrink-0" style={{ color: "#B8860B" }}>◼︎</span>
+          {editing ? (
+            <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[10.5px] font-bold focus:outline-none bg-transparent"
+              style={{ color: "#B8860B" }} value={data.editVal} onChange={(e) => data.onEditChange && data.onEditChange(e.target.value)}
+              onBlur={() => data.onCommitEdit && data.onCommitEdit()}
+              onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
+          ) : (
+            <span className="text-[10.5px] font-bold flex-1 min-w-0" style={{ color: "#B8860B" }}>{data.q}</span>
+          )}
+          <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ"
+            className="nodrag shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 text-[11px] leading-none px-0.5 transition-opacity">→</button>
+        </div>
+        {data.a && <div className="text-[10px] text-stone-500 mt-1">{data.a}</div>}
       </div>
-      {data.a && <div className="text-[10px] text-stone-500 mt-1">{data.a}</div>}
     </div>
   );
 }
@@ -997,7 +1008,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
       const rowDim = { width: 300, height: 78 + Math.max(0, labelLines - 2) * 15 };
       g.setNode(rowId, rowDim);
       g.setEdge(secId, rowId);
-      nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
+      nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length], nodeId: rowId } });
       edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId });
       (row.qa || []).forEach((pair, qi) => {
         const qaId = "qa:" + row.id + ":" + qi;
@@ -1016,7 +1027,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   return { nodes, edges };
 }
 
-function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter, onEditQuestion, posMap, onPosChange, onClearPos }) {
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter, onEditQuestion, posMap, onPosChange, onClearPos, widthMap, onWidthChange, onDeleteScene, onDeleteQuestion, onAddQuestion, onUndo, onRedo }) {
   const { fitView } = useReactFlow();
   const prevSigRef = useRef(null);
   const skipNextFitRef = useRef(false);
@@ -1052,11 +1063,27 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   };
   useEffect(() => {
     const onKey = (e) => {
+      // input/textarea内（インライン編集中や取材メモ欄）ではブラウザ標準のUndo/文字削除を優先し、横取りしない
+      const typingInField = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !typingInField) {
+        e.preventDefault();
+        if (e.shiftKey) onRedo && onRedo(); else onUndo && onUndo();
+        return;
+      }
       if (e.key === "Escape") {
         // 編集破棄。取り消し後にinputがDOMから外れてblurが飛んでもコミットされないよう、
         // editValを元の値に戻してから閉じる（onBlurの遅延commitを無害化）
         if (editId) { setEditVal(origValFor(editId)); setEditId(null); e.preventDefault(); }
         else if (selId) { setSelId(null); e.preventDefault(); }
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && selId && !typingInField) {
+        e.preventDefault();
+        if (isQA(selId)) {
+          const m = /^qa:(.+):(\d+)$/.exec(selId);
+          if (m && onDeleteQuestion) onDeleteQuestion(m[1], +m[2]);
+        } else if (onDeleteScene) onDeleteScene(selId);
+        setSelId(null); setEditId(null);
         return;
       }
       if ((e.key === "Enter" || e.key === "Tab") && selId) {
@@ -1071,15 +1098,17 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selId, editId, editVal, labelById, qaQById, onAddSceneAfter, onRenameScene, onEditQuestion]);
+  }, [selId, editId, editVal, labelById, qaQById, onAddSceneAfter, onRenameScene, onEditQuestion, onDeleteScene, onDeleteQuestion, onUndo, onRedo]);
+  const onResizeWidth = useCallback((nodeId, w) => { onWidthChange && onWidthChange(nodeId, w); }, [onWidthChange]);
   const nodes = useMemo(() => builtNodes.map((n) => {
     const pos = (posMap && posMap[n.id]) || n.position;
-    if (n.type === "mmSectionNode") return { ...n, position: pos, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } };
-    if (n.type === "mmSceneNode") return { ...n, position: pos, data: { ...n.data, selected: n.data.id === selId, editing: n.data.id === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
-    if (n.type === "mmQANode") return { ...n, position: pos, data: { ...n.data, selected: n.data.qaId === selId, editing: n.data.qaId === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
-    return { ...n, position: pos };
+    const width = (widthMap && widthMap[n.id]) || n.width;
+    if (n.type === "mmSectionNode") return { ...n, position: pos, width, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } };
+    if (n.type === "mmSceneNode") return { ...n, position: pos, width, data: { ...n.data, selected: n.data.id === selId, editing: n.data.id === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit, onResizeWidth } };
+    if (n.type === "mmQANode") return { ...n, position: pos, width, data: { ...n.data, selected: n.data.qaId === selId, editing: n.data.qaId === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit, onResizeWidth } };
+    return { ...n, position: pos, width };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal, posMap]);
+  }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal, posMap, widthMap, onResizeWidth]);
   // ドラッグ中の見た目はReact Flow内のローカルstateで持ち、ドロップ確定時にonPosChangeで親（プロジェクトデータ）へ永続化する
   const [liveNodes, setLiveNodes] = useState(nodes);
   useEffect(() => { setLiveNodes(nodes); }, [nodes]);
@@ -1089,6 +1118,13 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
     if (onClearPos) onClearPos(builtNodes.map((n) => n.id));
     requestAnimationFrame(() => fitView({ duration: 300, padding: 0.15 }));
   }, [onClearPos, builtNodes, fitView]);
+  // 「＋ノード」：選択中のシーンに質問ノードを追加してそのまま編集開始。シーン未選択時は何もしない
+  const handleAddNode = useCallback(() => {
+    if (!selId || isQA(selId) || !onAddQuestion) return;
+    const qi = onAddQuestion(selId);
+    if (qi != null) { const qaId = "qa:" + selId + ":" + qi; setSelId(qaId); setEditId(qaId); setEditVal(""); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId, onAddQuestion]);
   useEffect(() => {
     if (prevSigRef.current !== signature) {
       prevSigRef.current = signature;
@@ -1104,9 +1140,15 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
       onPaneClick={() => { setSelId(null); setEditId(null); }}
       proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "bezier", style: { strokeWidth: 1.5, opacity: 0.8 } }}>
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
-      <Controls showInteractive={false} position="top-left" />
-      <Panel position="top-left" style={{ marginTop: 132 }}>
-        <button onClick={handleAlign} title="ドラッグで動かした位置をリセットして自動整列に戻す"
+      <Panel position="top-left">
+        <button onClick={handleAddNode} disabled={!selId || isQA(selId)} title={selId && !isQA(selId) ? "選択中のシーンに質問ノードを追加" : "先にシーンを選んでください"}
+          className="nodrag bg-white border border-stone-200 rounded-lg shadow-sm text-[10.5px] font-bold text-stone-500 hover:text-stone-800 hover:border-stone-400 disabled:opacity-40 disabled:hover:text-stone-500 disabled:hover:border-stone-200 px-2 py-1.5 transition-colors">
+          ＋ノード
+        </button>
+      </Panel>
+      <Controls showInteractive={false} position="top-left" style={{ marginTop: 44 }} />
+      <Panel position="top-left" style={{ marginTop: 176 }}>
+        <button onClick={handleAlign} title="ドラッグで動かした位置・幅をリセットして自動整列に戻す"
           className="nodrag bg-white border border-stone-200 rounded-lg shadow-sm text-[10.5px] font-bold text-stone-500 hover:text-stone-800 hover:border-stone-400 px-2 py-1.5 transition-colors">
           整列
         </button>
@@ -2863,19 +2905,45 @@ export default function App() {
   }, []);
   const [spineFw, setSpineFwState] = useState(() => { try { return localStorage.getItem("mg:spineFw") || "spine"; } catch (e) { return "spine"; } });
   const setSpineFw = (k) => { setSpineFwState(k); try { localStorage.setItem("mg:spineFw", k); } catch (e) {} };
+  // マインドマップ専用のUndo/Redo（⌘Z/⌘⇧Z）。rows・メモ・位置・幅をまとめて1スナップショットとして積む
+  const mmUndoRef = useRef([]);
+  const mmRedoRef = useRef([]);
+  const mmSnapshot = () => ({ rows: project.rows, mindmapNotes: project.mindmapNotes, mindmapPos: project.mindmapPos, mindmapWidth: project.mindmapWidth });
+  const pushMmUndo = () => { mmUndoRef.current = [...mmUndoRef.current.slice(-49), mmSnapshot()]; mmRedoRef.current = []; };
+  const mmUndo = () => {
+    const snap = mmUndoRef.current.pop();
+    if (!snap) return;
+    mmRedoRef.current.push(mmSnapshot());
+    setProject((p) => ({ ...p, ...snap }));
+  };
+  const mmRedo = () => {
+    const snap = mmRedoRef.current.pop();
+    if (!snap) return;
+    mmUndoRef.current.push(mmSnapshot());
+    setProject((p) => ({ ...p, ...snap }));
+  };
   // マインドマップの各ステップに「ここで何を話すか」を書けるメモ（フレームワーク別にキー分離、台本の行はまだ作らない＝Phase1）
   const setMindmapNote = (sectionId, text) => {
+    pushMmUndo();
     setProject((p) => ({ ...p, mindmapNotes: { ...(p.mindmapNotes || {}), [spineFw + ":" + sectionId]: text } }));
   };
   // マインドマップのノード手動配置（D&D）。フレームワーク別にキー分離してmindmapNotesと同じ規約に揃える
   const setMindmapPos = (nodeId, pos) => {
+    pushMmUndo();
     setProject((p) => ({ ...p, mindmapPos: { ...(p.mindmapPos || {}), [spineFw + ":" + nodeId]: pos } }));
   };
+  // ノード幅の手動調整（D&Dリサイズ）。位置と同じキー規約
+  const setMindmapWidth = (nodeId, w) => {
+    pushMmUndo();
+    setProject((p) => ({ ...p, mindmapWidth: { ...(p.mindmapWidth || {}), [spineFw + ":" + nodeId]: w } }));
+  };
+  // 「整列」は位置・幅の手動調整を両方リセットして自動レイアウトに戻す（Undo対象外＝いつでも手動配置に戻せるため）
   const clearMindmapPos = (nodeIds) => {
     setProject((p) => {
-      const next = { ...(p.mindmapPos || {}) };
-      nodeIds.forEach((id) => { delete next[spineFw + ":" + id]; });
-      return { ...p, mindmapPos: next };
+      const nextPos = { ...(p.mindmapPos || {}) };
+      const nextWidth = { ...(p.mindmapWidth || {}) };
+      nodeIds.forEach((id) => { delete nextPos[spineFw + ":" + id]; delete nextWidth[spineFw + ":" + id]; });
+      return { ...p, mindmapPos: nextPos, mindmapWidth: nextWidth };
     });
   };
   const [spineDrag, setSpineDrag] = useState(null);          // 背骨のD&D {from, over}（ロケブロックごと並べ替え）
@@ -5851,6 +5919,7 @@ export default function App() {
      そのフェーズに既存のロケブロックがあれば末尾に追加。無ければ新規ロケを作り、
      行の並び順（phaseSeqは行順で単調増加という前提）を崩さない位置へ挿し込む。 */
   const addSceneFromMindmap = (sectionId) => {
+    pushMmUndo();
     const phaseIdx = +String(sectionId).replace("phase", "");
     const fw = STORY_FRAMEWORKS[spineFw] || STORY_FRAMEWORKS.spine;
     const noteText = (project.mindmapNotes && project.mindmapNotes[spineFw + ":" + sectionId]) || "";
@@ -5884,6 +5953,7 @@ export default function App() {
   /* マインドマップのノード操作（MindNode風）：Enter/Tabで選択中シーンの直後に兄弟シーンを追加。
      台本タブへは移動しない＝マインドマップに留まったまま連続入力できるように。新規行idを同期で返す */
   const addSceneAfter = (rowId, label) => {
+    pushMmUndo();
     const rows = project.rows || [];
     const idx = rows.findIndex((r) => r.id === rowId);
     if (idx < 0) return null;
@@ -5891,7 +5961,7 @@ export default function App() {
     insertBelow(idx, row);
     return row.id;
   };
-  const renameSceneLabel = (rowId, label) => updateRow(rowId, { label });
+  const renameSceneLabel = (rowId, label) => { pushMmUndo(); updateRow(rowId, { label }); };
   /* マインドマップのQ&Aサブノード：qi番目の「◼︎ 質問」行だけを書き換える（回答・他の質問行はそのまま） */
   const patchQuestion = (rowId, qi, newQ) => {
     const row = (project.rows || []).find((r) => r.id === rowId);
@@ -5902,8 +5972,37 @@ export default function App() {
       if (/^\s*[◼■]/.test(lines[i])) { seen++; if (seen === qi) { targetLine = i; break; } }
     }
     if (targetLine < 0) return;
+    pushMmUndo();
     lines[targetLine] = "◼︎ " + newQ;
     updateRow(rowId, { script: lines.join("\n") });
+  };
+  // マインドマップからのシーン削除（Delete/Backspaceキー）
+  const deleteSceneFromMindmap = (rowId) => { pushMmUndo(); deleteRow(rowId); };
+  /* マインドマップからのQ&A削除：qi番目の「◼︎ 質問」行から次の◼︎行の手前（無ければ末尾）までを丸ごと除去 */
+  const deleteQuestionFromMindmap = (rowId, qi) => {
+    const row = (project.rows || []).find((r) => r.id === rowId);
+    if (!row) return;
+    const lines = (row.script || "").split("\n");
+    const qLineIdxs = [];
+    lines.forEach((l, i) => { if (/^\s*[◼■]/.test(l)) qLineIdxs.push(i); });
+    const start = qLineIdxs[qi];
+    if (start == null) return;
+    const end = qLineIdxs[qi + 1] != null ? qLineIdxs[qi + 1] : lines.length;
+    pushMmUndo();
+    lines.splice(start, end - start);
+    updateRow(rowId, { script: lines.join("\n") });
+  };
+  /* マインドマップの「＋ノード」ボタン：選択中のシーンに空の質問行を追加し、そのまま編集開始できるよう新しいqiを返す */
+  const addQuestionToScene = (rowId) => {
+    const row = (project.rows || []).find((r) => r.id === rowId);
+    if (!row) return null;
+    pushMmUndo();
+    const script = row.script || "";
+    // parseQAは質問が空文字だとペアごと除外してノードが出てこないため、仮テキストを入れておく（編集開始時に選択状態で上書きできる）
+    const next = script + (script && !script.endsWith("\n") ? "\n" : "") + "◼︎ 新しい質問";
+    updateRow(rowId, { script: next });
+    const qLineIdxs = []; next.split("\n").forEach((l, i) => { if (/^\s*[◼■]/.test(l)) qLineIdxs.push(i); });
+    return qLineIdxs.length - 1;
   };
   /* 物語の背骨：ロケブロック（ロケ行＋配下シーン）ごとD&Dで並べ替え。from/to は beats のindex */
   const moveSpineBlock = (from, to) => setRows((rows) => {
@@ -7576,7 +7675,8 @@ export default function App() {
                   const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
                   const posPrefix = spineFw + ":";
                   const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
-                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} />;
+                  const widthMap = {}; Object.keys(project.mindmapWidth || {}).forEach((k) => { if (k.startsWith(posPrefix)) widthMap[k.slice(posPrefix.length)] = project.mindmapWidth[k]; });
+                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />;
                 })()}
               </section>
             ) : (<>
@@ -7945,10 +8045,11 @@ export default function App() {
               const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
               const posPrefix = spineFw + ":";
               const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
+              const widthMap = {}; Object.keys(project.mindmapWidth || {}).forEach((k) => { if (k.startsWith(posPrefix)) widthMap[k.slice(posPrefix.length)] = project.mindmapWidth[k]; });
               return (
                 <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
                   <p className="text-[11px] text-stone-400 mb-2">構成台本と同じデータを見ています。ここでの編集は台本にもそのまま反映されます。各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
-                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} />
+                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />
                 </section>
               );
             })()}
