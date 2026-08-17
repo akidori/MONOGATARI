@@ -1312,25 +1312,26 @@ function renderVideoList(accent, main){
   const el=document.getElementById("vc-list"); if(!el) return;
   const list=videoComments();
   el.innerHTML = list.length ? list.map(c=>{
-    const st=cStat(c), sc=CMT_STATUS_COL[st]||CMT_STATUS_COL["未対応"], pc=CMT_PRIO_COL[c.priority]||null;
+    const st=cStat(c), sc=CMT_STATUS_COL[st]||CMT_STATUS_COL["未対応"], pc=CMT_PRIO_COL[c.priority]||null, done=st==="完了";
     const replies=(c.replies||[]).map(r=>`<div class="text-[11px] pl-2 border-l-2 border-stone-200 mt-0.5"><b class="text-stone-600">${esc(r.author||"")}</b> <span class="text-stone-700">${esc(r.text||"")}</span></div>`).join("");
     return `
-    <div class="rounded-lg border border-stone-200 bg-white px-3 py-2 mb-1.5">
-      <div class="flex items-center gap-1.5 flex-wrap">
-        <button data-seek="${c.timecode}" class="vc-seek mono text-[11px] font-bold pl-2 pr-2.5 py-0.5 rounded-full shadow-sm text-white inline-flex items-center gap-1" style="background:${accent}">${icon("play","w-2.5 h-2.5")}${fmtTC(c.timecode)}</button>
+    <div class="rounded-xl border border-stone-200 bg-white p-2.5 mb-2">
+      <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+        ${CAN_RESOLVE?`<button data-resolve="${c.id}" data-next="${c.resolved?0:1}" class="vc-resolve w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 text-[11px] font-bold leading-none ${done?'text-white':'border-stone-300 text-transparent hover:border-emerald-400 hover:text-emerald-400'}" ${done?'style="background:#16A34A;border-color:#16A34A"':''} title="${done?'対応済みを解除':'対応済みにする'}">✓</button>`:""}
+        <button data-seek="${c.timecode}" class="vc-seek mono text-[10px] font-bold px-1.5 py-0.5 rounded text-white" style="background:${main}">▶ ${fmtTC(c.timecode)}</button>
         <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:#F0F0F2;color:#57534E">${esc(c.category||"その他")}</span>
         ${pc?`<span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${pc[0]};color:${pc[1]}">${esc(c.priority)}</span>`:""}
-        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${sc[0]};color:${sc[1]}">${st}</span>
-        <span class="ml-auto text-[10px] text-stone-400">${fmtTime(c.createdAt)}</span>
-        ${CAN_RESOLVE?`<button data-resolve="${c.id}" data-next="${c.resolved?0:1}" class="vc-resolve text-[10px] font-bold pl-2 pr-2.5 py-1 rounded-full shadow-sm inline-flex items-center gap-1 ${c.resolved?'bg-stone-200 text-stone-500':'text-white'}" ${c.resolved?'':'style="background:#10B981"'}>${icon(c.resolved?"undo":"check","w-2.5 h-2.5")}${c.resolved?'未対応に戻す':'対応済みにする'}</button>`:""}
-        ${MINE.includes(c.id)?`<button data-del="${c.id}" class="vc-del text-[10px] text-stone-300 hover:text-rose-500 font-bold" title="自分のコメントを削除">削除</button>`:""}
+        <span class="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${sc[0]};color:${sc[1]}">${st}</span>
       </div>
-      <div class="text-[11px] font-bold text-stone-600 mt-1">${esc(c.author||"ゲスト")}</div>
-      <div class="text-[12.5px] text-stone-800 whitespace-pre-wrap break-words mt-0.5">${esc(c.text)}</div>
+      <div class="text-[12px] text-stone-800 leading-snug whitespace-pre-wrap break-words">${esc(c.text)}</div>
+      <div class="text-[10px] text-stone-400 mt-1 flex items-center gap-2">
+        <span>${esc(c.author||"ゲスト")}</span><span>${fmtTime(c.createdAt)}</span>
+        ${MINE.includes(c.id)?`<button data-del="${c.id}" class="vc-del ml-auto hover:text-rose-500 font-bold" title="自分のコメントを削除">削除</button>`:""}
+      </div>
       ${replies?`<div class="mt-1.5">${replies}</div>`:""}
-      <div class="flex gap-1.5 mt-1.5">
-        <input data-rep="${c.id}" placeholder="返信…" class="vc-rep flex-1 min-w-0 text-[11px] border border-stone-200 rounded px-2 py-1 focus:outline-none">
-        <button data-repbtn="${c.id}" class="vc-repbtn text-[10px] font-bold pl-2 pr-2.5 py-1 rounded-full border border-stone-200 bg-white text-stone-500 inline-flex items-center gap-1">${icon("reply","w-2.5 h-2.5")}返信</button>
+      <div class="flex items-center gap-1.5 mt-1.5">
+        <input data-rep="${c.id}" placeholder="返信…" class="vc-rep flex-1 min-w-0 text-[11px] border border-stone-200 rounded-lg px-2 py-1 focus:outline-none">
+        <button data-repbtn="${c.id}" class="vc-repbtn text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 shrink-0">返信</button>
       </div>
     </div>`;}).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだコメントはありません。</div>';
   el.querySelectorAll(".vc-seek").forEach(b=>b.addEventListener("click", ()=>seekTo(+b.dataset.seek)));
