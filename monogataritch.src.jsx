@@ -1145,7 +1145,7 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
       onNodesChange={onNodesChange} onNodeDragStop={onNodeDragStop}
       panOnScroll zoomOnScroll={false} panOnScrollMode="free" zoomOnPinch
       onPaneClick={() => { setSelId(null); setEditId(null); }}
-      proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "bezier" }}>
+      proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "smoothstep", pathOptions: { borderRadius: 8 } }}>
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
       <Panel position="top-left">
         <button onClick={handleAddNode} disabled={!selId || isQA(selId)} title={selId && !isQA(selId) ? "選択中のシーンに質問ノードを追加" : "先にシーンを選んでください"}
