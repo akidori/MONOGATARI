@@ -793,7 +793,7 @@ const parseQA = (script) => {
   let cur = null;
   for (const raw of lines) {
     const line = raw.trim();
-    const m = /^[◼■]\s*(.*)$/.exec(line);
+    const m = /^[◼■]︎?\s*(.*)$/.exec(line);
     if (m) { cur = { q: m[1].trim(), a: "" }; pairs.push(cur); }
     else if (cur && line) cur.a = (cur.a ? cur.a + " " : "") + line;
   }
@@ -933,11 +933,29 @@ function MmSceneNode({ data }) {
   );
 }
 function MmQANode({ data }) {
+  const editing = data.editing;
+  const selected = data.selected;
+  const inputRef = useRef(null);
+  useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, [editing]);
   return (
     <div className="rounded-xl px-3 py-2 bg-white cursor-pointer border transition-colors w-[200px] hover:border-stone-400"
-      style={{ borderColor: "#F0B93A" }} onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ">
+      style={{ borderColor: "#F0B93A", boxShadow: selected ? "0 0 0 2px #F0B93A40" : "none" }}
+      onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.qaId); }}
+      onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.qaId); }}>
       <Handle type="target" position={Position.Left} />
-      <div className="text-[10.5px] font-bold line-clamp-2" style={{ color: "#B8860B" }}>◼︎ {data.q}</div>
+      <div className="flex items-start gap-1">
+        <span className="text-[10.5px] font-bold shrink-0" style={{ color: "#B8860B" }}>◼︎</span>
+        {editing ? (
+          <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[10.5px] font-bold border-b border-stone-300 focus:outline-none bg-transparent"
+            style={{ color: "#B8860B" }} value={data.editVal} onChange={(e) => data.onEditChange && data.onEditChange(e.target.value)}
+            onBlur={() => data.onCommitEdit && data.onCommitEdit()}
+            onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
+        ) : (
+          <span className="text-[10.5px] font-bold line-clamp-2 flex-1 min-w-0" style={{ color: "#B8860B" }}>{data.q}</span>
+        )}
+        <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ"
+          className="nodrag shrink-0 text-stone-300 hover:text-stone-600 text-[11px] leading-none px-0.5">→</button>
+      </div>
       {data.a && <div className="text-[10px] text-stone-500 mt-1 line-clamp-2">{data.a}</div>}
     </div>
   );
@@ -972,7 +990,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
         const qaDim = { width: 200, height: 70 };
         g.setNode(qaId, qaDim);
         g.setEdge(rowId, qaId);
-        nodes.push({ id: qaId, type: "mmQANode", position: { x: 0, y: 0 }, width: qaDim.width, height: qaDim.height, data: { ...pair, rowId: row.id } });
+        nodes.push({ id: qaId, type: "mmQANode", position: { x: 0, y: 0 }, width: qaDim.width, height: qaDim.height, data: { ...pair, rowId: row.id, qi, qaId } });
         edges.push({ id: "e-" + rowId + "-" + qaId, source: rowId, target: qaId });
       });
     });
@@ -982,7 +1000,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   return { nodes, edges };
 }
 
-function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter }) {
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter, onEditQuestion }) {
   const { fitView } = useReactFlow();
   const prevSigRef = useRef(null);
   const skipNextFitRef = useRef(false);
@@ -996,13 +1014,24 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   // ノート本文はここで毎レンダー最新値を差し込む（signatureに含めない＝入力中にdagre再配置してノードが動かないように）
   const noteById = useMemo(() => { const m = {}; sections.forEach((s) => { m[s.id] = s.note || ""; }); return m; }, [sections]);
   const labelById = useMemo(() => { const m = {}; sections.forEach((s) => s.rows.forEach((r) => { m[r.id] = r.label; })); return m; }, [sections]);
+  const qaQById = useMemo(() => { const m = {}; sections.forEach((s) => s.rows.forEach((r) => (r.qa || []).forEach((p, qi) => { m["qa:" + r.id + ":" + qi] = p.q; }))); return m; }, [sections]);
+  const isQA = (id) => typeof id === "string" && id.startsWith("qa:");
+  const origValFor = (id) => (isQA(id) ? qaQById[id] : labelById[id]) || "";
   // MindNode風のノード選択・インライン編集・Enter/Tabで兄弟シーン追加（Studio OS PRD Phase）
   const [selId, setSelId] = useState(null);
   const [editId, setEditId] = useState(null);
   const [editVal, setEditVal] = useState("");
-  const startEdit = (id) => { setSelId(id); setEditId(id); setEditVal(labelById[id] || ""); };
+  const startEdit = (id) => { setSelId(id); setEditId(id); setEditVal(origValFor(id)); };
   const commitEdit = () => {
-    if (editId) { const v = editVal.trim(); if (v !== (labelById[editId] || "")) onRenameScene && onRenameScene(editId, v); }
+    if (editId) {
+      const v = editVal.trim();
+      if (v !== origValFor(editId)) {
+        if (isQA(editId)) {
+          const m = /^qa:(.+):(\d+)$/.exec(editId);
+          if (m && onEditQuestion) onEditQuestion(m[1], +m[2], v);
+        } else if (onRenameScene) onRenameScene(editId, v);
+      }
+    }
     setEditId(null);
   };
   useEffect(() => {
@@ -1010,14 +1039,14 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
       if (e.key === "Escape") {
         // 編集破棄。取り消し後にinputがDOMから外れてblurが飛んでもコミットされないよう、
         // editValを元の値に戻してから閉じる（onBlurの遅延commitを無害化）
-        if (editId) { setEditVal(labelById[editId] || ""); setEditId(null); e.preventDefault(); }
+        if (editId) { setEditVal(origValFor(editId)); setEditId(null); e.preventDefault(); }
         else if (selId) { setSelId(null); e.preventDefault(); }
         return;
       }
       if ((e.key === "Enter" || e.key === "Tab") && selId) {
         e.preventDefault();
         if (editId === selId) commitEdit();
-        if (!onAddSceneAfter) return;
+        if (isQA(selId) || !onAddSceneAfter) return;   // Q&Aノードでの兄弟追加は未対応（シーンのみ）
         skipNextFitRef.current = true;
         const newId = onAddSceneAfter(selId, "");
         if (newId) { setSelId(newId); setEditId(newId); setEditVal(""); }
@@ -1026,10 +1055,11 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selId, editId, editVal, labelById, onAddSceneAfter, onRenameScene]);
+  }, [selId, editId, editVal, labelById, qaQById, onAddSceneAfter, onRenameScene, onEditQuestion]);
   const nodes = useMemo(() => builtNodes.map((n) => {
     if (n.type === "mmSectionNode") return { ...n, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } };
     if (n.type === "mmSceneNode") return { ...n, data: { ...n.data, selected: n.data.id === selId, editing: n.data.id === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
+    if (n.type === "mmQANode") return { ...n, data: { ...n.data, selected: n.data.qaId === selId, editing: n.data.qaId === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
     return n;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal]);
@@ -1051,10 +1081,10 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
     </ReactFlow>
   );
 }
-function MindmapView(props) {
+function MindmapView({ height, ...props }) {
   if (!(props.sections || []).length) return <div className="text-[12px] text-stone-400 py-2">物語の背骨でフレームワークを選ぶと表示されます</div>;
   return (
-    <div style={{ height: 480 }}>
+    <div style={{ height: height || 480 }}>
       <ReactFlowProvider><MmCanvas {...props} /></ReactFlowProvider>
     </div>
   );
@@ -4010,6 +4040,7 @@ export default function App() {
   const jumpToRow = (rowId) => {
     if (!rowId) return;
     setTab("script");
+    setScriptView("table");   // マインドマップ表示中にジャンプした時も台本編集画面へ戻す
     setShowReview(false);
     setTimeout(() => {
       const el = document.getElementById("row-" + rowId);
@@ -5803,6 +5834,19 @@ export default function App() {
     return row.id;
   };
   const renameSceneLabel = (rowId, label) => updateRow(rowId, { label });
+  /* マインドマップのQ&Aサブノード：qi番目の「◼︎ 質問」行だけを書き換える（回答・他の質問行はそのまま） */
+  const patchQuestion = (rowId, qi, newQ) => {
+    const row = (project.rows || []).find((r) => r.id === rowId);
+    if (!row) return;
+    const lines = (row.script || "").split("\n");
+    let seen = -1, targetLine = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*[◼■]/.test(lines[i])) { seen++; if (seen === qi) { targetLine = i; break; } }
+    }
+    if (targetLine < 0) return;
+    lines[targetLine] = "◼︎ " + newQ;
+    updateRow(rowId, { script: lines.join("\n") });
+  };
   /* 物語の背骨：ロケブロック（ロケ行＋配下シーン）ごとD&Dで並べ替え。from/to は beats のindex */
   const moveSpineBlock = (from, to) => setRows((rows) => {
     const blocks = spineBlocks(rows);
@@ -7251,6 +7295,7 @@ export default function App() {
         {/* ================= 構成台本タブ ================= */}
         {tab === "script" && project.format !== "talk" && (
           <>
+            {scriptView !== "mindmap" && (<>
             {/* 物語フレームワーク（背骨）：ロケブロックを選んだ型に比例配分して「穴」を可視化。クリックで該当ロケへ */}
             {(() => {
               const beats = deriveSpineBeats(project.rows);
@@ -7446,6 +7491,7 @@ export default function App() {
                 <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（空行でEnter → ◼︎ 自動挿入）" />
               )}
             </section>
+            </>)}
 
             {/* 台本編集／マインドマップの表示切替（Phase3） */}
             <div className="flex justify-end items-center gap-2 -mb-1">
@@ -7470,7 +7516,7 @@ export default function App() {
               <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
                 {(() => {
                   const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
-                  return <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} />;
+                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} />;
                 })()}
               </section>
             ) : (<>
@@ -8211,7 +8257,7 @@ export default function App() {
                   {mmOpen && (
                     <div className="px-3 sm:px-4 py-3">
                       <p className="text-[11px] text-stone-400 mb-2">各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
-                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} />
+                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} />
                     </div>
                   )}
                 </section>
