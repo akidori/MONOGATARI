@@ -7244,26 +7244,6 @@ export default function App() {
               );
             })()}
 
-            {/* マインドマップ（Studio OS Phase 1実装の移植、2026-08-15）: 物語の背骨と同じデータを
-                木構造で可視化。Pan/Zoom/MiniMap、ノードクリックで該当シーンへスクロール。 */}
-            {(() => {
-              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5);
-              return (
-                <section className={cardCls + " mb-4"}>
-                  {cardHead("マインドマップ", (
-                    <span className="w-6 h-6 shrink-0 grid place-items-center text-stone-400" title={mmOpen ? "畳む" : "開く"}>
-                      <span className="text-[10px] transition-transform inline-block" style={{ transform: mmOpen ? "none" : "rotate(-90deg)" }}>▾</span>
-                    </span>
-                  ), toggleMm)}
-                  {mmOpen && (
-                    <div className="px-3 sm:px-4 py-3">
-                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} />
-                    </div>
-                  )}
-                </section>
-              );
-            })()}
-
             {/* 番組情報 */}
             <section className={cardCls + " mb-4"}>
               {cardHead("番組情報", (
@@ -8051,6 +8031,25 @@ export default function App() {
                   className={"text-[12px] font-bold px-3.5 py-1.5 rounded-lg transition-colors " + (prepView === k ? "bg-white shadow-sm text-stone-800" : "text-stone-500 hover:text-stone-700")}>{lab}</button>
               ))}
             </div>
+            {/* マインドマップ（2026-08-15 Studio OSから移植／2026-08-17 構成台本タブから取材メモタブへ移動）:
+                物語の背骨と同じデータを木構造で可視化。Pan/Zoom/MiniMap、ノードクリックで該当シーンへスクロール。 */}
+            {(() => {
+              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5);
+              return (
+                <section className={cardCls + " mb-4"}>
+                  {cardHead("マインドマップ", (
+                    <span className="w-6 h-6 shrink-0 grid place-items-center text-stone-400" title={mmOpen ? "畳む" : "開く"}>
+                      <span className="text-[10px] transition-transform inline-block" style={{ transform: mmOpen ? "none" : "rotate(-90deg)" }}>▾</span>
+                    </span>
+                  ), toggleMm)}
+                  {mmOpen && (
+                    <div className="px-3 sm:px-4 py-3">
+                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} />
+                    </div>
+                  )}
+                </section>
+              );
+            })()}
             {prepView === "wizard" ? (
               <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
             ) : (
