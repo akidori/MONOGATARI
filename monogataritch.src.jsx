@@ -4150,11 +4150,11 @@ export default function App() {
     setDeliverBusy(true);
     try {
       // 切り抜き生成時のWhisper文字起こし（完成動画の実尺TC付き）があれば目次の根拠に使う
-      let transcript = null;
+      let transcript = null, transcriptUpdatedAt = 0;
       if (project.shareId) {
         try {
           const tr = await fetch(SHARE_API + "/api/transcript/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || "")).then((r) => r.json());
-          if (tr && Array.isArray(tr.segments) && tr.segments.length) transcript = tr.segments;
+          if (tr && Array.isArray(tr.segments) && tr.segments.length) { transcript = tr.segments; transcriptUpdatedAt = tr.updatedAt || 0; }
         } catch (e) {}
       }
       const res = await fetch(SHARE_API + "/api/deliver", {
@@ -4165,7 +4165,7 @@ export default function App() {
       if (!res.ok) throw new Error(d.error || "生成に失敗しました");
       // 生成結果を1つのpatchに集約。setMeta（非同期反映）に頼らず、この場で確実にクラウド保存する。
       const patch = { deliverChapters: chapters, deliverTitle: d.title || "", deliverDescription: d.description || "", deliverHashtags: d.hashtags || "" };
-      if (transcript && (d.chapters || "").trim()) patch.deliverChapters = d.chapters.trim();
+      if (transcript && (d.chapters || "").trim()) { patch.deliverChapters = d.chapters.trim(); patch.deliverChaptersTranscriptAt = transcriptUpdatedAt || Date.now(); }
       Object.entries(patch).forEach(([k, v]) => setMeta(k, v));
       // デバウンスautosaveを待たず即・明示保存（回線が飛んでも取りこぼさない）。失敗はloud-failでAKに知らせる。
       const merged = { ...project, meta: { ...project.meta, ...patch } };
@@ -4202,10 +4202,10 @@ export default function App() {
       const projRef = project; // deliver再依頼用（台本内容は目次生成に影響しないので多少古くてもOK）
       const poll = async (tries) => {
         if (tries > 60) { showToast("文字起こしが終わらなかった（Mac側停止かも）。あとでもう一度「自動生成」を押して"); return; }
-        let segs = null;
+        let segs = null, segsUpdatedAt = 0;
         try {
           const tr = await fetch(SHARE_API + "/api/transcript/" + snap + "?token=" + encodeURIComponent(token)).then((x) => x.json());
-          if (tr && Array.isArray(tr.segments) && tr.segments.length) segs = tr.segments;
+          if (tr && Array.isArray(tr.segments) && tr.segments.length) { segs = tr.segments; segsUpdatedAt = tr.updatedAt || 0; }
         } catch (e) {}
         if (!segs) { setTimeout(() => poll(tries + 1), 20000); return; }
         try {
@@ -4216,6 +4216,7 @@ export default function App() {
           const d = await res.json();
           if (res.ok && (d.chapters || "").trim()) {
             setMeta("deliverChapters", d.chapters.trim());
+            setMeta("deliverChaptersTranscriptAt", segsUpdatedAt || Date.now());
             showToast("目次を完成動画の文字起こしから実尺で作り直しました");
           }
         } catch (e) {}
@@ -5629,6 +5630,31 @@ export default function App() {
     }
   };
   React.useEffect(() => { if (tab === "review" && project) resumeStreamPolls(false); }, [tab, project && project.id]);
+  /* 納品完了タブを開くたびに、完成動画の文字起こしが後から出来ていないか確認し、出来ていれば目次だけ静かに実尺版へ差し替える。
+     「自動生成」直後の20分ポーリングはタブを閉じると死んで目次が更新されないまま=silent failになる（2026-08-17指摘）。
+     次に開いた時に必ず追いつく形にして、タブを開きっぱなしにする必要をなくす。 */
+  React.useEffect(() => {
+    if (tab !== "deliver" || !project || !project.shareId || project.format === "talk") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const tr = await fetch(SHARE_API + "/api/transcript/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || "")).then((r) => r.json());
+        if (cancelled || !tr || !Array.isArray(tr.segments) || !tr.segments.length) return;
+        const lastUsed = (project.meta || {}).deliverChaptersTranscriptAt || 0;
+        if ((tr.updatedAt || 0) <= lastUsed) return; // すでにこの文字起こしで作り直し済み
+        const res = await fetch(SHARE_API + "/api/deliver", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project, transcript: tr.segments }),
+        });
+        const d = await res.json();
+        if (cancelled || !res.ok || !(d.chapters || "").trim()) return;
+        setMeta("deliverChapters", d.chapters.trim());
+        setMeta("deliverChaptersTranscriptAt", tr.updatedAt || Date.now());
+        showToast("完成動画の文字起こしができていたので、目次を実尺版に自動更新しました");
+      } catch (e) {}
+    })();
+    return () => { cancelled = true; };
+  }, [tab, project && project.id, project && project.shareId]);
 
   /* 動画アップ＆ギガファイルの本体（モーダルと「動画・ファイル」タブで共用） */
   const renderMediaBody = (inModal = false) => {
