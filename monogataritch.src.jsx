@@ -2051,7 +2051,15 @@ function VersionTrashPanel({ items, onRestore }) {
   );
 }
 /* 縦ショート自動生成（たてがた君）＝納品段階で使う自己完結パネル。納品完了タブに置く。 */
-function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent }) {
+// たてがた君の見た目テンプレ（自社/演者色・フォント・境界線等）のうちよく使う既定値。
+// カスタムテンプレ（FANTS等）はIDを直接入力する運用（たてがた君アプリ側で確認できるID）。
+const SHORTS_TEMPLATE_PRESETS = [
+  { id: "", label: "既定（自動）" },
+  { id: "sys_bf", label: "Bird Flip（自社）" },
+  { id: "sys_tora", label: "令和の虎（赤）" },
+  { id: "sys_mono", label: "モノクロ（黒）" },
+];
+function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, templateId, onTemplateChange }) {
   const [busy, setBusy] = React.useState(false);
   const [jobs, setJobs] = React.useState([]);
   const [items, setItems] = React.useState([]);
@@ -2077,7 +2085,7 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent }) {
     try {
       const sh = await onEnsureShare();
       if (!sh) { setBusy(false); return; }
-      const r = await fetch(SHARE_API + "/api/shorts/enqueue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: sh.id, token: sh.token, videoKey }) });
+      const r = await fetch(SHARE_API + "/api/shorts/enqueue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: sh.id, token: sh.token, videoKey, templateId: templateId || "" }) });
       const d = await r.json();
       if (!d.ok) throw new Error(d.error || "登録に失敗しました");
       pollList(sh.id, sh.token, 0);
@@ -2094,6 +2102,20 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent }) {
           className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
           {busy || running ? "生成中…" : "ショート生成"}
         </button>
+      </div>
+      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+        <span className="text-[10px] font-bold text-stone-400 shrink-0">見た目テンプレ</span>
+        <select value={SHORTS_TEMPLATE_PRESETS.some((t) => t.id === templateId) ? templateId : "__custom"}
+          onChange={(e) => { if (e.target.value !== "__custom") onTemplateChange && onTemplateChange(e.target.value); }}
+          className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-600">
+          {SHORTS_TEMPLATE_PRESETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          <option value="__custom">カスタム（ID直接入力）</option>
+        </select>
+        {!SHORTS_TEMPLATE_PRESETS.some((t) => t.id === templateId) && (
+          <input value={templateId || ""} onChange={(e) => onTemplateChange && onTemplateChange(e.target.value)}
+            placeholder="例: tpl_xxxxxxxxxxxx（たてがた君アプリで確認できるID）"
+            className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 flex-1 min-w-[220px]" />
+        )}
       </div>
       {!videoKey && <div className="text-[11px] text-stone-400 mt-1.5">動画確認タブで完成版動画をアップすると、ここからショートを生成できます。</div>}
       {(busy || jobs.length > 0 || items.length > 0) && (
@@ -8975,7 +8997,8 @@ export default function App() {
                           <div className="text-[10px] text-stone-400 mt-1">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}/{DELIVER_THUMB_MAX}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
                         </div>
                       ) : key === "deliverShorts" ? (
-                        <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent} />
+                        <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent}
+                          templateId={m.deliverShortsTemplateId || ""} onTemplateChange={(v) => setMeta("deliverShortsTemplateId", v)} />
                       ) : multiline ? (
                         <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
                           className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" minHeight={60} />

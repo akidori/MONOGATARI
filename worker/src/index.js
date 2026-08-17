@@ -1601,7 +1601,7 @@ ${qList}
         const dup = idx0.find((e) => e.snap === snap && (e.kind || "shorts") === kind && (e.status === "pending" || e.status === "processing"));
         if (dup) return json({ ok: true, jobId: dup.id, status: dup.status, dedup: true });
         const jobId = rid(12);
-        const job = { id: jobId, snap, kind, videoKey: ("" + b.videoKey).slice(0, 200), sheetUrl: ("" + (b.sheetUrl || "")).slice(0, 300), notes: ("" + (b.notes || "")).slice(0, 1000), nMax: Math.max(1, Math.min(12, parseInt(b.nMax, 10) || 8)), status: "pending", createdAt: now(), updatedAt: now(), shorts: [], error: "" };
+        const job = { id: jobId, snap, kind, videoKey: ("" + b.videoKey).slice(0, 200), sheetUrl: ("" + (b.sheetUrl || "")).slice(0, 300), notes: ("" + (b.notes || "")).slice(0, 1000), nMax: Math.max(1, Math.min(12, parseInt(b.nMax, 10) || 8)), templateId: ("" + (b.templateId || "")).slice(0, 64), status: "pending", createdAt: now(), updatedAt: now(), shorts: [], error: "" };
         await env.SNAPS.put("sjob:" + jobId, JSON.stringify(job));
         // ジョブ索引 sjobs:idx に積む。poll/list/staleはKV list()禁止（無料枠1000回/日を10秒ポーリングが食い潰す）
         const idx = idx0;
