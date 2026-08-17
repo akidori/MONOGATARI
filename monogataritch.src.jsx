@@ -882,6 +882,10 @@ function MmSectionNode({ data }) {
       <BufferedTextarea value={data.note || ""} onChange={(v) => data.onNoteChange && data.onNoteChange(data.id, v)}
         placeholder={data.hint ? "ここで何を話すか…（例：" + data.hint + "）" : "ここで何を話すか…"} rows={2}
         className="nodrag nowheel mt-1.5 w-full text-[10.5px] leading-snug text-stone-600 bg-stone-50 border border-stone-200 rounded-md px-1.5 py-1 resize-y focus:outline-none focus:border-stone-400 placeholder:text-stone-300" />
+      <button onClick={() => data.onAddScene && data.onAddScene(data.id)} title="このメモを元に構成台本へシーンを作る"
+        className="nodrag mt-1.5 w-full text-[10px] font-bold text-stone-400 hover:text-stone-700 border border-dashed border-stone-300 hover:border-stone-400 rounded-md py-1 transition-colors">
+        ＋シーン追加
+      </button>
       <Handle type="source" position={Position.Right} />
     </div>
   );
@@ -931,7 +935,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   return { nodes, edges };
 }
 
-function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange }) {
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene }) {
   const { fitView } = useReactFlow();
   const prevSigRef = useRef(null);
   const signature = useMemo(() => mmContentSignature({ totalScenes, sections }), [totalScenes, sections]);
@@ -944,7 +948,7 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   // ノート本文はここで毎レンダー最新値を差し込む（signatureに含めない＝入力中にdagre再配置してノードが動かないように）
   const noteById = useMemo(() => { const m = {}; sections.forEach((s) => { m[s.id] = s.note || ""; }); return m; }, [sections]);
   const nodes = useMemo(() => builtNodes.map((n) => n.type === "mmSectionNode"
-    ? { ...n, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange } } : n), [builtNodes, noteById, onNoteChange]);
+    ? { ...n, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } } : n), [builtNodes, noteById, onNoteChange, onAddScene]);
   useEffect(() => {
     if (prevSigRef.current !== signature) {
       prevSigRef.current = signature;
@@ -5665,6 +5669,40 @@ export default function App() {
     const sp = { ...r.spine }; delete sp[fwKey];
     return { ...r, spine: sp };
   }));
+  /* マインドマップ Phase2：ステップのメモを種に、構成台本へ実際のシーン行を作る。
+     そのフェーズに既存のロケブロックがあれば末尾に追加。無ければ新規ロケを作り、
+     行の並び順（phaseSeqは行順で単調増加という前提）を崩さない位置へ挿し込む。 */
+  const addSceneFromMindmap = (sectionId) => {
+    const phaseIdx = +String(sectionId).replace("phase", "");
+    const fw = STORY_FRAMEWORKS[spineFw] || STORY_FRAMEWORKS.spine;
+    const noteText = (project.mindmapNotes && project.mindmapNotes[spineFw + ":" + sectionId]) || "";
+    const rows = project.rows || [];
+    const beats = deriveSpineBeats(rows);
+    const overrides = {};
+    rows.forEach((r) => { if (r.kind === "location" && r.spine && r.spine[spineFw] != null) overrides[r.id] = r.spine[spineFw]; });
+    const phases = phaseSeq(beats, fw.steps.length, spineFw, overrides);
+    const newRow = { ...newScene("解説系", ""), script: noteText };
+    let targetBeatIdx = -1;
+    for (let i = 0; i < beats.length; i++) { if (phases[i] === phaseIdx && beats[i].scenes > 0) targetBeatIdx = i; }
+    if (targetBeatIdx >= 0) {
+      const beat = beats[targetBeatIdx];
+      const lastItemId = beat.items.length ? beat.items[beat.items.length - 1].id : null;
+      const anchorId = lastItemId || beat.id;
+      const insertIdx = anchorId ? rows.findIndex((r) => r.id === anchorId) : -1;
+      if (insertIdx >= 0) insertBelow(insertIdx, newRow); else setRows((rs) => [...rs, newRow]);
+    } else {
+      let insertBeforeRowId = null;
+      for (let i = 0; i < beats.length; i++) { if (phases[i] > phaseIdx && beats[i].id) { insertBeforeRowId = beats[i].id; break; } }
+      const newLoc = { id: uid(), kind: "location", label: (fw.steps[phaseIdx] && fw.steps[phaseIdx].phrase) || "新規ロケ", address: "", time: "", note: "", spine: { [spineFw]: phaseIdx } };
+      setRows((rs) => {
+        const next = [...rs];
+        const pos = insertBeforeRowId ? next.findIndex((r) => r.id === insertBeforeRowId) : next.length;
+        next.splice(pos < 0 ? next.length : pos, 0, newLoc, newRow);
+        return next;
+      });
+    }
+    jumpToRow(newRow.id);
+  };
   /* 物語の背骨：ロケブロック（ロケ行＋配下シーン）ごとD&Dで並べ替え。from/to は beats のindex */
   const moveSpineBlock = (from, to) => setRows((rows) => {
     const blocks = spineBlocks(rows);
@@ -8055,8 +8093,8 @@ export default function App() {
                   ), toggleMm)}
                   {mmOpen && (
                     <div className="px-3 sm:px-4 py-3">
-                      <p className="text-[11px] text-stone-400 mb-2">各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます（台本の行はまだ作られません）。</p>
-                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} />
+                      <p className="text-[11px] text-stone-400 mb-2">各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
+                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} />
                     </div>
                   )}
                 </section>
