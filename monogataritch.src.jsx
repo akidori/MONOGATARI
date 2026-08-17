@@ -786,6 +786,19 @@ const sceneGist = (r) => {
   const first = s.split("\n").map((x) => x.trim()).find(Boolean) || "";
   return first.length > 18 ? first.slice(0, 18) + "…" : first;
 };
+/* 原稿の「◼︎ 質問」行＋続く地の文（回答）をQ&Aペアに分解（マインドマップのQ&Aサブノード用。データは増やさず既存の原稿を読むだけ） */
+const parseQA = (script) => {
+  const lines = (script || "").replace(/\*\*/g, "").replace(/!!/g, "").split("\n");
+  const pairs = [];
+  let cur = null;
+  for (const raw of lines) {
+    const line = raw.trim();
+    const m = /^[◼■]\s*(.*)$/.exec(line);
+    if (m) { cur = { q: m[1].trim(), a: "" }; pairs.push(cur); }
+    else if (cur && line) cur.a = (cur.a ? cur.a + " " : "") + line;
+  }
+  return pairs.filter((p) => p.q);
+};
 const deriveSpineBeats = (rows) => {
   const beats = [];
   let cur = null;
@@ -849,7 +862,7 @@ function buildMindmapSections(rows, spineFw, rate, notes) {
       const durSec = chars > 0 ? chars / r : target;
       sections[phaseIdx].rows.push({
         id: row.id, label: sceneGist(row) || "（無題）", kind: "scene",
-        sceneType: row.type || "解説系", sceneNo, durSec,
+        sceneType: row.type || "解説系", sceneNo, durSec, qa: parseQA(row.script),
       });
     });
   });
@@ -859,7 +872,7 @@ function buildMindmapSections(rows, spineFw, rate, notes) {
 }
 
 function mmContentSignature({ totalScenes, sections }) {
-  return totalScenes + "|" + sections.map((s) => s.id + ":" + s.label + ":" + s.rows.map((rr) => rr.id + "." + rr.label + "." + rr.sceneType + "." + Math.round(rr.durSec)).join(",")).join("||");
+  return totalScenes + "|" + sections.map((s) => s.id + ":" + s.label + ":" + s.rows.map((rr) => rr.id + "." + rr.label + "." + rr.sceneType + "." + Math.round(rr.durSec) + "." + (rr.qa || []).length + "." + (rr.qa || []).map((p) => p.q.length + "-" + p.a.length).join(",")).join(",")).join("||");
 }
 
 const mmFmtSec = (sec) => { const s = Math.round(sec || 0); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
@@ -915,10 +928,21 @@ function MmSceneNode({ data }) {
           className="nodrag ml-auto shrink-0 text-stone-300 hover:text-stone-600 text-[11px] leading-none px-0.5">→</button>
       </div>
       <div className="text-[9px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
+      <Handle type="source" position={Position.Right} />
     </div>
   );
 }
-const MM_NODE_TYPES = { mmProjectNode: MmProjectNode, mmSectionNode: MmSectionNode, mmSceneNode: MmSceneNode };
+function MmQANode({ data }) {
+  return (
+    <div className="rounded-xl px-3 py-2 bg-white cursor-pointer border transition-colors w-[200px] hover:border-stone-400"
+      style={{ borderColor: "#F0B93A" }} onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.rowId); }} title="台本のこのシーンへ">
+      <Handle type="target" position={Position.Left} />
+      <div className="text-[10.5px] font-bold line-clamp-2" style={{ color: "#B8860B" }}>◼︎ {data.q}</div>
+      {data.a && <div className="text-[10px] text-stone-500 mt-1 line-clamp-2">{data.a}</div>}
+    </div>
+  );
+}
+const MM_NODE_TYPES = { mmProjectNode: MmProjectNode, mmSectionNode: MmSectionNode, mmSceneNode: MmSceneNode, mmQANode: MmQANode };
 
 function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) {
   const g = new dagre.graphlib.Graph();
@@ -943,6 +967,14 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
       g.setEdge(secId, rowId);
       nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
       edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId });
+      (row.qa || []).forEach((pair, qi) => {
+        const qaId = "qa:" + row.id + ":" + qi;
+        const qaDim = { width: 200, height: 70 };
+        g.setNode(qaId, qaDim);
+        g.setEdge(rowId, qaId);
+        nodes.push({ id: qaId, type: "mmQANode", position: { x: 0, y: 0 }, width: qaDim.width, height: qaDim.height, data: { ...pair, rowId: row.id } });
+        edges.push({ id: "e-" + rowId + "-" + qaId, source: rowId, target: qaId });
+      });
     });
   });
   dagre.layout(g);
@@ -957,7 +989,7 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   const signature = useMemo(() => mmContentSignature({ totalScenes, sections }), [totalScenes, sections]);
   const { nodes: builtNodes, edges } = useMemo(() => {
     const graph = mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections });
-    graph.nodes.forEach((n) => { if (n.type === "mmSceneNode") n.data.onNodeClick = onNodeClick; });
+    graph.nodes.forEach((n) => { if (n.type === "mmSceneNode" || n.type === "mmQANode") n.data.onNodeClick = onNodeClick; });
     return graph;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signature]);
