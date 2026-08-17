@@ -1144,7 +1144,10 @@ function wireVideoControls(){
   videoEl.addEventListener("click", vcTogglePlay);
   videoEl.addEventListener("play", ()=>{ if(pp) pp.innerHTML=icon("pause","w-3.5 h-3.5"); });
   videoEl.addEventListener("pause", ()=>{ if(pp) pp.innerHTML=icon("play","w-3.5 h-3.5"); });
-  videoEl.addEventListener("loadedmetadata", ()=>{ if(seek&&isFinite(videoEl.duration)) seek.max=videoEl.duration; });
+  const showDuration=()=>{ if(!isFinite(videoEl.duration)) return; if(seek) seek.max=videoEl.duration; if(cur) cur.textContent=vcFmt(videoEl.currentTime)+" / "+vcFmt(videoEl.duration); };
+  videoEl.addEventListener("loadedmetadata", showDuration);
+  videoEl.addEventListener("durationchange", showDuration);
+  if(videoEl.readyState>=1) showDuration();  // 再アタッチ時などmetadataが既に読み込み済みでイベントを取りこぼすケース
   videoEl.addEventListener("timeupdate", ()=>{ if(seek&&!seek._drag&&isFinite(videoEl.duration)){ seek.max=videoEl.duration; seek.value=videoEl.currentTime; } if(cur) cur.textContent=vcFmt(videoEl.currentTime)+" / "+vcFmt(videoEl.duration); });
   if(seek){ seek.addEventListener("input", ()=>{ seek._drag=true; if(videoEl) videoEl.currentTime=+seek.value; }); seek.addEventListener("change", ()=>{ seek._drag=false; }); }
   if(pp) pp.addEventListener("click", vcTogglePlay);
@@ -1156,19 +1159,40 @@ function wireVideoControls(){
   }); }
 }
 /* シークバーのホバープレビュー（YouTube風）。Stream変換済みは公式サムネAPI（?time=Ns）で
-   カーソル位置のシーンを出す。それ以外（生mp4/変換中）はタイムコードだけの吹き出し。 */
+   カーソル位置のシーンを出す。それ以外（生mp4/変換中）は隠しvideo要素をその秒数へ都度シークし、
+   デコードされたフレームをcanvasへ焼いてプレビューにする（サーバ側のサムネ生成に頼らない）。 */
+let _scrubVideo=null;
 function wireSeekPreview(){
   const sk=document.getElementById("vc-seek"); if(!sk || sk._pvWired) return; sk._pvWired=true;
   const wrap=sk.parentElement; if(!wrap) return; wrap.style.position="relative";
   const cv=curVideo(SNAP.project||{}); const v=(cv&&cv.video)||{};
   const thumbBase=(v.type==="stream"&&v.ready&&v.hls)?v.hls.replace(/manifest\/video\.m3u8.*$/,"thumbnails/thumbnail.jpg"):"";
+  if(_scrubVideo){ _scrubVideo.remove(); _scrubVideo=null; }  // 版切替などで前回分が残っていたら破棄
+  let scrubReady=false;
+  const rawSrc = (!thumbBase && videoEl) ? (videoEl.src || videoEl.currentSrc || "") : "";
+  if(rawSrc){
+    _scrubVideo=document.createElement("video");
+    _scrubVideo.src=rawSrc; _scrubVideo.muted=true; _scrubVideo.playsInline=true; _scrubVideo.preload="auto";
+    _scrubVideo.style.cssText="position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px";
+    _scrubVideo.addEventListener("loadedmetadata", ()=>{ scrubReady=true; }, { once:true });
+    document.body.appendChild(_scrubVideo);
+  }
   const tip=document.createElement("div");
   tip.style.cssText="position:absolute;bottom:20px;transform:translateX(-50%);z-index:30;pointer-events:none;display:none;border-radius:10px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.35);background:#000;border:1px solid rgba(0,0,0,.25)";
-  tip.innerHTML=(thumbBase?`<img style="display:block;width:160px;height:90px;object-fit:cover" alt="">`:"")
+  tip.innerHTML=(thumbBase?`<img style="display:block;width:160px;height:90px;object-fit:cover" alt="">`
+      :_scrubVideo?`<canvas width="160" height="90" style="display:block;width:160px;height:90px"></canvas>`:"")
     +`<div class="pv-t" style="text-align:center;font-size:10px;font-weight:bold;color:rgba(255,255,255,.92);padding:2px 8px;background:rgba(0,0,0,.85);font-family:ui-monospace,monospace"></div>`;
   wrap.appendChild(tip);
-  const img=tip.querySelector("img"), tt=tip.querySelector(".pv-t");
-  let lastSec=-1;
+  const img=tip.querySelector("img"), canv=tip.querySelector("canvas"), tt=tip.querySelector(".pv-t");
+  const cctx=canv?canv.getContext("2d"):null;
+  let lastSec=-1, seekBusy=false, pendingSec=null;
+  if(_scrubVideo){
+    _scrubVideo.addEventListener("seeked", ()=>{
+      seekBusy=false;
+      if(cctx){ try{ cctx.drawImage(_scrubVideo,0,0,160,90); }catch(e){} }
+      if(pendingSec!=null){ const s=pendingSec; pendingSec=null; seekBusy=true; try{ _scrubVideo.currentTime=s; }catch(e){ seekBusy=false; } }
+    });
+  }
   sk.addEventListener("mousemove",(e)=>{
     const d=(videoEl&&isFinite(videoEl.duration)&&videoEl.duration)||0;
     if(!d){ tip.style.display="none"; return; }
@@ -1177,10 +1201,13 @@ function wireSeekPreview(){
     tip.style.left=Math.min(r.width-84,Math.max(84,e.clientX-r.left))+"px";
     tip.style.display="block";
     tt.textContent=fmtTC(t);
-    if(img){ const s=Math.max(0,Math.floor(t)); if(s!==lastSec){ lastSec=s;
+    const s=Math.max(0,Math.floor(t)); if(s===lastSec) return; lastSec=s;
+    if(img){
       const u=thumbBase+"?time="+s+"s&height=90";
       const im=new Image(); im.onload=()=>{ img.src=u; }; im.src=u;  // 読み込み完了後に差し替え＝チラつき防止
-    } }
+    } else if(_scrubVideo && scrubReady){
+      if(seekBusy){ pendingSec=s; } else { seekBusy=true; try{ _scrubVideo.currentTime=s; }catch(e){ seekBusy=false; } }
+    }
   });
   sk.addEventListener("mouseleave",()=>{ tip.style.display="none"; });
 }
@@ -1205,7 +1232,7 @@ function mountVideo(p, accent, main){
   } else if(v.type==="stream" && v.ready && v.hls){
     // Stream変換済み：軽量HLSを再生。再生不能(HLS非対応/CDN落ち/配信エラー)なら生mp4へ自動フォールバック
     videoEl = document.createElement("video");
-    videoEl.controls = false; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
+    videoEl.controls = false; videoEl.playsInline = true; videoEl.preload = "metadata"; videoEl.className = "w-full h-full bg-black";
     /* poster＝再生前から1フレーム目を表示（黒画面を見せない） */
     try{ videoEl.poster = v.hls.replace(/manifest\/video\.m3u8.*$/,"thumbnails/thumbnail.jpg")+"?time=0s&height=720"; }catch(e){}
     stage.replaceWith(videoEl); videoEl.id = "vc-player";
@@ -1227,7 +1254,7 @@ function mountVideo(p, accent, main){
     // 生mp4（R2/外部URL）を直接再生。stream指定でも変換が未完なら元ファイルで再生し、永久「変換中」を防ぐ
     videoEl = document.createElement("video");
     videoEl.src = v.key ? (API+"/api/file/"+v.key) : (v.url||"");
-    videoEl.controls = false; videoEl.playsInline = true; videoEl.className = "w-full h-full bg-black";
+    videoEl.controls = false; videoEl.playsInline = true; videoEl.preload = "metadata"; videoEl.className = "w-full h-full bg-black";
     stage.replaceWith(videoEl); videoEl.id = "vc-player";
     videoEl.addEventListener("timeupdate", ()=>{ const tc=document.getElementById("vc-tc"); if(tc) tc.textContent=fmtTC(videoEl.currentTime); });
     wireVideoControls();
