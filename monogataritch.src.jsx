@@ -4035,6 +4035,19 @@ export default function App() {
         }).catch(() => {});
     }
   }, [tab, activeId, project && project.review && (project.review.versions || []).length]);
+  /* 納品完了タブのタイトル＝構成台本（企画・サムネのタイトル案①＝plans[0].title）と連動。
+     手入力で差し替えたら追従を止める（動画URLの自動追従と同じ「まだ自動か」判定パターン）。 */
+  const lastSyncedDeliverTitleRef = useRef(null);
+  useEffect(() => {
+    if (tab !== "deliver" || !project) return;
+    const planTitle = ((project.plans && project.plans[0] && project.plans[0].title) || "").trim();
+    const curTitle = ((project.meta || {}).deliverTitle || "").trim();
+    if (!planTitle) return;
+    if (!curTitle || curTitle === lastSyncedDeliverTitleRef.current) {
+      if (curTitle !== planTitle) setMeta("deliverTitle", planTitle);
+      lastSyncedDeliverTitleRef.current = planTitle;
+    }
+  }, [tab, activeId, project && project.plans && project.plans[0] && project.plans[0].title]);
 
   /* 指摘の対象シーンへスクロール＋一時ハイライト */
   const jumpToRow = (rowId) => {
@@ -8507,10 +8520,10 @@ export default function App() {
         {/* ================= 納品完了タブ ================= */}
         {tab === "deliver" && (() => {
           const dv = [
+            ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）。構成台本のタイトルと連動", false, true],
+            ["deliverThumbImages", "サムネ画像", "", false, false, "image"],
             ["deliverVideoUrl", "納品完了動画", "動画確認の最新版から自動で入ります（Drive/YouTubeのURLに差し替えOK）", false, true],
             ["deliverShorts", "切り抜きショート", "たてがた君のショートから自動で入ります（1行に1本・差し替えOK）", true, true],
-            ["deliverThumbImages", "サムネ画像", "", false, false, "image"],
-            ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）", false, true],
             ["deliverDescription", "概要欄", "自動生成で埋まります（手直しOK）", true, true],
             ["deliverHashtags", "ハッシュタグ", "自動生成で埋まります（手直しOK）", false, true],
             ["deliverChapters", "目次", "自動生成で埋まります（手直しOK）", true, true],
@@ -8544,7 +8557,6 @@ export default function App() {
                 ))}
               </div>
             </div>
-            <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent} />
             <section className={cardCls}>
               {dv.map((row, i) => {
                 const [key, label, placeholder, multiline, auto, kind] = row;
@@ -8565,7 +8577,7 @@ export default function App() {
                           onDragOver={(e) => { e.preventDefault(); if (!thumbDropOver) setThumbDropOver(true); }}
                           onDragLeave={() => setThumbDropOver(false)}
                           onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
-                          <div className="grid grid-cols-3 gap-2 max-w-md">
+                          <div className="grid grid-cols-3 gap-3 max-w-2xl">
                             {thumbs.map((t, ti) => (
                               <label key={t.key} className="relative aspect-video group cursor-pointer" title="クリックで差し替え">
                                 {/* object-contain: 画像の縦横比が16:9でなくても切り取らず全体を見せる（coverだと勝手にクロップされ画角が合わない） */}
@@ -8584,6 +8596,8 @@ export default function App() {
                           </div>
                           <div className="text-[10px] text-stone-400 mt-1">{thumbs.length}/{DELIVER_THUMB_MAX}枚{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
                         </div>
+                      ) : key === "deliverShorts" ? (
+                        <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent} />
                       ) : multiline ? (
                         <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
                           className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" minHeight={60} />
@@ -8592,23 +8606,15 @@ export default function App() {
                           className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
                       )}
                       {/* URL欄はワンクリックで飛べるリンクを添える（入力欄のテキストは編集用に据え置き） */}
-                      {(key === "deliverVideoUrl" || key === "deliverShorts") && (() => {
+                      {key === "deliverVideoUrl" && (() => {
                         const urls = (m[key] || "").split("\n").map((s) => s.trim()).filter((s) => /^https?:\/\//.test(s));
                         if (!urls.length) return null;
-                        // ショートはWorkerのギャラリーページ(/shorts/{snap})で全本まとめて再生できる。URLからsnapを逆引き
-                        const gm = key === "deliverShorts" ? urls[0].match(/^(https?:\/\/[^/]+)\/api\/file\/f\/([a-z0-9]+)\//) : null;
                         return (
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
-                            {gm && (
-                              <a href={gm[1] + "/shorts/" + gm[2]} target="_blank" rel="noreferrer" title="全ショートを1画面で再生・保存"
-                                className="text-[10px] font-bold px-2 py-1 rounded-lg border border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100 inline-flex items-center gap-1">
-                                ↗ まとめて見る
-                              </a>
-                            )}
                             {urls.map((u, ui) => (
                               <a key={ui} href={u} target="_blank" rel="noreferrer" title={u}
                                 className="text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-700 inline-flex items-center gap-1">
-                                ↗ {key === "deliverShorts" ? (urls.length > 1 ? "ショート" + (ui + 1) : "ショート") + "を開く" : "動画を開く"}
+                                ↗ 動画を開く
                               </a>
                             ))}
                           </div>
