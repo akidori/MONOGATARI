@@ -8134,23 +8134,7 @@ export default function App() {
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
           <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1 space-y-4">
-            {/* 「いまの状態」(ステータス/次にやること/締切)はタスク管理＝Flip Boardに集約のため削除 */}
-            {/* 基本情報 */}
-            <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
-              <h2 className="text-[14px] font-bold text-stone-800 mb-3">基本情報</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="block"><span className="text-[11px] font-bold text-stone-500">案件名</span>
-                  <input value={project.name || ""} onChange={(e) => { const v = e.target.value; setProject((p) => ({ ...p, name: v })); renameProject(project.id, v); }} className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" /></label>
-                <label className="block"><span className="text-[11px] font-bold text-stone-500">チャンネル / クライアント</span>
-                  <input value={(project.meta && project.meta.client) || ""} onChange={(e) => { const v = e.target.value; setProject((p) => ({ ...p, meta: { ...p.meta, client: v } })); }} placeholder={project.channel} className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" /></label>
-                <label className="block"><span className="text-[11px] font-bold text-stone-500">撮影日</span>
-                  <input type="date" value={(project.meta && project.meta.shootDate) || ""} onChange={(e) => { const v = e.target.value; setProject((p) => ({ ...p, meta: { ...p.meta, shootDate: v } })); }} className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" /></label>
-                <label className="block"><span className="text-[11px] font-bold text-stone-500">撮影場所</span>
-                  <input value={(project.meta && project.meta.place) || ""} onChange={(e) => { const v = e.target.value; setProject((p) => ({ ...p, meta: { ...p.meta, place: v } })); }} className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" /></label>
-              </div>
-              <label className="block mt-3"><span className="text-[11px] font-bold text-stone-500">メモ</span>
-                <textarea value={(project.meta && project.meta.note) || ""} onChange={(e) => { const v = e.target.value; setProject((p) => ({ ...p, meta: { ...p.meta, note: v } })); }} className="mt-1 w-full h-20 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" /></label>
-            </div>
+            {/* 「いまの状態」(ステータス/次にやること/締切)はタスク管理＝Flip Boardに集約のため削除。基本情報カードも未使用のため削除（2026-08-17 AK指示） */}
             {/* ひと目サマリー */}
             <div className="grid grid-cols-3 gap-3">
               {[["企画案", (project.plans || []).length], ["素材", (project.assets || []).length], ["確認用動画", (project.assets || []).filter((a) => a.category === "確認用動画").length]].map(([lbl, n]) => (
@@ -8294,7 +8278,6 @@ export default function App() {
           <div className="max-w-5xl mx-auto px-1 sm:px-0 py-2">
             <div className="mb-3">
               <h2 className="text-[15px] font-bold text-stone-800">動画確認（試写・修正管理）</h2>
-              <p className="text-[12px] text-stone-500 mt-0.5">初稿/修正版をバージョン管理。止めた位置に修正コメント（カテゴリ・優先度・ステータス・返信）。OKが出たらそれが納品。</p>
             </div>
             <ReviewBoard
               versions={evs} trashedVersions={trashedReviewVersions()} comments={comments} main={theme.main} accent={theme.accent} accentText={accentText}
