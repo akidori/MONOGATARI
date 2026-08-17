@@ -901,7 +901,7 @@ function MmSectionNode({ data }) {
         <div className="text-[9.5px] text-stone-400 mt-0.5">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
       </div>
       <BufferedTextarea value={data.note || ""} onChange={(v) => data.onNoteChange && data.onNoteChange(data.id, v)}
-        placeholder={data.hint ? "ここで何を話すか…（例：" + data.hint + "）" : "ここで何を話すか…"} rows={2}
+        placeholder="ここで何を話すか…" rows={2}
         className="nodrag nowheel mt-1.5 w-full text-[10.5px] leading-snug text-stone-600 bg-transparent border-0 border-b border-stone-200 rounded-none px-0 py-1 resize-y focus:outline-none focus:border-stone-400 placeholder:text-stone-300" />
       <button onClick={() => data.onAddScene && data.onAddScene(data.id)} title="このメモを元に構成台本へシーンを作る"
         className="nodrag mt-1.5 text-[10px] font-bold text-stone-400 hover:text-stone-700 border-b border-dashed border-stone-300 hover:border-stone-400 transition-colors">
@@ -1030,7 +1030,8 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections, fo
     g.setNode(secId, { width: 220, height: 64 });
     g.setEdge(ROOT_ID, secId);
     nodes.push({ id: secId, type: "mmSectionNode", position: { x: 0, y: 0 }, width: 220, height: 64, data: { ...sec, accent } });
-    edges.push({ id: "e-" + ROOT_ID + "-" + secId, source: ROOT_ID, target: secId, style: { stroke: accent, strokeWidth: 4, opacity: 0.7 } });
+    // opacityを付けると、同じ根元を共有する枝同士が重なる幹の部分で半透明が重なって色が濁って「線が切れて見える」原因になるため不透明にする
+    edges.push({ id: "e-" + ROOT_ID + "-" + secId, source: ROOT_ID, target: secId, style: { stroke: accent, strokeWidth: 4 } });
     sec.rows.forEach((row) => {
       const rowId = "row:" + row.id;
       const labelLines = mmEstLines(row.label, 19);
@@ -1044,7 +1045,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections, fo
       g.setNode(rowId, rowDim);
       g.setEdge(secId, rowId);
       nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent, nodeId: rowId, qa, qaCount, folded } });
-      edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId, style: { stroke: accent, strokeWidth: 3, opacity: 0.7 } });
+      edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId, style: { stroke: accent, strokeWidth: 3 } });
     });
   });
   dagre.layout(g);
