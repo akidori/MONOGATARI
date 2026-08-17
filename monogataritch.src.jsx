@@ -2855,6 +2855,8 @@ export default function App() {
     try { localStorage.setItem("mg:scriptLayout", nx); } catch (e) {}
     return nx;
   });
+  // 構成台本タブ：台本の編集画面／マインドマップの表示切替（Phase3）
+  const [scriptView, setScriptView] = useState("table");
   const lastSelRef = useRef(null);                          // shift範囲選択の起点
   /* ヒアリング：文字起こし取込 */
   const [hearingImport, setHearingImport] = useState(null); // { raw } モーダル開いてる時 or null
@@ -7347,18 +7349,33 @@ export default function App() {
               )}
             </section>
 
-            {/* 構成テーブル（PC：横並びテーブル）。overflow-clip＝角丸クリップは維持しつつ
-                スクロールコンテナ化しない→theadのstickyが効く（列名がスクロールで消えない） */}
-            {/* 見せ方の切替（PCのみ）。スマホは上下積み固定なので出さない */}
-            {!isNarrow && (
-              <div className="flex justify-end -mb-1">
+            {/* 台本編集／マインドマップの表示切替（Phase3） */}
+            <div className="flex justify-end items-center gap-2 -mb-1">
+              <button onClick={() => setScriptView((v) => v === "mindmap" ? "table" : "mindmap")}
+                title={scriptView === "mindmap" ? "台本の編集画面に戻す" : "マインドマップで見る"}
+                className={"text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors " + (scriptView === "mindmap" ? "text-white border-transparent" : "border-stone-200 text-stone-500 hover:bg-stone-50")}
+                style={scriptView === "mindmap" ? { background: theme.main } : {}}>
+                {scriptView === "mindmap" ? "◂ 台本に戻る" : "マインドマップで見る"}
+              </button>
+              {/* 構成テーブル（PC：横並びテーブル）。overflow-clip＝角丸クリップは維持しつつ
+                  スクロールコンテナ化しない→theadのstickyが効く（列名がスクロールで消えない） */}
+              {/* 見せ方の切替（PCのみ）。スマホは上下積み固定なので出さない */}
+              {!isNarrow && scriptView !== "mindmap" && (
                 <button onClick={toggleScriptLayout}
                   title={scriptLayout === "stack" ? "横並びの表に戻す" : "原稿を全幅で読む（上下積み）"}
                   className="text-[11px] text-stone-400 hover:text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors">
                   {scriptLayout === "stack" ? "表示：上下積み（原稿全幅）" : "表示：横並びの表"}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
+            {scriptView === "mindmap" ? (
+              <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
+                {(() => {
+                  const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
+                  return <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} />;
+                })()}
+              </section>
+            ) : (<>
 
             {!stacked && (
             <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-clip">
@@ -7712,6 +7729,7 @@ export default function App() {
             <p className="mt-3 text-[11px] text-stone-400 leading-relaxed">
               原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　ロケ見出しの「1日目」で撮影日を割り当て（2日目にすると台本・香盤表が日別に区切られ、時刻・移動も日ごとにリセット）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の⋮⋮をドラッグで移動・左の✓で撮影完了（グレーアウト）　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
             </p>
+            </>)}
           </>
         )}
 
