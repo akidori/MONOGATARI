@@ -376,6 +376,9 @@ const migrateProject = (p) => {
     deadline: p.deadline || "",
     nextAction: p.nextAction || "",
     meta: {
+      // 未知のフィールド（納品完了タブのdeliverXXXなど、ここに列挙されていないもの）を黙って落とさない。
+      // 2026-08-17発覚：deliverThumbImages等がここに無かったせいでプロジェクト再読み込みのたびに消えていた事故の再発防止
+      ...meta,
       shootDate: meta.shootDate || "",
       place: meta.place || "",
       titles: meta.titles || ["", "", ""],
