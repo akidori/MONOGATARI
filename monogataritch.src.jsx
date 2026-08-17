@@ -411,6 +411,7 @@ const migrateProject = (p) => {
     mindmapNotes: (p.mindmapNotes && typeof p.mindmapNotes === "object") ? p.mindmapNotes : {},
     mindmapPos: (p.mindmapPos && typeof p.mindmapPos === "object") ? p.mindmapPos : {},
     mindmapWidth: (p.mindmapWidth && typeof p.mindmapWidth === "object") ? p.mindmapWidth : {},
+    transcriptRaw: p.transcriptRaw || "",
     updatedAt: p.updatedAt || p.createdAt || Date.now(),
   };
 };
@@ -2982,6 +2983,8 @@ export default function App() {
   const [assistantText, setAssistantText] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantSummary, setAssistantSummary] = useState("");
+  const [transcriptBusy, setTranscriptBusy] = useState(false);
+  const [transcriptStep, setTranscriptStep] = useState(null); // "skeleton" | "fillqa" | null（ボタンごとの進行中表示）
   const [showReview, setShowReview] = useState(false);      // 校正チェックモーダル
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewResult, setReviewResult] = useState(null);   // { issues:[], summary } | null
@@ -4007,6 +4010,55 @@ export default function App() {
     } catch (e) {
       showToast("反映に失敗：" + (e.message || e));
     } finally { setAssistantBusy(false); }
+  };
+
+  /* 取材メモの文字起こし本文（永続化。①②で使い回す） */
+  const setTranscriptRaw = (v) => setProject((p) => ({ ...p, transcriptRaw: v }));
+  /* ①文字起こし→骨組み（ロケ・時刻・シーンの型のみ、原稿は空）。マインドマップは並び順から自動でスパインに乗るので、これだけで確認できる状態になる */
+  const runSkeletonGenerate = async () => {
+    const raw = (project.transcriptRaw || "").trim();
+    if (!raw || !project || transcriptBusy) return;
+    if ((project.rows || []).length && !window.confirm("今の構成台本を、文字起こしから作った骨組みで上書きします。\n（原稿本文はまだ書きません。ロケ・時刻・シーンの型だけ）\n\nよろしいですか？")) return;
+    setTranscriptBusy(true); setTranscriptStep("skeleton");
+    try {
+      const res = await fetch(SHARE_API + "/api/skeleton", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.project) throw new Error(d.error || "骨組み生成に失敗しました");
+      const parsed = normalizeImport(d.project);
+      const meta = { ...project.meta };
+      if (parsed.meta.shootDate) meta.shootDate = parsed.meta.shootDate;
+      if (parsed.meta.place) meta.place = parsed.meta.place;
+      const data = { ...project, name: project.name || d.project.name || project.name, channel: project.channel || d.project.channel || project.channel, meta, rows: parsed.rows };
+      setProject(data);
+      try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+      showToast("骨組みを作ったよ（" + parsed.rows.filter((r) => r.kind === "scene").length + "シーン）。マインドマップで確認してね");
+    } catch (e) {
+      showToast("骨組み生成に失敗：" + (e.message || e));
+    } finally { setTranscriptBusy(false); setTranscriptStep(null); }
+  };
+  /* ②骨組み済みの構成台本へ、同じ文字起こしからQ&A原稿を書き込む（構造は変えずscriptだけ埋まる） */
+  const runFillQa = async () => {
+    const raw = (project.transcriptRaw || "").trim();
+    if (!raw || !project || !(project.rows || []).length || transcriptBusy) return;
+    setTranscriptBusy(true); setTranscriptStep("fillqa");
+    try {
+      const res = await fetch(SHARE_API + "/api/fillqa", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project, raw }),
+      });
+      const d = await res.json();
+      if (!res.ok || !d.project) throw new Error(d.error || "原稿の生成に失敗しました");
+      const parsed = normalizeImport(d.project);
+      const data = { ...project, rows: parsed.rows };
+      setProject(data);
+      try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+      showToast((d.summary ? d.summary + "｜" : "") + "Q&A原稿を書き込んだよ");
+    } catch (e) {
+      showToast("Q&A生成に失敗：" + (e.message || e));
+    } finally { setTranscriptBusy(false); setTranscriptStep(null); }
   };
 
   /* 校正チェック（誤字脱字・質問と回答の逆転・未記入）をAIに依頼 */
@@ -8428,6 +8480,32 @@ export default function App() {
               <span className="text-[12px] font-bold text-stone-600">マインドマップで構造を見る・編集する</span>
               <span className="ml-auto text-[11px] text-stone-400">開く →</span>
             </button>
+            {/* 文字起こし→骨組み→Q&A原稿の2段階生成（2026-08-17）。①でロケ・時刻・型だけの骨組みをマインドマップに作り、②で同じ文字起こしからQ&A原稿を書き込む。ここまでで8割、仕上げは構成台本タブで */}
+            <div className="mb-4 rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Icon name="sparkle" className="w-4 h-4 shrink-0" style={{ color: theme.accent }} />
+                <span className="text-[13px] font-bold text-stone-800">文字起こしから構成を作る</span>
+              </div>
+              <p className="text-[11.5px] text-stone-500 mb-2 leading-relaxed">
+                ①でロケ・時刻・シーンの型だけの骨組みを作ります（原稿はまだ空）。マインドマップで並び順・スパインを確認・手直ししたら、②で同じ文字起こしからQ&A原稿を書き込みます。ここまでで8割、仕上げは構成台本タブで。
+              </p>
+              <BufferedTextarea value={project.transcriptRaw || ""} onChange={setTranscriptRaw}
+                placeholder="ここに文字起こし・取材メモを貼り付け…" rows={6}
+                className="w-full text-[12.5px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y placeholder:text-stone-300" />
+              <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                <button onClick={runSkeletonGenerate} disabled={!((project.transcriptRaw || "").trim()) || transcriptBusy}
+                  className="text-[12px] font-bold px-3.5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1.5"
+                  style={{ background: theme.accent, color: accentText }}>
+                  {transcriptStep === "skeleton" ? "生成中…" : "① 骨組みを作る"}
+                </button>
+                <button onClick={runFillQa} disabled={!((project.transcriptRaw || "").trim()) || !(project.rows || []).length || transcriptBusy}
+                  title={!(project.rows || []).length ? "先に①で骨組みを作ってください" : ""}
+                  className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 disabled:opacity-40 inline-flex items-center gap-1.5">
+                  {transcriptStep === "fillqa" ? "書き込み中…" : "② Q&A原稿を書き込む"}
+                </button>
+                {transcriptBusy && <span className="text-[11px] text-stone-400">少し時間がかかります…</span>}
+              </div>
+            </div>
             {prepView === "wizard" ? (
               <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
             ) : (

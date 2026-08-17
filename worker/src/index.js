@@ -359,6 +359,34 @@ ${qList}
         return json({ project });
       }
 
+      // POST /api/skeleton  { raw }  → 文字起こしからロケ・時刻・シーンの型だけの骨組みを返す（scriptは空、マインドマップ確認用）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "skeleton") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const raw = (b && b.raw ? b.raw : "").toString();
+        if (!raw.trim()) return json({ error: "文字起こしが空です" }, 400);
+        if (raw.length > 60000) return json({ error: "本文が長すぎます（6万字まで）" }, 413);
+        const project = await skeletonWithClaude(raw, env);
+        if (!project || !Array.isArray(project.rows) || !project.rows.length) {
+          return json({ error: "骨組みの生成に失敗しました（構成を読み取れませんでした）" }, 422);
+        }
+        return json({ project });
+      }
+
+      // POST /api/fillqa  { project, raw }  → 骨組み済みの構成台本へ、文字起こしからQ&A原稿を書き込んで返す
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "fillqa") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const raw = (b && b.raw ? b.raw : "").toString();
+        const project = b && b.project;
+        if (!raw.trim()) return json({ error: "文字起こしが空です" }, 400);
+        if (raw.length > 60000) return json({ error: "本文が長すぎます（6万字まで）" }, 413);
+        if (!project || !Array.isArray(project.rows) || !project.rows.length) return json({ error: "先に骨組みを作ってください" }, 400);
+        const out = await fillQaWithClaude(project, raw, env);
+        if (!out || !Array.isArray(out.rows) || !out.rows.length) return json({ error: "原稿の生成に失敗しました" }, 422);
+        return json({ project: out, summary: (out.summary || "").toString() });
+      }
+
       // POST /api/assist  { project, message }  → 現案件に生メッセージを反映して更新案件を返す
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "assist") {
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
@@ -2345,6 +2373,82 @@ async function parseWithClaude(raw, env) {
     }
   }
   throw lastErr || new Error("整形に失敗しました");
+}
+
+/* ===== 文字起こし → 骨組み（ロケ・時刻・撮影日・シーンの型）だけをマインドマップ用に生成 =====
+   台本本文（script）はまだ書かない。マインドマップの「スパイン」はロケーションの並び順から
+   自動で割り振られる（phaseSeq、クライアント側）ため、ここでは順番と型だけ正しく出せば十分。
+   AKの運用：①この骨組みをマインドマップで確認・手直し → ②fillqaでQ&A原稿を書き込む → ③台本タブで最終調整 */
+const SKELETON_SYSTEM = `あなたは一日密着ドキュメンタリーの構成作家です。渡された文字起こし・取材メモ（形式は不問）を読み、まだ原稿は書かずに「骨組み」だけを build_project ツールで返してください。骨組み＝ロケーション（場所・時刻・撮影日）と、その配下のシーンの型・目安尺・短い見出しです。
+
+# セクション5種（rowsのtype）
+- インサート（3〜5秒）＝映像のみ。場面説明
+- VLOG（15〜30秒）＝原稿にない他愛もない会話。人柄
+- 解説系（30秒〜1分）＝今から何をするか／今やっている業務の説明
+- 訴求（2〜3分）＝最も伝えたい内容・想い・原点・商品紹介。動画の核
+- ブリッジ（5〜10秒）＝次の場面へのつなぎ
+
+# ルール
+- 場所の見出しは {kind:"location", label, time?, day?}。素材に「1日目/2日目」等の撮影日区切りがあれば、その日以降の location に day を付ける
+- 各 scene は {kind:"scene", type, sec, label(短い見出し)} だけを埋める。script は空文字のまま返す（絶対に本文を書かない）
+- 文字起こしの中身を読み、話題の切れ目・場面転換ごとに scene を分ける。1ロケーションに複数シーンがあって構わない
+- type は インサート/ブリッジ/VLOG/解説系/訴求 のいずれか。sec は目安秒数（インサート5・ブリッジ10・VLOG30・解説系60・訴求180）
+- 素材が乏しくロケーション情報が読み取れない場合は、話題ごとに1つの仮ロケーション（label="（撮影場所未定）"）にまとめてよい
+- meta に shootDate/place、分かる範囲で name(演者名｜案件名)・channel(クライアント名) を埋める（titles/thumbs/highlightは無理に埋めない）`;
+
+async function skeletonWithClaude(raw, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const payload = {
+    model,
+    max_tokens: 16000,
+    system: SKELETON_SYSTEM,
+    tools: [BUILD_TOOL],
+    tool_choice: { type: "tool", name: "build_project" },
+    messages: [{ role: "user", content: "以下の文字起こし・取材メモから骨組み（ロケ・時刻・シーンの型のみ、原稿は空）を build_project で返してください。\n\n----- 素材ここから -----\n" + raw + "\n----- 素材ここまで -----" }],
+  };
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const data = await claudeMessages(payload, env);
+      const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
+      if (!block || !block.input) { lastErr = new Error("tool_use が返りませんでした"); continue; }
+      return coerceRows(block.input);
+    } catch (e) {
+      lastErr = e;
+      if (e.status && e.status !== 429 && e.status < 500) throw e;
+    }
+  }
+  throw lastErr || new Error("骨組み生成に失敗しました");
+}
+
+/* ===== 骨組み確定後：同じ文字起こしからQ&A原稿を各シーンのscriptへ書き込む =====
+   構成（ロケ・順番・型・尺・見出し）は一切変えない。scriptだけを埋めて全行を返す（assistと同じ全行エコー方式）。 */
+const QAFILL_SYSTEM = `あなたは一日密着ドキュメンタリーの構成作家です。「現在の構成台本(JSON、骨組みのみ・script空)」と、その元になった「文字起こし」が渡されます。文字起こしの中から各シーンに対応する会話を見つけ、script を「◼ 質問」「回答（話し言葉）」の形式で埋めて、更新後の【完全な】構成台本を build_project で返してください。
+
+# ルール
+- rows の kind/label/type/sec/time/day/id は絶対に変更しない。順番も行の追加・削除もしない。scriptだけを埋める
+- 質問は行頭「◼ 」、回答はその下に話し言葉で（改行は維持）。1シーンに複数の質問があってよい
+- 文字起こしに無い事実・数字・固有名詞は作らない。該当する発言が文字起こしに見つからないシーンは、script に「★取材：（何を聞くか）」とだけ書いて空けておく
+- 文字起こしの言い回しは要約・改変せず、話した内容の本質を保ったまま自然な話し言葉に整える（意味を変えない）
+- rows は省略せず【全行】返す（scriptが埋まらなかった行もそのまま含める）
+- summary に「何シーン分の原稿を書いたか／埋まらなかったシーンがあれば理由」を日本語で1〜2行`;
+
+async function fillQaWithClaude(project, raw, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const ctx = "----- 現在の構成台本(JSON、骨組みのみ) -----\n" + JSON.stringify(slim(project)) +
+    "\n----- 文字起こし -----\n" + raw +
+    "\n----- ここまで -----\n\n文字起こしから各シーンのscriptを埋めて、更新後の完全な構成台本を build_project で返してください。";
+  const data = await claudeMessages({
+    model,
+    max_tokens: 32000,
+    system: QAFILL_SYSTEM,
+    tools: [BUILD_TOOL],
+    tool_choice: { type: "tool", name: "build_project" },
+    messages: [{ role: "user", content: ctx }],
+  }, env);
+  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_project");
+  if (!block || !block.input) throw new Error("tool_use が返りませんでした");
+  return coerceRows(block.input);
 }
 
 /* ===== AIアシスタント：現案件＋現場からの生メッセージ → 反映して更新案件を返す ===== */
