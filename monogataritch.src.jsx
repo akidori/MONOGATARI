@@ -2941,7 +2941,7 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     const talk = project.format === "talk";
-    const valid = ["overview", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
+    const valid = ["overview", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["mindmap"]), ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
       .filter((k) => !LIVE_ONLY_TABS || LIVE_ONLY_TABS.includes(k));
     if (!valid.includes(tab)) setTab(valid[0] || "overview");
   }, [project && project.format, project && project.id, tab]);
@@ -3171,7 +3171,7 @@ export default function App() {
             // 不正値は下の「保存した選択ページの正規化」useEffectがoverviewへ補正するので、
             // ここでは軽くホワイトリスト検証するのみ
             const wantTab = new URLSearchParams(location.search).get("tab");
-            if (wantTab && ["overview", "plan", "hearing", "script", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
+            if (wantTab && ["overview", "plan", "hearing", "script", "mindmap", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
               setTab(wantTab);
             }
             setLoaded(true); return;
@@ -6523,7 +6523,7 @@ export default function App() {
   );
 
   // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
-  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["mindmap", "share", "マインドマップ", "MM"]]), ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
   // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
   const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
   const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
@@ -7878,6 +7878,21 @@ export default function App() {
           </>
         )}
 
+        {/* ================= マインドマップタブ（構成台本と同じデータをフルページで） ================= */}
+        {tab === "mindmap" && project.format !== "talk" && (
+          <div className="max-w-[1700px] mx-auto px-1 sm:px-0 py-1">
+            {(() => {
+              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
+              return (
+                <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
+                  <p className="text-[11px] text-stone-400 mb-2">構成台本と同じデータを見ています。ここでの編集は台本にもそのまま反映されます。各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
+                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} />
+                </section>
+              );
+            })()}
+          </div>
+        )}
+
         {/* ================= 香盤表タブ ================= */}
         {tab === "kouban" && (
           <>
@@ -8243,26 +8258,13 @@ export default function App() {
                   className={"text-[12px] font-bold px-3.5 py-1.5 rounded-lg transition-colors " + (prepView === k ? "bg-white shadow-sm text-stone-800" : "text-stone-500 hover:text-stone-700")}>{lab}</button>
               ))}
             </div>
-            {/* マインドマップ（2026-08-15 Studio OSから移植／2026-08-17 構成台本タブから取材メモタブへ移動）:
-                物語の背骨と同じデータを木構造で可視化。Pan/Zoom/MiniMap、ノードクリックで該当シーンへスクロール。 */}
-            {(() => {
-              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
-              return (
-                <section className={cardCls + " mb-4"}>
-                  {cardHead("マインドマップ", (
-                    <span className="w-6 h-6 shrink-0 grid place-items-center text-stone-400" title={mmOpen ? "畳む" : "開く"}>
-                      <span className="text-[10px] transition-transform inline-block" style={{ transform: mmOpen ? "none" : "rotate(-90deg)" }}>▾</span>
-                    </span>
-                  ), toggleMm)}
-                  {mmOpen && (
-                    <div className="px-3 sm:px-4 py-3">
-                      <p className="text-[11px] text-stone-400 mb-2">各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
-                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} />
-                    </div>
-                  )}
-                </section>
-              );
-            })()}
+            {/* マインドマップは独立タブへ移設（2026-08-17）。ここには入口だけ残す */}
+            <button onClick={() => setTab("mindmap")}
+              className="mb-4 w-full text-left rounded-2xl border border-dashed border-stone-300 hover:border-stone-400 hover:bg-stone-50 transition-colors px-4 py-3 flex items-center gap-2">
+              <Icon name="share" className="w-4 h-4 text-stone-400 shrink-0" />
+              <span className="text-[12px] font-bold text-stone-600">マインドマップで構造を見る・編集する</span>
+              <span className="ml-auto text-[11px] text-stone-400">開く →</span>
+            </button>
             {prepView === "wizard" ? (
               <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
             ) : (
