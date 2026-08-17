@@ -913,7 +913,7 @@ function MmSceneNode({ data }) {
   const inputRef = useRef(null);
   useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, [editing]);
   return (
-    <div className="rounded-xl px-3 py-2.5 bg-white cursor-pointer border transition-colors min-w-[170px] max-w-[240px] hover:border-stone-400"
+    <div className="rounded-xl px-3 py-2.5 bg-white cursor-pointer border transition-colors min-w-[220px] max-w-[320px] hover:border-stone-400"
       style={{ borderColor: selected ? data.accent : "#dde3ec", boxShadow: selected ? "0 0 0 2px " + data.accent + "40" : "none" }}
       onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.id); }}
       onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.id); }}>
@@ -942,7 +942,7 @@ function MmQANode({ data }) {
   const inputRef = useRef(null);
   useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, [editing]);
   return (
-    <div className="rounded-xl px-3 py-2 bg-white cursor-pointer border transition-colors w-[200px] hover:border-stone-400"
+    <div className="rounded-xl px-3 py-2 bg-white cursor-pointer border transition-colors w-[280px] hover:border-stone-400"
       style={{ borderColor: "#F0B93A", boxShadow: selected ? "0 0 0 2px #F0B93A40" : "none" }}
       onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.qaId); }}
       onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.qaId); }}>
@@ -977,7 +977,7 @@ function mmEstLines(text, charsPerLine) {
 }
 function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) {
   const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "LR", nodesep: 26, ranksep: 90 });
+  g.setGraph({ rankdir: "LR", nodesep: 26, ranksep: 100 });
   g.setDefaultEdgeLabel(() => ({}));
   const nodes = [], edges = [];
   const ROOT_ID = "project";
@@ -986,24 +986,24 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   nodes.push({ id: ROOT_ID, type: "mmProjectNode", position: { x: 0, y: 0 }, width: rootDim.width, height: rootDim.height, data: { title: deliverableTitle, totalEstSec, totalScenes } });
   sections.forEach((sec, i) => {
     const secId = "section:" + sec.id;
-    const secDim = { width: 168, height: 64 };
+    const secDim = { width: 220, height: 64 };
     g.setNode(secId, secDim);
     g.setEdge(ROOT_ID, secId);
     nodes.push({ id: secId, type: "mmSectionNode", position: { x: 0, y: 0 }, width: secDim.width, height: secDim.height, data: { ...sec, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
     edges.push({ id: "e-" + ROOT_ID + "-" + secId, source: ROOT_ID, target: secId });
     sec.rows.forEach((row) => {
       const rowId = "row:" + row.id;
-      const labelLines = mmEstLines(row.label, 12);
-      const rowDim = { width: 220, height: 78 + Math.max(0, labelLines - 2) * 15 };
+      const labelLines = mmEstLines(row.label, 19);
+      const rowDim = { width: 300, height: 78 + Math.max(0, labelLines - 2) * 15 };
       g.setNode(rowId, rowDim);
       g.setEdge(secId, rowId);
       nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
       edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId });
       (row.qa || []).forEach((pair, qi) => {
         const qaId = "qa:" + row.id + ":" + qi;
-        const qLines = mmEstLines(pair.q, 12);
-        const aLines = mmEstLines(pair.a, 16);
-        const qaDim = { width: 200, height: 70 + Math.max(0, qLines - 2) * 13 + Math.max(0, aLines - 2) * 12 };
+        const qLines = mmEstLines(pair.q, 19);
+        const aLines = mmEstLines(pair.a, 23);
+        const qaDim = { width: 280, height: 70 + Math.max(0, qLines - 2) * 13 + Math.max(0, aLines - 2) * 12 };
         g.setNode(qaId, qaDim);
         g.setEdge(rowId, qaId);
         nodes.push({ id: qaId, type: "mmQANode", position: { x: 0, y: 0 }, width: qaDim.width, height: qaDim.height, data: { ...pair, rowId: row.id, qi, qaId } });
