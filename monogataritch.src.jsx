@@ -5223,7 +5223,7 @@ export default function App() {
   };
   /* ===== 共有URL：タブ別／案件まるごと ===== */
   /* アプリのタブ → share.html のペイン名 */
-  const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files" };
+  const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files", deliver: "deliver" };
   const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (pane ? "&tab=" + pane : ""); };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
   const copyShareUrl = async (t) => {
@@ -5256,8 +5256,8 @@ export default function App() {
   };
   const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", wizard: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル" };
   /* タブ共有バー（全タブ共通・右上に固定表示）のボタン文言 */
-  const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー" };
-  const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept"]; // 受け渡しで選べるタブ
+  const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー", deliver: "納品セットを共有" };
+  const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept", "deliver"]; // 受け渡しで選べるタブ
   /* AI（Claude/GPT）に読ませる用リンク。share.html ではなくサーバー読み取り可能な JSON エンドポイントを渡す。
      #フラグメントは外部fetchで読めないので live URL は不可。/api/snap/{id} はトークン不要の読み取り専用JSON。 */
   const copyAiUrl = async () => {
@@ -5470,9 +5470,22 @@ export default function App() {
     setAssets((arr) => arr.filter((x) => x.id !== id));
     if (a && a.key) { try { await fetch(SHARE_API + "/api/file/" + a.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
   };
-  // 納品完了タブ：サムネ画像アップロード（最大6枚）
+  // 納品完了タブ：サムネ画像アップロード（候補は最大6枚・実際に使うのは最大3枚）
   const DELIVER_THUMB_MAX = 6;
+  const DELIVER_THUMB_USE_MAX = 3;
   const deliverThumbs = () => (m.deliverThumbImages && Array.isArray(m.deliverThumbImages)) ? m.deliverThumbImages : (m.deliverThumbImage ? [m.deliverThumbImage] : []);
+  // useフィールドが無い（アップ済みの旧データ）は先頭3枚を使用中扱いにする＝移行直後もいきなり全部「未選択」にならない
+  const deliverThumbUsed = (t, idx) => (t.use !== undefined ? t.use : idx < DELIVER_THUMB_USE_MAX);
+  const toggleDeliverThumbUse = (idx) => {
+    const cur = deliverThumbs();
+    const t = cur[idx]; if (!t) return;
+    const nowUsed = deliverThumbUsed(t, idx);
+    if (!nowUsed) {
+      const usedCount = cur.filter((x, i) => deliverThumbUsed(x, i)).length;
+      if (usedCount >= DELIVER_THUMB_USE_MAX) { showToast(`使用は最大${DELIVER_THUMB_USE_MAX}枚まで。他を候補に戻してから選んでね`); return; }
+    }
+    setMeta("deliverThumbImages", cur.map((x, i) => (i === idx ? { ...x, use: !nowUsed } : x)));
+  };
   const uploadDeliverThumbs = async (files) => {
     const list = Array.from(files || []).filter((f) => /^image\//.test(f.type));
     if (!list.length) { showToast("画像ファイルを選んでね"); return; }
@@ -8932,15 +8945,26 @@ export default function App() {
                           onDragLeave={() => setThumbDropOver(false)}
                           onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
                           <div className="grid grid-cols-3 gap-3 max-w-2xl">
-                            {thumbs.map((t, ti) => (
-                              <label key={t.key} className="relative aspect-video group cursor-pointer" title="クリックで差し替え">
-                                {/* object-contain: 画像の縦横比が16:9でなくても切り取らず全体を見せる（coverだと勝手にクロップされ画角が合わない） */}
-                                <img src={SHARE_API + "/api/file/" + t.key} alt="" className="w-full h-full object-contain bg-stone-100 rounded-md border border-stone-200" />
-                                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
+                            {(() => { let candRank = 0; return thumbs.map((t, ti) => {
+                              const used = deliverThumbUsed(t, ti);
+                              if (!used) candRank++;
+                              return (
+                              <div key={t.key} className="relative aspect-video group">
+                                <label className="block w-full h-full cursor-pointer" title="クリックで差し替え">
+                                  {/* object-contain: 画像の縦横比が16:9でなくても切り取らず全体を見せる（coverだと勝手にクロップされ画角が合わない） */}
+                                  <img src={SHARE_API + "/api/file/" + t.key} alt="" className={"w-full h-full object-contain bg-stone-100 rounded-md border-2 " + (used ? "border-emerald-400" : "border-stone-200 opacity-70")} />
+                                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
+                                </label>
                                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
                                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
-                              </label>
-                            ))}
+                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
+                                  title={used ? "候補に戻す" : "この画像を使用する"}
+                                  className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
+                                  {used ? "使用中" : `候補${candRank}位`}
+                                </button>
+                              </div>
+                              );
+                            }); })()}
                             {thumbs.length < DELIVER_THUMB_MAX && (
                               <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-xl leading-none">
                                 +
@@ -8948,7 +8972,7 @@ export default function App() {
                               </label>
                             )}
                           </div>
-                          <div className="text-[10px] text-stone-400 mt-1">{thumbs.length}/{DELIVER_THUMB_MAX}枚{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
+                          <div className="text-[10px] text-stone-400 mt-1">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}/{DELIVER_THUMB_MAX}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
                         </div>
                       ) : key === "deliverShorts" ? (
                         <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent} />
