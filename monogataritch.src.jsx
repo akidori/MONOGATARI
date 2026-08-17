@@ -1056,7 +1056,15 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   const skipNextFitRef = useRef(false);
   const signature = useMemo(() => mmContentSignature({ totalScenes, sections }), [totalScenes, sections]);
   // シーン配下のQ&Aだけ折りたたみ開閉できる（MindNodeのfolding相当。台本データ自体は変えない一時的な表示状態）
-  const [foldedRows, setFoldedRows] = useState(() => new Set());
+  // 既定は全シーンQ&A折りたたみ＝骨組み（ロケ・スパイン・シーン）だけの見通しの良い状態からスタート。
+  // 実プロジェクト（20シーン超×複数Q&A）だと全展開は文字が潰れて読めなくなるため（2026-08-17指摘）。
+  // 新規に追加したQ&Aはこの初期化には含まれないので自動的に開いたまま見える
+  const [foldedRows, setFoldedRows] = useState(() => {
+    const s = new Set();
+    sections.forEach((sec) => sec.rows.forEach((r) => { if ((r.qa || []).length) s.add(r.id); }));
+    return s;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
   const toggleFold = useCallback((rowId) => {
     setFoldedRows((prev) => { const next = new Set(prev); if (next.has(rowId)) next.delete(rowId); else next.add(rowId); return next; });
   }, []);
