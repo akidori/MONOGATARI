@@ -1963,6 +1963,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
   const [dropOver, setDropOver] = React.useState(false);
+  const [showOldVers, setShowOldVers] = React.useState(false);  // 旧版タブの折りたたみ（既定=最新のみ表示）
   const onDropVideo = (e) => { e.preventDefault(); setDropOver(false); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f && (f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm)$/i.test(f.name || ""))) onUploadVideo(f); };
   const onDragOverVideo = (e) => { e.preventDefault(); if (!dropOver) setDropOver(true); };
   const [filter, setFilter] = React.useState("全部");
@@ -2119,18 +2120,39 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
       {/* バージョンタブ（ドラッグ&ドロップで動画追加OK） */}
       <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 rounded-lg transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "3px" } : {}}
         onDragOver={onDragOverVideo} onDragLeave={() => setDropOver(false)} onDrop={onDropVideo}>
-        {versions.map((v) => {
-          const on = v.id === sel.id;
-          const open = comments.filter((c) => (c.versionId === v.id || (c.videoKey || "") === (v.key || v.url || "")) && cstat(c) !== "完了").length;
-          return (
-            <button key={v.id} onClick={() => setSelId(v.id)}
-              className={"shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-bold border " + (on ? "text-white" : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50")}
-              style={on ? { background: main, borderColor: main } : {}}>
-              {v.label}<span className="font-normal opacity-80 ml-1">{v.name && v.name !== v.label ? v.name : ""}</span>
-              {open > 0 && <span className="ml-1.5 text-[10px] px-1.5 rounded-full" style={{ background: on ? "rgba(255,255,255,.25)" : accent, color: "#fff" }}>{open}</span>}
-            </button>
-          );
-        })}
+        {(() => {
+          const latestId = versions.length ? versions[versions.length - 1].id : null;
+          const shown = showOldVers ? versions : versions.filter((v) => v.id === latestId || v.id === sel.id);
+          const hidden = versions.filter((v) => !shown.some((x) => x.id === v.id));
+          const openOf = (vv) => comments.filter((c) => (c.versionId === vv.id || (c.videoKey || "") === (vv.key || vv.url || "")) && cstat(c) !== "完了").length;
+          const hiddenOpen = hidden.reduce((n, vv) => n + openOf(vv), 0);
+          return (<React.Fragment>
+            {hidden.length > 0 && (
+              <button onClick={() => setShowOldVers(true)}
+                className="shrink-0 px-2.5 py-1.5 rounded-lg text-[12px] font-bold border bg-white text-stone-500 border-stone-200 hover:bg-stone-50"
+                title="過去のバージョンを表示">
+                旧版 {hidden.length} ▸
+                {hiddenOpen > 0 && <span className="ml-1 text-[10px] px-1.5 rounded-full text-white" style={{ background: accent }}>{hiddenOpen}</span>}
+              </button>
+            )}
+            {showOldVers && versions.length > 1 && (
+              <button onClick={() => setShowOldVers(false)}
+                className="shrink-0 px-2 py-1.5 rounded-lg text-[12px] font-bold text-stone-400 hover:text-stone-600" title="旧版を隠す">◂ 隠す</button>
+            )}
+            {shown.map((v) => {
+              const on = v.id === sel.id;
+              const open = openOf(v);
+              return (
+                <button key={v.id} onClick={() => setSelId(v.id)}
+                  className={"shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-bold border " + (on ? "text-white" : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50")}
+                  style={on ? { background: main, borderColor: main } : {}}>
+                  {v.label}<span className="font-normal opacity-80 ml-1">{v.name && v.name !== v.label ? v.name : ""}</span>
+                  {open > 0 && <span className="ml-1.5 text-[10px] px-1.5 rounded-full" style={{ background: on ? "rgba(255,255,255,.25)" : accent, color: "#fff" }}>{open}</span>}
+                </button>
+              );
+            })}
+          </React.Fragment>);
+        })()}
         <label className="shrink-0 px-3.5 py-1.5 rounded-lg text-[12px] font-bold text-white cursor-pointer flex items-center gap-1 shadow-sm hover:opacity-90" style={{ background: main }} title="動画をアップ（ここにドラッグ&ドロップでも追加できます）">
           <span className="text-[13px] leading-none">⬆</span>動画を追加
           <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
