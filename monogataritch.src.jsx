@@ -1001,19 +1001,22 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   nodes.push({ id: ROOT_ID, type: "mmProjectNode", position: { x: 0, y: 0 }, width: rootDim.width, height: rootDim.height, data: { title: deliverableTitle, totalEstSec, totalScenes } });
   sections.forEach((sec, i) => {
     const secId = "section:" + sec.id;
+    const accent = MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length];
+    // MindNode風：ルートから枝分かれした瞬間からセクションの色を引き継ぎ、配下のシーン・Q&Aまで同じ色の線でつなぐ
+    const edgeStyle = { stroke: accent, strokeWidth: 1.75, opacity: 0.55 };
     const secDim = { width: 220, height: 64 };
     g.setNode(secId, secDim);
     g.setEdge(ROOT_ID, secId);
-    nodes.push({ id: secId, type: "mmSectionNode", position: { x: 0, y: 0 }, width: secDim.width, height: secDim.height, data: { ...sec, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length] } });
-    edges.push({ id: "e-" + ROOT_ID + "-" + secId, source: ROOT_ID, target: secId });
+    nodes.push({ id: secId, type: "mmSectionNode", position: { x: 0, y: 0 }, width: secDim.width, height: secDim.height, data: { ...sec, accent } });
+    edges.push({ id: "e-" + ROOT_ID + "-" + secId, source: ROOT_ID, target: secId, style: edgeStyle });
     sec.rows.forEach((row) => {
       const rowId = "row:" + row.id;
       const labelLines = mmEstLines(row.label, 19);
       const rowDim = { width: 300, height: 78 + Math.max(0, labelLines - 2) * 15 };
       g.setNode(rowId, rowDim);
       g.setEdge(secId, rowId);
-      nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent: MM_SECTION_ACCENTS[i % MM_SECTION_ACCENTS.length], nodeId: rowId } });
-      edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId });
+      nodes.push({ id: rowId, type: "mmSceneNode", position: { x: 0, y: 0 }, width: rowDim.width, height: rowDim.height, data: { ...row, accent, nodeId: rowId } });
+      edges.push({ id: "e-" + secId + "-" + rowId, source: secId, target: rowId, style: edgeStyle });
       (row.qa || []).forEach((pair, qi) => {
         const qaId = "qa:" + row.id + ":" + qi;
         const qLines = mmEstLines(pair.q, 19);
@@ -1022,7 +1025,7 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
         g.setNode(qaId, qaDim);
         g.setEdge(rowId, qaId);
         nodes.push({ id: qaId, type: "mmQANode", position: { x: 0, y: 0 }, width: qaDim.width, height: qaDim.height, data: { ...pair, rowId: row.id, qi, qaId } });
-        edges.push({ id: "e-" + rowId + "-" + qaId, source: rowId, target: qaId });
+        edges.push({ id: "e-" + rowId + "-" + qaId, source: rowId, target: qaId, style: edgeStyle });
       });
     });
   });
@@ -1142,7 +1145,7 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
       onNodesChange={onNodesChange} onNodeDragStop={onNodeDragStop}
       panOnScroll zoomOnScroll={false} panOnScrollMode="free" zoomOnPinch
       onPaneClick={() => { setSelId(null); setEditId(null); }}
-      proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "bezier", style: { strokeWidth: 1.5, opacity: 0.8 } }}>
+      proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "bezier" }}>
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
       <Panel position="top-left">
         <button onClick={handleAddNode} disabled={!selId || isQA(selId)} title={selId && !isQA(selId) ? "選択中のシーンに質問ノードを追加" : "先にシーンを選んでください"}
