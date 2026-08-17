@@ -891,13 +891,28 @@ function MmSectionNode({ data }) {
   );
 }
 function MmSceneNode({ data }) {
+  const editing = data.editing;
+  const selected = data.selected;
+  const inputRef = useRef(null);
+  useEffect(() => { if (editing && inputRef.current) { inputRef.current.focus(); inputRef.current.select(); } }, [editing]);
   return (
     <div className="rounded-xl px-3 py-2.5 bg-white cursor-pointer border transition-colors min-w-[170px] max-w-[240px] hover:border-stone-400"
-      style={{ borderColor: "#dde3ec" }} onClick={() => data.onNodeClick && data.onNodeClick(data.id)}>
+      style={{ borderColor: selected ? data.accent : "#dde3ec", boxShadow: selected ? "0 0 0 2px " + data.accent + "40" : "none" }}
+      onClick={(e) => { e.stopPropagation(); data.onSelect && data.onSelect(data.id); }}
+      onDoubleClick={(e) => { e.stopPropagation(); data.onStartEdit && data.onStartEdit(data.id); }}>
       <Handle type="target" position={Position.Left} />
-      <div className="text-[11.5px] font-bold text-stone-700 line-clamp-2 flex items-center gap-1">
+      <div className="flex items-center gap-1">
         {data.sceneNo != null && <span className="text-[9px] font-bold text-stone-400 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
-        <span>{data.label}</span>
+        {editing ? (
+          <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[11.5px] font-bold text-stone-700 border-b border-stone-300 focus:outline-none bg-transparent"
+            value={data.editVal} onChange={(e) => data.onEditChange && data.onEditChange(e.target.value)}
+            onBlur={() => data.onCommitEdit && data.onCommitEdit()}
+            onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
+        ) : (
+          <span className="text-[11.5px] font-bold text-stone-700 line-clamp-2">{data.label || "（無題）"}</span>
+        )}
+        <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.id); }} title="台本のこのシーンへ"
+          className="nodrag ml-auto shrink-0 text-stone-300 hover:text-stone-600 text-[11px] leading-none px-0.5">→</button>
       </div>
       <div className="text-[9px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
     </div>
@@ -935,9 +950,10 @@ function mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections }) 
   return { nodes, edges };
 }
 
-function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene }) {
+function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNodeClick, onNoteChange, onAddScene, onRenameScene, onAddSceneAfter }) {
   const { fitView } = useReactFlow();
   const prevSigRef = useRef(null);
+  const skipNextFitRef = useRef(false);
   const signature = useMemo(() => mmContentSignature({ totalScenes, sections }), [totalScenes, sections]);
   const { nodes: builtNodes, edges } = useMemo(() => {
     const graph = mmBuildGraph({ deliverableTitle, totalEstSec, totalScenes, sections });
@@ -947,16 +963,55 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   }, [signature]);
   // ノート本文はここで毎レンダー最新値を差し込む（signatureに含めない＝入力中にdagre再配置してノードが動かないように）
   const noteById = useMemo(() => { const m = {}; sections.forEach((s) => { m[s.id] = s.note || ""; }); return m; }, [sections]);
-  const nodes = useMemo(() => builtNodes.map((n) => n.type === "mmSectionNode"
-    ? { ...n, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } } : n), [builtNodes, noteById, onNoteChange, onAddScene]);
+  const labelById = useMemo(() => { const m = {}; sections.forEach((s) => s.rows.forEach((r) => { m[r.id] = r.label; })); return m; }, [sections]);
+  // MindNode風のノード選択・インライン編集・Enter/Tabで兄弟シーン追加（Studio OS PRD Phase）
+  const [selId, setSelId] = useState(null);
+  const [editId, setEditId] = useState(null);
+  const [editVal, setEditVal] = useState("");
+  const startEdit = (id) => { setSelId(id); setEditId(id); setEditVal(labelById[id] || ""); };
+  const commitEdit = () => {
+    if (editId) { const v = editVal.trim(); if (v !== (labelById[editId] || "")) onRenameScene && onRenameScene(editId, v); }
+    setEditId(null);
+  };
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        // 編集破棄。取り消し後にinputがDOMから外れてblurが飛んでもコミットされないよう、
+        // editValを元の値に戻してから閉じる（onBlurの遅延commitを無害化）
+        if (editId) { setEditVal(labelById[editId] || ""); setEditId(null); e.preventDefault(); }
+        else if (selId) { setSelId(null); e.preventDefault(); }
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && selId) {
+        e.preventDefault();
+        if (editId === selId) commitEdit();
+        if (!onAddSceneAfter) return;
+        skipNextFitRef.current = true;
+        const newId = onAddSceneAfter(selId, "");
+        if (newId) { setSelId(newId); setEditId(newId); setEditVal(""); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selId, editId, editVal, labelById, onAddSceneAfter, onRenameScene]);
+  const nodes = useMemo(() => builtNodes.map((n) => {
+    if (n.type === "mmSectionNode") return { ...n, data: { ...n.data, note: noteById[n.data.id] || "", onNoteChange, onAddScene } };
+    if (n.type === "mmSceneNode") return { ...n, data: { ...n.data, selected: n.data.id === selId, editing: n.data.id === editId, editVal, onSelect: setSelId, onStartEdit: startEdit, onEditChange: setEditVal, onCommitEdit: commitEdit } };
+    return n;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [builtNodes, noteById, onNoteChange, onAddScene, selId, editId, editVal]);
   useEffect(() => {
     if (prevSigRef.current !== signature) {
       prevSigRef.current = signature;
-      requestAnimationFrame(() => fitView({ duration: 300, padding: 0.15 }));
+      const skip = skipNextFitRef.current;
+      skipNextFitRef.current = false;
+      if (!skip) requestAnimationFrame(() => fitView({ duration: 300, padding: 0.15 }));
     }
   }, [signature, fitView]);
   return (
     <ReactFlow nodes={nodes} edges={edges} nodeTypes={MM_NODE_TYPES} fitView minZoom={0.25} maxZoom={2.5}
+      onPaneClick={() => { setSelId(null); setEditId(null); }}
       proOptions={{ hideAttribution: true }} defaultEdgeOptions={{ type: "bezier", style: { strokeWidth: 1.5, opacity: 0.8 } }}>
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
       <Controls showInteractive={false} position="top-left" />
@@ -5705,6 +5760,17 @@ export default function App() {
     }
     jumpToRow(newRow.id);
   };
+  /* マインドマップのノード操作（MindNode風）：Enter/Tabで選択中シーンの直後に兄弟シーンを追加。
+     台本タブへは移動しない＝マインドマップに留まったまま連続入力できるように。新規行idを同期で返す */
+  const addSceneAfter = (rowId, label) => {
+    const rows = project.rows || [];
+    const idx = rows.findIndex((r) => r.id === rowId);
+    if (idx < 0) return null;
+    const row = newScene("解説系", label || "");
+    insertBelow(idx, row);
+    return row.id;
+  };
+  const renameSceneLabel = (rowId, label) => updateRow(rowId, { label });
   /* 物語の背骨：ロケブロック（ロケ行＋配下シーン）ごとD&Dで並べ替え。from/to は beats のindex */
   const moveSpineBlock = (from, to) => setRows((rows) => {
     const blocks = spineBlocks(rows);
@@ -7372,7 +7438,7 @@ export default function App() {
               <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
                 {(() => {
                   const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
-                  return <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} />;
+                  return <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} />;
                 })()}
               </section>
             ) : (<>
@@ -8113,7 +8179,7 @@ export default function App() {
                   {mmOpen && (
                     <div className="px-3 sm:px-4 py-3">
                       <p className="text-[11px] text-stone-400 mb-2">各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
-                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} />
+                      <MindmapView deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} />
                     </div>
                   )}
                 </section>
