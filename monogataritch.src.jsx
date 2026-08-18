@@ -453,30 +453,35 @@ const GRADE_COLOR = { S: "#E11D48", A: "#EA580C", B: "#0EA5E9", C: "#9CA3AF" };
 
 /* meta.titles/thumbs（番組情報）⇔ plans（企画・サムネ）の相互変換。plansを正本にして両者を連携 */
 const seedPlansFromMeta = (meta) => {
-  const titles = (meta && meta.titles) || [], thumbs = (meta && meta.thumbs) || [];
+  const titles = (meta && meta.titles) || [], thumbs = (meta && meta.thumbs) || [], thumbs2 = (meta && meta.thumbs2) || [];
   let last = -1;
-  const n = Math.max(titles.length, thumbs.length);
-  for (let i = 0; i < n; i++) if ((titles[i] || "").trim() || (thumbs[i] || "").trim()) last = i;
+  const n = Math.max(titles.length, thumbs.length, thumbs2.length);
+  for (let i = 0; i < n; i++) if ((titles[i] || "").trim() || (thumbs[i] || "").trim() || (thumbs2[i] || "").trim()) last = i;
   const out = [];
-  for (let i = 0; i <= last; i++) out.push({ ...newPlan(), title: titles[i] || "", thumbText: thumbs[i] || "" });
+  for (let i = 0; i <= last; i++) out.push({ ...newPlan(), title: titles[i] || "", thumbText: thumbs[i] || "", thumbText2: thumbs2[i] || "" });
   return out;
 };
-const applyTitlesToPlans = (plans, titles, thumbs) => {
+const applyTitlesToPlans = (plans, titles, thumbs, thumbs2) => {
   const arr = (plans || []).map((p) => ({ ...p }));
-  const n = Math.max((titles || []).length, (thumbs || []).length);
+  const n = Math.max((titles || []).length, (thumbs || []).length, (thumbs2 || []).length);
   for (let i = 0; i < n; i++) {
-    const t = (titles || [])[i], th = (thumbs || [])[i];
-    if (!t && !th) continue;
+    const t = (titles || [])[i], th = (thumbs || [])[i], th2 = (thumbs2 || [])[i];
+    if (!t && !th && !th2) continue;
     while (arr.length <= i) arr.push(newPlan());
     if (t) arr[i].title = t;
     if (th) arr[i].thumbText = th;
+    if (th2) arr[i].thumbText2 = th2;
   }
   return arr;
 };
 const metaTitlesFromPlans = (plans) => {
   const ps = plans || [];
   const slot = (i, f) => (ps[i] && ps[i][f]) || "";
-  return { titles: [slot(0, "title"), slot(1, "title"), slot(2, "title")], thumbs: [slot(0, "thumbText"), slot(1, "thumbText"), slot(2, "thumbText")] };
+  return {
+    titles: [slot(0, "title"), slot(1, "title"), slot(2, "title")],
+    thumbs: [slot(0, "thumbText"), slot(1, "thumbText"), slot(2, "thumbText")],
+    thumbs2: [slot(0, "thumbText2"), slot(1, "thumbText2"), slot(2, "thumbText2")],
+  };
 };
 
 /* ---------- 構成台本の丸ごと取り込み（JSON / 構成台本コピーTSV 両対応） ----------
@@ -619,12 +624,14 @@ const normalizeImport = (obj) => {
   const meta = obj.meta || {};
   const titles = (meta.titles && meta.titles.length ? meta.titles : ["", "", ""]).slice(0, 3);
   const thumbs = (meta.thumbs && meta.thumbs.length ? meta.thumbs : ["", "", ""]).slice(0, 3);
+  const thumbs2 = (meta.thumbs2 && meta.thumbs2.length ? meta.thumbs2 : ["", "", ""]).slice(0, 3);
   while (titles.length < 3) titles.push("");
   while (thumbs.length < 3) thumbs.push("");
+  while (thumbs2.length < 3) thumbs2.push("");
   return {
     name: obj.name || "",
     channel: obj.channel || "",
-    meta: { shootDate: meta.shootDate || "", place: meta.place || "", titles, thumbs, highlight: meta.highlight || "" },
+    meta: { shootDate: meta.shootDate || "", place: meta.place || "", titles, thumbs, thumbs2, highlight: meta.highlight || "" },
     theme: obj.theme && obj.theme.main ? { ...DEFAULT_THEME, ...obj.theme } : { ...DEFAULT_THEME },
     rate: Number(obj.rate) || 5,
     timeFormat: obj.timeFormat === "jp" ? "jp" : "tc",
@@ -678,6 +685,7 @@ const parseImportText = (text) => {
       if (c1 === "撮影場所") { meta.place = vals[0] || ""; continue; }
       if (c1 === "タイトル案") { meta.titles = [vals[0] || "", vals[1] || "", vals[2] || ""]; continue; }
       if (c1 === "サムネ案") { meta.thumbs = [vals[0] || "", vals[1] || "", vals[2] || ""]; continue; }
+      if (c1 === "サムネ案②" || c1 === "サムネ案2") { meta.thumbs2 = [vals[0] || "", vals[1] || "", vals[2] || ""]; continue; }
       if (c1 === "ハイライト") { meta.highlight = vals[0] || ""; continue; }
     }
     // ヘッダー行：列位置を記録（原稿/内容/秒数 が後ろや別位置にあっても正しく拾える）
@@ -3229,6 +3237,8 @@ export default function App() {
   const liveWS = useRef(null);          // リアルタイム編集の WebSocket
   const lastRemoteRef = useRef("");     // 直近に受信した project JSON（自分の送信エコー抑止）
   const liveSendTimer = useRef(null);
+  const liveOwnerRef = useRef(false);   // ライブ編集中の自分＝案件所有者（本体コピーを持つ）か。所有者ならライブ中も本体へ追従保存する
+  const liveOwnSaveTimer = useRef(null);
   /* 動画確認＋ファイル転送 */
   const [showMediaModal, setShowMediaModal] = useState(false); // 動画/ファイル登録モーダル
   const [mediaTarget, setMediaTarget] = useState("project");   // 動画/ファイルの対象 "project"|planId
@@ -3565,8 +3575,22 @@ export default function App() {
       if (js === lastRemoteRef.current) return; // 受信直後の状態はエコー送信しない
       clearTimeout(liveSendTimer.current);
       liveSendTimer.current = setTimeout(() => {
-        try { if (liveWS.current && liveWS.current.readyState === 1) liveWS.current.send(JSON.stringify({ t: "full", project: cleanProj(project) })); } catch (e) {}
+        // updatedAt を送信時に打刻する（2026-08-18・Codex指摘）。ゲスト編集は saveProjectData を通らず
+        // 打刻ゼロだったため、DOスナップの updatedAt が実際より古く見え、鮮度比較で共同編集分を潰す穴になっていた
+        try { if (liveWS.current && liveWS.current.readyState === 1) liveWS.current.send(JSON.stringify({ t: "full", project: { ...cleanProj(project), updatedAt: Date.now() } })); } catch (e) {}
       }, 400);
+      // 所有者なら本体（クラウド保存）も10秒デバウンスで追従させる（2026-08-18）。
+      // 旧実装はライブ中の保存を完全停止＝「DOだけが正本」で、DO消滅・別リンク閲覧・共有スナップ再発行が
+      // すべて古い版を見る穴だった（08-08 森川さん案件で実測2.4日ズレ）。
+      if (liveOwnerRef.current) {
+        clearTimeout(liveOwnSaveTimer.current);
+        liveOwnSaveTimer.current = setTimeout(() => {
+          const p = projectLiveRef.current;
+          if (!p || !p.live || !liveOwnerRef.current) return;
+          const { live, ...rest } = p;   // liveフラグは本体に持ち込まない（通常モードの誤判定防止）
+          Promise.resolve(saveProjectData(rest)).catch(() => {});
+        }, 10000);
+      }
       return () => clearTimeout(liveSendTimer.current);
     }
     clearTimeout(saveTimer.current);
@@ -3579,7 +3603,17 @@ export default function App() {
       if (Date.now() < quotaUntilRef.current) { pendingSaveRef.current = project; setSaveState("quota"); return; }
       const ok = await saveProjectData(project);
       if (ok === false) { pendingSaveRef.current = project; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
-      else { pendingSaveRef.current = null; lastSaveSigRef.current = sig; setSaveState("ok"); recordHistory(project); }
+      else {
+        pendingSaveRef.current = null; lastSaveSigRef.current = sig; setSaveState("ok"); recordHistory(project);
+        // 発行済みの同時編集リンク（DO）にも同じ内容を押し込む（2026-08-18・置き去りDO対策）。
+        // 本体だけ直してDOが古いままだと、編集リンクを開いた人が昔の版を見る。失敗しても本体保存は成立済みなので握りつぶす。
+        if (project.liveId && project.liveToken && !project.live) {
+          fetch(SHARE_API + "/api/live/" + encodeURIComponent(project.liveId) + "/push", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ k: project.liveToken, project: { ...cleanProj(project), updatedAt: Date.now() } }),
+          }).catch(() => {});
+        }
+      }
     }, 3000);
     return () => clearTimeout(saveTimer.current);
   }, [project, loaded]);
@@ -3596,7 +3630,23 @@ export default function App() {
   useEffect(() => {
     const flush = () => {
       const p = projectLiveRef.current;
-      if (!p || p.live) return;                                  // live編集中はDOが正本なので触らない
+      if (!p) return;
+      if (p.live) {
+        // ライブ編集中の離脱：デバウンス残りの最後の打鍵を即時送信（2026-08-18）。
+        // まずWSで即send（ブラウザはunload時もバッファ送出をベストエフォートで行う）。
+        // keepalive fetch は64KB上限があるため、小さい案件のときだけ保険として併用する（Codex指摘）
+        try {
+          const wire = JSON.stringify({ t: "full", project: { ...cleanProj(p), updatedAt: Date.now() } });
+          if (liveWS.current && liveWS.current.readyState === 1) liveWS.current.send(wire);
+          if (p.liveId && p.liveToken) {
+            const body = JSON.stringify({ k: p.liveToken, project: { ...cleanProj(p), updatedAt: Date.now() } });
+            if (body.length < 60000) fetch(SHARE_API + "/api/live/" + encodeURIComponent(p.liveId) + "/push", {
+              method: "POST", keepalive: true, headers: { "Content-Type": "application/json" }, body,
+            }).catch(() => {});
+          }
+        } catch (e) {}
+        return;
+      }
       let sig;
       try { sig = JSON.stringify(cleanProj(p)); } catch (e) { return; }
       if (sig === lastSaveSigRef.current) return;                // 保存済みと同じ内容なら何もしない
@@ -3887,7 +3937,7 @@ export default function App() {
         if (editable) {
           try {
             const lr = await fetch(SHARE_API + "/api/live/create", {
-              method: "POST", headers: { "Content-Type": "application/json" },
+              method: "POST", headers: { "Content-Type": "application/json", ...(MG_SESSION ? { Authorization: "Bearer " + MG_SESSION } : {}) },
               body: JSON.stringify({ project: { ...cleanProj(p), channelInfo: { ...ci, name: ci.name || channel } }, prevLiveId: p.liveId || null, editToken: p.liveToken || null }),
             });
             const ld = await lr.json();
@@ -4050,8 +4100,9 @@ export default function App() {
     if (m.highlight) meta.highlight = m.highlight;
     if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
     if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
-    const plans = ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean)))
-      ? applyTitlesToPlans(project.plans, m.titles, m.thumbs) : project.plans;
+    if (m.thumbs2 && m.thumbs2.some(Boolean)) meta.thumbs2 = m.thumbs2;
+    const plans = ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean)) || (m.thumbs2 && m.thumbs2.some(Boolean)))
+      ? applyTitlesToPlans(project.plans, m.titles, m.thumbs, m.thumbs2) : project.plans;
     const data = { ...project, meta, rate: parsed.rate || project.rate, timeFormat: parsed.timeFormat || project.timeFormat, rows: parsed.rows, plans };
     setProject(data);
     await saveProjectData(data); // collab/個人を正しく振り分けて確実に保存
@@ -4076,6 +4127,8 @@ export default function App() {
   const runAssistant = async () => {
     const msg = assistantText.trim();
     if (!msg || !project) return;
+    // トーク系はAI反映（build_project＝rows形状）に未対応。黙って壊すのではなく明示して止める
+    if (project.format === "talk") { showToast("トーク系台本はAI反映に未対応です（構成台本タブで直接編集してください）"); return; }
     setAssistantBusy(true); setAssistantSummary("");
     try {
       const res = await fetch(SHARE_API + "/api/assist", {
@@ -4107,8 +4160,9 @@ export default function App() {
       if (m.highlight) meta.highlight = m.highlight;
       if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
       if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
-      const plans = ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean)))
-        ? applyTitlesToPlans(project.plans, m.titles, m.thumbs) : project.plans;
+      if (m.thumbs2 && m.thumbs2.some(Boolean)) meta.thumbs2 = m.thumbs2;
+      const plans = ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean)) || (m.thumbs2 && m.thumbs2.some(Boolean)))
+        ? applyTitlesToPlans(project.plans, m.titles, m.thumbs, m.thumbs2) : project.plans;
       const data = { ...project, meta, rate: parsed.rate || project.rate, rows, plans };
       setProject(data);
       try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
@@ -4435,10 +4489,11 @@ export default function App() {
     if (m.highlight) meta.highlight = m.highlight;
     if (m.titles && m.titles.some(Boolean)) meta.titles = m.titles;
     if (m.thumbs && m.thumbs.some(Boolean)) meta.thumbs = m.thumbs;
+    if (m.thumbs2 && m.thumbs2.some(Boolean)) meta.thumbs2 = m.thumbs2;
     const base = { ...project, meta };
     if (prop.name) base.name = prop.name;
     if (prop.channel) base.channel = prop.channel;
-    if ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean))) base.plans = applyTitlesToPlans(project.plans, m.titles, m.thumbs);
+    if ((m.titles && m.titles.some(Boolean)) || (m.thumbs && m.thumbs.some(Boolean)) || (m.thumbs2 && m.thumbs2.some(Boolean))) base.plans = applyTitlesToPlans(project.plans, m.titles, m.thumbs, m.thumbs2);
     let data;
     if (prop.format === "talk" && prop.talk) {
       const t = prop.talk;
@@ -4556,11 +4611,12 @@ export default function App() {
   /* 企画案(正本) → 番組情報のタイトル案/サムネ案 を自動ミラー（書き出し/AI用にmetaも常に最新化） */
   useEffect(() => {
     if (!project) return;
-    const { titles, thumbs } = metaTitlesFromPlans(project.plans);
+    const { titles, thumbs, thumbs2 } = metaTitlesFromPlans(project.plans);
     const cm = project.meta || {};
     if (JSON.stringify((cm.titles || []).slice(0, 3)) === JSON.stringify(titles)
-      && JSON.stringify((cm.thumbs || []).slice(0, 3)) === JSON.stringify(thumbs)) return;
-    setProject((p) => (p ? { ...p, meta: { ...p.meta, titles, thumbs } } : p));
+      && JSON.stringify((cm.thumbs || []).slice(0, 3)) === JSON.stringify(thumbs)
+      && JSON.stringify((cm.thumbs2 || []).slice(0, 3)) === JSON.stringify(thumbs2)) return;
+    setProject((p) => (p ? { ...p, meta: { ...p.meta, titles, thumbs, thumbs2 } } : p));
   }, [project && project.plans]);
   const [refBusy, setRefBusy] = useState({}); // {`${pid}:${idx}`: true}
   /* 参考動画URL → Worker経由でYouTube統計を取得して該当refに反映 */
@@ -4741,7 +4797,7 @@ export default function App() {
     let idx = [...index];
     for (const pl of extras) {
       const base = newProjectData(((pl.title || "").trim() || "企画案"), ch, fmt);
-      const data = { ...base, format: fmt, plans: [{ ...pl, id: uid() }], meta: { ...base.meta, titles: [pl.title || "", "", ""], thumbs: [pl.thumbText || "", "", ""] } };
+      const data = { ...base, format: fmt, plans: [{ ...pl, id: uid() }], meta: { ...base.meta, titles: [pl.title || "", "", ""], thumbs: [pl.thumbText || "", "", ""], thumbs2: [pl.thumbText2 || "", "", ""] } };
       try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
       idx.push({ id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt });
     }
@@ -5166,7 +5222,33 @@ export default function App() {
         if (m.t === "init") { setActiveId(liveId); inited = true; }
         // init（接続直後）は自分の状態が無いのでそのまま採用。以降の full は3方向マージ＝
         // 自分の直前の打鍵を相手のブロードキャストで巻き戻さない。
-        if (m.t === "init") setProject({ ...proj, live: true, liveId, liveToken: token });
+        if (m.t === "init") {
+          setProject({ ...proj, live: true, liveId, liveToken: token });
+          // 置き去りDO対策（2026-08-18）：所有者なら本体コピーと鮮度を比べ、本体が新しければそちらを正とする。
+          // 採用した本体はこの後の自動保存（liveブランチ）が全員へブロードキャストするので、開いた瞬間に全員が最新化される。
+          liveOwnerRef.current = false;
+          if (MG_SESSION && proj.id && typeof window.storage !== "undefined") {
+            (async () => {
+              try {
+                const r = await window.storage.get(STORE_PROJ(proj.id));
+                if (!r || !r.value) return;
+                const own = migrateProject(JSON.parse(r.value));
+                liveOwnerRef.current = true;
+                if ((own.updatedAt || 0) > (proj.updatedAt || 0)) {
+                  // 丸ごと置換でなく3方向マージ（base=DO版）：本体で変えた項目だけをDO版へ接ぎ木する。
+                  // DO側にしか無い共同編集（updatedAt打刻が無かった旧セッション分）を全消ししないため
+                  setProject((cur) => {
+                    if (!cur || cur.liveId !== liveId) return cur;
+                    // base=DO初期値 / local=本体 / remote=現在値。storage.get待機中に届いた共同編集や
+                    // 自分の打鍵（=現在値に反映済み）を消さず、本体の新しい項目だけ接ぎ木する（Codex二周目指摘）
+                    const grafted = merge3(cleanProj(proj), cleanProj(own), cleanProj(cur));
+                    return { ...grafted, live: true, liveId, liveToken: token };
+                  });
+                }
+              } catch (e) {}
+            })();
+          }
+        }
         else setProject((cur) => {
           if (!cur) return { ...proj, live: true, liveId, liveToken: token };
           let b = null; try { b = base ? JSON.parse(base) : null; } catch (_) { b = null; }
@@ -5187,7 +5269,7 @@ export default function App() {
     setSharing(true);
     try {
       const res = await fetch(SHARE_API + "/api/live/create", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json", ...(MG_SESSION ? { Authorization: "Bearer " + MG_SESSION } : {}) },
         body: JSON.stringify({ project: { ...cleanProj(project), channelInfo: curChannelInfo }, prevLiveId: project.liveId || null, editToken: project.liveToken || null }),
       });
       const data = await res.json();
@@ -6565,6 +6647,8 @@ export default function App() {
     lines.push(["", "撮影場所", esc(m.place)].join("\t"));
     lines.push(["", "タイトル案", esc(m.titles[0]), esc(m.titles[1]), esc(m.titles[2])].join("\t"));
     lines.push(["", "サムネ案", esc(m.thumbs[0]), esc(m.thumbs[1]), esc(m.thumbs[2])].join("\t"));
+    const th2 = m.thumbs2 || [];
+    if (th2.some(Boolean)) lines.push(["", "サムネ案②", esc(th2[0]), esc(th2[1]), esc(th2[2])].join("\t"));
     lines.push(["", "ハイライト", esc(m.highlight)].join("\t"));
     lines.push("");
     lines.push(["時間", "ロケーション", "内容", "シーン", "秒数", "所要時間", "文字数", "原稿"].join("\t"));

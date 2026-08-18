@@ -37,6 +37,8 @@ if (!data.id) {
 }
 
 console.log("✅ 発行しました");
+console.log("⚠️ このスナップはまだアプリのサイドバーに出ません。所有者の案件として登録するには:");
+console.log("   node tools/register_case.mjs " + data.id);
 console.log("   共有URL : " + PAGES + "/share.html?id=" + data.id);
 console.log("   id      : " + data.id);
 console.log("   token   : " + data.token + "   ← 控えておく（次回この case を更新する時に使う）");

@@ -1441,16 +1441,45 @@ ${qList}
 
       // ===== リアルタイム共同編集：ライブドキュメント発行 =====
       // POST /api/live/create { project, prevLiveId?, editToken? } → { liveId, editToken }
+      // 認可（2026-08-18・監査P0）：野良のDO作成を塞ぐ。ログイン済み、または既存ライブ文書の
+      // 正しい editToken を持つ再シードのみ許可。乗っ取り（既存liveIdへ別tokenで上書きseed）はDO側でも拒否する。
       if (request.method === "POST" && parts[1] === "live" && parts[2] === "create") {
-        const b = await request.json();
+        // サイズガード：認証前に無制限の request.json() をしない（巨大ボディでCPU/メモリを焼くDoS面。Codex指摘）
+        const rawBody = await readBodyCapped(request, 4200000);
+        if (rawBody == null) return json({ error: "too large" }, 413);
+        let b; try { b = JSON.parse(rawBody); } catch (e) { return json({ error: "invalid json" }, 400); }
         if (!b.project || !Array.isArray(b.project.rows)) return json({ error: "invalid project" }, 400);
         let liveId = (b.prevLiveId || "").toString().slice(0, 16);
         let editToken = (b.editToken || "").toString();
+        const u = await requireUser(request, env);
+        if (!u) {
+          let reseedOk = false;
+          if (liveId && editToken) {
+            const stub0 = env.LIVEDOC.get(env.LIVEDOC.idFromName(liveId));
+            const r0 = await stub0.fetch("https://do/snapshot?k=" + encodeURIComponent(editToken));
+            reseedOk = r0.ok;
+          }
+          if (!reseedOk) return json({ error: "ログインが必要です（編集リンクの発行はログイン中のみ）" }, 401);
+        }
         if (!liveId || !editToken) { liveId = rid(8); editToken = rid(20); }
         const stub = env.LIVEDOC.get(env.LIVEDOC.idFromName(liveId));
         const r = await stub.fetch("https://do/seed", { method: "POST", body: JSON.stringify({ project: b.project, editToken }) });
+        if (r.status === 403) return json({ error: "この編集リンクを更新する権限がありません" }, 403);
         if (!r.ok) return json({ error: "ライブ発行に失敗" }, 500);
         return json({ liveId, editToken });
+      }
+
+      // POST /api/live/{id}/push { k, project } → 本体保存と同時にライブ文書を最新化（置き去りDO対策 2026-08-18）
+      // 本体（D1）とDOが別世界で、古いDOを開いた人が何日も前の版を見る事故（08-08 森川さん案件）の恒久修正。
+      if (request.method === "POST" && parts[1] === "live" && parts[2] && parts[3] === "push") {
+        const rawBody = await readBodyCapped(request, 4200000);
+        if (rawBody == null) return json({ error: "too large" }, 413);
+        let b; try { b = JSON.parse(rawBody); } catch (e) { b = null; }
+        if (!b || !b.project) return json({ error: "invalid" }, 400);
+        const stub = env.LIVEDOC.get(env.LIVEDOC.idFromName(parts[2]));
+        const r = await stub.fetch("https://do/push", { method: "POST", body: JSON.stringify({ k: (b.k || "").toString(), project: b.project }) });
+        const d = await r.json().catch(() => ({}));
+        return json(d, r.status);
       }
 
       // GET /api/live/{id}/snapshot?k=token → ライブ文書の現在値（チャンネル編集共有で最新の企画・サムネを見せる用）
@@ -1993,6 +2022,29 @@ async function requireUser(request, env) {
   return verifySession(m[1], sessionSecret(env));
 }
 
+/* ボディをサイズ上限つきで読む（2026-08-18）。上限超過は null（呼び出し側で413）。
+   認証前ルートで無制限の request.json() をすると巨大ボディでCPU/メモリを焼かれるため、
+   Content-Length が無い chunked 送信でも実バイト数で打ち切る。 */
+async function readBodyCapped(request, maxBytes) {
+  const cl = Number(request.headers.get("Content-Length") || 0);
+  if (cl && cl > maxBytes) return null;
+  const reader = request.body ? request.body.getReader() : null;
+  if (!reader) return "";
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) { try { await reader.cancel(); } catch (e) {} return null; }
+    chunks.push(value);
+  }
+  const buf = new Uint8Array(total);
+  let off = 0;
+  for (const c of chunks) { buf.set(c, off); off += c.byteLength; }
+  return new TextDecoder().decode(buf);
+}
+
 /* OAuth refresh token等のユーザー秘密をKVへ平文で置かないためのAES-GCM封印。
    鍵はSESSION_SECRETからSHA-256で導出し、暗号文ごとにランダムIVを使う。 */
 async function privateKey(secret) {
@@ -2240,7 +2292,7 @@ const PARSE_SYSTEM = `あなたは一日密着ドキュメンタリーの構成�
 - 種別が無く、時間やロケ名/イベント名だけの行 = location 見出し（例「8:50␉出社」→ {kind:"location", label:"出社", time:"8:50"}）。配下の scene をその下に並べる
 - 原稿の「▶︎「…」（狙い）」はそのシーンの狙い書き＝残してよい。「◼ 」始まりは質問
 - 表より前にある「ルール説明」「◼︎セクションの意図」「注意」など“作り方の説明”ブロックは取り込まない（rowsに入れない）
-- 「撮影日」「撮影場所」「タイトル案」「サムネ案」「ハイライト」「動画の流れ」の行は meta へ振り分ける（タイトル案/サムネ案は横並びの複数セルを titles[]/thumbs[] に。動画の流れは highlight 末尾に添えるか無視）
+- 「撮影日」「撮影場所」「タイトル案」「サムネ案」「サムネ案②」「ハイライト」「動画の流れ」の行は meta へ振り分ける（タイトル案/サムネ案は横並びの複数セルを titles[]/thumbs[] に、サムネ案②は thumbs2[] に。動画の流れは highlight 末尾に添えるか無視）
 - 空セルだけの行、「合計」行、緑の自動生成セルは無視。原稿は改変せずそのまま写す`;
 
 const BUILD_TOOL = {
@@ -2263,6 +2315,7 @@ const BUILD_TOOL = {
           place: { type: "string" },
           titles: { type: "array", items: { type: "string" } },
           thumbs: { type: "array", items: { type: "string" } },
+          thumbs2: { type: "array", items: { type: "string" } },
           highlight: { type: "string" },
         },
       },
@@ -2777,6 +2830,7 @@ const PROPOSE_TOOL = {
           shootDate: { type: "string" }, place: { type: "string" },
           titles: { type: "array", items: { type: "string" } },
           thumbs: { type: "array", items: { type: "string" } },
+          thumbs2: { type: "array", items: { type: "string" } },
           highlight: { type: "string" },
         },
       },
@@ -2928,12 +2982,33 @@ export class LiveDoc extends DurableObject {
   async fetch(request) {
     const url = new URL(request.url);
     if (request.headers.get("Upgrade") !== "websocket") {
-      // seed（Worker からの内部 HTTP）
+      // seed（Worker からの内部 HTTP）。既にトークンが設定済みの文書は、同じトークンを
+      // 提示した再シードだけを受け付ける（別トークンでの上書き＝乗っ取り・締め出しを拒否）。
       if (request.method === "POST" && url.pathname.endsWith("/seed")) {
         const b = await request.json();
-        if (b.project) await this.ctx.storage.put("project", b.project);
+        const cur = await this.ctx.storage.get("editToken");
+        if (cur && b.editToken !== cur) return new Response("forbidden", { status: 403 });
+        if (b.project) {
+          let s; try { s = JSON.stringify(b.project); } catch (e) { s = ""; }
+          if (!s || s.length > 4000000) return new Response("too large", { status: 413 });   // WS経路と同じ4MBガード
+          await this.ctx.storage.put("project", b.project);
+        }
         if (b.editToken) await this.ctx.storage.put("editToken", b.editToken);
         return new Response("ok");
+      }
+      // push（本体側の保存をライブ文書へ反映し、接続中の全員へ配信）＝置き去りDO対策
+      if (request.method === "POST" && url.pathname.endsWith("/push")) {
+        const jres = (o, s) => new Response(JSON.stringify(o), { status: s || 200, headers: { "Content-Type": "application/json" } });
+        const b = await request.json().catch(() => null);
+        const editToken = await this.ctx.storage.get("editToken");
+        if (!editToken || !b || (b.k || "") !== editToken) return jres({ error: "forbidden" }, 403);
+        let s;
+        try { s = JSON.stringify(b.project); } catch (e) { return jres({ error: "invalid" }, 400); }
+        if (s.length > 4000000) return jres({ error: "too large" }, 413);
+        await this.ctx.storage.put("project", b.project);
+        const out = JSON.stringify({ t: "full", project: b.project });
+        for (const peer of this.sockets) { try { peer.send(out); } catch (e) {} }
+        return jres({ ok: true });
       }
       // snapshot（編集トークン照合つき）：チャンネル編集共有の最新表示用
       if (request.method === "GET" && url.pathname.endsWith("/snapshot")) {
