@@ -1585,6 +1585,23 @@ ${qList}
         return json({ uploads: ups });
       }
 
+      // GET /api/shorts/templates → たてがた君の見た目テンプレ一覧をプロキシ（Basic認証はここで秘匿）。
+      // ものがたりっちのブラウザから直接たてがた君を叩くとCORS/認証情報の壁があるため、Worker経由にする。
+      // /api/tpl（builtin同期分＋カスタム全部）を使う。/api/templatesはbuiltin6種のみでFANTS等のカスタムが載らない。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "templates") {
+        if (!env.TATEGATA_APP_PASSWORD) return json({ templates: [] });
+        try {
+          const r = await fetch("https://tategata-kun-production.up.railway.app/api/tpl", {
+            headers: { Authorization: "Basic " + btoa("x:" + env.TATEGATA_APP_PASSWORD) },
+          });
+          if (!r.ok) return json({ templates: [] });
+          const list = await r.json();
+          // kind(self/talent)はUIの色自動セット用の目印。store.py側にkind概念が無いため、
+          // 自社テンプレの固定id(sys_bf)だけ特別扱いし、それ以外は全部talent扱いにする。
+          return json({ templates: (Array.isArray(list) ? list : []).filter((t) => !t.archived).map((t) => ({ id: t.id, label: t.label, kind: t.id === "sys_bf" ? "self" : "talent" })) });
+        } catch (e) { return json({ templates: [] }); }
+      }
+
       // ===== 縦型ショート生成ジョブ（ものがたりっち→Macエンジン のポーリング連携）=====
       // POST /api/shorts/enqueue { snap, token, videoKey, sheetUrl?, notes?, nMax?, kind? } → ジョブ登録（snap所有者のみ）
       // kind="transcribe" はショートを作らずWhisper文字起こしだけ返す（納品完了タブの実尺目次用）

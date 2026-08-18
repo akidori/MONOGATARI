@@ -136,7 +136,7 @@ const histSnapshot = (p) => {
   });
   return o;
 };
-const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], icon: "", clientNotes: "", manuals: [] });
+const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], icon: "", clientNotes: "", manuals: [], promanUrl: "", manualUrl: "", checklistUrl: "" });
 /* チャンネルアイコンに選べる絵文字 */
 const CHANNEL_ICONS = ["📁","🎬","🎥","🎙️","🎤","📺","🎮","📷","🎨","💡","🔥","⭐","🚀","💼","🏆","⚽","🏀","🍳","💪","🐦","🐱","🐶","🌸","🌙","🎯","💰","📚","🧠","❤️","✨","🎸","🍜","🧳","👑","🛠️","🌍"];
 const emptyCompetitor = () => ({ url: "", vid: "", name: "", subs: 0, note: "" });
@@ -2051,18 +2051,18 @@ function VersionTrashPanel({ items, onRestore }) {
   );
 }
 /* 縦ショート自動生成（たてがた君）＝納品段階で使う自己完結パネル。納品完了タブに置く。 */
-// たてがた君の見た目テンプレ（自社/演者色・フォント・境界線等）のうちよく使う既定値。
-// カスタムテンプレ（FANTS等）はIDを直接入力する運用（たてがた君アプリ側で確認できるID）。
-const SHORTS_TEMPLATE_PRESETS = [
-  { id: "", label: "既定（自動）" },
-  { id: "sys_bf", label: "Bird Flip（自社）" },
-  { id: "sys_tora", label: "令和の虎（赤）" },
-  { id: "sys_mono", label: "モノクロ（黒）" },
-];
 function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, templateId, onTemplateChange }) {
   const [busy, setBusy] = React.useState(false);
   const [jobs, setJobs] = React.useState([]);
   const [items, setItems] = React.useState([]);
+  // たてがた君の見た目テンプレ一覧（自社/演者色・フォント・境界線・カスタム全部）をWorker経由で取得。
+  // IDを人間に直接入力させる旧仕様は「IDって何？」の詰まりを生んだため廃止（2026-08-18指摘）。
+  const [shortsTemplates, setShortsTemplates] = React.useState(null); // null=読み込み中
+  React.useEffect(() => {
+    fetch(SHARE_API + "/api/shorts/templates").then((r) => r.json())
+      .then((d) => setShortsTemplates((d && d.templates) || []))
+      .catch(() => setShortsTemplates([]));
+  }, []);
   // ダウンロードしないと中身が見えないのは非効率との指摘（2026-08-17）：クリックでその場再生できるプレビューを追加
   const [previewIdx, setPreviewIdx] = React.useState(null);
   const pollList = async (snap, token, tries = 0) => {
@@ -2105,16 +2105,14 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, tem
       </div>
       <div className="flex items-center gap-1.5 flex-wrap mt-2">
         <span className="text-[10px] font-bold text-stone-400 shrink-0">見た目テンプレ</span>
-        <select value={SHORTS_TEMPLATE_PRESETS.some((t) => t.id === templateId) ? templateId : "__custom"}
-          onChange={(e) => { if (e.target.value !== "__custom") onTemplateChange && onTemplateChange(e.target.value); }}
-          className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-600">
-          {SHORTS_TEMPLATE_PRESETS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-          <option value="__custom">カスタム（ID直接入力）</option>
-        </select>
-        {!SHORTS_TEMPLATE_PRESETS.some((t) => t.id === templateId) && (
-          <input value={templateId || ""} onChange={(e) => onTemplateChange && onTemplateChange(e.target.value)}
-            placeholder="例: tpl_xxxxxxxxxxxx（たてがた君アプリで確認できるID）"
-            className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 flex-1 min-w-[220px]" />
+        {shortsTemplates === null ? (
+          <span className="text-[11px] text-stone-400">読み込み中…</span>
+        ) : (
+          <select value={templateId || ""} onChange={(e) => onTemplateChange && onTemplateChange(e.target.value)}
+            className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-600 max-w-full">
+            <option value="">既定（自動）</option>
+            {shortsTemplates.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
         )}
       </div>
       {!videoKey && <div className="text-[11px] text-stone-400 mt-1.5">動画確認タブで完成版動画をアップすると、ここからショートを生成できます。</div>}
@@ -7513,6 +7511,18 @@ export default function App() {
                     placeholder="https://www.youtube.com/@..."
                     className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
                 </label>
+                {[
+                  ["promanUrl", "プロマネのURL"],
+                  ["manualUrl", "マニュアルのURL"],
+                  ["checklistUrl", "チェックリストのURL"],
+                ].map(([key, label]) => (
+                  <label key={key} className="block">
+                    <span className="text-[11px] font-bold text-stone-500">{label}</span>
+                    <input value={curChannelInfo[key]} onChange={(e) => updateChannelInfo({ [key]: e.target.value })}
+                      placeholder="https://..."
+                      className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                  </label>
+                ))}
               </div>
             </section>
 
