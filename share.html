@@ -89,6 +89,7 @@ const cStat = (c) => c.status || (c.resolved ? "完了" : "未対応");
 /* 右上バーと同系のピル型ボタン用SVGピクトグラム（UIに絵文字は使わない） */
 const ICONS = {
   comment: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>',
   edit: '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
   play: '<path d="M6 4l14 8-14 8V4z"/>',
   pause: '<path d="M8 5v14"/><path d="M16 5v14"/>',
@@ -768,15 +769,23 @@ function render(){
     <div class="fixed top-2 right-2 z-40 flex gap-1.5">
       <button id="eb-up" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md text-white flex items-center gap-1.5" style="background:${accent}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M12 17V4"/><path d="M6 10l6-6 6 6"/><path d="M4 20h16"/></svg>動画を上げる</button>
+      <button id="eb-tab" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md bg-white border border-stone-200 text-stone-600 flex items-center gap-1.5">${icon("link","w-3.5 h-3.5")}このタブだけURL</button>
       <button id="eb-link" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md bg-white border border-stone-200 text-stone-600 flex items-center gap-1.5">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>確認URLをコピー</button>
     </div>` : "";
+  // 編集者向けの作業リンク（プロマネ／マニュアル／チェックリスト）＝チャンネル基本情報のURL欄。
+  // 内部の段取りリンクなので編集者リンク(&up=)の時だけ出す（先方・演者には見せない）
+  const resLinks = (UP_TOKEN && !CHMODE && ci) ? [["promanUrl","プロマネ"],["manualUrl","マニュアル"],["checklistUrl","チェックリスト"]]
+    .map(([k,label]) => [safeUrl(ci[k]), label]).filter(([u]) => u) : [];
+  const resBar = resLinks.length ? `<div class="flex flex-wrap gap-1.5 mb-3">${resLinks.map(([u,label]) =>
+    `<a href="${u}" target="_blank" rel="noopener" class="text-[11px] font-bold pl-2.5 pr-3 py-1.5 rounded-full bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 shadow-sm inline-flex items-center gap-1.5">${icon("link","w-3 h-3")}${label}</a>`).join("")}</div>` : "";
   appEl.innerHTML = `
     ${editorBar}
     <div class="flex items-center justify-between mb-3">
       <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">ものがたりっち！</div>
       <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
     </div>
+    ${resBar}
     ${tabBar}
     ${/* 番組情報カードが出る時はそこにタイトル行があるので、大枠の見出しは出さない（AK指示: タイトルも普通の表示で） */""}
     ${infoBlock ? "" : `<div class="mb-4">
@@ -817,6 +826,15 @@ function render(){
   if(ebLink) ebLink.addEventListener("click", async () => {
     const u = new URL(location.href); u.searchParams.delete("up"); u.searchParams.delete("start");
     try { await navigator.clipboard.writeText(u.toString()); ebLink.lastChild.textContent = ""; ebLink.insertAdjacentText("beforeend", "コピーした"); setTimeout(() => render(), 1400); }
+    catch(e) { prompt("このURLをコピーしてね", u.toString()); }
+  });
+  // 今見ているタブだけの閲覧URL（&tab=固定・upトークン抜き）を発行。編集者が「香盤表だけ」等を人に渡せる
+  const ebTab = document.getElementById("eb-tab");
+  if(ebTab) ebTab.addEventListener("click", async () => {
+    const u = new URL(location.href);
+    ["up","start","tabs"].forEach((k) => u.searchParams.delete(k));
+    u.searchParams.set("tab", TAB);
+    try { await navigator.clipboard.writeText(u.toString()); ebTab.lastChild.textContent = ""; ebTab.insertAdjacentText("beforeend", "コピーした"); setTimeout(() => render(), 1400); }
     catch(e) { prompt("このURLをコピーしてね", u.toString()); }
   });
 }

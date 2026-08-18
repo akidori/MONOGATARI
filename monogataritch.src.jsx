@@ -3713,7 +3713,9 @@ export default function App() {
 
   /* 現在の案件のチャンネルのコンセプト情報を取得／更新 */
   const curChannel = project ? (project.channel || DEFAULT_CHANNEL) : DEFAULT_CHANNEL;
-  const curChannelInfo = { ...emptyChannelInfo(), name: curChannel, ...(channelInfo[curChannel] || {}) };
+  // live編集リンクで開いた編集者はチャンネルストアが空＝発行時に案件へ同梱した channelInfo をフォールバックに使う
+  // （これが無いと概要タブのチャンネル基本情報・プロマネ/マニュアル/チェックリストURLが編集者に見えない）
+  const curChannelInfo = { ...emptyChannelInfo(), name: curChannel, ...((project && project.channelInfo) || {}), ...(channelInfo[curChannel] || {}) };
   const updateChannelInfo = (patch) => setChannelInfo((ci) => ({ ...ci, [curChannel]: { ...emptyChannelInfo(), name: curChannel, ...(ci[curChannel] || {}), ...patch } }));
   const setCompetitors = (updater) => updateChannelInfo({ competitors: typeof updater === "function" ? updater(curChannelInfo.competitors || []) : updater });
   const addCompetitor = () => setCompetitors((cs) => [...(cs || []), emptyCompetitor()]);
@@ -6020,7 +6022,9 @@ export default function App() {
         return;
       }
       // 一般利用者をAKのR2/Streamへ暗黙フォールバックさせない。費用分離を必ず守る。
-      if (!cfStream.legacyAllowed) {
+      // 例外＝live編集リンクで開いている編集者：所有者の案件への完成動画アップなので所有者のR2/Streamに保存
+      // （share.htmlの&up=編集者アップと同じ設計。ここを塞ぐと「編集権限なのに動画が上げられない」）
+      if (!cfStream.legacyAllowed && !project.live) {
         setShowAccount(true);
         throw new Error(user ? "先にアカウント画面で自分のCloudflare Streamを接続してください" : "動画アップロードにはGoogleログインと自分のCloudflare Stream接続が必要です");
       }
