@@ -98,6 +98,12 @@ async function rateLimit(env, ip, bucket, limit, windowSec) {
   } catch { return true; } // KV障害時はブロックしない（可用性優先／DoS抑止はベストエフォート）
 }
 
+// 緊急停止スイッチ（2026-08-18・監査P0）。KV ops:kill = {"ai":true,"uploads":true} 形式。
+// 切替は wrangler kv key put/delete ops:kill …。KV障害時は停止しない（可用性優先）。
+async function opsKilled(env, what) {
+  try { const k = await env.SNAPS.get("ops:kill", "json"); return !!(k && k[what]); } catch { return false; }
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
@@ -113,9 +119,21 @@ export default {
 
     try {
       // AI系エンドポイントのIPレート制限（無認証で叩けるためANTHROPIC/YT予算の焼却DoSを防ぐ）
-      if (parts[0] === "api" && ["parse", "assist", "review", "deliver", "hearing", "chat", "help", "yt", "ytsearch"].includes(parts[1])) {
+      if (parts[0] === "api" && ["parse", "assist", "review", "deliver", "hearing", "chat", "help", "yt", "ytsearch", "skeleton", "fillqa", "wizard"].includes(parts[1])) {
+        // 緊急停止スイッチ（監査P0）：KV ops:kill = {"ai":true} で全AI系を503。
+        // 有効化: cd worker && npx wrangler kv key put ops:kill '{"ai":true}' --namespace-id dae9e99997cc4ad29722f28f4c23476f --remote
+        if (await opsKilled(env, "ai")) return json({ error: "AI機能は現在一時停止中です" }, 503);
         const ip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
         if (!(await rateLimit(env, ip, "ai", 40, 60))) return json({ error: "リクエストが多すぎます。1分ほど待って再度お試しください。" }, 429);
+        // 日次予算（監査P0「ユーザー別予算が無い」対応）：ログイン済みはsub単位、無認証はIP単位。
+        // Claude課金ルートのみ対象（yt/ytsearchはYouTube APIかつボード表示で大量に飛ぶ＝KV書込枠を守るため除外）。
+        // アプリのAI呼び出しは大半が無認証fetchなので、IP側は編集者・AKの実運用を妨げない値を既定にする
+        if (["parse", "assist", "review", "deliver", "hearing", "chat", "help", "skeleton", "fillqa", "wizard"].includes(parts[1])) {
+          const du = await requireUser(request, env);
+          const dayKey = du ? "u:" + du.sub : "ip:" + ip;
+          const dayLimit = du ? +(env.AI_DAY_LIMIT_USER || 800) : +(env.AI_DAY_LIMIT_IP || 200);
+          if (!(await rateLimit(env, dayKey, "aiday", dayLimit, 86400))) return json({ error: "本日のAI利用上限に達しました。明日また試すか、運営に連絡してください。" }, 429);
+        }
       }
       // GET /api/lab-manual?channel=オリックス → Flip-LABの保存済み編集ルールを中継して返す。
       // 編集者がものがたりっちで作業中に、そのチャンネルの蒸留済みルールを見れる。
@@ -196,8 +214,7 @@ export default {
       // domainはサーバ側で台本設計に固定＝任意domain指定でLAB側の新規Opus生成を焼却されない。
       // scaffoldはOpus生成で重い＝rateLimitを別バケツできつめに。
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "questions") {
-        const wip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
-        if (!(await rateLimit(env, wip, "ai", 40, 60))) return json({ ok: false, error: "リクエストが多すぎます。1分ほど待ってください。" }, 429);
+        // 分あたりの"ai"バケットは冒頭の共通ゲートが担当（ここで再実行すると1リクエスト2消費＝実質上限半減。Codex指摘で撤去）
         if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続" }, 502);
         const qs = "domain=" + encodeURIComponent("台本設計");
         const labReq = new Request("https://flip-lens/api/questions?" + qs, { headers: { "Authorization": "Bearer " + env.FLIP_LAB_TOKEN } });
@@ -235,8 +252,7 @@ export default {
       // ヒアリングタブの入力内容から質問13の答え候補を推測して返す（「こういうのじゃない？」提案）。
       // 注意: 質問13の主語は視聴者(ターゲット)。ヒアリング(演者情報)から視聴者像への翻訳を行う。
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "suggest") {
-        const wip = request.headers.get("cf-connecting-ip") || "0.0.0.0";
-        if (!(await rateLimit(env, wip, "ai", 40, 60))) return json({ ok: false, error: "リクエストが多すぎます。1分ほど待ってください。" }, 429);
+        // 分あたりの"ai"バケットは冒頭の共通ゲートが担当（二重消費防止・Codex指摘で撤去）
         if (!env.ANTHROPIC_API_KEY) return json({ ok: false, error: "ANTHROPIC_API_KEY 未設定" }, 500);
         const b = await request.json().catch(() => ({}));
         const qs = Array.isArray(b.questions) ? b.questions.slice(0, 20) : [];
@@ -395,9 +411,12 @@ ${qList}
         const project = b && b.project;
         if (!message.trim()) return json({ error: "メッセージが空です" }, 400);
         if (message.length > 40000) return json({ error: "メッセージが長すぎます（4万字まで）" }, 413);
-        if (!project || !Array.isArray(project.rows)) return json({ error: "現在の案件が必要です" }, 400);
+        const isTalkProj = project && project.format === "talk";
+        if (!project || (!isTalkProj && !Array.isArray(project.rows))) return json({ error: "現在の案件が必要です" }, 400);
         const out = await assistWithClaude(project, message, env);
-        if (!out || !Array.isArray(out.rows) || !out.rows.length) return json({ error: "反映に失敗しました" }, 422);
+        const bad = isTalkProj ? (!out || !out.talk || !Array.isArray(out.talk.body) || !out.talk.body.length)
+          : (!out || !Array.isArray(out.rows) || !out.rows.length);
+        if (bad) return json({ error: "反映に失敗しました" }, 422);
         return json({ project: out, summary: (out.summary || "").toString() });
       }
 
@@ -1362,6 +1381,21 @@ ${qList}
 
       // ===== 案件ごとの共同編集（招待・権限） =====
       // POST /api/collab/{upsert|invite|uninvite|leave|list|get|delete}
+      // GET /api/ops/usage → 今月・先月のR2アップロード使用量と緊急停止スイッチの状態（要ログイン）
+      if (request.method === "GET" && parts[1] === "ops" && parts[2] === "usage") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        // 運営専用（全体使用量とkill状態は一般ログインユーザーに見せない）
+        const adminEmail = (env.LEGACY_STREAM_OWNER_EMAIL || "").toLowerCase();
+        if (!adminEmail || (u.email || "").toLowerCase() !== adminEmail) return json({ error: "forbidden" }, 403);
+        const ym = (dt) => dt.toISOString().slice(0, 7).replace("-", "");
+        const d = new Date(); const prev = new Date(d); prev.setUTCMonth(d.getUTCMonth() - 1);
+        const cur = (await env.SNAPS.get("usage:r2:" + ym(d), "json")) || { bytes: 0, count: 0 };
+        const last = (await env.SNAPS.get("usage:r2:" + ym(prev), "json")) || { bytes: 0, count: 0 };
+        const kill = (await env.SNAPS.get("ops:kill", "json")) || {};
+        return json({ month: ym(d), r2: cur, prevMonth: ym(prev), r2Prev: last, kill });
+      }
+
       if (request.method === "POST" && parts[1] === "collab") {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
@@ -1383,10 +1417,18 @@ ${qList}
             await addIdx(myEmail, id);
           } else {
             if (!canEdit(doc)) return json({ error: "forbidden" }, 403);
+            // 競合検知（2026-08-18）：クライアントが最後に見た版(baseUpdatedAt)より新しい保存が既にあれば
+            // 上書きせず409で現物を返す。クライアントは3方向マージして再保存する。
+            // baseUpdatedAt未送信（旧クライアント）は従来通りlast-write-wins
+            // doc.updatedAt は ISO文字列（now()）。数値/ISOどちらで来てもms比較できるように正規化（Codex指摘：Number(ISO)=NaNで409が不発だった）
+            const tsMs = (v) => (typeof v === "number" ? v : (Date.parse(v || "") || 0));
+            const baseAt = tsMs(b.baseUpdatedAt);
+            if (baseAt && tsMs(doc.updatedAt) > baseAt)
+              return json({ conflict: true, project: doc.project, updatedAt: doc.updatedAt }, 409);
             doc.project = project; doc.name = project.name || doc.name; doc.channel = project.channel || doc.channel; doc.updatedAt = now();
           }
           await env.SNAPS.put(docKey(id), JSON.stringify(doc));
-          return json({ id, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
+          return json({ id, updatedAt: doc.updatedAt, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
         }
         if (op === "invite") {
           const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
@@ -1434,7 +1476,7 @@ ${qList}
         if (op === "get") {
           const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
           if (!canEdit(doc)) return json({ error: "forbidden" }, 403);
-          return json({ project: doc.project, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
+          return json({ project: doc.project, updatedAt: doc.updatedAt, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
         }
         return json({ error: "unknown collab op" }, 400);
       }
@@ -1501,6 +1543,7 @@ ${qList}
 
       // POST /api/file/mpu/create  { snap, name, size, mime, token? } → { key, uploadId }
       if (request.method === "POST" && parts[1] === "file" && parts[2] === "mpu" && parts[3] === "create") {
+        if (await opsKilled(env, "uploads")) return json({ error: "アップロードは現在一時停止中です" }, 503);
         const b = await request.json();
         const snap = (b.snap || "").toString().slice(0, 16);
         if (!snap) return json({ error: "snap がありません" }, 400);
@@ -1580,6 +1623,19 @@ ${qList}
           await env.FILES.delete(key);
           return json({ error: "アップロード容量の検証に失敗しました" }, 413);
         }
+        // R2使用量の月次記録（2026-08-18・監査P0「使用量記録が無い」対応の第一歩）。全体＋案件別カウンタ。
+        // 参照は GET /api/ops/usage（運営のみ）。失敗してもアップロード自体は成立させる。
+        // KVのread-modify-writeなので同時アップロードでは過少計上しうる＝会計でなく傾向監視用（厳密化はDO化が必要）
+        try {
+          const ym = new Date().toISOString().slice(0, 7).replace("-", "");
+          const bump = async (k, ttl) => {
+            const cur = (await env.SNAPS.get(k, "json")) || { bytes: 0, count: 0 };
+            cur.bytes += actualSize; cur.count += 1;
+            await env.SNAPS.put(k, JSON.stringify(cur), ttl ? { expirationTtl: ttl } : undefined);
+          };
+          await bump("usage:r2:" + ym);
+          await bump("usage:r2:" + ym + ":" + snap, 400 * 86400);
+        } catch (e) {}
         const ret = +b.retention; // 30 | 90 | 0(無期限)
         // 既定=90日（2026-08-02 AK決定「90日間保存でいい」）。無期限は明示的に retention:0 を送った時だけ。
         const days = ret === 30 || ret === 90 ? ret : (b.retention === 0 || b.retention === "0" ? 0 : 90);
@@ -2545,7 +2601,90 @@ const ASSIST_SYSTEM = `あなたは一日密着ドキュメンタリーの構成
 - rows は省略せず【全行】返す（変更が無い行もそのまま含める）
 - summary に「何をどう変えたか」を日本語で1〜3行。反映できる情報が無ければ無理に変えず、summary でその旨を伝える`;
 
+/* ===== トーク系台本へのAI反映（2026-08-18実装。従来は「build_projectがrows形状のため未対応」だった） ===== */
+const TALK_ASSIST_SYSTEM = `あなたはトーク系YouTube台本（一人語り・対談）の構成作家アシスタントです。「現在のトーク台本(JSON)」と、現場・演者・依頼者から届いた「生のメッセージ（LINE文面・メモ・指示など、形式は不問）」が渡されます。メッセージの内容を台本に反映し、更新後の【完全な】台本を build_talk ツールで返してください。
+
+# 構造
+- highlight=冒頭ハイライト（動画の一番おいしい部分の予告）/ intro=冒頭の挨拶・導入 / toc[]=目次 / body[]=本編（heading=見出し + script=語り原稿）/ cta=締めの行動喚起
+# 原則
+- 触る指示が無い部分は一字一句そのまま残す（勝手に書き換えない・要約しない）
+- 原稿(script)は話し言葉。演者の口調・語彙を維持する
+- 見出しの追加/削除/並べ替えの指示があれば body と toc の両方を整合させる
+- summary に今回の変更点を日本語で1〜3行`;
+
+const BUILD_TALK_TOOL = {
+  name: "build_talk",
+  description: "更新後のトーク系台本を返す",
+  strict: true,
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      summary: { type: "string", description: "今回の変更点を日本語で1〜3行" },
+      talk: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          highlight: { type: "string" },
+          intro: { type: "string" },
+          toc: { type: "array", items: { type: "string" } },
+          body: {
+            type: "array",
+            items: {
+              type: "object", additionalProperties: false,
+              properties: { heading: { type: "string" }, script: { type: "string" } },
+              required: ["heading", "script"],
+            },
+          },
+          cta: { type: "string" },
+        },
+        required: ["body"],
+      },
+    },
+    required: ["talk"],
+  },
+};
+
+async function assistTalkWithClaude(project, message, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const t = project.talk || {};
+  const cur = {
+    name: project.name || "",
+    talk: {
+      highlight: t.highlight || "", intro: t.intro || "",
+      toc: Array.isArray(t.toc) ? t.toc : [],
+      body: (Array.isArray(t.body) ? t.body : []).map((x) => ({ heading: x.heading || "", script: x.script || "" })),
+      cta: t.cta || "",
+    },
+  };
+  const ctx = "----- 現在のトーク台本(JSON) -----\n" + JSON.stringify(cur) +
+    "\n----- 現場から届いたメッセージ -----\n" + message +
+    "\n----- ここまで -----\n\n上のメッセージを台本に反映して、更新後の完全な台本を build_talk で返してください。";
+  const data = await claudeMessages({
+    model,
+    max_tokens: 32000,
+    system: TALK_ASSIST_SYSTEM,
+    tools: [BUILD_TALK_TOOL],
+    tool_choice: { type: "tool", name: "build_talk" },
+    messages: [{ role: "user", content: ctx }],
+  }, env);
+  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "build_talk");
+  if (!block || !block.input || !block.input.talk) throw new Error("tool_use が返りませんでした");
+  const rt = block.input.talk;
+  return {
+    format: "talk",
+    summary: (block.input.summary || "").toString(),
+    talk: {
+      highlight: (rt.highlight || "").toString(), intro: (rt.intro || "").toString(),
+      toc: (Array.isArray(rt.toc) ? rt.toc : []).map((x) => (x || "").toString()),
+      body: (Array.isArray(rt.body) ? rt.body : []).map((x) => ({ heading: (x.heading || "").toString(), script: (x.script || "").toString() })),
+      cta: (rt.cta || "").toString(),
+    },
+  };
+}
+
 async function assistWithClaude(project, message, env) {
+  if (project && project.format === "talk") return assistTalkWithClaude(project, message, env);
   const model = env.PARSE_MODEL || "claude-sonnet-4-6";
   const ctx = "----- 現在の構成台本(JSON) -----\n" + JSON.stringify(slim(project)) +
     "\n----- 現場から届いたメッセージ -----\n" + message +

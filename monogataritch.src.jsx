@@ -174,7 +174,12 @@ async function authFetch(path, body) {
     body: JSON.stringify(body || {}),
   });
   if (res.status === 401) { const e = new Error("unauthorized"); e.code = 401; throw e; }
-  if (!res.ok) { let m = "通信エラー"; try { m = (await res.json()).error || m; } catch (_) {} throw new Error(m); }
+  if (!res.ok) {
+    let d = null; try { d = await res.json(); } catch (_) {}
+    const e = new Error((d && d.error) || "通信エラー");
+    e.code = res.status; e.data = d;   // 409競合など、呼び出し側がボディを使えるように添付
+    throw e;
+  }
   return res.json();
 }
 
@@ -3238,7 +3243,9 @@ export default function App() {
   const lastRemoteRef = useRef("");     // 直近に受信した project JSON（自分の送信エコー抑止）
   const liveSendTimer = useRef(null);
   const liveOwnerRef = useRef(false);   // ライブ編集中の自分＝案件所有者（本体コピーを持つ）か。所有者ならライブ中も本体へ追従保存する
+  const liveCollabRef = useRef(false);  // 上記所有がcollab案件（本体保存の宛先が /api/collab/upsert）か
   const liveOwnSaveTimer = useRef(null);
+  const collabBaseRef = useRef({});     // {id:{updatedAt, base}} collab保存の競合検知用＝最後に見たサーバ版
   /* 動画確認＋ファイル転送 */
   const [showMediaModal, setShowMediaModal] = useState(false); // 動画/ファイル登録モーダル
   const [mediaTarget, setMediaTarget] = useState("project");   // 動画/ファイルの対象 "project"|planId
@@ -3588,7 +3595,8 @@ export default function App() {
           const p = projectLiveRef.current;
           if (!p || !p.live || !liveOwnerRef.current) return;
           const { live, ...rest } = p;   // liveフラグは本体に持ち込まない（通常モードの誤判定防止）
-          Promise.resolve(saveProjectData(rest)).catch(() => {});
+          // collab案件はcollabフラグを立てて保存＝saveProjectDataが /api/collab/upsert へ振り分ける
+          Promise.resolve(saveProjectData(liveCollabRef.current ? { ...rest, collab: true } : rest)).catch(() => {});
         }, 10000);
       }
       return () => clearTimeout(liveSendTimer.current);
@@ -3809,13 +3817,41 @@ export default function App() {
     setSaveState("quota");
     return true;
   };
+  /* collab案件の取得＋競合検知の基準(base)記録。collab/get はここを通すこと */
+  const collabGet = async (id) => {
+    const r = await authFetch("/api/collab/get", { id });
+    if (r && r.project) collabBaseRef.current[id] = { updatedAt: r.updatedAt || 0, base: { ...r.project, id, collab: true } };
+    return r;
+  };
   const saveProjectData = async (data0) => {
     if (!data0) return true;
     const data = { ...data0, updatedAt: Date.now() };
     // collab かつログイン中のみクラウドへ。未ログイン(ログアウト後)は個人ストレージへフォールバック保存（silent fail防止）
     if (data.collab && MG_SESSION) {
-      try { await authFetch("/api/collab/upsert", { id: data.id, project: data }); return true; }
-      catch (e) { console.error("collab保存", e); if (!noteSaveError(e)) { try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} } return false; }
+      // 競合検知つき保存（2026-08-18）。従来はlast-write-wins＝相手の保存を黙って上書きしていた。
+      // baseUpdatedAt（最後に見たサーバ版）を添えて送り、サーバがより新しければ409+現物が返る→3方向マージして再保存
+      try {
+        const entry = collabBaseRef.current[data.id] || {};
+        const r = await authFetch("/api/collab/upsert", { id: data.id, project: data, baseUpdatedAt: entry.updatedAt || 0 });
+        collabBaseRef.current[data.id] = { updatedAt: (r && r.updatedAt) || Date.now(), base: data };
+        return true;
+      }
+      catch (e) {
+        if (e.code === 409 && e.data && e.data.project) {
+          try {
+            const entry = collabBaseRef.current[data.id] || {};
+            const remote = { ...e.data.project, id: data.id };
+            const merged = { ...merge3(entry.base || null, data, remote), id: data.id, collab: true };
+            const r2 = await authFetch("/api/collab/upsert", { id: data.id, project: merged, baseUpdatedAt: e.data.updatedAt || 0 });
+            collabBaseRef.current[data.id] = { updatedAt: (r2 && r2.updatedAt) || Date.now(), base: merged };
+            // 画面へも統合結果を反映。保存中に打った字は base=data との再マージで温存する
+            setProject((cur) => (cur && cur.id === data.id ? { ...merge3(data, cur, merged), collab: true } : cur));
+            showToast("他のメンバーの編集と統合しました");
+            return true;
+          } catch (e2) { console.error("collab競合マージ", e2); noteSaveError(e2); return false; }
+        }
+        console.error("collab保存", e); if (!noteSaveError(e)) { try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} } return false;
+      }
     } else {
       try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); return true; } catch (e) { console.error(e); noteSaveError(e); return false; }
     }
@@ -3929,7 +3965,7 @@ export default function App() {
         let p = null;
         try {
           if (x.id === activeId && project) p = project;
-          else if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); p = r.project ? { ...r.project, id: x.id, collab: true } : null; }
+          else if (x.collab) { const r = await collabGet(x.id); p = r.project ? { ...r.project, id: x.id, collab: true } : null; }
           else { const r = await window.storage.get(STORE_PROJ(x.id)); if (r && r.value) p = JSON.parse(r.value); }
         } catch (e) {}
         if (!p) continue;
@@ -4037,7 +4073,7 @@ export default function App() {
     const entry = index.find((x) => x.id === id);
     try {
       if (entry && entry.collab) {
-        const r = await authFetch("/api/collab/get", { id });
+        const r = await collabGet(id);
         const data = { ...migrateProject(r.project), id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members };
         setActiveId(id); setProject(data); setTab("script");
       } else {
@@ -4127,8 +4163,6 @@ export default function App() {
   const runAssistant = async () => {
     const msg = assistantText.trim();
     if (!msg || !project) return;
-    // トーク系はAI反映（build_project＝rows形状）に未対応。黙って壊すのではなく明示して止める
-    if (project.format === "talk") { showToast("トーク系台本はAI反映に未対応です（構成台本タブで直接編集してください）"); return; }
     setAssistantBusy(true); setAssistantSummary("");
     try {
       const res = await fetch(SHARE_API + "/api/assist", {
@@ -4137,6 +4171,30 @@ export default function App() {
       });
       const d = await res.json();
       if (!res.ok || !d.project) throw new Error(d.error || "反映に失敗しました");
+      // トーク系は build_talk の結果を適用（2026-08-18実装）。既存bodyのidは見出し一致→同位置の順で引き継ぐ
+      if (project.format === "talk") {
+        const rt = d.project.talk || {};
+        const pt = project.talk || {};
+        const prevBody = Array.isArray(pt.body) ? pt.body : [];
+        const body = (Array.isArray(rt.body) ? rt.body : []).map((x, i) => {
+          const prev = prevBody.find((b) => (b.heading || "") === (x.heading || "")) || prevBody[i];
+          return { id: prev ? prev.id : uid(), heading: x.heading || "", script: x.script || "" };
+        });
+        const talk = {
+          highlight: rt.highlight != null ? rt.highlight : pt.highlight || "",
+          intro: rt.intro != null ? rt.intro : pt.intro || "",
+          toc: Array.isArray(rt.toc) && rt.toc.length ? rt.toc : (Array.isArray(pt.toc) ? pt.toc : [""]),
+          body: body.length ? body : prevBody,
+          cta: rt.cta != null ? rt.cta : pt.cta || "",
+        };
+        const data = { ...project, talk };
+        setProject(data);
+        try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
+        setAssistantSummary(d.summary || "台本に反映しました。");
+        setAssistantText("");
+        showToast("AIがトーク台本に反映しました");
+        return;
+      }
       const parsed = normalizeImport(d.project);
       // 既存の地図リンク・撮影完了フラグはロケ名で引き継ぐ（AI更新で消さない）
       const prevByLabel = {};
@@ -4709,7 +4767,7 @@ export default function App() {
         if (boardCache[x.id]) continue;
         try {
           let data = null;
-          if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); data = { ...migrateProject(r.project), id: x.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }; }
+          if (x.collab) { const r = await collabGet(x.id); data = { ...migrateProject(r.project), id: x.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }; }
           else { const r = await window.storage.get(STORE_PROJ(x.id)); data = r && r.value ? migrateProject(JSON.parse(r.value)) : null; }
           if (data && !cancelled) setBoardCache((c) => ({ ...c, [x.id]: data }));
         } catch (e) { if ((e && e.message) === "nf" && !cancelled) setBrokenIds((b) => ({ ...b, [x.id]: true })); }
@@ -4727,7 +4785,7 @@ export default function App() {
         if (x.id === activeId || boardCache[x.id]) continue;
         try {
           let data = null;
-          if (x.collab) { const r = await authFetch("/api/collab/get", { id: x.id }); data = { ...migrateProject(r.project), id: x.id, collab: true }; }
+          if (x.collab) { const r = await collabGet(x.id); data = { ...migrateProject(r.project), id: x.id, collab: true }; }
           else { const r = await window.storage.get(STORE_PROJ(x.id)); data = r && r.value ? migrateProject(JSON.parse(r.value)) : null; }
           if (data && !cancelled) setBoardCache((c) => ({ ...c, [x.id]: data }));
         } catch (e) { if ((e && e.message) === "nf" && !cancelled) setBrokenIds((b) => ({ ...b, [x.id]: true })); }
@@ -4908,7 +4966,7 @@ export default function App() {
     setIndex(idx); persistIndex(idx);
     if (id === activeId) {
       const next = idx[0];
-      if (next.collab) { try { const r = await authFetch("/api/collab/get", { id: next.id }); setActiveId(next.id); setProject({ ...migrateProject(r.project), id: next.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }); } catch (e) {} }
+      if (next.collab) { try { const r = await collabGet(next.id); setActiveId(next.id); setProject({ ...migrateProject(r.project), id: next.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }); } catch (e) {} }
       else { const r = await window.storage.get(STORE_PROJ(next.id)); setActiveId(next.id); setProject(r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(next.name)); }
     }
     showToast(entry.collab && entry.role !== "owner" ? "共有から退出しました" : "案件を削除しました");
@@ -5102,7 +5160,7 @@ export default function App() {
     } else if (activeInChannel) {
       const first = idx[0];
       try {
-        if (first.collab) { const r = await authFetch("/api/collab/get", { id: first.id }); setActiveId(first.id); setProject({ ...migrateProject(r.project), id: first.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }); }
+        if (first.collab) { const r = await collabGet(first.id); setActiveId(first.id); setProject({ ...migrateProject(r.project), id: first.id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }); }
         else { const r = await window.storage.get(STORE_PROJ(first.id)); setActiveId(first.id); setProject(r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData(first.name)); }
       } catch (e) {}
     }
@@ -5226,13 +5284,18 @@ export default function App() {
           setProject({ ...proj, live: true, liveId, liveToken: token });
           // 置き去りDO対策（2026-08-18）：所有者なら本体コピーと鮮度を比べ、本体が新しければそちらを正とする。
           // 採用した本体はこの後の自動保存（liveブランチ）が全員へブロードキャストするので、開いた瞬間に全員が最新化される。
-          liveOwnerRef.current = false;
+          liveOwnerRef.current = false; liveCollabRef.current = false;
           if (MG_SESSION && proj.id && typeof window.storage !== "undefined") {
             (async () => {
               try {
-                const r = await window.storage.get(STORE_PROJ(proj.id));
-                if (!r || !r.value) return;
-                const own = migrateProject(JSON.parse(r.value));
+                let own = null;
+                // collab正本を先に照会する（保存失敗時の個人ストレージ退避コピーが所有判定を乗っ取り、
+                // 書き戻し先が個人側へ誤ルーティングされるのを防ぐ＝Codex指摘）
+                try { const c = await collabGet(proj.id); if (c && c.project) { own = migrateProject(c.project); liveCollabRef.current = true; } } catch (e) {}
+                if (!own) {
+                  try { const r = await window.storage.get(STORE_PROJ(proj.id)); if (r && r.value) own = migrateProject(JSON.parse(r.value)); } catch (e) {}
+                }
+                if (!own) return;
                 liveOwnerRef.current = true;
                 if ((own.updatedAt || 0) > (proj.updatedAt || 0)) {
                   // 丸ごと置換でなく3方向マージ（base=DO版）：本体で変えた項目だけをDO版へ接ぎ木する。
