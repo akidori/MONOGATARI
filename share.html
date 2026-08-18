@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://customer-clbb6903mpf6390m.cloudflarestream.com" crossorigin>
 <link rel="preconnect" href="https://mg-share.aki-surf89315.workers.dev" crossorigin>
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="tailwind.css?v=20260731a">
+<link rel="stylesheet" href="tailwind.css?v=20260818a">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
 <style>
   html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
@@ -764,28 +764,22 @@ function render(){
 
   const appEl = document.getElementById("app");
   if(appEl) appEl.style.maxWidth = (TAB==="video") ? "1280px" : "820px";
-  // 編集者URL専用：どのタブにいても右上から「動画を上げる」「確認URLをコピー」に届く固定バー
+  // 編集者URL専用：「動画を上げる」「このタブだけURL」「確認URLをコピー」。
+  // 旧実装はfixed右上固定でチャンネル名や本文に被っていた（2026-08-18 AK指摘）→ヘッダー行の中に置く
   const editorBar = (UP_TOKEN && !CHMODE) ? `
-    <div class="fixed top-2 right-2 z-40 flex gap-1.5">
-      <button id="eb-up" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md text-white flex items-center gap-1.5" style="background:${accent}">
+      <button id="eb-up" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-sm text-white flex items-center gap-1.5" style="background:${accent}">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M12 17V4"/><path d="M6 10l6-6 6 6"/><path d="M4 20h16"/></svg>動画を上げる</button>
-      <button id="eb-tab" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md bg-white border border-stone-200 text-stone-600 flex items-center gap-1.5">${icon("link","w-3.5 h-3.5")}このタブだけURL</button>
-      <button id="eb-link" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-md bg-white border border-stone-200 text-stone-600 flex items-center gap-1.5">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>確認URLをコピー</button>
-    </div>` : "";
-  // 編集者向けの作業リンク（プロマネ／マニュアル／チェックリスト）＝チャンネル基本情報のURL欄。
-  // 内部の段取りリンクなので編集者リンク(&up=)の時だけ出す（先方・演者には見せない）
-  const resLinks = (UP_TOKEN && !CHMODE && ci) ? [["promanUrl","プロマネ"],["manualUrl","マニュアル"],["checklistUrl","チェックリスト"]]
-    .map(([k,label]) => [safeUrl(ci[k]), label]).filter(([u]) => u) : [];
-  const resBar = resLinks.length ? `<div class="flex flex-wrap gap-1.5 mb-3">${resLinks.map(([u,label]) =>
-    `<a href="${u}" target="_blank" rel="noopener" class="text-[11px] font-bold pl-2.5 pr-3 py-1.5 rounded-full bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 shadow-sm inline-flex items-center gap-1.5">${icon("link","w-3 h-3")}${label}</a>`).join("")}</div>` : "";
+      <button id="eb-tab" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-sm bg-white border border-stone-200 text-stone-600 flex items-center gap-1.5">${icon("link","w-3.5 h-3.5")}このタブだけURL</button>
+      <button id="eb-link" class="text-[11px] font-bold pl-2.5 pr-3 py-2 rounded-full shadow-sm bg-white border border-stone-200 text-stone-600 flex items-center gap-1.5">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>確認URLをコピー</button>` : "";
   appEl.innerHTML = `
-    ${editorBar}
-    <div class="flex items-center justify-between mb-3">
+    <div class="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap mb-3">
       <div class="text-[11px] font-bold tracking-[0.2em] text-stone-400">ものがたりっち！</div>
-      <div class="text-[11px] text-stone-400">${esc(p.channel||"")}</div>
+      <div class="flex items-center justify-end gap-1.5 flex-wrap min-w-0">
+        <span class="text-[11px] text-stone-400">${esc(p.channel||"")}</span>
+        ${editorBar}
+      </div>
     </div>
-    ${resBar}
     ${tabBar}
     ${/* 番組情報カードが出る時はそこにタイトル行があるので、大枠の見出しは出さない（AK指示: タイトルも普通の表示で） */""}
     ${infoBlock ? "" : `<div class="mb-4">
@@ -1501,6 +1495,21 @@ function fileGroups(p){
   });
   return groups;
 }
+/* 編集者向け作業リンク（プロマネ／マニュアル／チェックリスト）＝チャンネル基本情報のURL欄。
+   内部の段取りリンクなので編集者リンク(&up=)の時だけ。左上に裸チップで出すと分かりづらい
+   （2026-08-18 AK指摘）ので、ファイルタブの頭にカードで置く */
+function workLinksHtml(p){
+  if(!UP_TOKEN || CHMODE) return "";
+  const ci = p.channelInfo || {};
+  const links = [["promanUrl","プロマネ","進行状況・段取りの確認"],["manualUrl","マニュアル","編集のやり方"],["checklistUrl","チェックリスト","納品前の確認"]]
+    .map(([k,label,desc])=>[safeUrl(ci[k]),label,desc]).filter(([u])=>u);
+  if(!links.length) return "";
+  return `<div class="rounded-xl border border-stone-200 bg-white p-3.5 mb-4">
+    <div class="text-[12px] font-bold text-stone-600 mb-2">作業リンク</div>
+    <div class="flex flex-wrap gap-2">${links.map(([u,label,desc])=>
+      `<a href="${u}" target="_blank" rel="noopener" class="inline-flex items-center gap-1.5 text-[12px] font-bold pl-3 pr-3.5 py-2 rounded-lg border border-stone-200 bg-stone-50 text-stone-600 hover:bg-white">${icon("link","w-3.5 h-3.5")}${label}<span class="text-[10px] text-stone-400 font-normal">${desc}</span></a>`).join("")}</div>
+  </div>`;
+}
 function paneFiles(p, accent, main){
   const plans=(p.plans||[]);
   const targetSel = plans.length ? `<select id="fl-target" class="text-[12px] border border-stone-200 rounded px-2 py-1 block">
@@ -1517,6 +1526,7 @@ function paneFiles(p, accent, main){
     <input id="fl-folder-new" type="text" placeholder="フォルダ名（例：18_追撮）" class="hidden text-[12px] border border-stone-200 rounded px-2 py-1 block w-64 max-w-full">`;
   return `
     <div>
+      ${workLinksHtml(p)}
       <div id="fl-list"></div>
       ${CHMODE?"":`<div id="fl-drop" class="rounded-xl border border-dashed border-stone-300 bg-stone-50 p-4 mt-3 transition-colors">
         <div class="text-[12px] font-bold text-stone-600 mb-1">ファイルを送る</div>

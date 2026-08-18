@@ -681,7 +681,10 @@ ${qList}
         if (!snap) return json({ error: "not found" }, 404);
         let uptok = await env.SNAPS.get("uptok:" + id);
         if (!uptok) { uptok = rid(20); await env.SNAPS.put("uptok:" + id, uptok); }
-        return json({ id, up: uptok, name: (snap.project && snap.project.name) || "" });
+        // r（閲覧トークン）も返す：新方式snapは ?r= 無しだと share.html がリンク無効になる。
+        // Fボードが &up= だけでURLを組むと編集者はページごと開けない（2026-08-18 森川さん案件で発覚）
+        const rtok = await env.SNAPS.get("rtok:" + id);
+        return json({ id, up: uptok, r: rtok || null, name: (snap.project && snap.project.name) || "" });
       }
 
       // GET /api/share-links?id=<snapId> ＋ ヘッダ `Authorization: Bearer <MG_EDITOR_KEY>`

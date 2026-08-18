@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="密着ドキュメンタリー制作ツール「ものがたりっち！」。構成台本・香盤表・企画サムネ・動画確認・大容量ファイル転送をひとつの案件URLに。">
+<meta property="og:title" content="ものがたりっち！｜密着ドキュメンタリー制作ツール">
+<meta property="og:description" content="構成台本から納品確認まで、密着制作はこれひとつ。">
+<link rel="icon" href="favicon-64.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>ものがたりっち！｜密着ドキュメンタリー制作ツール</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700;900&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+</head>
+<body>
+<style>
+  :root{
+    --ink:#1F2430;
+    --accent:#E63946;
+    --accent-soft:#FDEDEE;
+    --paper:#FBF8F3;
+    --card:#FFFFFF;
+    --wash:#F2EDE3;
+    --navy-wash:#EDF0F5;
+    --sub:#5B616E;
+    --line:#E5E0D5;
+    --yellow:#F5C84C;
+    --maru:"Zen Maru Gothic","Hiragino Maru Gothic ProN",sans-serif;
+    --kaku:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Noto Sans JP",sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--kaku);
+    font-size:15px;
+    line-height:1.9;
+    -webkit-font-smoothing:antialiased;
+  }
+  img{max-width:100%}
+  a{color:inherit}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+  h1,h2,h3{font-family:var(--maru);text-wrap:balance;line-height:1.4}
+
+  /* ───── nav ───── */
+  .nav{
+    position:sticky;top:0;z-index:50;
+    background:rgba(251,248,243,.92);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+  }
+  .nav-in{display:flex;align-items:center;gap:14px;height:60px;max-width:1060px;margin:0 auto;padding:0 22px}
+  .nav-logo{width:34px;height:34px;border-radius:9px;display:block}
+  .nav-name{font-family:var(--maru);font-weight:900;font-size:17px;letter-spacing:.02em}
+  .nav-links{display:flex;gap:22px;margin-left:auto;font-size:13px;font-weight:500;color:var(--sub)}
+  .nav-links a{text-decoration:none}
+  .nav-links a:hover{color:var(--accent)}
+  .nav-cta{
+    margin-left:8px;background:var(--ink);color:#fff;text-decoration:none;
+    font-size:13px;font-weight:700;padding:8px 18px;border-radius:999px;
+  }
+  .nav-cta:hover{background:var(--accent)}
+  @media(max-width:720px){.nav-links{display:none}}
+
+  /* ───── hero ───── */
+  .hero{padding:64px 0 40px;position:relative;overflow:hidden}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
+  @media(max-width:860px){.hero-grid{grid-template-columns:1fr}}
+  .eyebrow{
+    display:inline-block;font-size:12px;font-weight:700;letter-spacing:.14em;
+    color:var(--accent);background:var(--accent-soft);
+    padding:4px 14px;border-radius:999px;margin-bottom:18px;
+  }
+  .hero h1{font-size:clamp(30px,4.6vw,44px);font-weight:900;margin-bottom:6px}
+  .hero .brand-line{display:flex;align-items:center;gap:16px;margin:14px 0 18px}
+  .hero .brand-logo{width:72px;height:72px;border-radius:18px;box-shadow:0 6px 18px rgba(31,36,48,.14)}
+  .brand-name{font-family:var(--maru);font-weight:900;font-size:clamp(34px,5vw,50px);line-height:1.2}
+  .brand-name .bang{color:var(--accent)}
+  .brand-name .hl{
+    background:linear-gradient(transparent 68%,rgba(245,200,76,.55) 68%);
+    border-radius:2px;
+  }
+  .hero p.lede{color:var(--sub);max-width:34em;margin-bottom:26px}
+  .cta-row{display:flex;gap:14px;flex-wrap:wrap}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;text-decoration:none;
+    font-family:var(--maru);font-weight:700;font-size:15px;
+    padding:13px 28px;border-radius:999px;transition:transform .15s ease;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn-red{background:var(--accent);color:#fff;box-shadow:0 6px 16px rgba(230,57,70,.28)}
+  .btn-ghost{background:var(--card);color:var(--ink);border:1.5px solid var(--line)}
+  .btn svg{width:16px;height:16px}
+
+  /* hero mock (構成台本UI) */
+  .mock{
+    background:var(--card);border-radius:16px;overflow:hidden;
+    box-shadow:0 18px 44px rgba(31,36,48,.16);
+    border:1px solid var(--line);
+    font-size:12px;position:relative;
+  }
+  .mock-bar{background:var(--ink);color:#fff;display:flex;align-items:center;gap:8px;padding:9px 14px}
+  .mock-bar .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.28)}
+  .mock-bar .ttl{font-family:var(--maru);font-weight:700;font-size:12px;margin-left:4px}
+  .mock-tabs{display:flex;gap:2px;background:var(--navy-wash);padding:6px 10px 0;font-size:11px;font-weight:700;color:var(--sub)}
+  .mock-tabs span{padding:5px 12px;border-radius:8px 8px 0 0}
+  .mock-tabs .on{background:var(--card);color:var(--ink);box-shadow:0 -1px 0 var(--line)}
+  .mock-body{padding:12px 14px 16px;display:flex;flex-direction:column;gap:8px}
+  .loc{
+    background:var(--ink);color:#fff;font-family:var(--maru);font-weight:700;
+    padding:5px 12px;border-radius:8px;letter-spacing:.03em;
+  }
+  .scene{display:flex;align-items:center;gap:8px;padding:2px 4px}
+  .tchip{font-variant-numeric:tabular-nums;background:var(--navy-wash);color:var(--ink);font-weight:700;padding:1px 7px;border-radius:6px}
+  .scene b{font-weight:700}
+  .kind{font-size:10px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:1px 8px;border-radius:999px}
+  .q{color:var(--accent);font-weight:700;padding:0 4px}
+  .ans{color:var(--sub);padding:0 4px 6px;border-bottom:1px dashed var(--line)}
+  .cmt{
+    position:absolute;right:14px;bottom:52px;
+    background:var(--card);border:1.5px solid var(--accent);
+    border-radius:12px 12px 12px 3px;padding:8px 12px;max-width:190px;
+    box-shadow:0 10px 24px rgba(31,36,48,.16);font-size:11px;line-height:1.6;
+  }
+  .cmt .who{color:var(--accent);font-weight:700;font-size:10px;display:block}
+  @media(max-width:860px){.cmt{position:static;margin:10px 14px 14px;max-width:none}}
+
+  /* ───── sections ───── */
+  section{padding:64px 0}
+  .sec-head{margin-bottom:36px}
+  .sec-eyebrow{font-size:12px;font-weight:700;letter-spacing:.16em;color:var(--accent);margin-bottom:8px}
+  .sec-head h2{font-size:clamp(23px,3.2vw,30px);font-weight:900}
+  .sec-head p{color:var(--sub);margin-top:10px;max-width:38em}
+
+  /* pillars */
+  .pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  @media(max-width:760px){.pillars{grid-template-columns:1fr}}
+  .pillar{
+    background:var(--card);border:1px solid var(--line);border-radius:16px;
+    padding:26px 24px;
+  }
+  .pillar .p-ic{
+    width:44px;height:44px;border-radius:12px;background:var(--accent-soft);
+    display:flex;align-items:center;justify-content:center;margin-bottom:14px;
+  }
+  .pillar .p-ic svg{width:22px;height:22px;stroke:var(--accent)}
+  .pillar h3{font-size:17px;font-weight:700;margin-bottom:6px}
+  .pillar p{font-size:13.5px;color:var(--sub)}
+
+  /* feature cards */
+  .feat-sec{background:var(--wash);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .feats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  @media(max-width:960px){.feats{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:560px){.feats{grid-template-columns:1fr}}
+  .feat{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:20px 18px;display:flex;flex-direction:column;gap:8px;
+  }
+  .feat .f-ic{width:36px;height:36px;border-radius:10px;background:var(--navy-wash);display:flex;align-items:center;justify-content:center}
+  .feat .f-ic svg{width:18px;height:18px;stroke:var(--ink)}
+  .feat h3{font-size:15px;font-weight:700}
+  .feat p{font-size:12.5px;color:var(--sub);line-height:1.8}
+
+  /* how-to steps */
+  .steps{display:flex;flex-direction:column;gap:0;counter-reset:step}
+  .step{
+    display:grid;grid-template-columns:64px 1fr;gap:0 22px;position:relative;
+    padding-bottom:38px;
+  }
+  .step:last-child{padding-bottom:0}
+  .step::before{
+    content:"";position:absolute;left:31px;top:64px;bottom:0;width:2px;
+    background:var(--line);
+  }
+  .step:last-child::before{display:none}
+  .step-num{
+    counter-increment:step;
+    width:64px;height:64px;border-radius:50%;
+    background:var(--ink);color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--maru);font-weight:900;font-size:22px;
+    position:relative;z-index:1;
+  }
+  .step-num::after{content:counter(step)}
+  .step-body{padding-top:6px}
+  .step-body h3{font-size:18px;font-weight:700;margin-bottom:6px}
+  .step-body p{color:var(--sub);font-size:14px;max-width:44em}
+  .step-body .ui{
+    display:inline-block;background:var(--navy-wash);border:1px solid var(--line);
+    border-radius:7px;padding:1px 9px;font-size:12.5px;font-weight:700;color:var(--ink);
+    white-space:nowrap;
+  }
+  .step-body .tip{
+    margin-top:10px;background:var(--accent-soft);border-left:3px solid var(--accent);
+    border-radius:0 10px 10px 0;padding:8px 14px;font-size:12.5px;color:var(--ink);
+    max-width:44em;
+  }
+  @media(max-width:560px){
+    .step{grid-template-columns:44px 1fr;gap:0 14px}
+    .step-num{width:44px;height:44px;font-size:17px}
+    .step::before{left:21px;top:48px}
+  }
+
+  /* role guides */
+  .roles{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:760px){.roles{grid-template-columns:1fr}}
+  .role{
+    background:var(--card);border-radius:16px;padding:26px 26px;
+    border:1px solid var(--line);border-top:4px solid var(--ink);
+  }
+  .role.red{border-top-color:var(--accent)}
+  .role h3{font-size:17px;font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:10px}
+  .role h3 svg{width:20px;height:20px;stroke:var(--accent)}
+  .role ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+  .role li{
+    font-size:13.5px;color:var(--sub);padding-left:20px;position:relative;
+  }
+  .role li::before{
+    content:"";position:absolute;left:2px;top:.65em;width:8px;height:8px;
+    border-radius:50%;background:var(--yellow);
+  }
+  .role li b{color:var(--ink)}
+
+  /* FAQ */
+  .faq-sec{background:var(--wash);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .faqs{display:flex;flex-direction:column;gap:12px;max-width:760px}
+  details{
+    background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:0 22px;
+  }
+  summary{
+    cursor:pointer;list-style:none;display:flex;align-items:center;gap:12px;
+    font-weight:700;font-size:14.5px;padding:17px 0;
+  }
+  summary::-webkit-details-marker{display:none}
+  summary .qm{
+    flex-shrink:0;width:26px;height:26px;border-radius:50%;
+    background:var(--accent);color:#fff;font-family:var(--maru);font-weight:900;
+    display:flex;align-items:center;justify-content:center;font-size:13px;
+  }
+  details p{color:var(--sub);font-size:13.5px;padding:0 0 18px 38px}
+  details[open] summary{border-bottom:1px dashed var(--line);margin-bottom:12px}
+
+  /* footer cta */
+  .foot-cta{
+    background:var(--ink);color:#fff;text-align:center;
+    padding:70px 22px;
+  }
+  .foot-cta img{width:80px;height:80px;border-radius:20px;margin-bottom:18px}
+  .foot-cta h2{font-size:clamp(22px,3.4vw,30px);font-weight:900;margin-bottom:10px}
+  .foot-cta p{color:rgba(255,255,255,.72);font-size:14px;margin-bottom:28px}
+  .footer{
+    background:var(--ink);color:rgba(255,255,255,.55);
+    border-top:1px solid rgba(255,255,255,.12);
+    text-align:center;font-size:12px;padding:22px;
+  }
+  .footer b{color:#fff;font-family:var(--maru)}
+</style>
+
+<nav class="nav">
+  <div class="nav-in">
+    <img class="nav-logo" src="logo-header.png" alt="ものがたりっち！ロゴ">
+    <span class="nav-name">ものがたりっち！</span>
+    <div class="nav-links">
+      <a href="#about">できること</a>
+      <a href="#features">機能</a>
+      <a href="#howto">使い方</a>
+      <a href="#roles">受け取った方へ</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <a class="nav-cta" href="https://monogataritch.pages.dev/">アプリを開く</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">密着ドキュメンタリー制作ツール</span>
+      <h1>構成台本から納品確認まで、<br>密着制作は<span class="hl">これひとつ</span>。</h1>
+      <div class="brand-line">
+        <img class="brand-logo" src="logo-header.png" alt="">
+        <div class="brand-name">ものがたりっち<span class="bang">！</span></div>
+      </div>
+      <p class="lede">一日密着ドキュメンタリーの企画・構成台本・香盤表づくりから、撮影後の動画確認、素材の受け渡しまで。ブラウザだけで、ディレクター・編集者・クライアントが同じ画面を見ながら進められます。</p>
+      <div class="cta-row">
+        <a class="btn btn-red" href="https://monogataritch.pages.dev/">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3l14 9-14 9V3z"/></svg>
+          アプリを開く
+        </a>
+        <a class="btn btn-ghost" href="#howto">使い方を見る</a>
+      </div>
+    </div>
+    <div class="mock" aria-hidden="true">
+      <div class="mock-bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="ttl">セラさん｜一日密着</span>
+      </div>
+      <div class="mock-tabs">
+        <span>企画・サムネ</span><span class="on">構成台本</span><span>香盤表</span><span>動画確認</span>
+      </div>
+      <div class="mock-body">
+        <div class="loc">■ 自宅</div>
+        <div class="scene"><span class="tchip">00:00</span><b>挨拶</b><span class="kind">ブリッジ・10秒</span></div>
+        <div class="q">◼︎ 今のお仕事は何ですか？</div>
+        <div class="ans">すごくいい質問で、いちばん難しい質問になります。私、職業が本当に気分でコロコロ変わる人で……</div>
+        <div class="loc">■ 農家友人の畑</div>
+        <div class="scene"><span class="tchip">10:00</span><b>移住と解放</b><span class="kind">解説系・60秒</span></div>
+        <div class="q">◼︎ なぜ森に住もうと思ったんですか？</div>
+      </div>
+      <div class="cmt"><span class="who">クライアント</span>ここ、もう少し表情に寄った画が見たいです</div>
+    </div>
+  </div>
+</header>
+
+<section id="about">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">ABOUT</div>
+      <h2>「書く・見せる・受け渡す」を、案件ごとにまとめる</h2>
+      <p>台本はスプレッドシート、確認はメール、素材はギガ便……とバラバラだった制作のやりとりを、案件ひとつのURLに集約します。</p>
+    </div>
+    <div class="pillars">
+      <div class="pillar">
+        <div class="p-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
+        <h3>書く</h3>
+        <p>ロケーションとシーンで組み立てる構成台本と、撮影当日の香盤表。日本語入力に最適化されていて、長文もサクサク書けます。</p>
+      </div>
+      <div class="pillar">
+        <div class="p-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div>
+        <h3>見せる</h3>
+        <p>URLをひとつ渡すだけ。相手はログイン不要で台本や動画を確認でき、シーンごと・秒数ごとにコメントを残せます。</p>
+      </div>
+      <div class="pillar">
+        <div class="p-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg></div>
+        <h3>受け渡す</h3>
+        <p>撮影素材も完成動画も同じ案件ページで。大容量ファイルの転送サービスを別に用意する必要はありません。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features" class="feat-sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">FEATURES</div>
+      <h2>制作の流れに合わせた8つの機能</h2>
+    </div>
+    <div class="feats">
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></svg></div>
+        <h3>構成台本エディタ</h3>
+        <p>ロケーション→シーン→質問と回答、の三層で密着の一日を設計。時刻・シーン種別・目標尺を並べて全体の流れが一目で分かります。</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></div>
+        <h3>香盤表</h3>
+        <p>撮影当日の進行表。住所は候補から選ぶだけで地図リンク付きに。撮影が終わったシーンはチェックひとつで畳めます。</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 21h8M12 18v3"/><path d="M7 9l3 3 5-5"/></svg></div>
+        <h3>企画・サムネ</h3>
+        <p>タイトル案とサムネ文言を企画単位で管理。参考にしたいYouTube動画はURLを貼るだけで再生数などの統計を取得し、S〜Cで自動評価します。</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.6L20 10l-6.1 1.4L12 17l-1.9-5.6L4 10l6.1-1.4L12 3z"/><path d="M19 17l.8 2.2L22 20l-2.2.8L19 23l-.8-2.2L16 20l2.2-.8L19 17z"/></svg></div>
+        <h3>AI取り込みと校正</h3>
+        <p>文字起こしやメモを貼って「AIで整形して取り込む」を押せば、構成台本の形に自動変換。書き上がった台本は誤字や矛盾をAIがチェックします。</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v7a2 2 0 002 2h12a2 2 0 002-2v-7"/><path d="M16 6l-4-4-4 4"/><path d="M12 2v13"/></svg></div>
+        <h3>共有リンク</h3>
+        <p>右上の「共有」から、案件全部でも今開いているタブだけでも。相手はログイン不要、内容を更新すると共有先も自動で最新になります。</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 01-9 8.4 8.6 8.6 0 01-4-.9L3 20l1-4.9a8.4 8.4 0 015-12.2 8.4 8.4 0 0112 8.6z"/></svg></div>
+        <h3>コメントと同時編集</h3>
+        <p>台本のシーンにも動画の秒数にもコメントが付けられ、未対応・対応済で管理。必要ならGoogleドキュメントのような同時編集リンクも発行できます。</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></div>
+        <h3>動画確認</h3>
+        <p>初稿・修正稿をv1、v2、v3と版で管理。0.5〜4倍速で再生しながらタイムコード付きの修正指示を残し、対応状況をリストで追えます。</p>
+      </div>
+      <div class="feat">
+        <div class="f-ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg></div>
+        <h3>大容量ファイル転送</h3>
+        <p>撮影素材や完成動画をフォルダ構造ごとアップロード＆まとめてダウンロード。ダウンロード時もファイル名は元のまま届きます。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="howto">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">HOW TO USE</div>
+      <h2>使い方：案件づくりから納品まで</h2>
+      <p>ディレクター視点の基本の流れです。実際の画面のボタン名で説明しています。</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <h3>案件を作る</h3>
+          <p>サイドバーの <span class="ui">＋新規案件</span> から「一日密着」か「トーク系」を選びます。案件はチャンネル（クライアント）ごとのフォルダに整理され、チャンネル単位でコンセプトやターゲットも書いておけます。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <h3>台本を入れる</h3>
+          <p>ゼロから書いてもいいですが、手元に文字起こしやメモがあるなら <span class="ui">構成台本を取り込み</span> に貼り付けて <span class="ui">AIで整形して取り込む</span> を押すだけ。構成台本の形になって新しい案件に入ります。TXT・CSV・Excelファイルもそのまま読み込めます。</p>
+          <div class="tip">書き上がったら、ヘッダーの <b>校正</b> ボタンでAIが誤字脱字・質問と回答の食い違い・未記入を洗い出してくれます。指摘をクリックすると該当シーンへ飛びます。</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <h3>撮影の準備をする</h3>
+          <p><span class="ui">香盤表</span> タブで時間と場所を整えます。住所欄は入力すると候補が出て、選ぶと地図リンク付きに。当日は撮影が終わったシーンからチェックを入れると、済んだ分が畳まれて残りに集中できます。</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <h3>共有する</h3>
+          <p>右上の <span class="ui">共有</span> メニューから <span class="ui">全部見せる</span> か <span class="ui">今のタブだけ見せる</span> を選んでURLをコピー。演者やクライアントに渡せば、ログイン不要で内容を見てシーンごとにコメントできます。編集者には「その他」内の<b>編集者リンク</b>（大容量アップロード付き）を渡します。</p>
+          <div class="tip">台本を直したあとの「再送」は不要。共有リンクの中身は自動で最新に保たれます。</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div class="step-body">
+          <h3>動画を確認して納品する</h3>
+          <p>編集者が完成動画をアップすると <span class="ui">動画確認</span> タブに自動で並びます。再生しながら <span class="ui">＋ここにコメント</span> で秒数に紐づく修正指示を残し、対応済みになったら次の版へ。OKが出たらそのまま納品です。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="roles">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">FOR MEMBERS</div>
+      <h2>URLを受け取った方へ</h2>
+    </div>
+    <div class="roles">
+      <div class="role">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><path d="M8.1 8.1L21 21M8.1 15.9L21 3M6 15a3 3 0 100 6 3 3 0 000-6z"/></svg>編集者の方</h3>
+        <ul>
+          <li>受け取ったURLを開くと、<b>担当案件の一覧</b>が表示されます。案件を開けば台本・香盤表など全タブを見られます。</li>
+          <li>撮影素材は <b>ファイルタブ</b> から。<b>まとめてダウンロード</b>でフォルダ構造ごと保存できます。</li>
+          <li>完成動画は <b>動画確認タブのアップロード枠</b> へ。アップした瞬間、確認用として全員に共有されます。</li>
+          <li>操作に迷ったら、画面右下の <b>使い方・ご意見チャット</b> へどうぞ。改善要望もそこから届きます。</li>
+        </ul>
+      </div>
+      <div class="role red">
+        <h3><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>クライアント・演者の方</h3>
+        <ul>
+          <li>届いたURLを開くだけ。<b>アプリのインストールもログインも不要</b>です。</li>
+          <li>台本で気になったシーンは <b>コメント</b> ボタンから。書いた内容はそのまま制作側に届きます。</li>
+          <li>確認動画は倍速で再生でき、コメントは<b>動画の該当秒数に紐づく</b>ので「何分何秒のあそこ」の説明が要りません。</li>
+          <li>素材をお持ちの場合は、ファイルタブからそのままアップロードできます。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" class="faq-sec">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="sec-eyebrow">FAQ</div>
+      <h2>よくある質問</h2>
+    </div>
+    <div class="faqs">
+      <details>
+        <summary><span class="qm">Q</span>ログインは必要ですか？</summary>
+        <p>共有URLを見る・コメントするだけなら不要です。案件を作る側はGoogleアカウントでワンクリックログインすると、データがクラウドに保存されどの端末からでも開けるようになります。</p>
+      </details>
+      <details>
+        <summary><span class="qm">Q</span>どのくらいのサイズのファイルまで送れますか？</summary>
+        <p>制作側と編集者は1ファイル500GBまでアップロードできます。共有URLから外部の方がアップする場合は2GBまでです。ダウンロードは元のファイル名のまま届きます。</p>
+      </details>
+      <details>
+        <summary><span class="qm">Q</span>スマホでも使えますか？</summary>
+        <p>ブラウザでそのまま使えます。ホーム画面に追加すればアプリのように起動でき、香盤表は現場でのスマホ確認を想定した表示になっています。</p>
+      </details>
+      <details>
+        <summary><span class="qm">Q</span>共有URLは誰でも見られてしまいますか？</summary>
+        <p>URLにはランダムな鍵が含まれており、リンクを知っている人だけが開けます。閲覧のみ・編集可・大容量アップ付きなど、渡す相手に合わせて権限の異なるリンクを発行できます。</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<div class="foot-cta">
+  <img src="logo-header.png" alt="">
+  <h2>さっそく、はじめましょう</h2>
+  <p>ブラウザで開くだけ。インストールは不要です。</p>
+  <a class="btn btn-red" href="https://monogataritch.pages.dev/">アプリを開く</a>
+</div>
+<div class="footer"><b>ものがたりっち！</b>　©​ Bird Flip</div>
+
+</body>
+</html>
