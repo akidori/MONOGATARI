@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://customer-clbb6903mpf6390m.cloudflarestream.com" crossorigin>
 <link rel="preconnect" href="https://mg-share.aki-surf89315.workers.dev" crossorigin>
 <link rel="icon" href="icon-192.png">
-<link rel="stylesheet" href="tailwind.css?v=20260818a">
+<link rel="stylesheet" href="tailwind.css?v=20260819a">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap">
 <style>
   html,body{margin:0;padding:0;background:#E9E8E3;font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif;color:#1C1C1E}
@@ -1082,12 +1082,20 @@ function videoUploadBox(accent, main, compact){
 function paneDeliver(p, accent, main){
   const m = p.meta||{};
   const thumbs = Array.isArray(m.deliverThumbImages) ? m.deliverThumbImages : (m.deliverThumbImage ? [m.deliverThumbImage] : []);
-  const usedThumbs = thumbs.filter((t,i)=> (t.use!==undefined ? t.use : i<3));
+  // 2026-08-19 AK「先方確認でちゃんとプレビューできるように」: 従来は使用中のみ表示＝候補6/使用0だと
+  // 先方に1枚も見えなかった。候補も含め全部を「使用中/候補N位」バッジ付きで出し、クリックで全画面。
+  let _rank = 0;
+  const ranked = thumbs.map((t,i)=>{ const used=(t.use!==undefined ? t.use : i<3); if(!used) _rank++; return { ...t, _used:used, _label: used?"使用中":("候補"+_rank+"位") }; });
+  const usedThumbs = ranked.filter((t)=>t._used);
   const field = (label,val) => val?`<div class="mb-3"><div class="text-[10px] font-bold text-stone-400 mb-0.5">${label}</div><div class="text-[13px] whitespace-pre-wrap leading-relaxed">${esc(val)}</div></div>`:"";
   const url = (m.deliverVideoUrl||"").trim();
   return `
     ${m.deliverTitle?`<div class="text-[17px] font-black leading-snug text-stone-800 mb-4">${esc(m.deliverTitle)}</div>`:""}
-    ${usedThumbs.length?`<div class="grid grid-cols-3 gap-2 mb-5 max-w-xl">${usedThumbs.map(t=>`<img src="${API}/api/file/${esc(t.key)}" alt="" class="w-full aspect-video object-contain bg-stone-100 rounded-lg border border-stone-200">`).join("")}</div>`:""}
+    ${ranked.length?`<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 max-w-3xl">${ranked.map((t,i)=>`
+      <div class="relative">
+        <img src="${API}/api/file/${esc(t.key)}" alt="" data-dvlb="${i}" class="dv-thumb w-full aspect-video object-contain bg-stone-100 rounded-lg border-2 ${t._used?"border-emerald-400":"border-stone-200"} cursor-zoom-in" title="クリックで拡大">
+        <span class="absolute bottom-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow ${t._used?"bg-emerald-500 text-white":"bg-white/90 text-stone-500"}">${t._label}</span>
+      </div>`).join("")}</div>`:""}
     ${url?`<div id="dv-player" class="rounded-xl overflow-hidden bg-black mb-5" style="aspect-ratio:16/9"></div>`:""}
     ${(m.deliverDescription||m.deliverHashtags||m.deliverChapters)?`<div class="rounded-xl border border-stone-200 bg-white p-4 mb-5">
       ${field("概要欄", m.deliverDescription)}
@@ -1098,9 +1106,45 @@ function paneDeliver(p, accent, main){
     ${(!url && !usedThumbs.length && !m.deliverDescription)?'<div class="text-stone-400 text-sm py-8 text-center">まだ納品物がありません。</div>':""}
   `;
 }
+// サムネの全画面ライトボックス（背景/×/Escで閉・←→で前後・スマホはボタン）
+function dvLightbox(items, idx){
+  const old = document.getElementById("dv-lb"); if(old) old.remove();
+  let cur = idx;
+  const ov = document.createElement("div");
+  ov.id = "dv-lb";
+  ov.className = "fixed inset-0 z-[200] bg-black/90 flex items-center justify-center";
+  const render = () => {
+    ov.innerHTML = `
+      <img src="${items[cur].src}" alt="" class="max-w-[96vw] max-h-[90vh] object-contain" id="dv-lb-img">
+      <div class="absolute top-3 left-1/2 -translate-x-1/2 text-white/90 text-xs font-bold px-3 py-1 rounded-full bg-white/10">${items[cur].label}　${cur+1} / ${items.length}</div>
+      ${items.length>1?`
+        <button id="dv-lb-prev" class="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl leading-none">‹</button>
+        <button id="dv-lb-next" class="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl leading-none">›</button>`:""}
+      <button id="dv-lb-close" class="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/15 text-white text-xl leading-none">×</button>`;
+    ov.querySelector("#dv-lb-img").onclick = (e)=>e.stopPropagation();
+    const pv = ov.querySelector("#dv-lb-prev"), nx = ov.querySelector("#dv-lb-next");
+    if(pv) pv.onclick = (e)=>{ e.stopPropagation(); cur=(cur-1+items.length)%items.length; render(); };
+    if(nx) nx.onclick = (e)=>{ e.stopPropagation(); cur=(cur+1)%items.length; render(); };
+    ov.querySelector("#dv-lb-close").onclick = (e)=>{ e.stopPropagation(); close(); };
+  };
+  const onKey = (e)=>{
+    if(e.key==="Escape") close();
+    if(e.key==="ArrowRight"){ cur=(cur+1)%items.length; render(); }
+    if(e.key==="ArrowLeft"){ cur=(cur-1+items.length)%items.length; render(); }
+  };
+  const close = ()=>{ document.removeEventListener("keydown", onKey); ov.remove(); };
+  ov.onclick = close;
+  document.addEventListener("keydown", onKey);
+  render();
+  document.body.appendChild(ov);
+}
+
 function mountDeliver(p, accent, main){
   _shMain = main; mountShorts();
   const m = p.meta||{};
+  // サムネのクリック→全画面（paneDeliverの data-dvlb と対）
+  const lbItems = Array.from(document.querySelectorAll(".dv-thumb")).map((el)=>({ src: el.getAttribute("src"), label: (el.nextElementSibling && el.nextElementSibling.textContent) || "" }));
+  document.querySelectorAll(".dv-thumb").forEach((el)=>{ el.onclick = ()=> dvLightbox(lbItems, Number(el.getAttribute("data-dvlb")) || 0); });
   const stage = document.getElementById("dv-player");
   if(!stage) return;
   const url = (m.deliverVideoUrl||"").trim();

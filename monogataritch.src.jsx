@@ -3256,6 +3256,19 @@ export default function App() {
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
   const [thumbUp, setThumbUp] = useState(null);               // 納品完了タブのサムネ画像アップ進捗 {pct}
   const [thumbDropOver, setThumbDropOver] = useState(false);   // 納品完了タブのサムネ画像D&D中フラグ
+  // サムネの全画面プレビュー（2026-08-19 AK「サムネ見づらい。クリックで拡大・全画面で」）
+  // {items:[{key,label}], idx}。Esc=閉じる / ←→=前後。差し替えは画像クリックから「差替」ボタンへ分離
+  const [thumbLightbox, setThumbLightbox] = useState(null);
+  useEffect(() => {
+    if (!thumbLightbox) return;
+    const onKey = (e) => {
+      if (e.key === "Escape") setThumbLightbox(null);
+      if (e.key === "ArrowRight") setThumbLightbox((lb) => lb && { ...lb, idx: (lb.idx + 1) % lb.items.length });
+      if (e.key === "ArrowLeft") setThumbLightbox((lb) => lb && { ...lb, idx: (lb.idx - 1 + lb.items.length) % lb.items.length });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [!!thumbLightbox]);
   const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
   const shareReadTokRef = useRef("");                        // 閲覧用トークン（&r=）。新方式snapの共有URLに必須。publish応答から取得
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
@@ -9089,6 +9102,13 @@ export default function App() {
                 <p className="text-[12px] text-stone-500 mt-0.5">動画・ショートのURLは動画確認の完成データから自動。タイトル・概要欄・ハッシュタグ・目次は台本から自動生成。編集者も入力OK。</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                {/* 先方確認用URL（2026-08-19 AK要望）: 納品完了ページだけを見せる共有URLを発行してコピー。
+                    copyShareUrl は毎回publish＝常に最新の中身が先方に見える */}
+                <button onClick={() => copyShareUrl("deliver")}
+                  title="先方に見せる確認ページのURLを発行してコピー（タイトル・サムネ・完成動画・概要欄だけが見えます）"
+                  className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800">
+                  <Icon name="copy" className="w-3.5 h-3.5" />先方確認用URL
+                </button>
                 <button onClick={generateDeliverAll} disabled={deliverBusy}
                   className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50"
                   style={{ background: theme.accent, color: accentText }}>
@@ -9127,23 +9147,30 @@ export default function App() {
                           onDragOver={(e) => { e.preventDefault(); if (!thumbDropOver) setThumbDropOver(true); }}
                           onDragLeave={() => setThumbDropOver(false)}
                           onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
-                          <div className="grid grid-cols-3 gap-3 max-w-2xl">
+                          {/* 2026-08-19 AK「サムネ見づらい・クリックで拡大」: 2列に拡大、候補の減光(opacity-70)を廃止、
+                              画像クリック=全画面ライトボックス。差し替えはホバーで出る「差替」ボタンへ分離 */}
+                          <div className="grid grid-cols-2 gap-3 max-w-3xl">
                             {(() => { let candRank = 0; return thumbs.map((t, ti) => {
                               const used = deliverThumbUsed(t, ti);
                               if (!used) candRank++;
+                              const rankLabel = used ? "使用中" : `候補${candRank}位`;
                               return (
                               <div key={t.key} className="relative aspect-video group">
-                                <label className="block w-full h-full cursor-pointer" title="クリックで差し替え">
+                                <button type="button" className="block w-full h-full cursor-zoom-in" title="クリックで拡大"
+                                  onClick={() => { let r = 0; setThumbLightbox({ idx: ti, items: thumbs.map((x, xi) => { const u = deliverThumbUsed(x, xi); if (!u) r++; return { key: x.key, label: u ? "使用中" : `候補${r}位` }; }) }); }}>
                                   {/* object-contain: 画像の縦横比が16:9でなくても切り取らず全体を見せる（coverだと勝手にクロップされ画角が合わない） */}
-                                  <img src={SHARE_API + "/api/file/" + t.key} alt="" className={"w-full h-full object-contain bg-stone-100 rounded-md border-2 " + (used ? "border-emerald-400" : "border-stone-200 opacity-70")} />
-                                  <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
+                                  <img src={SHARE_API + "/api/file/" + t.key} alt="" className={"w-full h-full object-contain bg-stone-100 rounded-md border-2 " + (used ? "border-emerald-400" : "border-stone-200")} />
+                                </button>
+                                <label onClick={(e) => e.stopPropagation()} title="画像を差し替え"
+                                  className="absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
+                                  差替<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
                                 </label>
                                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
                                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
                                 <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
                                   title={used ? "候補に戻す" : "この画像を使用する"}
                                   className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
-                                  {used ? "使用中" : `候補${candRank}位`}
+                                  {rankLabel}
                                 </button>
                               </div>
                               );
@@ -9156,6 +9183,26 @@ export default function App() {
                             )}
                           </div>
                           <div className="text-[10px] text-stone-400 mt-1">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}/{DELIVER_THUMB_MAX}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
+                          {/* 全画面ライトボックス（背景クリック/Esc/×で閉・←→で前後） */}
+                          {thumbLightbox && (
+                            <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center" onClick={() => setThumbLightbox(null)}>
+                              <img src={SHARE_API + "/api/file/" + thumbLightbox.items[thumbLightbox.idx].key} alt=""
+                                className="max-w-[96vw] max-h-[90vh] object-contain" onClick={(e) => e.stopPropagation()} />
+                              <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white/90 text-xs font-bold px-3 py-1 rounded-full bg-white/10">
+                                {thumbLightbox.items[thumbLightbox.idx].label}　{thumbLightbox.idx + 1} / {thumbLightbox.items.length}
+                              </div>
+                              {thumbLightbox.items.length > 1 && (
+                                <>
+                                  <button className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl leading-none hover:bg-white/30"
+                                    onClick={(e) => { e.stopPropagation(); setThumbLightbox((lb) => ({ ...lb, idx: (lb.idx - 1 + lb.items.length) % lb.items.length })); }}>‹</button>
+                                  <button className="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl leading-none hover:bg-white/30"
+                                    onClick={(e) => { e.stopPropagation(); setThumbLightbox((lb) => ({ ...lb, idx: (lb.idx + 1) % lb.items.length })); }}>›</button>
+                                </>
+                              )}
+                              <button className="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/15 text-white text-xl leading-none hover:bg-white/30"
+                                onClick={(e) => { e.stopPropagation(); setThumbLightbox(null); }}>×</button>
+                            </div>
+                          )}
                         </div>
                       ) : key === "deliverShorts" ? (
                         <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent}
