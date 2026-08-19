@@ -3920,7 +3920,6 @@ export default function App() {
     else if ((m = /^plan(\d+)\.(title|thumbText|thumbText2)$/.exec(k))) {
       const i = Number(m[1]);
       setPlanField(i, m[2], h.before);
-      if (m[2] === "title" && i === 0) renameProject(project.id, h.before);   // 案件名はplans[0].titleに追随する
     }
     else if (k === "meta.highlight") setMeta("highlight", h.before);
     else if ((m = /^row\.(.+)\.(label|script)$/.exec(k))) {
@@ -4818,21 +4817,14 @@ export default function App() {
     clearTimeout(boardSaveTimers.current[id]);
     boardSaveTimers.current[id] = setTimeout(() => { setBoardCache((c) => { if (c[id]) saveProjectData(c[id]); return c; }); }, 600);
   };
-  /* ボード上の案件のタイトル / サムネ文言を編集（名前のindex同期はblur時に集約） */
+  /* ボード上の案件のタイトル / サムネ文言を編集（案件名とは独立） */
   const updateBoardTitle = (id, field, val) => {
     if (id === activeId) {
-      setProject((p) => { const plans = [...(p.plans || [])]; plans[0] = { ...(plans[0] || newPlan()), [field]: val }; const np = { ...p, plans }; if (field === "title" && val.trim()) np.name = val.trim(); return np; });
+      setProject((p) => { const plans = [...(p.plans || [])]; plans[0] = { ...(plans[0] || newPlan()), [field]: val }; return { ...p, plans }; });
       return;
     }
-    setBoardCache((c) => { const d = c[id]; if (!d) return c; const plans = [...(d.plans || [])]; plans[0] = { ...(plans[0] || newPlan()), [field]: val }; const nd = { ...d, plans }; if (field === "title" && val.trim()) nd.name = val.trim(); return { ...c, [id]: nd }; });
+    setBoardCache((c) => { const d = c[id]; if (!d) return c; const plans = [...(d.plans || [])]; plans[0] = { ...(plans[0] || newPlan()), [field]: val }; return { ...c, [id]: { ...d, plans } }; });
     saveBoardCaseSoon(id);
-  };
-  /* タイトル確定時に案件名（サイドバー表示）へ同期 */
-  const commitCaseName = (id) => {
-    const d = id === activeId ? project : boardCache[id];
-    const t = ((d && d.plans && d.plans[0] && d.plans[0].title) || "").trim();
-    if (!t) return;
-    setIndex((cur) => { const e = cur.find((x) => x.id === id); if (!e || e.name === t) return cur; const nx = cur.map((x) => (x.id === id ? { ...x, name: t } : x)); persistIndex(nx); return nx; });
   };
   /* カードを開く（=その案件をアクティブにして展開。タブはplanのまま） */
   const openBoardCase = async (id) => {
@@ -7788,7 +7780,7 @@ export default function App() {
             <div className="max-w-[900px] mx-auto">
               <p className="text-[12px] text-stone-500 mb-3">トーク系台本（一人語り・対談など）。タイトルは「企画・サムネ」タブと連携しています。</p>
               {sec("①", "タイトル", "企画・サムネと連携", (
-                <input value={(project.plans && project.plans[0] && project.plans[0].title) || ""} onChange={(e) => setPlanField(0, "title", e.target.value)} onBlur={() => commitCaseName(activeId)}
+                <input value={(project.plans && project.plans[0] && project.plans[0].title) || ""} onChange={(e) => setPlanField(0, "title", e.target.value)}
                   placeholder="動画のタイトル" className="w-full text-[15px] font-bold border border-stone-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-stone-400" />
               ))}
               {sec("②", "ハイライト", "冒頭に差し込む見せ場・名場面", (
@@ -8004,7 +7996,7 @@ export default function App() {
               <div className="border-b border-stone-100 px-3 py-2">
                 <div className="text-[11px] font-bold text-stone-400 mb-1">タイトル</div>
                 <AutoTextarea value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路"
-                  onChange={(e) => setPlanField(0, "title", e.target.value)} onBlur={() => commitCaseName(activeId)} title="企画・サムネタブのタイトルと連携しています"
+                  onChange={(e) => setPlanField(0, "title", e.target.value)} title="企画・サムネタブのタイトルと連携しています"
                   minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
               </div>
               {/* サムネ文言 ＝2パターン。ラベル下・改行可。空行込みで全文見えるように自動で伸ばす */}
@@ -8675,7 +8667,7 @@ export default function App() {
                         ? <img src={"https://img.youtube.com/vi/" + firstVid + "/default.jpg"} alt="" className="shrink-0 w-12 h-7 object-cover rounded" />
                         : <div className="shrink-0 w-12 h-7 rounded bg-stone-100 grid place-items-center text-[10px] text-stone-300"><Icon name="image" className="w-3.5 h-3.5" /></div>}
                       {data ? (
-                        <input value={title} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "title", e.target.value)} onBlur={() => commitCaseName(entry.id)}
+                        <input value={title} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "title", e.target.value)}
                           placeholder={"タイトル案（例：30歳で会社を捨てた男の末路）"}
                           className="flex-1 min-w-0 text-[13px] font-bold bg-transparent border-0 border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1" />
                       ) : brokenIds[entry.id] ? (
