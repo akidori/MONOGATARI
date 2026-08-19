@@ -3253,6 +3253,11 @@ export default function App() {
   const [retention, setRetention] = useState(90);            // アップロードの保存期限（日）。0=無期限
   const [mediaBusy, setMediaBusy] = useState("");            // アップロード中の表示メッセージ
   const [mediaProg, setMediaProg] = useState(0);             // アップロード進捗 0-100
+  // 動画確認への動画アップロードを直列化するキュー。mediaBusy/mediaProgは1個の共有stateなので
+  // 同時に2本上げると先に終わった方の setMediaBusy("") が後発の進捗表示を消し、
+  // 「アップロードできていないように見える」事故になる（2026-08-19判明）。直列化して1本ずつ確実に進める。
+  const uploadQueueRef = useRef(Promise.resolve());
+  const uploadQueuePendingRef = useRef(0);   // 待ち行列の本数（2本目以降を上げたときの案内表示用）
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
   const [thumbUp, setThumbUp] = useState(null);               // 納品完了タブのサムネ画像アップ進捗 {pct}
   const [thumbDropOver, setThumbDropOver] = useState(false);   // 納品完了タブのサムネ画像D&D中フラグ
@@ -6062,15 +6067,29 @@ export default function App() {
   const trashedReviewVersions = () => reviewVersions().filter((v) => v.trashedAt);
   const setVersions = (updater) => setProject((p) => { const rv = (p.review && p.review.versions) || []; const next = typeof updater === "function" ? updater(rv) : updater; return { ...p, review: { versions: next, comments: (p.review && p.review.comments) || [] } }; });
   const addVersionFromVideo = async (vobj, name) => {
-    setVersions((arr) => {
-      // 採番は「配列長+1」だと削除や競合でv3が2個できる（2026-07-07 近川さんで実発生）→既存最大番号+1
-      const maxN = arr.reduce((mx, v) => { const m = /^v(\d+)$/.exec(v.label || ""); return m ? Math.max(mx, +m[1]) : mx; }, 0);
-      const label = "v" + (maxN + 1);
-      const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", streamOwner: vobj.streamOwner || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
-      // 素材管理の「確認用動画」にもミラー（DLは元のR2マスター）
-      setAssets((as) => [newAsset("確認用動画", { type: vobj.type === "youtube" ? "youtube" : "mp4", key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id }), ...as]);
-      return [...arr, v];
+    // setProjectの結果（本当に確定した最新project）をこのPromiseで受け取る。closureのprojectを使うと
+    // 3秒デバウンス保存が通る前にリロード/離脱されたときに版が消える（2026-08-19 動画確認消失事故）ので、
+    // ここで確実に即保存する。
+    const next = await new Promise((resolve) => {
+      setProject((p) => {
+        const rv = (p.review && p.review.versions) || [];
+        // 採番は「配列長+1」だと削除や競合でv3が2個できる（2026-07-07 近川さんで実発生）→既存最大番号+1
+        const maxN = rv.reduce((mx, v) => { const m = /^v(\d+)$/.exec(v.label || ""); return m ? Math.max(mx, +m[1]) : mx; }, 0);
+        const label = "v" + (maxN + 1);
+        const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", streamOwner: vobj.streamOwner || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
+        const np = { ...p, review: { versions: [...rv, v], comments: (p.review && p.review.comments) || [] } };
+        // 素材管理の「確認用動画」にもミラー（DLは元のR2マスター）
+        setAssets((as) => [newAsset("確認用動画", { type: vobj.type === "youtube" ? "youtube" : "mp4", key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id }), ...as]);
+        resolve(np);
+        return np;
+      });
     });
+    // 3秒デバウンスを待たず即保存。失敗しても既存のpendingSaveRef経路が拾って再送する。
+    try {
+      const ok = await saveProjectData(next);
+      if (ok !== false) { lastSaveSigRef.current = JSON.stringify(cleanProj(next)); pendingSaveRef.current = null; setSaveState("ok"); }
+      else { pendingSaveRef.current = next; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
+    } catch (e) { pendingSaveRef.current = next; setSaveState("error"); }
   };
   /* Stream変換状況をポーリングして hls を埋める */
   const pollStreamReady = async (sid, tries = 0) => {
@@ -6151,7 +6170,18 @@ export default function App() {
     }
     return { type: "stream", uid: d.uid, key: "", ready: false, streamOwner: "user" };
   };
-  const uploadVersionVideo = async (file, onProgress = null) => {
+  // mediaBusy/mediaProgは1個の共有stateなので、2本目を上げ始めると先に終わった方の
+  // setMediaBusy("")が後発の進捗表示を消してしまい「アップロードできていない」ように見える
+  // （2026-08-19判明）。直列キューに通して1本ずつ確実に進める。
+  const uploadVersionVideo = (file, onProgress = null) => {
+    const queued = uploadQueuePendingRef.current > 0;
+    uploadQueuePendingRef.current += 1;
+    if (queued) showToast("前の動画のアップロードが終わり次第、続けて上げます");
+    const run = uploadQueueRef.current.then(() => uploadVersionVideoImpl(file, onProgress)).finally(() => { uploadQueuePendingRef.current -= 1; });
+    uploadQueueRef.current = run.catch(() => {});
+    return run;
+  };
+  const uploadVersionVideoImpl = async (file, onProgress = null) => {
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
     // 保存が通っていない状態で上げると、R2への転送は成功するのに版そのものが保存されず、
     // 画面を切り替えた瞬間に消える（＝GB単位を上げ直すハメになる）。上げる前に必ず止める。
