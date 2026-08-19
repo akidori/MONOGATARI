@@ -6196,25 +6196,29 @@ export default function App() {
   };
   // mediaBusy/mediaProgは1個の共有stateなので、2本目を上げ始めると先に終わった方の
   // setMediaBusy("")が後発の進捗表示を消してしまい「アップロードできていない」ように見える
-  // （2026-08-19判明）。直列キューに通して1本ずつ確実に進める。
-  const uploadVersionVideo = (file, onProgress = null) => {
-    const queued = uploadQueuePendingRef.current > 0;
-    uploadQueuePendingRef.current += 1;
-    if (queued) showToast("前の動画のアップロードが終わり次第、続けて上げます");
-    const run = uploadQueueRef.current.then(() => uploadVersionVideoImpl(file, onProgress)).finally(() => { uploadQueuePendingRef.current -= 1; });
-    uploadQueueRef.current = run.catch(() => {});
-    return run;
-  };
-  const uploadVersionVideoImpl = async (file, onProgress = null) => {
+  // （2026-08-19判明）。転送だけ直列キューに通して1本ずつ確実に進める。
+  // ただし targetId／sh（共有ID）／projLive は「今アクティブな案件」に依存する値なので、
+  // キューで待たされている間に案件タブを切り替えられると取り違える（2026-08-19 ゆかり先生タブに
+  // 聖良さん分が混入する形で実際に再発）。これらは必ずクリック直後＝キューに積む前に確定させる。
+  const uploadVersionVideo = async (file, onProgress = null) => {
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
-    const targetId = activeIdRef.current;   // アップロード開始時点の案件。完了時に別案件へ切り替えられていても混ざらないように固定しておく
     // 保存が通っていない状態で上げると、R2への転送は成功するのに版そのものが保存されず、
     // 画面を切り替えた瞬間に消える（＝GB単位を上げ直すハメになる）。上げる前に必ず止める。
     if (Date.now() < quotaUntilRef.current || pendingSaveRef.current) {
       const go = window.confirm("いま案件の保存がサーバーに通っていません。\n\nこのまま動画を上げても、追加した版は保存されず、画面を切り替えた時点で消えます（アップロードの時間だけ無駄になります）。\n\nそれでも続けますか？");
       if (!go) return;
     }
+    const targetId = activeIdRef.current;
+    const projLive = !!project.live;
     const sh = await ensureShare(); if (!sh) return;   // 確認用URLは動画アップの副産物として自動発行（先に手で発行させない）
+    const queued = uploadQueuePendingRef.current > 0;
+    uploadQueuePendingRef.current += 1;
+    if (queued) showToast("前の動画のアップロードが終わり次第、続けて上げます");
+    const run = uploadQueueRef.current.then(() => uploadVersionVideoImpl(file, onProgress, targetId, sh, projLive)).finally(() => { uploadQueuePendingRef.current -= 1; });
+    uploadQueueRef.current = run.catch(() => {});
+    return run;
+  };
+  const uploadVersionVideoImpl = async (file, onProgress, targetId, sh, projLive) => {
     setMediaBusy("動画をアップロード中…"); setMediaProg(0);
     try {
       // 接続済みユーザーは自分のStreamへ直接送る。AKのR2/Streamには一切保存しない。
@@ -6229,7 +6233,7 @@ export default function App() {
       // 一般利用者をAKのR2/Streamへ暗黙フォールバックさせない。費用分離を必ず守る。
       // 例外＝live編集リンクで開いている編集者：所有者の案件への完成動画アップなので所有者のR2/Streamに保存
       // （share.htmlの&up=編集者アップと同じ設計。ここを塞ぐと「編集権限なのに動画が上げられない」）
-      if (!cfStream.legacyAllowed && !project.live) {
+      if (!cfStream.legacyAllowed && !projLive) {
         setShowAccount(true);
         throw new Error(user ? "先にアカウント画面で自分のCloudflare Streamを接続してください" : "動画アップロードにはGoogleログインと自分のCloudflare Stream接続が必要です");
       }
