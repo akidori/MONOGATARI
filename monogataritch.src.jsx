@@ -2996,6 +2996,8 @@ function WizardPane({ project, setProject, theme, setTab }) {
 export default function App() {
   const [index, setIndex] = useState([]);       // [{id,name,createdAt}]
   const [activeId, setActiveId] = useState(null);
+  const activeIdRef = useRef(null);   // 常に最新のactiveId。アップロード等の非同期処理が完了した時点で
+  activeIdRef.current = activeId;     // 案件を切り替えられていないか判定するのに使う（closureのactiveIdは開始時点で固定される）
   const [project, setProject] = useState(null);  // 現在編集中の案件データ
   const [channelInfo, setChannelInfo] = useState({}); // {channelName: {name,url,concept,target,purpose,competitors[]}}
   const [loaded, setLoaded] = useState(false);
@@ -5724,6 +5726,7 @@ export default function App() {
   // 編集者が共有リンクから上げた素材(file_up)を、この案件の素材管理に取り込む
   const importGuestUploads = async (silent) => {
     if (!project || !project.shareId) { if (!silent) showToast("先に確認用URLを発行してね"); return; }
+    const targetId = activeIdRef.current;
     let ups = [];
     try { const r = await fetch(SHARE_API + "/api/snap/" + project.shareId + "/uploads"); const d = await r.json(); ups = (d && d.uploads) || []; }
     catch (e) { if (!silent) showToast("取り込み失敗：" + (e.message || e)); return; }
@@ -5747,7 +5750,7 @@ export default function App() {
         const d = await r.json();
         if (d.uid) v = { type: "stream", uid: d.uid, key: u.key, ready: false };
       } catch (e) {}
-      await addVersionFromVideo(v, (u.name || "編集者アップ"));
+      await addVersionFromVideo(targetId, v, (u.name || "編集者アップ"));
       if (v.type === "stream") pollStreamReady(v.uid);
     }
     if (!silent) showToast("編集者アップを取り込んだよ（動画" + reviewUps.length + "・素材" + assetUps.length + "件）");
@@ -6066,30 +6069,51 @@ export default function App() {
   const activeReviewVersions = () => reviewVersions().filter((v) => !v.trashedAt);
   const trashedReviewVersions = () => reviewVersions().filter((v) => v.trashedAt);
   const setVersions = (updater) => setProject((p) => { const rv = (p.review && p.review.versions) || []; const next = typeof updater === "function" ? updater(rv) : updater; return { ...p, review: { versions: next, comments: (p.review && p.review.comments) || [] } }; });
-  const addVersionFromVideo = async (vobj, name) => {
-    // setProjectの結果（本当に確定した最新project）をこのPromiseで受け取る。closureのprojectを使うと
-    // 3秒デバウンス保存が通る前にリロード/離脱されたときに版が消える（2026-08-19 動画確認消失事故）ので、
-    // ここで確実に即保存する。
-    const next = await new Promise((resolve) => {
-      setProject((p) => {
-        const rv = (p.review && p.review.versions) || [];
-        // 採番は「配列長+1」だと削除や競合でv3が2個できる（2026-07-07 近川さんで実発生）→既存最大番号+1
-        const maxN = rv.reduce((mx, v) => { const m = /^v(\d+)$/.exec(v.label || ""); return m ? Math.max(mx, +m[1]) : mx; }, 0);
-        const label = "v" + (maxN + 1);
-        const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", streamOwner: vobj.streamOwner || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
-        const np = { ...p, review: { versions: [...rv, v], comments: (p.review && p.review.comments) || [] } };
-        // 素材管理の「確認用動画」にもミラー（DLは元のR2マスター）
-        setAssets((as) => [newAsset("確認用動画", { type: vobj.type === "youtube" ? "youtube" : "mp4", key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id }), ...as]);
-        resolve(np);
-        return np;
-      });
-    });
-    // 3秒デバウンスを待たず即保存。失敗しても既存のpendingSaveRef経路が拾って再送する。
+  // targetId＝アップロードを開始した時点でアクティブだった案件。アップロード完了までの間に
+  // 別タブ（別案件）へ切り替えられていることがあり、そのままsetProjectで書くと「今アクティブな
+  // （切替先の）案件」に版が混ざる（2026-08-19 複数案件で同時並行アップロードした動画が1タブに
+  // まとまって入る事故）。完了時点のactiveIdRefと比較し、切り替えられていたら該当案件のデータを
+  // 読み直してからそちらへ書く。
+  const addVersionFromVideo = async (targetId, vobj, name) => {
+    const buildNext = (p) => {
+      const rv = (p.review && p.review.versions) || [];
+      // 採番は「配列長+1」だと削除や競合でv3が2個できる（2026-07-07 近川さんで実発生）→既存最大番号+1
+      const maxN = rv.reduce((mx, v) => { const m = /^v(\d+)$/.exec(v.label || ""); return m ? Math.max(mx, +m[1]) : mx; }, 0);
+      const label = "v" + (maxN + 1);
+      const v = { id: uid(), label, name: name || label, type: vobj.type, key: vobj.key || "", url: vobj.url || "", uid: vobj.uid || "", hls: vobj.hls || "", streamOwner: vobj.streamOwner || "", ready: vobj.type === "stream" ? !!vobj.ready : true, createdAt: Date.now(), createdBy: (user && user.name) || "ディレクター" };
+      // 素材管理の「確認用動画」にもミラー（DLは元のR2マスター）
+      const asset = newAsset("確認用動画", { type: vobj.type === "youtube" ? "youtube" : "mp4", key: vobj.key || "", url: vobj.url || "", name: v.name, versionId: v.id });
+      return { ...p, review: { versions: [...rv, v], comments: (p.review && p.review.comments) || [] }, assets: [asset, ...(Array.isArray(p.assets) ? p.assets : [])] };
+    };
+    if (targetId === activeIdRef.current) {
+      // setProjectの結果（本当に確定した最新project）をこのPromiseで受け取る。closureのprojectを使うと
+      // 3秒デバウンス保存が通る前にリロード/離脱されたときに版が消える（2026-08-19 動画確認消失事故）ので、
+      // ここで確実に即保存する。
+      const next = await new Promise((resolve) => { setProject((p) => { const np = buildNext(p); resolve(np); return np; }); });
+      try {
+        const ok = await saveProjectData(next);
+        if (ok !== false) { lastSaveSigRef.current = JSON.stringify(cleanProj(next)); pendingSaveRef.current = null; setSaveState("ok"); }
+        else { pendingSaveRef.current = next; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
+      } catch (e) { pendingSaveRef.current = next; setSaveState("error"); }
+      return;
+    }
+    // 切り替え済み：boardCacheは古い可能性があるので必ずストレージから読み直してから追記する
+    const entry = index.find((x) => x.id === targetId);
+    let base = null;
     try {
-      const ok = await saveProjectData(next);
-      if (ok !== false) { lastSaveSigRef.current = JSON.stringify(cleanProj(next)); pendingSaveRef.current = null; setSaveState("ok"); }
-      else { pendingSaveRef.current = next; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
-    } catch (e) { pendingSaveRef.current = next; setSaveState("error"); }
+      if (entry && entry.collab) {
+        const r = await collabGet(targetId);
+        base = { ...migrateProject(r.project), id: targetId, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members };
+      } else {
+        const r = await window.storage.get(STORE_PROJ(targetId));
+        base = r && r.value ? migrateProject(JSON.parse(r.value)) : null;
+      }
+    } catch (e) {}
+    if (!base) { showToast("アップロード先の案件を読み込めず、保存できませんでした"); return; }
+    const next = buildNext(base);
+    setBoardCache((c) => ({ ...c, [targetId]: next }));
+    try { await saveProjectData(next); showToast("「" + ((entry && entry.name) || "他の案件") + "」に動画を追加したよ（切替先ではなく元の案件に保存）"); }
+    catch (e) { showToast("保存に失敗しました：" + (e.message || e)); }
   };
   /* Stream変換状況をポーリングして hls を埋める */
   const pollStreamReady = async (sid, tries = 0) => {
@@ -6183,6 +6207,7 @@ export default function App() {
   };
   const uploadVersionVideoImpl = async (file, onProgress = null) => {
     if (!/^video\//.test(file.type) && !/\.(mp4|mov|m4v|webm)$/i.test(file.name)) { showToast("動画ファイルを選んでね"); return; }
+    const targetId = activeIdRef.current;   // アップロード開始時点の案件。完了時に別案件へ切り替えられていても混ざらないように固定しておく
     // 保存が通っていない状態で上げると、R2への転送は成功するのに版そのものが保存されず、
     // 画面を切り替えた瞬間に消える（＝GB単位を上げ直すハメになる）。上げる前に必ず止める。
     if (Date.now() < quotaUntilRef.current || pendingSaveRef.current) {
@@ -6195,7 +6220,7 @@ export default function App() {
       // 接続済みユーザーは自分のStreamへ直接送る。AKのR2/Streamには一切保存しない。
       if (user && cfStream.connected) {
         const own = await uploadToOwnStream(file, onProgress);
-        await addVersionFromVideo(own, file.name);
+        await addVersionFromVideo(targetId, own, file.name);
         pollOwnStreamReady(own.uid);
         showToast("自分のCloudflare Streamへアップしました。軽量版を準備中…");
         setMediaBusy("");
@@ -6218,7 +6243,7 @@ export default function App() {
         if (d.uid) v = { type: "stream", uid: d.uid, key: meta.key, ready: false };
       } catch (e) {}
       if (!v) v = { type: "mp4", key: meta.key };
-      await addVersionFromVideo(v, file.name);
+      await addVersionFromVideo(targetId, v, file.name);
       if (v.type === "stream") { pollStreamReady(v.uid); showToast("アップ完了。変換中…（少し待つと軽く再生できる）"); }
       else showToast("バージョンを追加したよ（Stream未設定のためR2直再生）");
     }
@@ -6227,8 +6252,9 @@ export default function App() {
   };
   const addVersionYouTube = async (rawUrl) => {
     const vid = ytIdFromUrl(rawUrl); if (!vid) { showToast("YouTubeのURLが正しくないみたい"); return; }
+    const targetId = activeIdRef.current;
     const sh = await ensureShare(); if (!sh) return;   // 共有URLが無ければ自動発行（追加した版がそのまま確認URLに出るように）
-    await addVersionFromVideo({ type: "youtube", url: "https://www.youtube.com/watch?v=" + vid }, "YouTube版");
+    await addVersionFromVideo(targetId, { type: "youtube", url: "https://www.youtube.com/watch?v=" + vid }, "YouTube版");
     showToast("バージョンを追加したよ");
   };
   // 即消しではなくゴミ箱送り＝7日間は復元可能（誤削除対策）。R2/Stream本体はcleanupExpired cronが猶予後に消す
