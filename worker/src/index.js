@@ -1810,9 +1810,22 @@ async function del(fileKey, btn) {
         if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
         if (!b.videoKey) return json({ error: "videoKey必須" }, 400);
         const kind = b.kind === "transcribe" ? "transcribe" : "shorts";
-        // 同じsnapで同種ジョブが走行中なら二重登録しない（自動生成の連打・再訪で積み上がるのを防ぐ）
+        // 同じsnapで同種ジョブが走行中なら二重登録しない（自動生成の連打・再訪で積み上がるのを防ぐ）。
+        // ただし processing のまま30分以上進捗が無いものは「Macエンジン側の再デプロイに巻き込まれて
+        // 死んだ」ゾンビとみなし、自動でerrorへ倒して新規登録を通す（2026-08-20：ゾンビが永久に
+        // dedupへ引っかかり続け、二度と再生成できなくなる事故があった。手動でKVを書き換えて復旧した）。
         const idx0 = (await env.SNAPS.get("sjobs:idx", "json")) || [];
-        const dup = idx0.find((e) => e.snap === snap && (e.kind || "shorts") === kind && (e.status === "pending" || e.status === "processing"));
+        let dup = idx0.find((e) => e.snap === snap && (e.kind || "shorts") === kind && (e.status === "pending" || e.status === "processing"));
+        if (dup && dup.status === "processing" && (Date.now() - new Date(dup.updatedAt || dup.createdAt).getTime()) > 30 * 60000) {
+          dup.status = "error"; dup.error = "放置検知により自動リセット（30分以上進捗なし）"; dup.updatedAt = now();
+          await env.SNAPS.put("sjobs:idx", JSON.stringify(idx0));
+          const zombieSjob = await env.SNAPS.get("sjob:" + dup.id, "json");
+          if (zombieSjob) {
+            zombieSjob.status = "error"; zombieSjob.error = dup.error; zombieSjob.updatedAt = dup.updatedAt;
+            await env.SNAPS.put("sjob:" + dup.id, JSON.stringify(zombieSjob));
+          }
+          dup = null;
+        }
         if (dup) return json({ ok: true, jobId: dup.id, status: dup.status, dedup: true });
         const jobId = rid(12);
         const job = { id: jobId, snap, kind, videoKey: ("" + b.videoKey).slice(0, 200), sheetUrl: ("" + (b.sheetUrl || "")).slice(0, 300), notes: ("" + (b.notes || "")).slice(0, 1000), nMax: Math.max(1, Math.min(12, parseInt(b.nMax, 10) || 8)), templateId: ("" + (b.templateId || "")).slice(0, 64), status: "pending", createdAt: now(), updatedAt: now(), shorts: [], error: "" };

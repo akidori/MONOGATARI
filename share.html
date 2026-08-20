@@ -656,6 +656,106 @@ function paneManual(p, accent, main){
   // Flip-LABのチャンネル編集ルール（編集者リンクのみ・mountLabManualが非同期で埋める）
   return guide + `<div id="lab-manual"></div>` + (sections || (guide ? "" : '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>'));
 }
+
+/* ── 編集者向け「いまやること」コーチ ──
+   マニュアルを探して読む前提を外し、編集者リンクを開くだけで現在工程の行動を表示する。
+   短い指示は入口であり、理由・案件固有ルール・元Q&Aは折りたたまず参照できる導線を残す。 */
+function editorPhase(p){
+  const raw = String(p.status||"").toLowerCase();
+  const versions = videoOptions(p).length;
+  if(/納品|完了|deliver/.test(raw)) return "delivery";
+  if(/修正|確認|review|戻し/.test(raw) || versions>0) return "review";
+  if(/初稿|演出|draft/.test(raw)) return "draft";
+  if(/粗|カット|edit/.test(raw)) return "rough";
+  return "start";
+}
+const EDITOR_GUIDES = {
+  start:{ label:"案件開始前", title:"まず、編集を始められる状態か確認", tasks:[
+    "ファイルタブで素材とPremiereプロジェクトを確認する",
+    "構成台本でピーク・CV・物語の核を確認する",
+    "★未確認・NG・許諾確認が残っていないか確認する"
+  ], reason:"情報が欠けたまま編集を始めると、後から構成変更や素材差し替えが発生します。ピーク・CV・許諾は編集者だけで確定せず、空欄や矛盾があれば担当者へ戻します。", tab:"files", manual:"project-start/first-steps" },
+  rough:{ label:"粗編集", title:"演出を入れず、物語を95％まで作る", tasks:[
+    "全素材を一度見て、話題ごとにセクションを分ける",
+    "使う素材・使わない素材を判断する（この段階では尺を詰めすぎない）",
+    "ピークとCVが伝わる順番に並べ、最後に尺を調整する"
+  ], reason:"粗編集はテロップやSEで面白く見せる工程ではありません。素材だけで物語が伝わる状態を先に作ることで、演出によるごまかしと手戻りを防ぎます。", tab:"script", manual:"edit/rough-cut" },
+  draft:{ label:"初稿・演出", title:"重要度の高い情報から演出を乗せる", tasks:[
+    "強調テロップを入れる",
+    "補足テロップ、字幕の順に入れる",
+    "最後にトランジションとSEを入れ、全体を確認する"
+  ], reason:"演出は、視聴者へ何が重要かを伝える順番です。強調・補足・字幕を先に確定すると、装飾が情報設計を邪魔しません。", tab:"manual", manual:"edit/draft-cut" },
+  review:{ label:"修正・動画確認", title:"指示の意図を確認してから直す", tasks:[
+    "動画確認タブで未対応コメントを上から確認する",
+    "修正内容だけでなく、修正理由と影響範囲を確認する",
+    "対応後にチェックし、判断が必要な項目だけ担当者へ戻す"
+  ], reason:"表面の指示だけ直すと、同じ理由による修正が別の箇所に残ります。理由まで理解して、同じ問題がある範囲をまとめて確認します。", tab:"video", manual:"review/handle-review" },
+  delivery:{ label:"納品前", title:"書き出す前に、抜けを機械的に確認", tasks:[
+    "納品前チェックリストを上からすべて確認する",
+    "案件指定と書き出し設定を照合する",
+    "完成動画を動画確認タブへアップする"
+  ], reason:"納品前は新しい表現を加える工程ではなく、事故を防ぐ工程です。記憶で確認せず、チェックリストを使います。", tab:"video", manual:"delivery/pre-delivery-check" }
+};
+const GUIDE_MODES = {
+  simple:{ label:"シンプル", hint:"次の1つを先に表示" },
+  checklist:{ label:"チェック", hint:"手順と進捗を表示" },
+  structure:{ label:"理由から", hint:"目的と理由を先に表示" }
+};
+function editorGuideMode(p){
+  // 将来はStudio OSのPersonal Work OSをp.personalWorkOsへ同梱する。
+  // MVPでは本人が選んだ表示を端末へ保存し、URLのguide=でも初期指定できる。
+  const fromProject=p.personalWorkOs&&p.personalWorkOs.manual_display;
+  const fromUrl=params.get("guide");
+  let fromLocal=""; try{ fromLocal=localStorage.getItem("mg:workstyle:manual-display")||""; }catch(e){}
+  // 本人の明示選択を、中央プロファイルの初期値より優先する。
+  const mode=fromUrl||fromLocal||fromProject||"checklist";
+  return GUIDE_MODES[mode]?mode:"checklist";
+}
+function editorCoach(p, main, accent){
+  if(!UP_TOKEN || CHMODE) return "";
+  const phase=editorPhase(p), g=EDITOR_GUIDES[phase];
+  const mode=editorGuideMode(p);
+  const savedKey="mg:coach:"+ID+":"+phase;
+  let done=[]; try{ done=JSON.parse(localStorage.getItem(savedKey)||"[]"); }catch(e){}
+  const manualHref=(p.channelInfo&&p.channelInfo.manualUrl)||"https://flip-lens.aki-surf89315.workers.dev/m/%E7%B7%A8%E9%9B%86%E3%83%9E%E3%83%8B%E3%83%A5%E3%82%A2%E3%83%AB";
+  const qaTab=(p.hearing||[]).some(s=>(s.items||[]).some(it=>(it.value||"").trim()))?"hearing":"script";
+  const taskRow=(task,i)=>`<label class="flex items-start gap-2.5 rounded-xl border border-stone-100 px-3 py-2.5 cursor-pointer hover:bg-stone-50">
+    <input type="checkbox" data-coach-check="${i}" ${done.includes(i)?"checked":""} class="mt-0.5 w-4 h-4 accent-current"><span class="text-[12.5px] leading-relaxed ${done.includes(i)?"line-through text-stone-400":"text-stone-700 font-bold"}">${task}</span></label>`;
+  const remaining=g.tasks.map((task,i)=>({task,i})).filter(x=>!done.includes(x.i));
+  const next=remaining[0]||{task:"この工程は完了です",i:-1};
+  const modeBody=mode==="simple" ? `<div class="rounded-xl border-2 px-3 py-3" style="border-color:${accent}55;background:${accent}08">
+      <div class="text-[10px] font-bold mb-1" style="color:${accent}">次にやる1つ</div>
+      ${next.i>=0?taskRow(next.task,next.i):`<div class="text-[13px] font-bold text-stone-600">${next.task}</div>`}
+      ${remaining.length>1?`<details class="mt-2"><summary class="text-[11px] font-bold text-stone-500 cursor-pointer">残り${remaining.length-1}項目も見る</summary><div class="space-y-2 mt-2">${remaining.slice(1).map(x=>taskRow(x.task,x.i)).join("")}</div></details>`:""}
+    </div>`
+    : mode==="structure" ? `<div class="rounded-xl bg-stone-50 border border-stone-100 px-3 py-3 mb-3">
+        <div class="text-[10px] font-bold text-stone-400 mb-1">この工程の目的</div>
+        <div class="text-[13px] font-black text-stone-700 mb-2">${g.title}</div>
+        <div class="text-[12px] leading-relaxed text-stone-600">${g.reason}</div>
+      </div><div class="space-y-2">${g.tasks.map(taskRow).join("")}</div>`
+    : `<div class="space-y-2">${g.tasks.map(taskRow).join("")}</div>`;
+  return `<section id="editor-coach" data-phase="${phase}" class="rounded-2xl border bg-white shadow-sm mb-4 overflow-hidden" style="border-color:${accent}44">
+    <div class="px-4 py-3 flex items-start gap-3" style="background:${accent}10">
+      <div class="w-8 h-8 rounded-full text-white text-[13px] font-black flex items-center justify-center shrink-0" style="background:${accent}">${done.length}/${g.tasks.length}</div>
+      <div class="min-w-0 flex-1"><div class="text-[10px] font-bold tracking-wider" style="color:${accent}">いまの工程：${g.label}</div><div class="text-[15px] font-black text-stone-800 leading-snug">${g.title}</div></div>
+    </div>
+    <div class="p-4">
+      <div class="flex items-center gap-1 mb-3 overflow-x-auto"><span class="text-[10px] font-bold text-stone-400 mr-1 shrink-0">表示</span>${Object.entries(GUIDE_MODES).map(([key,item])=>`<button data-coach-mode="${key}" title="${item.hint}" class="text-[10.5px] font-bold px-2.5 py-1.5 rounded-full border whitespace-nowrap ${mode===key?"text-white border-transparent":"bg-white border-stone-200 text-stone-500"}" style="${mode===key?`background:${main}`:""}">${item.label}</button>`).join("")}</div>
+      ${modeBody}
+      ${mode==="structure"?"":`<details class="mt-3 rounded-xl bg-stone-50 border border-stone-100 px-3 py-2.5">
+        <summary class="text-[11.5px] font-bold text-stone-600 cursor-pointer">なぜ、この順番なのか</summary>
+        <p class="text-[12px] leading-relaxed text-stone-600 mt-2">${g.reason}</p>
+      </details>`}
+      <div class="flex flex-wrap gap-2 mt-3">
+        <button id="coach-go" data-tab="${g.tab}" class="text-[11.5px] font-bold text-white px-3 py-2 rounded-full" style="background:${main}">作業画面を開く</button>
+        <button id="coach-manual" data-tab="manual" class="text-[11.5px] font-bold px-3 py-2 rounded-full border border-stone-200 bg-white text-stone-600">案件固有ルール</button>
+        <button id="coach-qa" data-tab="${qaTab}" class="text-[11.5px] font-bold px-3 py-2 rounded-full border border-stone-200 bg-white text-stone-600">元Q&A・原文</button>
+        <a href="${esc(manualHref)}" target="_blank" rel="noopener" class="text-[11.5px] font-bold px-3 py-2 rounded-full border border-stone-200 bg-white text-stone-600">詳しい手順と理由 ↗</a>
+      </div>
+      <p class="text-[10.5px] text-stone-400 mt-2 leading-relaxed">短い指示で意味が足りない場合は「案件固有ルール・全Q&A」から、理由・具体例・元の回答を省略せず確認できます。</p>
+    </div>
+  </section>`;
+}
 /* Flip-LABの編集ルールを取得して表示。機密（NGワード等）が乗るため編集者トークン(&up=)がある時だけ。 */
 let LABMAN;
 async function mountLabManual(p){
@@ -780,6 +880,7 @@ function render(){
         ${editorBar}
       </div>
     </div>
+    ${editorCoach(p, main, accent)}
     ${tabBar}
     ${/* 番組情報カードが出る時はそこにタイトル行があるので、大枠の見出しは出さない（AK指示: タイトルも普通の表示で） */""}
     ${infoBlock ? "" : `<div class="mb-4">
@@ -804,6 +905,19 @@ function render(){
   `;
 
   document.querySelectorAll(".tabbtn").forEach(b => b.addEventListener("click", () => setTab(b.dataset.tab)));
+  document.querySelectorAll("[data-coach-check]").forEach(box => box.addEventListener("change", () => {
+    const phase=(document.getElementById("editor-coach")||{}).dataset?.phase; if(!phase) return;
+    const done=[...document.querySelectorAll("[data-coach-check]:checked")].map(x=>+x.dataset.coachCheck);
+    try{ localStorage.setItem("mg:coach:"+ID+":"+phase, JSON.stringify(done)); }catch(e){}
+    render();
+  }));
+  document.querySelectorAll("[data-coach-mode]").forEach(button => button.addEventListener("click", () => {
+    try{ localStorage.setItem("mg:workstyle:manual-display",button.dataset.coachMode); }catch(e){}
+    render();
+  }));
+  const coachGo=document.getElementById("coach-go"); if(coachGo) coachGo.addEventListener("click",()=>setTab(coachGo.dataset.tab));
+  const coachManual=document.getElementById("coach-manual"); if(coachManual) coachManual.addEventListener("click",()=>setTab("manual"));
+  const coachQa=document.getElementById("coach-qa"); if(coachQa) coachQa.addEventListener("click",()=>setTab(coachQa.dataset.tab));
   document.querySelectorAll(".cbtn").forEach(b => b.addEventListener("click", () => toggleComments(b.dataset.c, b.dataset.l)));
   mountScriptToc();
   if(TAB==="video") mountVideo(p, accent, main);
@@ -1090,7 +1204,10 @@ function paneDeliver(p, accent, main){
   const field = (label,val) => val?`<div class="mb-3"><div class="text-[10px] font-bold text-stone-400 mb-0.5">${label}</div><div class="text-[13px] whitespace-pre-wrap leading-relaxed">${esc(val)}</div></div>`:"";
   const url = (m.deliverVideoUrl||"").trim();
   return `
-    ${m.deliverTitle?`<div class="text-[17px] font-black leading-snug text-stone-800 mb-4">${esc(m.deliverTitle)}</div>`:""}
+    ${m.deliverTitle?`<div class="mb-4">
+      <div class="text-[17px] font-black leading-snug text-stone-800">${esc(m.deliverTitle)}</div>
+      ${m.deliverTitle2?`<div class="text-[10px] font-bold text-stone-400 mt-2 mb-0.5">タイトル案2</div><div class="text-[15px] font-bold leading-snug text-stone-600">${esc(m.deliverTitle2)}</div>`:""}
+    </div>`:""}
     ${ranked.length>1?`<div class="text-[12px] text-stone-500 mb-2">気に入ったサムネがあれば「これに決める」を押してください。選んだ内容はこちらに届きます。</div>`:""}
     ${ranked.length?`<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 max-w-3xl">${ranked.map((t,i)=>`
       <div class="relative">
