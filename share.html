@@ -1859,7 +1859,10 @@ function renderShorts(d){
   const el=document.getElementById("vc-shorts"); if(!el) return;
   const shorts=(d&&d.shorts)||[], jobs=(d&&d.jobs)||[];
   const running = jobs.some(j=>j.status==="pending"||j.status==="processing");
-  const errored = jobs.some(j=>j.status==="error");
+  // 過去に一度でもエラーがあると、後で成功しても警告が消えなかった（2026-08-20 AK指摘）
+  // →「失敗した回がある」ではなく「直近のジョブが失敗のまま」かどうかで判定する
+  const latestJob = jobs.slice().sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))[0];
+  const errored = !!latestJob && latestJob.status==="error";
   if(!shorts.length && !running && !errored){ el.innerHTML=""; return; }
   el.innerHTML = `<div class="mt-4 rounded-xl border border-stone-200 bg-white p-3">
     <div class="text-[12px] font-bold text-stone-500 mb-2">縦ショート（たてがた君 自動生成）</div>
