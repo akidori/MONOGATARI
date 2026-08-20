@@ -2064,7 +2064,7 @@ function VersionTrashPanel({ items, onRestore }) {
   );
 }
 /* 縦ショート自動生成（たてがた君）＝納品段階で使う自己完結パネル。納品完了タブに置く。 */
-function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, templateId, onTemplateChange }) {
+function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalleryUrl, accent, templateId, onTemplateChange }) {
   const [busy, setBusy] = React.useState(false);
   const [jobs, setJobs] = React.useState([]);
   const [items, setItems] = React.useState([]);
@@ -2078,15 +2078,13 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, tem
   }, []);
   // ダウンロードしないと中身が見えないのは非効率との指摘（2026-08-17）：クリックでその場再生できるプレビューを追加
   const [previewIdx, setPreviewIdx] = React.useState(null);
-  // 先方にショート単体を送るための直リンク（2026-08-20指摘：各ショートの欄にURLが欲しい／
-  // 飛んだらプレビューできるように）。/api/file/{key} は公開GETでvideo/mp4を返すので、
-  // このURLをそのまま送ればブラウザがインライン再生する。
-  const [copiedKey, setCopiedKey] = React.useState(null);
-  const copyShortUrl = (key) => {
-    const url = SHARE_API + "/api/file/" + key;
-    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
-      .then(() => { setCopiedKey(key); setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1800); })
-      .catch(() => window.prompt("このURLをコピーしてください", url));
+  // 先方に切り抜きショートをまとめて送るための共有URL（2026-08-20：個別URLでなく全部まとめて1本欲しい、との指摘で
+  // 個別リンクから統合ギャラリーページ（/shorts/{snap}?r=<rtok>、全本を再生・DLできる）へ変更）。
+  const [galleryCopied, setGalleryCopied] = React.useState(false);
+  const copyGalleryUrl = async () => {
+    if (!onCopyGalleryUrl) return;
+    const ok = await onCopyGalleryUrl();
+    if (ok !== false) { setGalleryCopied(true); setTimeout(() => setGalleryCopied(false), 1800); }
   };
   const pollList = async (snap, token, tries = 0) => {
     if (tries > 80) return;
@@ -2120,6 +2118,13 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, tem
       <div className="flex items-center gap-2 flex-wrap">
         <div className="text-[12px] font-bold text-stone-600">🎬 たてがた君（縦ショート自動生成）</div>
         <div className="flex-1" />
+        {items.length > 0 && (
+          <button onClick={copyGalleryUrl}
+            title="生成した全ショートをまとめて見せる先方用URLをコピー（開くだけで再生・DLできます）"
+            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
+            <Icon name="copy" className="w-3.5 h-3.5" />{galleryCopied ? "コピーしました" : "共有URL"}
+          </button>
+        )}
         <button onClick={enqueue} disabled={!videoKey || busy || running}
           title={!videoKey ? "先に動画確認で完成版をアップしてください" : running ? "既に生成中です" : "納品動画から縦型ショートを自動生成"}
           className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
@@ -2143,20 +2148,21 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, tem
         <div className="mt-2">
           {busy && <div className="text-[11px] text-stone-500">📤 リクエストを送信中…</div>}
           {running && <div className="text-[11px] text-stone-500">⏳ 生成中…（Macでの処理待ち／実行中。数分かかることがあります）</div>}
-          {jobs.filter((j) => j.status === "error").map((j) => <div key={j.id} className="text-[11px] text-rose-500">⚠️ {j.error || "生成に失敗しました"}</div>)}
+          {(() => {
+            // 過去に失敗したジョブが履歴に残っていても、その後成功していれば古いエラーは消す
+            // （2026-08-20：再デプロイに巻き込まれて一度失敗→再実行で成功、というケースでUIにエラーが残り続けた）。
+            // 直近のジョブがerrorの時だけ表示する。
+            const latest = [...jobs].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0];
+            return latest && latest.status === "error"
+              ? <div className="text-[11px] text-rose-500">⚠️ {latest.error || "生成に失敗しました"}</div> : null;
+          })()}
           {items.length > 0 && (
             <ul className="flex flex-wrap gap-2 mt-1.5">
               {items.map((f, i) => (
-                <li key={f.key} className="inline-flex items-center rounded-lg border border-stone-200 overflow-hidden">
+                <li key={f.key}>
                   <button onClick={() => setPreviewIdx(i)}
-                    className="text-[11px] font-bold px-2.5 py-1.5 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
+                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
                     🎬 {f.name}
-                  </button>
-                  <button onClick={() => copyShortUrl(f.key)}
-                    title="このショート単体の共有URLをコピー（先方はURLを開くだけでプレビューできます）"
-                    className="text-[11px] font-bold px-2 py-1.5 border-l border-stone-200 text-stone-400 hover:bg-stone-50 hover:text-stone-600 inline-flex items-center gap-1">
-                    <Icon name="copy" className="w-3.5 h-3.5" />
-                    {copiedKey === f.key ? "コピーしました" : "URL"}
                   </button>
                 </li>
               ))}
@@ -5430,6 +5436,17 @@ export default function App() {
     const u = buildShareUrl(id, t);
     setShareModal({ id, url: u, updated: had, tab: t || "" });
     try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLを更新してコピーしたよ"); } catch (e) {}
+  };
+  /* 切り抜きショートだけをまとめて見せる先方用URL（mg-share workerの /shorts/{snap}?r=<rtok> ギャラリー
+     ページ、全本を1画面で再生・DLできる）。ShortsPanelの「共有URL」ボタンから呼ばれる。
+     戻り値がfalseならコピー失敗（ShortsPanel側でボタンの「コピーしました」表示を出さない）。 */
+  const copyShortsGalleryUrl = async () => {
+    const id = await publishShare(true);
+    if (!id) return false;
+    const rtok = project.shareReadToken || shareReadTokRef.current || "";
+    const u = SHARE_API + "/shorts/" + id + (rtok ? "?r=" + encodeURIComponent(rtok) : "");
+    try { await navigator.clipboard.writeText(u); showToast("切り抜きショートまとめての共有URLをコピーしたよ"); return true; }
+    catch (e) { window.prompt("このURLをコピーしてください", u); return false; }
   };
   /* ===== 受け渡し（ラリー）：相手別に「見せるタブ＋着地タブ＋文面」をまとめてコピー ===== */
   /* アプリのタブキー配列 → share.html?id=..&tabs=ペイン,..&start=ペイン を組み立て */
@@ -9273,7 +9290,7 @@ export default function App() {
                           )}
                         </div>
                       ) : key === "deliverShorts" ? (
-                        <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent}
+                        <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} onCopyGalleryUrl={copyShortsGalleryUrl} accent={theme.accent}
                           templateId={m.deliverShortsTemplateId || ""} onTemplateChange={(v) => setMeta("deliverShortsTemplateId", v)} />
                       ) : kind === "title2" ? (
                         // タイトル案を2つまで持てるように（2026-08-20 AK要望）。案1は構成台本のタイトルと連動、
