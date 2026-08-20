@@ -1206,8 +1206,9 @@ function paneDeliver(p, accent, main){
   const url = (m.deliverVideoUrl||"").trim();
   return `
     ${m.deliverTitle?`<div class="mb-4">
+      ${m.deliverTitle2?`<div class="text-[10px] font-bold text-stone-400 mb-0.5">タイトル案1</div>`:""}
       <div class="text-[17px] font-black leading-snug text-stone-800">${esc(m.deliverTitle)}</div>
-      ${m.deliverTitle2?`<div class="text-[10px] font-bold text-stone-400 mt-2 mb-0.5">タイトル案2</div><div class="text-[15px] font-bold leading-snug text-stone-600">${esc(m.deliverTitle2)}</div>`:""}
+      ${m.deliverTitle2?`<div class="text-[10px] font-bold text-stone-400 mt-2 mb-0.5">タイトル案2</div><div class="text-[17px] font-black leading-snug text-stone-800">${esc(m.deliverTitle2)}</div>`:""}
     </div>`:""}
     ${ranked.length>1?`<div class="text-[12px] text-stone-500 mb-2">気に入ったサムネがあれば「これに決める」を押してください。選んだ内容はこちらに届きます。</div>`:""}
     ${ranked.length?`<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 max-w-3xl">${ranked.map((t,i)=>`
