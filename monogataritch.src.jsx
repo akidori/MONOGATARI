@@ -2078,6 +2078,16 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, tem
   }, []);
   // ダウンロードしないと中身が見えないのは非効率との指摘（2026-08-17）：クリックでその場再生できるプレビューを追加
   const [previewIdx, setPreviewIdx] = React.useState(null);
+  // 先方にショート単体を送るための直リンク（2026-08-20指摘：各ショートの欄にURLが欲しい／
+  // 飛んだらプレビューできるように）。/api/file/{key} は公開GETでvideo/mp4を返すので、
+  // このURLをそのまま送ればブラウザがインライン再生する。
+  const [copiedKey, setCopiedKey] = React.useState(null);
+  const copyShortUrl = (key) => {
+    const url = SHARE_API + "/api/file/" + key;
+    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+      .then(() => { setCopiedKey(key); setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1800); })
+      .catch(() => window.prompt("このURLをコピーしてください", url));
+  };
   const pollList = async (snap, token, tries = 0) => {
     if (tries > 80) return;
     try {
@@ -2137,10 +2147,16 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, accent, tem
           {items.length > 0 && (
             <ul className="flex flex-wrap gap-2 mt-1.5">
               {items.map((f, i) => (
-                <li key={f.key}>
+                <li key={f.key} className="inline-flex items-center rounded-lg border border-stone-200 overflow-hidden">
                   <button onClick={() => setPreviewIdx(i)}
-                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
+                    className="text-[11px] font-bold px-2.5 py-1.5 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
                     🎬 {f.name}
+                  </button>
+                  <button onClick={() => copyShortUrl(f.key)}
+                    title="このショート単体の共有URLをコピー（先方はURLを開くだけでプレビューできます）"
+                    className="text-[11px] font-bold px-2 py-1.5 border-l border-stone-200 text-stone-400 hover:bg-stone-50 hover:text-stone-600 inline-flex items-center gap-1">
+                    <Icon name="copy" className="w-3.5 h-3.5" />
+                    {copiedKey === f.key ? "コピーしました" : "URL"}
                   </button>
                 </li>
               ))}
@@ -4347,7 +4363,7 @@ export default function App() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || "生成に失敗しました");
       // 生成結果を1つのpatchに集約。setMeta（非同期反映）に頼らず、この場で確実にクラウド保存する。
-      const patch = { deliverChapters: chapters, deliverTitle: d.title || "", deliverDescription: d.description || "", deliverHashtags: d.hashtags || "" };
+      const patch = { deliverChapters: chapters, deliverTitle: d.title || "", deliverTitle2: d.title2 || "", deliverDescription: d.description || "", deliverHashtags: d.hashtags || "" };
       if (transcript && (d.chapters || "").trim()) { patch.deliverChapters = d.chapters.trim(); patch.deliverChaptersTranscriptAt = transcriptUpdatedAt || Date.now(); }
       Object.entries(patch).forEach(([k, v]) => setMeta(k, v));
       // デバウンスautosaveを待たず即・明示保存（回線が飛んでも取りこぼさない）。失敗はloud-failでAKに知らせる。
@@ -9135,7 +9151,7 @@ export default function App() {
         {/* ================= 納品完了タブ ================= */}
         {tab === "deliver" && (() => {
           const dv = [
-            ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）。構成台本のタイトルと連動", false, true],
+            ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）。構成台本のタイトルと連動", false, true, "title2"],
             ["deliverThumbImages", "サムネ画像", "", false, false, "image"],
             ["deliverVideoUrl", "納品完了動画", "動画確認の最新版から自動で入ります（Drive/YouTubeのURLに差し替えOK）", false, true],
             ["deliverShorts", "切り抜きショート", "たてがた君のショートから自動で入ります（1行に1本・差し替えOK）", true, true],
@@ -9259,6 +9275,21 @@ export default function App() {
                       ) : key === "deliverShorts" ? (
                         <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} accent={theme.accent}
                           templateId={m.deliverShortsTemplateId || ""} onTemplateChange={(v) => setMeta("deliverShortsTemplateId", v)} />
+                      ) : kind === "title2" ? (
+                        // タイトル案を2つまで持てるように（2026-08-20 AK要望）。案1は構成台本のタイトルと連動、
+                        // 案2は独立入力（自動生成が2案返せば埋まる／無ければ空のまま手入力）。
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="shrink-0 text-[10px] font-bold text-stone-400 w-10">案1</span>
+                            <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
+                              className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="shrink-0 text-[10px] font-bold text-stone-400 w-10">案2</span>
+                            <input value={m[key + "2"] || ""} onChange={(e) => setMeta(key + "2", e.target.value)} placeholder="もう1つのタイトル案（任意）"
+                              className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
+                          </div>
+                        </div>
                       ) : multiline ? (
                         <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
                           className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" minHeight={60} />

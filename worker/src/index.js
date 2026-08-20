@@ -1396,6 +1396,115 @@ ${qList}
         return json({ month: ym(d), r2: cur, prevMonth: ym(prev), r2Prev: last, kill });
       }
 
+      // ===== ストレージ一覧（何がR2を食っているか可視化。2026-08-20） =====
+      // /api/ops/usage は月次合計しか見えず「今どのファイルが容量を食っているか」が分からなかった
+      // （たてがた君側の /storage 追加と対の対処。AKからの「一覧タブが欲しい」要望）。
+      // Googleログイン(requireUser)はHTMLページの直接ナビゲーションではAuthorizationヘッダーを
+      // 付けられないため使えない。MG_LIST_KEY/SHORTS_KEYと同じ「秘密クエリキー」方式にする。
+      // 使うには: wrangler secret put OPS_KEY で好きな値を設定 → /ops/storage?key=<その値>
+      const opsKeyOk = (u) => !!env.OPS_KEY && u.searchParams.get("key") === env.OPS_KEY;
+
+      async function listStorageFiles() {
+        const items = [];
+        let cursor;
+        do {
+          const res = await env.SNAPS.list({ prefix: "file:", cursor, limit: 1000 });
+          for (const k of res.keys) {
+            const meta = await env.SNAPS.get(k.name, "json");
+            if (meta && !meta.trashedAt) items.push(meta);
+          }
+          cursor = res.list_complete ? null : res.cursor;
+        } while (cursor);
+        const snapNameCache = {};
+        for (const it of items) {
+          const m = (it.key || "").match(/^f\/([^/]+)\//);
+          it.snap = m ? m[1] : "";
+          if (it.snap && !(it.snap in snapNameCache)) {
+            const s = await env.SNAPS.get("snap:" + it.snap, "json").catch(() => null);
+            snapNameCache[it.snap] = (s && s.project && (s.project.name || s.project.id)) || it.snap;
+          }
+          it.projectName = snapNameCache[it.snap] || it.snap || "(不明)";
+        }
+        items.sort((a, b) => (b.size || 0) - (a.size || 0));
+        return items;
+      }
+
+      // GET /api/ops/storage?key=<OPS_KEY> → 全アップロードファイル一覧（案件名・サイズ付き、size降順）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "ops" && parts[2] === "storage") {
+        if (!opsKeyOk(url)) return json({ error: "forbidden" }, 403);
+        const items = await listStorageFiles();
+        const total = items.reduce((s, it) => s + (it.size || 0), 0);
+        return json({ items, total_bytes: total });
+      }
+
+      // POST /api/ops/storage/trash?key=<OPS_KEY>&fileKey=... → 運営が案件tokenを介さず削除（7日猶予）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "ops" && parts[2] === "storage" && parts[3] === "trash") {
+        if (!opsKeyOk(url)) return json({ error: "forbidden" }, 403);
+        const fileKey = url.searchParams.get("fileKey") || "";
+        if (!fileKey) return json({ error: "fileKey が必要です" }, 400);
+        const meta = await env.SNAPS.get("file:" + fileKey, "json");
+        if (!meta) return json({ error: "not found" }, 404);
+        const trashedAt = now();
+        const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+        await env.SNAPS.put("file:" + fileKey, JSON.stringify({ ...meta, trashedAt, expiresAt }));
+        const m = fileKey.match(/^f\/([^/]+)\//);
+        if (m) {
+          const snap = m[1];
+          let ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
+          const idx = ups.findIndex((f) => f.key === fileKey);
+          if (idx >= 0) { ups[idx] = { ...ups[idx], trashedAt, expiresAt }; await env.SNAPS.put("file_up:" + snap, JSON.stringify(ups)); }
+        }
+        return json({ ok: true, expiresAt });
+      }
+
+      // GET /ops/storage?key=<OPS_KEY> → 上記一覧のHTML管理画面（案件・サイズ・削除ボタン）
+      if (request.method === "GET" && parts[0] === "ops" && parts[1] === "storage") {
+        if (!opsKeyOk(url)) return new Response("forbidden", { status: 403 });
+        const items = await listStorageFiles();
+        const total = items.reduce((s, it) => s + (it.size || 0), 0);
+        const fmtSize = (n) => n >= 1024 ** 3 ? (n / 1024 ** 3).toFixed(2) + " GB"
+          : n >= 1024 ** 2 ? (n / 1024 ** 2).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
+        const esc = (s) => ("" + (s || "")).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+        const key = esc(url.searchParams.get("key"));
+        const rows = items.map((it) => `<tr>
+            <td>${esc(it.projectName)}</td>
+            <td>${esc(it.name)}</td>
+            <td>${it.role === "review" ? "確認用動画" : "素材"}</td>
+            <td>${fmtSize(it.size || 0)}</td>
+            <td>${esc((it.uploadedAt || "").slice(0, 10))}</td>
+            <td>${it.expiresAt ? esc(it.expiresAt.slice(0, 10)) : "無期限"}</td>
+            <td><button onclick="del('${esc(it.key)}', this)">削除</button></td>
+          </tr>`).join("");
+        const page = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ストレージ一覧｜ものがたりっち</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Kaku Gothic ProN',sans-serif;background:#F5F5F4;color:#1C1C1E;padding:24px;}
+h1{font-size:20px;margin-bottom:4px;} .sub{color:#71717A;font-size:13px;margin-bottom:18px;}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06);}
+th,td{text-align:left;padding:10px 12px;font-size:13px;border-bottom:1px solid #E7E5E4;}
+th{background:#EFEFED;font-weight:700;color:#52525B;}
+button{font-size:11px;font-weight:700;color:#B91C1C;background:#fff;border:1px solid #FCA5A5;border-radius:100px;padding:5px 12px;cursor:pointer;}
+button:hover{background:#B91C1C;color:#fff;}
+.total{font-family:monospace;font-size:13px;color:#52525B;margin-bottom:14px;}
+</style></head><body>
+<h1>ストレージ一覧</h1>
+<p class="sub">R2にアップロードされている全ファイル（サイズ降順）。削除は7日間の復元猶予つき。</p>
+<p class="total">合計 ${fmtSize(total)}（${items.length}件）</p>
+<table><thead><tr><th>案件</th><th>ファイル名</th><th>種別</th><th>サイズ</th><th>アップ日</th><th>保存期限</th><th></th></tr></thead>
+<tbody>${rows || '<tr><td colspan="7">データがありません</td></tr>'}</tbody></table>
+<script>
+const KEY = ${JSON.stringify(key)};
+async function del(fileKey, btn) {
+  if (!confirm('このファイルを削除しますか？(7日間は復元可)')) return;
+  btn.disabled = true; btn.textContent = '削除中…';
+  const r = await fetch('/api/ops/storage/trash?key=' + encodeURIComponent(KEY) + '&fileKey=' + encodeURIComponent(fileKey), { method: 'POST' });
+  if (r.ok) { btn.closest('tr').remove(); } else { alert('削除に失敗しました'); btn.disabled = false; btn.textContent = '削除'; }
+}
+</script></body></html>`;
+        return new Response(page, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+      }
+
       if (request.method === "POST" && parts[1] === "collab") {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
@@ -2788,7 +2897,8 @@ const DELIVER_SYSTEM = `あなたは動画プロダクション「Bird Flip」�
 
 # ルール
 - 台本の中身（本人の発言・事実）だけを根拠にする。台本に無い情報は創作しない
-- タイトルは30〜40字程度。結論を全部言い切らず、続きが気になる言い回しにする
+- タイトルは30〜40字程度。結論を全部言い切らず、続きが気になる言い回しにする。案を2つ作る（title/title2）。
+  2案は言い回しの微調整ではなく切り口を変える（例：本人の言葉を引用する案／事実・数字を前面に出す案、など）
 - サムネ文言は8〜14字程度。太字1〜2行で画面に収まる短く強い言葉
 - 概要欄は250〜400字程度の文章体。箇条書き（・）は使わない。冒頭1〜2文で動画の核心と人物を紹介し、そのあと背景・見どころ・本人の思いを流れのあるつながった文章で書く。段落は2〜3つ、改行で区切ってよい。ドキュメンタリーの読み物として視聴者に語りかけるトーンで
 - 概要欄の文体は丁寧語（です・ます調）で統一する。「〜だ」「〜である」調は使わない（例:×「取り組んできた獣医師だ」→○「取り組んできた獣医師です」）。本人の発言の引用「」内は原文のままでよい
@@ -2810,13 +2920,14 @@ const DELIVER_TOOL = {
   input_schema: {
     type: "object",
     properties: {
-      title: { type: "string", description: "投稿用タイトル（30〜40字程度）" },
+      title: { type: "string", description: "投稿用タイトル案1（30〜40字程度）" },
+      title2: { type: "string", description: "投稿用タイトル案2（30〜40字程度・案1とは切り口を変える）" },
       thumbText: { type: "string", description: "サムネ文言（8〜14字程度）" },
       description: { type: "string", description: "概要欄テキスト（文章体250〜400字、です・ます調、箇条書き禁止）" },
       hashtags: { type: "string", description: "#区切りのハッシュタグ（5〜8個、半角スペース区切り1行）" },
       chapters: { type: "string", description: "目次。1行1章「M:SS ラベル」。0:00始まり。ラベルは検索されそうな具体語入り8〜18字。文字起こしが無い時は省略" },
     },
-    required: ["title", "thumbText", "description", "hashtags"],
+    required: ["title", "title2", "thumbText", "description", "hashtags"],
   },
 };
 
