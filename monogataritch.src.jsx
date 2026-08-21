@@ -2086,19 +2086,43 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
     const ok = await onCopyGalleryUrl();
     if (ok !== false) { setGalleryCopied(true); setTimeout(() => setGalleryCopied(false), 1800); }
   };
-  const pollList = async (snap, token, tries = 0) => {
-    if (tries > 80) return;
-    try {
-      const r = await fetch(SHARE_API + "/api/shorts/list/" + snap + "?token=" + encodeURIComponent(token || ""));
-      const d = await r.json();
-      if (d && !d.error) {
-        setItems(d.shorts || []); setJobs(d.jobs || []);
-        if (!(d.jobs || []).some((j) => j.status === "pending" || j.status === "processing")) return;
+  // ポーリングに世代管理を導入（2026-08-21 Codex調査で判明したバグ対策）。
+  // 旧実装はキャンセル機構が無く、案件を切り替えても古いポーリングが動き続け、
+  // 後から届く古い応答（生成中だった時点のスナップショット）が新しい案件の表示を
+  // 上書きしていた（「昨日完了したはずのショートが今日また生成中に見える」の原因）。
+  // gen（世代番号）を持たせ、shareId/shareToken変更時やアンマウント時に世代を進めて
+  // 古いチェーンを無効化する。fetch失敗時も古いpending/processingを握り続けない。
+  const pollGenRef = React.useRef(0);
+  const pollList = React.useCallback((snap, token, tries = 0) => {
+    pollGenRef.current += 1;
+    const gen = pollGenRef.current;
+    const step = async (n) => {
+      if (n > 80 || gen !== pollGenRef.current) return;
+      try {
+        const r = await fetch(SHARE_API + "/api/shorts/list/" + snap + "?token=" + encodeURIComponent(token || ""), { cache: "no-store" });
+        if (gen !== pollGenRef.current) return;
+        const d = await r.json();
+        if (gen !== pollGenRef.current) return;
+        if (d && !d.error) {
+          setItems(d.shorts || []); setJobs(d.jobs || []);
+          if (!(d.jobs || []).some((j) => j.status === "pending" || j.status === "processing")) return;
+        } else {
+          setJobs((js) => js.filter((j) => j.status !== "pending" && j.status !== "processing"));
+          return;
+        }
+      } catch (e) {
+        if (gen !== pollGenRef.current) return;
+        setJobs((js) => js.filter((j) => j.status !== "pending" && j.status !== "processing"));
+        return;
       }
-    } catch (e) {}
-    setTimeout(() => pollList(snap, token, tries + 1), 5000);
-  };
-  React.useEffect(() => { if (shareId) pollList(shareId, shareToken, 0); }, [shareId]);
+      setTimeout(() => step(n + 1), 5000);
+    };
+    step(tries);
+  }, []);
+  React.useEffect(() => {
+    if (shareId) pollList(shareId, shareToken, 0);
+    return () => { pollGenRef.current += 1; };
+  }, [shareId, shareToken, pollList]);
   const running = jobs.some((j) => j.status === "pending" || j.status === "processing");
   const enqueue = async () => {
     if (!videoKey || busy || running) return;
@@ -9290,7 +9314,7 @@ export default function App() {
                           )}
                         </div>
                       ) : key === "deliverShorts" ? (
-                        <ShortsPanel videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} onCopyGalleryUrl={copyShortsGalleryUrl} accent={theme.accent}
+                        <ShortsPanel key={project.id} videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} onCopyGalleryUrl={copyShortsGalleryUrl} accent={theme.accent}
                           templateId={m.deliverShortsTemplateId || ""} onTemplateChange={(v) => setMeta("deliverShortsTemplateId", v)} />
                       ) : kind === "title2" ? (
                         // タイトル案を2つまで持てるように（2026-08-20 AK要望）。案1は構成台本のタイトルと連動、
