@@ -7573,15 +7573,19 @@ export default function App() {
             <Icon name="menu" className="w-[18px] h-[18px]" />
           </button>
           )}
-          <input
-            value={project.name}
-            onChange={(e) => renameProject(project.id, e.target.value)}
-            className="bg-transparent font-bold tracking-wide text-[14px] focus:outline-none focus:bg-white/10 rounded px-1.5 py-1 min-w-0"
-            /* 200px固定だと長いタイトルが「…」も出ずに頭だけ表示され、リネームが効いてないように見えた（2026-08-08）。
-               幅を広げ、あふれ分は省略記号にする（サイドバーの truncate と同じ見え方に揃える） */
-            style={{ color: mainText, width: "min(46vw, 420px)", textOverflow: "ellipsis" }}
-            title={project.name || "案件名（クリックで編集）"}
-          />
+          {tab === "regulations" ? (
+            <div className="font-bold tracking-wide text-[14px] px-1.5 py-1 min-w-0 truncate" style={{ color: mainText, width: "min(46vw, 420px)" }}>レギュレーション一覧</div>
+          ) : (
+            <input
+              value={project.name}
+              onChange={(e) => renameProject(project.id, e.target.value)}
+              className="bg-transparent font-bold tracking-wide text-[14px] focus:outline-none focus:bg-white/10 rounded px-1.5 py-1 min-w-0"
+              /* 200px固定だと長いタイトルが「…」も出ずに頭だけ表示され、リネームが効いてないように見えた（2026-08-08）。
+                 幅を広げ、あふれ分は省略記号にする（サイドバーの truncate と同じ見え方に揃える） */
+              style={{ color: mainText, width: "min(46vw, 420px)", textOverflow: "ellipsis" }}
+              title={project.name || "案件名（クリックで編集）"}
+            />
+          )}
           {/* カテゴリ（チャンネル）チップはヘッダーから撤去（2026-07-23 AK指示）。変更は左の案件ツリー側で行う */}
           {/* Googleアカウント（チャンネル名の右横） */}
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
@@ -7595,6 +7599,10 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
           </span>
           <div className="flex-1" />
+          <button onClick={() => setTab("regulations")} title="全社・クライアント別のレギュレーション一覧"
+            className={"h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 " + (tab === "regulations" ? "bg-white/15" : "")} style={{ color: mainText }}>
+            <Icon name="book" className="w-4 h-4 shrink-0" /><span>規定一覧</span>
+          </button>
           {/* 先方コメント */}
           {project.shareId && (
             <button onClick={() => { setShowComments(true); fetchComments(); }} title="先方コメント"
