@@ -206,7 +206,7 @@ const DEFAULT_CHANNEL = "未分類";
    msg の {url} はリンクに、{name} は案件名に置換される。mg:handoff に保存され、UIから自由に編集できる。 */
 const HANDOFF_KEY = "mg:handoff";
 const HANDOFF_DEFAULTS = [
-  { id: "editor", emoji: "✂️", label: "編集へ", tabs: ["script", "kouban", "assets", "review"], start: "script", upload: true,
+  { id: "editor", emoji: "✂️", label: "編集者へ", tabs: ["review", "script", "kouban", "assets", "manual"], start: "review", upload: true,
     msg: "{name}、構成・香盤・素材まとめました！編集よろしくお願いします🙏\n完成動画は「動画」タブから直接アップできます（大容量OK）。\n{url}\n\n編集の決め事はページ内の「マニュアル」タブにまとめてあります。初めての方は先に目を通してください。" },
   { id: "client", emoji: "🎬", label: "先方へ", tabs: ["review"], start: "review",
     msg: "{name} の動画が上がりました。ご確認お願いします（再生しながら時間指定でコメント頂けます）\n{url}" },
@@ -3172,6 +3172,7 @@ export default function App() {
   const [editHeaderChannel, setEditHeaderChannel] = useState(false); // ヘッダーからカテゴリ変更中
   const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
   const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
+  const [shareAudience, setShareAudience] = useState(null); // 動画共有先の選択（先方／編集者）
   const [shareMore, setShareMore] = useState(false);       // 共有メニュー「その他」の折りたたみ
   const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
   const [thumbTest, setThumbTest] = useState(null);        // サムネ目立ちテスト {pid, keyword, myImage, items[], myPos, busy, reveal}
@@ -3229,7 +3230,7 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     const talk = project.format === "talk";
-    const valid = ["overview", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["mindmap"]), ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
+    const valid = ["overview", "regulations", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["mindmap"]), ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
       .filter((k) => !LIVE_ONLY_TABS || LIVE_ONLY_TABS.includes(k));
     if (!valid.includes(tab)) setTab(valid[0] || "overview");
   }, [project && project.format, project && project.id, tab]);
@@ -5459,7 +5460,7 @@ export default function App() {
   };
   /* ===== 共有URL：タブ別／案件まるごと ===== */
   /* アプリのタブ → share.html のペイン名 */
-  const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files", deliver: "deliver" };
+  const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files", deliver: "deliver", manual: "manual" };
   const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (pane ? "&tab=" + pane : ""); };
   const hashGateValue = async (value) => {
     const bytes = new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value || null));
@@ -5557,7 +5558,8 @@ export default function App() {
     finally { setPreflightBusy(false); }
   };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
-  const copyShareUrl = async (t, preflightDone = false) => {
+  const copyShareUrl = async (t, preflightDone = false, audience = "") => {
+    if (t === "review" && !audience) { setShareAudience("review"); return; }
     if (t === "deliver" && !preflightDone) return openPublishPreflight();
     if ((!t || t === "review" || t === "deliver") && !(await checkPublishGate())) return;
     const had = !!project.shareId;
@@ -5598,10 +5600,10 @@ export default function App() {
     setShareModal({ id, url, updated: !!project.shareId, handoff: h, text });
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
   };
-  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", wizard: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル" };
+  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", wizard: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル", manual: "適用レギュレーション" };
   /* タブ共有バー（全タブ共通・右上に固定表示）のボタン文言 */
   const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー", deliver: "納品セットを共有" };
-  const HANDOFF_TAB_CHOICES = ["script", "kouban", "assets", "review", "plan", "hearing", "concept", "deliver"]; // 受け渡しで選べるタブ
+  const HANDOFF_TAB_CHOICES = ["review", "manual", "script", "kouban", "assets", "plan", "hearing", "concept", "deliver"]; // 受け渡しで選べるタブ
   /* AI（Claude/GPT）に読ませる用リンク。share.html ではなくサーバー読み取り可能な JSON エンドポイントを渡す。
      #フラグメントは外部fetchで読めないので live URL は不可。/api/snap/{id} はトークン不要の読み取り専用JSON。 */
   const copyAiUrl = async () => {
@@ -10404,6 +10406,28 @@ export default function App() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 動画共有先の選択 ===== */}
+      {shareAudience && (
+        <div className="fixed inset-0 z-[205] bg-black/45 flex items-center justify-center p-4" onClick={() => setShareAudience(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 flex items-center justify-between border-b border-stone-200" style={{ background: theme.main, color: mainText }}>
+              <div><h3 className="text-sm font-bold">誰に共有しますか？</h3><p className="text-[10px] opacity-70 mt-0.5">相手に必要な動画・情報・権限だけを自動で設定します</p></div>
+              <button onClick={() => setShareAudience(null)} className="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 grid sm:grid-cols-2 gap-3">
+              <button onClick={() => { setShareAudience(null); copyShareUrl("review", false, "client"); }} className="text-left rounded-xl border-2 border-stone-200 p-4 hover:border-stone-400 hover:bg-stone-50 transition-colors">
+                <div className="text-[14px] font-bold text-stone-900">先方に共有</div>
+                <p className="mt-2 text-[11px] text-stone-500 leading-relaxed">動画の再生とタイムコードコメントだけ。共有前に公開レギュレーションを確認し、社内ルールは表示しません。</p>
+              </button>
+              <button onClick={() => { const h = handoffs.find((x) => x.id === "editor") || HANDOFF_DEFAULTS[0]; setShareAudience(null); doHandoff({ ...h, tabs: Array.from(new Set(["review", ...(h.tabs || []), "manual"])), start: "review", upload: true }); }} className="text-left rounded-xl border-2 border-stone-200 p-4 hover:border-rose-300 hover:bg-rose-50/40 transition-colors">
+                <div className="text-[14px] font-bold text-stone-900">編集者に共有</div>
+                <p className="mt-2 text-[11px] text-stone-500 leading-relaxed">動画・制作情報・素材・この案件に適用されるレギュレーションを共有。動画アップとダウンロードもできます。</p>
+              </button>
             </div>
           </div>
         </div>
