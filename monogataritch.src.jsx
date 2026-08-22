@@ -3271,6 +3271,7 @@ export default function App() {
   const [shareModal, setShareModal] = useState(null);       // {url, id} or null
   const [preflight, setPreflight] = useState(null);         // MONOGATARI内の公開前チェック画面
   const [preflightBusy, setPreflightBusy] = useState(false);
+  const [studioRegs, setStudioRegs] = useState({ rules: [] }); // Studio OSで承認済みのregulation_rules（PRD実装順⑥、openPublishPreflightで都度取得）
   const [showHandoffEdit, setShowHandoffEdit] = useState(false); // 受け渡しプリセットのカスタマイズモーダル
   const [handoffs, setHandoffs] = useState(() => {          // 相手別の受け渡しプリセット（リンク＋文面）。mg:handoff に保存
     try { const s = localStorage.getItem(HANDOFF_KEY); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch (e) {}
@@ -5541,11 +5542,15 @@ export default function App() {
      全社共通(APPLIED_PREFLIGHT_RULES+globalManuals)・クライアント共通(curChannelInfo.manuals)・
      案件固有(project.manuals)を1件ずつのチェック項目としてこの下のpreflightモーダルへ合流させる。
      全社ルールは配列インデックス、決め事はuid()のidをキーにして、他の項目と混ざらないようprefixする。 */
+  const REG_DECISION_LABEL = { deny: "禁止", allow: "許可", approval_required: "要承認確認" };
   const regulationChecklist = [
     ...APPLIED_PREFLIGHT_RULES.map(([cat, rule], i) => ({ key: "pf" + i, scope: "全社", cat, title: rule, body: "" })),
     ...(globalManuals || []).map((m) => ({ key: "gm:" + m.id, scope: "全社", cat: m.cat || "全社ルール", title: m.title || "名称未設定", body: m.body || "" })),
     ...(curChannelInfo.manuals || []).map((m) => ({ key: "cm:" + m.id, scope: curChannel, cat: m.cat || "クライアントルール", title: m.title || "名称未設定", body: m.body || "" })),
     ...((project.manuals) || []).map((m) => ({ key: "pm:" + m.id, scope: "この案件", cat: m.cat || "案件ルール", title: m.title || "名称未設定", body: m.body || "" })),
+    // 08-22 AK指示（PRD実装順⑥）: Studio OSで登録・承認済みのregulation_rulesもここへ合流させる。
+    // openPublishPreflightがproject.studioGateTokenを使って都度取得しstudioRegsへ保存している。
+    ...(studioRegs.rules || []).map((r) => ({ key: "sr:" + r.id, scope: "Studio OS", cat: r.category, title: `${r.title}（${REG_DECISION_LABEL[r.decision] || r.decision}）`, body: r.description || "" })),
   ];
   /* resumeを渡すと、チェック完了直後にその関数を呼び直して元々やろうとしていた共有処理を続行する
      （08-22 AK指示: 納品タブだけでなく全ての共有経路をこのチェックリストに通すため、
@@ -5554,6 +5559,13 @@ export default function App() {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
     setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "", resume: resume || null });
     setPreflightBusy(true);
+    // PRD実装順⑥: Studio OSで承認済みのregulation_rulesを取得してチェックリストへ合流させる。
+    // 失敗してもローカルのmanualsベースのチェックリストは動くので、ここは静かに諦める。
+    if (project.studioGateToken) {
+      fetch("https://studio-os-5dm.pages.dev/api/v1/public/regulations?mg_project_id=" + encodeURIComponent(project.id) + "&gate_token=" + encodeURIComponent(project.studioGateToken))
+        .then((r) => r.json()).then((d) => { if (d && d.data) setStudioRegs(d.data); })
+        .catch(() => {});
+    }
     try {
       const r = await fetch(SHARE_API + "/api/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) });
       const d = await r.json();
