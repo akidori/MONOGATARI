@@ -5509,6 +5509,16 @@ export default function App() {
     ["corrections", "過去の修正指示とNG事項を反映した"],
     ["privacy", "個人情報・家族・場所・センシティブ情報を確認した"],
   ];
+  const APPLIED_PREFLIGHT_RULES = [
+    ["ブランド", "本人が何者として認識されたいかという現在のブランドを最優先する", "全社"],
+    ["プライバシー", "居住地・住所・家族・個人情報は、明示承認なしに公開しない", "全社"],
+    ["センシティブ", "医療・ワクチン・過去のトラウマは、本編と広告訴求を切り分ける", "全社"],
+    ["サムネ・タイトル", "センシティブ情報をサムネ・タイトルの主訴求にしない", "全社"],
+    ["個別承認", "本編・サムネ・タイトル・概要欄は、それぞれ個別に承認する", "全社"],
+    ["表現", "CTRより出演者の信頼を優先し、煽り・センセーショナル表現を避ける", "全社"],
+    ["過去修正", "一度共有されたNG事項と過去の修正内容を全工程へ反映する", "全社"],
+    ["再承認", "承認後に変更した成果物は、変更後の版で再承認する", "全社"],
+  ];
   const openPublishPreflight = async () => {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
     setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "" });
@@ -10350,6 +10360,19 @@ export default function App() {
                   ))}
                 </div>
               </section>
+              <details className="rounded-xl border border-stone-200 bg-stone-50/50 overflow-hidden">
+                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-800 select-none">今回適用されるレギュレーション <span className="ml-1 text-[10px] font-normal text-stone-400">{APPLIED_PREFLIGHT_RULES.length}件・Obsidian承認済み</span></summary>
+                <div className="border-t border-stone-200 bg-white px-3.5 py-1">
+                  {APPLIED_PREFLIGHT_RULES.map(([category, rule, scope], i) => (
+                    <div key={category + rule} className={"flex items-start gap-2.5 py-2.5 " + (i ? "border-t border-stone-100" : "")}>
+                      <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">{category}</span>
+                      <span className="flex-1 text-[11.5px] leading-relaxed text-stone-700">{rule}</span>
+                      <span className="shrink-0 text-[9px] text-stone-400">{scope}</span>
+                    </div>
+                  ))}
+                  <div className="border-t border-stone-100 py-2 text-[9.5px] text-stone-400">出典：{preflight.knowledgeVersion}　今後はクライアント・チャンネル・案件固有ルールもここへ自動追加されます。</div>
+                </div>
+              </details>
               <section className="rounded-xl border border-stone-200 p-3.5">
                 <div className="flex items-center gap-2 mb-2"><span className="text-[12px] font-bold text-stone-800">AIが自動で確認</span>{preflightBusy && <span className="text-[10px] text-indigo-500">確認中…</span>}</div>
                 <p className="text-[11px] text-stone-500 leading-relaxed">ブランド、個人情報、センシティブ情報、煽り表現、過去修正、個別承認の懸念をObsidianの承認済みルールと照合します。</p>
