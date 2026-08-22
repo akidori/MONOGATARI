@@ -654,7 +654,7 @@ function paneManual(p, accent, main){
       <div class="text-[11px] font-bold" style="color:${main}">開く →</div>
     </a>` : "";
   // Flip-LABのチャンネル編集ルール（編集者リンクのみ・mountLabManualが非同期で埋める）
-  return guide + `<div id="lab-manual"></div>` + (sections || (guide ? "" : '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>'));
+  return guide + (sections || (guide ? "" : '<div class="text-stone-400 text-sm py-8 text-center">マニュアルは登録されていません。</div>'));
 }
 
 /* ── 編集者向け「いまやること」コーチ ──
@@ -757,24 +757,9 @@ function editorCoach(p, main, accent){
   </section>`;
 }
 /* Flip-LABの編集ルールを取得して表示。機密（NGワード等）が乗るため編集者トークン(&up=)がある時だけ。 */
-let LABMAN;
 async function mountLabManual(p){
-  const el=document.getElementById("lab-manual"); if(!el) return;
-  if(!UP_TOKEN || !p.channel){ el.innerHTML=""; return; }
-  if(LABMAN===undefined){
-    el.innerHTML='<div class="text-[11px] text-stone-400 py-1 mb-2">Flip-LABの編集ルールを読み込み中…</div>';
-    try{
-      const qs=new URLSearchParams({ channel:p.channel, id:ID, up:UP_TOKEN });
-      LABMAN=await fetch(API+"/api/lab-manual?"+qs.toString()).then(r=>r.json());
-    }catch(e){ LABMAN={}; }
-  }
-  const d=LABMAN||{};
-  const cur=document.getElementById("lab-manual"); if(!cur) return;
-  if(!d.manual){ cur.innerHTML=""; return; }
-  cur.innerHTML=`<div class="mb-5">
-    <div class="flex items-center gap-1.5 text-[12px] font-bold mb-2 text-stone-700">${icon("note","w-3.5 h-3.5 text-stone-400")}${esc(p.channel)} 編集ルール（Flip-LAB）${d.updated?`<span class="ml-auto text-[10px] text-stone-400 mono font-normal">${esc(String(d.updated).slice(0,10))}時点</span>`:""}</div>
-    <div class="rounded-xl border border-stone-200 bg-white p-3 text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">${esc(d.manual)}</div>
-  </div>`;
+  // Flip-LAB連携は廃止。共有スナップに同梱されたObsidian由来のマニュアルだけを表示する。
+  return;
 }
 function paneConcept(p){
   const ci = p.channelInfo;
@@ -863,7 +848,9 @@ function render(){
   const infoBlock = (TAB==="script" && !isTalk) ? metaInfoBlock(p) : "";
 
   const appEl = document.getElementById("app");
-  if(appEl) appEl.style.maxWidth = (TAB==="video") ? "1280px" : "820px";
+  // タブ列の基準幅を全ページで固定する。本文幅に合わせて変えると、
+  // 動画→香盤表などの切替時にタブ全体が左右へ跳ねて操作位置を見失う。
+  if(appEl) appEl.style.maxWidth = "1280px";
   // 編集者URL専用：「動画を上げる」「このタブだけURL」「確認URLをコピー」。
   // 旧実装はfixed右上固定でチャンネル名や本文に被っていた（2026-08-18 AK指摘）→ヘッダー行の中に置く
   const editorBar = (UP_TOKEN && !CHMODE) ? `
@@ -880,7 +867,6 @@ function render(){
         ${editorBar}
       </div>
     </div>
-    ${editorCoach(p, main, accent)}
     ${tabBar}
     ${/* 番組情報カードが出る時はそこにタイトル行があるので、大枠の見出しは出さない（AK指示: タイトルも普通の表示で） */""}
     ${infoBlock ? "" : `<div class="mb-4">
