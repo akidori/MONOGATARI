@@ -5520,6 +5520,16 @@ export default function App() {
     ["過去修正", "一度共有されたNG事項と過去の修正内容を全工程へ反映する", "全社"],
     ["再承認", "承認後に変更した成果物は、変更後の版で再承認する", "全社"],
   ];
+  /* 08-22 AK指示: レギュレーション一覧に並ぶだけの読み物では公開前チェックとして機能しないため、
+     全社共通(APPLIED_PREFLIGHT_RULES+globalManuals)・クライアント共通(curChannelInfo.manuals)・
+     案件固有(project.manuals)を1件ずつのチェック項目としてこの下のpreflightモーダルへ合流させる。
+     全社ルールは配列インデックス、決め事はuid()のidをキーにして、他の項目と混ざらないようprefixする。 */
+  const regulationChecklist = [
+    ...APPLIED_PREFLIGHT_RULES.map(([cat, rule], i) => ({ key: "pf" + i, scope: "全社", cat, title: rule, body: "" })),
+    ...(globalManuals || []).map((m) => ({ key: "gm:" + m.id, scope: "全社", cat: m.cat || "全社ルール", title: m.title || "名称未設定", body: m.body || "" })),
+    ...(curChannelInfo.manuals || []).map((m) => ({ key: "cm:" + m.id, scope: curChannel, cat: m.cat || "クライアントルール", title: m.title || "名称未設定", body: m.body || "" })),
+    ...((project.manuals) || []).map((m) => ({ key: "pm:" + m.id, scope: "この案件", cat: m.cat || "案件ルール", title: m.title || "名称未設定", body: m.body || "" })),
+  ];
   const openPublishPreflight = async () => {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
     setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "" });
@@ -5539,6 +5549,7 @@ export default function App() {
   });
   const finishPublishPreflight = async () => {
     if (!preflight || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k])) return showToast("人が確認する4項目を完了してください");
+    if (regulationChecklist.some((r) => !preflight.checks[r.key])) return showToast("レギュレーションのチェックが残っています");
     if (preflight.error) return showToast("AIチェックが完了していないためURL生成を停止しました");
     if ((preflight.concerns || []).some((c) => c.severity === "block")) return showToast("要修正の項目があります。内容を直してもう一度チェックしてください");
     if ((preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが見つけた懸念点を確認してください");
@@ -10468,17 +10479,21 @@ export default function App() {
                   ))}
                 </div>
               </section>
-              <details className="rounded-xl border border-stone-200 bg-stone-50/50 overflow-hidden">
-                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-800 select-none">今回適用されるレギュレーション <span className="ml-1 text-[10px] font-normal text-stone-400">{APPLIED_PREFLIGHT_RULES.length}件・Obsidian承認済み</span></summary>
+              <details open className="rounded-xl border border-stone-200 bg-stone-50/50 overflow-hidden">
+                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-800 select-none">今回確認するレギュレーション <span className="ml-1 text-[10px] font-normal text-stone-400">{regulationChecklist.length}件・{regulationChecklist.filter((r) => preflight.checks[r.key]).length}件確認済み</span></summary>
                 <div className="border-t border-stone-200 bg-white px-3.5 py-1">
-                  {APPLIED_PREFLIGHT_RULES.map(([category, rule, scope], i) => (
-                    <div key={category + rule} className={"flex items-start gap-2.5 py-2.5 " + (i ? "border-t border-stone-100" : "")}>
-                      <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">{category}</span>
-                      <span className="flex-1 text-[11.5px] leading-relaxed text-stone-700">{rule}</span>
-                      <span className="shrink-0 text-[9px] text-stone-400">{scope}</span>
-                    </div>
+                  {regulationChecklist.map((r, i) => (
+                    <label key={r.key} className={"flex items-start gap-2.5 py-2.5 cursor-pointer " + (i ? "border-t border-stone-100" : "")}>
+                      <input type="checkbox" checked={!!preflight.checks[r.key]} onChange={() => toggleHumanPreflight(r.key)} className="mt-0.5 w-4 h-4 accent-emerald-600 shrink-0" />
+                      <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">{r.cat}</span>
+                      <span className="flex-1 min-w-0 text-[11.5px] leading-relaxed text-stone-700">
+                        {r.title}
+                        {r.body && <span className="block text-[10.5px] text-stone-500 mt-0.5 whitespace-pre-wrap">{r.body}</span>}
+                      </span>
+                      <span className="shrink-0 text-[9px] text-stone-400">{r.scope}</span>
+                    </label>
                   ))}
-                  <div className="border-t border-stone-100 py-2 text-[9.5px] text-stone-400">出典：{preflight.knowledgeVersion}　今後はクライアント・チャンネル・案件固有ルールもここへ自動追加されます。</div>
+                  {regulationChecklist.length === 0 && <p className="text-[11px] text-stone-400 py-3">適用されるレギュレーションはありません。</p>}
                 </div>
               </details>
               <section className="rounded-xl border border-stone-200 p-3.5">
@@ -10504,7 +10519,7 @@ export default function App() {
             </div>
             <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50">
               <span className="text-[10px] text-stone-400">案件とクライアントは自動判定済みです</span>
-              <button onClick={finishPublishPreflight} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block" || !preflight.acknowledged[c.id])}
+              <button onClick={finishPublishPreflight} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || regulationChecklist.some((r) => !preflight.checks[r.key]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block" || !preflight.acknowledged[c.id])}
                 className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
                 {preflightBusy ? "AI確認中…" : "確認を完了してURL生成"}
               </button>
