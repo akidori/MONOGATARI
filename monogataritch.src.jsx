@@ -4852,9 +4852,9 @@ export default function App() {
     return () => { cancelled = true; };
   }, [tab, curChannel, activeId, index, loaded, project && project.id]);
 
-  /* ホーム表示中は全案件の本体を読み込んでカードにステータス/締切/次の一手を出す（取れたものから順次） */
+  /* ホーム／レギュレーション一覧では全案件本体を読み込む（取れたものから順次） */
   useEffect(() => {
-    if (!loaded || view !== "home") return;
+    if (!loaded || (view !== "home" && tab !== "regulations")) return;
     let cancelled = false;
     (async () => {
       for (const x of index) {
@@ -4868,7 +4868,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [view, index, loaded]);
+  }, [view, tab, index, loaded]);
   /* アクティブ案件にplans[0]が無ければ1枠だけ用意（ボード編集の土台） */
   useEffect(() => {
     if (tab !== "plan" || !project) return;
@@ -7849,9 +7849,8 @@ export default function App() {
                 <Icon name="book" className="w-6 h-6 mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <h2 className="text-xl font-bold">レギュレーション一覧</h2>
-                  <p className="mt-1 text-[12px] text-stone-300 leading-relaxed">登録の基本単位はクライアント／チャンネルです。全案件共通 → クライアント共通 → 案件固有の例外、の順に自動適用されます。</p>
+                  <p className="mt-1 text-[12px] text-stone-300 leading-relaxed">全案件共通のレギュレーションと、各案件のレギュレーションを一つのページで確認できます。</p>
                 </div>
-                <button onClick={() => { setManualScope("channel"); setShowManual(true); }} className="shrink-0 rounded-lg bg-white text-stone-900 px-3 py-2 text-[11px] font-bold hover:bg-stone-100">「{curChannel}」の規定を編集</button>
               </div>
             </div>
 
@@ -7874,40 +7873,22 @@ export default function App() {
             </section>
 
             <section className={cardCls}>
-              {cardHead("クライアント／チャンネル別", <span className="text-[10px] text-stone-400">{channelGroups.length}件</span>)}
-              <div className="p-4 space-y-3">
-                {channelGroups.map(({ channel, items }) => {
-                  const info = channelInfo[channel] || {};
-                  const rules = info.manuals || [];
-                  return <details key={channel} open={channel === curChannel} className="rounded-xl border border-stone-200 bg-white overflow-hidden">
-                    <summary className="cursor-pointer px-4 py-3 flex items-center gap-2 bg-stone-50 select-none">
-                      <Icon name="folder" className="w-4 h-4 text-stone-500" /><span className="text-[13px] font-bold text-stone-800">{channel}</span>
-                      <span className="text-[10px] text-stone-400 ml-auto">共通ルール {rules.length}件・案件 {items.length}件</span>
-                    </summary>
-                    <div className="p-3 space-y-2">
-                      {rules.length === 0 && <p className="text-[11px] text-stone-400 px-1">チャンネル共通の追加ルールはまだありません。</p>}
-                      {rules.map((m, i) => <div key={i} className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2"><span className="text-[10px] font-bold text-amber-700">{m.cat || "チャンネルルール"}</span><div className="text-[12px] font-bold text-stone-800">{m.title || "名称未設定"}</div>{m.body && <div className="text-[11px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</div>}</div>)}
-                      <div className="pt-1 grid sm:grid-cols-2 gap-2">
-                        {items.map((x) => {
-                          const d = caseData(x.id);
-                          const manuals = (d && d.manuals) || [];
-                          return <div key={x.id} className={"rounded-lg border px-3 py-2 " + (x.id === activeId ? "border-rose-200 bg-rose-50/50" : "border-stone-200 bg-white")}>
-                            <div className="flex items-center gap-2"><span className="text-[12px] font-bold text-stone-800 truncate">{x.name}</span>{x.id === activeId && <span className="text-[9px] font-bold text-rose-600 shrink-0">開いている案件</span>}<span className="ml-auto text-[10px] text-stone-400 shrink-0">例外 {manuals.length}件</span></div>
-                            {manuals.map((m, i) => <div key={i} className="mt-2 pl-2 border-l-2 border-rose-200"><div className="text-[11px] font-bold text-stone-700">{m.title || "名称未設定"}</div>{m.body && <div className="text-[10px] text-stone-500 whitespace-pre-wrap">{m.body}</div>}</div>)}
-                            {!d && <div className="text-[9px] text-stone-400 mt-1">案件を開くと固有ルールを表示します</div>}
-                          </div>;
-                        })}
-                      </div>
+              {cardHead("各案件のレギュレーション", <span className="text-[10px] text-stone-400">全{index.length}案件</span>)}
+              <div className="p-4 grid sm:grid-cols-2 gap-3">
+                {index.map((x) => {
+                  const d = caseData(x.id);
+                  const manuals = (d && d.manuals) || [];
+                  return <div key={x.id} className="rounded-xl border border-stone-200 bg-white px-4 py-3">
+                    <div className="flex items-start gap-2 mb-2">
+                      <div className="min-w-0 flex-1"><div className="text-[13px] font-bold text-stone-800 truncate">{x.name}</div><div className="text-[10px] text-stone-400 truncate">{x.channel || DEFAULT_CHANNEL}</div></div>
+                      <span className="text-[10px] font-bold text-stone-500 shrink-0">{manuals.length}件</span>
                     </div>
-                  </details>;
+                    {manuals.length ? manuals.map((m, i) => <div key={i} className="mt-2 rounded-lg bg-rose-50 border border-rose-100 px-3 py-2"><div className="text-[10px] font-bold text-rose-700">{m.cat || "案件ルール"}</div><div className="text-[12px] font-bold text-stone-800">{m.title || "名称未設定"}</div>{m.body && <div className="text-[11px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</div>}</div>) : <div className="text-[11px] text-stone-400">案件固有のレギュレーションはありません</div>}
+                    {!d && <div className="text-[9px] text-amber-600 mt-1">データ読込中</div>}
+                  </div>;
                 })}
               </div>
             </section>
-
-            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-800 leading-relaxed">
-              <span className="font-bold">現在の案件：</span>{project.name} ／ {curChannel}　
-              公開前チェックでは、上の全案件共通ルール・「{curChannel}」の共通ルール・この案件だけの例外を自動でまとめて確認します。
-            </div>
           </div>
         )}
 
@@ -10106,6 +10087,10 @@ export default function App() {
               <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
               <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
               <div className="flex-1" />
+              <button onClick={() => { setView("editor"); setTab("regulations"); }}
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10">
+                <Icon name="book" className="w-4 h-4" />レギュレーション
+              </button>
               <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
                 className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10">
                 {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
