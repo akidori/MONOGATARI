@@ -4038,6 +4038,7 @@ export default function App() {
       const ci = channelInfo[channel] || {};
       const entries = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === channel);
       const projects = [];
+      const blockedNames = [];
       for (const x of entries) {
         let p = null;
         try {
@@ -4046,6 +4047,11 @@ export default function App() {
           else { const r = await window.storage.get(STORE_PROJ(x.id)); if (r && r.value) p = JSON.parse(r.value); }
         } catch (e) {}
         if (!p) continue;
+        // 08-22 AK指示: チャンネル一括共有（複数案件を1つのURLでまとめて見せる）は個別案件の
+        // 公開前チェックリストを素通りしていたため、発行前に案件ごとにStudio OSのゲートを確認する。
+        // 1件でも未完了ならチャンネル全体の発行を止め、案件名を挙げて個別に完了させる（トーストは
+        // 1件ずつ出すとうるさいのでsilent、最後にまとめて1回だけ出す）。
+        if (!(await checkPublishGate(p, true))) { blockedNames.push(x.name); continue; }
         // 編集共有：案件ごとに live 文書を発行（既存があれば現在の内容で再シード）して編集リンクを得る
         if (editable) {
           try {
@@ -4067,6 +4073,7 @@ export default function App() {
         }
         projects.push(p);
       }
+      if (blockedNames.length) throw new Error(blockedNames.join("・") + " が公開前チェック未完了です。各案件を開き「共有」から確認を完了してください");
       const res = await fetch(SHARE_API + "/api/publish-channel", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: channel, channelInfo: { ...ci, name: ci.name || channel }, projects, edit: editable, prevId: ci.shareId || null, token: ci.shareToken || null }),
@@ -4853,9 +4860,11 @@ export default function App() {
     return () => { cancelled = true; };
   }, [tab, curChannel, activeId, index, loaded, project && project.id]);
 
-  /* ホーム表示中は全案件の本体を読み込んでカードにステータス/締切/次の一手を出す（取れたものから順次） */
+  /* ホーム／レギュレーション一覧では全案件本体を読み込む（取れたものから順次）。
+     レギュレーション一覧のクライアント／チャンネル別グルーピング表示（caseData経由でmanuals件数
+     を出す）が全案件のboardCacheを必要とするため。 */
   useEffect(() => {
-    if (!loaded || view !== "home") return;
+    if (!loaded || (view !== "home" && tab !== "regulations")) return;
     let cancelled = false;
     (async () => {
       for (const x of index) {
@@ -4869,7 +4878,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [view, index, loaded]);
+  }, [view, tab, index, loaded]);
   /* アクティブ案件にplans[0]が無ければ1枠だけ用意（ボード編集の土台） */
   useEffect(() => {
     if (tab !== "plan" || !project) return;
@@ -5467,40 +5476,48 @@ export default function App() {
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
   };
-  const publishArtifactHashes = async () => {
-    const meta = project.meta || {};
+  /* pを渡すと任意の案件（チャンネル一括共有で読み込んだ他案件など）に対して計算できる。
+     省略時は現在開いている project（従来通りの挙動）。 */
+  const publishArtifactHashes = async (p) => {
+    const pr = p || project;
+    const meta = pr.meta || {};
     const thumbs = Array.isArray(meta.deliverThumbImages) ? meta.deliverThumbImages : [];
-    const activeVideos = reviewVersions().filter((v) => v && !v.trashedAt).map((v) => ({ id: v.id, key: v.key, url: v.url, uid: v.uid, label: v.label }));
+    const activeVideos = reviewVersions(pr).filter((v) => v && !v.trashedAt).map((v) => ({ id: v.id, key: v.key, url: v.url, uid: v.uid, label: v.label }));
     return {
-      structure: await hashGateValue({ plans: project.plans || [], rows: project.rows || [], talk: project.talk || null }),
+      structure: await hashGateValue({ plans: pr.plans || [], rows: pr.rows || [], talk: pr.talk || null }),
       video: await hashGateValue({ deliverVideoUrl: meta.deliverVideoUrl || "", versions: activeVideos }),
       thumbnail: await hashGateValue(thumbs),
       title: await hashGateValue(meta.deliverTitle || ""),
       description: await hashGateValue(meta.deliverDescription || ""),
     };
   };
-  const checkPublishGate = async () => {
-    if (!project.studioGateToken) {
-      showToast("Studio OSの公開ゲートが未接続です。Studio OSの案件画面から接続してください");
+  /* silent=trueはチャンネル一括共有の事前チェックなど、案件ごとにトーストを出したくない場面用。
+     pを渡すと現在開いていない案件も検査できる（publishArtifactHashesと同じ理由）。 */
+  const checkPublishGate = async (p, silent = false) => {
+    const pr = p || project;
+    if (!pr.studioGateToken) {
+      if (!silent) showToast("Studio OSの公開ゲートが未接続です。Studio OSの案件画面から接続してください");
       return false;
     }
-    const artifactHashes = await publishArtifactHashes();
+    const artifactHashes = await publishArtifactHashes(pr);
     try {
       const res = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/check", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mgProjectId: project.id, gateToken: project.studioGateToken, artifactHashes }),
+        body: JSON.stringify({ mgProjectId: pr.id, gateToken: pr.studioGateToken, artifactHashes }),
       });
       const payload = await res.json();
       const result = payload && payload.data;
       if (!res.ok || !result || !result.allowShare) {
-        const first = result && Array.isArray(result.checks) ? result.checks.find((c) => c.result !== "pass") : null;
-        showToast("公開チェック：" + ((result && result.result) || "UNKNOWN") + " — " + ((first && first.reason) || "Studio OSで承認を確認してください"));
+        if (!silent) {
+          const first = result && Array.isArray(result.checks) ? result.checks.find((c) => c.result !== "pass") : null;
+          showToast("公開チェック：" + ((result && result.result) || "UNKNOWN") + " — " + ((first && first.reason) || "Studio OSで承認を確認してください"));
+        }
         return false;
       }
-      showToast("公開チェック PASS：承認済みの版と一致しました");
+      if (!silent) showToast("公開チェック PASS：承認済みの版と一致しました");
       return true;
     } catch (e) {
-      showToast("公開チェックに接続できないためURL生成を停止しました");
+      if (!silent) showToast("公開チェックに接続できないためURL生成を停止しました");
       return false;
     }
   };
@@ -5530,9 +5547,12 @@ export default function App() {
     ...(curChannelInfo.manuals || []).map((m) => ({ key: "cm:" + m.id, scope: curChannel, cat: m.cat || "クライアントルール", title: m.title || "名称未設定", body: m.body || "" })),
     ...((project.manuals) || []).map((m) => ({ key: "pm:" + m.id, scope: "この案件", cat: m.cat || "案件ルール", title: m.title || "名称未設定", body: m.body || "" })),
   ];
-  const openPublishPreflight = async () => {
+  /* resumeを渡すと、チェック完了直後にその関数を呼び直して元々やろうとしていた共有処理を続行する
+     （08-22 AK指示: 納品タブだけでなく全ての共有経路をこのチェックリストに通すため、
+     どの共有操作から呼ばれても戻れるようにresumeで汎用化した）。 */
+  const openPublishPreflight = async (resume) => {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
-    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "" });
+    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "", resume: resume || null });
     setPreflightBusy(true);
     try {
       const r = await fetch(SHARE_API + "/api/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) });
@@ -5563,16 +5583,19 @@ export default function App() {
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d?.error?.message || "承認記録を保存できませんでした");
+      const resume = preflight.resume;
       setPreflight(null);
-      await copyShareUrl("deliver", true);
+      if (resume) await resume();
     } catch (e) { showToast("公開前チェックを完了できませんでした：" + (e.message || e)); }
     finally { setPreflightBusy(false); }
   };
-  /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
+  /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー。
+     08-22 AK指示: 従来は納品(deliver)/動画確認(review)/案件まるごとの3経路だけがゲート対象で、
+     構成台本・香盤表・素材などタブ単体の共有は素通りしていた。共有はどの経路でも「先方にこの
+     案件の中身を見せる」行為として同じリスクを持つため、tの値に関わらず全経路をゲートする。 */
   const copyShareUrl = async (t, preflightDone = false, audience = "") => {
     if (t === "review" && !audience) { setShareAudience("review"); return; }
-    if (t === "deliver" && !preflightDone) return openPublishPreflight();
-    if ((!t || t === "review" || t === "deliver") && !(await checkPublishGate())) return;
+    if (!preflightDone && !(await checkPublishGate())) return openPublishPreflight(() => copyShareUrl(t, true, audience));
     const had = !!project.shareId;
     // 既存リンクでも必ず再発行してから渡す。動画確認の版など最新状態をスナップに反映するため
     // （これが無いと「URLをコピーするだけ」になり、追加した確認動画が共有ページに出ず別動画にフォールバックする）
@@ -5584,8 +5607,10 @@ export default function App() {
   };
   /* 切り抜きショートだけをまとめて見せる先方用URL（mg-share workerの /shorts/{snap}?r=<rtok> ギャラリー
      ページ、全本を1画面で再生・DLできる）。ShortsPanelの「共有URL」ボタンから呼ばれる。
-     戻り値がfalseならコピー失敗（ShortsPanel側でボタンの「コピーしました」表示を出さない）。 */
-  const copyShortsGalleryUrl = async () => {
+     戻り値がfalseならコピー失敗（ShortsPanel側でボタンの「コピーしました」表示を出さない）。
+     08-22 AK指示: これも先方に見せるURLである以上、他の共有経路と同じく公開前チェックを通す。 */
+  const copyShortsGalleryUrl = async (preflightDone = false) => {
+    if (!preflightDone && !(await checkPublishGate())) { openPublishPreflight(() => copyShortsGalleryUrl(true)); return false; }
     const id = await publishShare(true);
     if (!id) return false;
     const rtok = project.shareReadToken || shareReadTokRef.current || "";
@@ -6246,7 +6271,7 @@ export default function App() {
   };
 
   /* ===== 確認動画バージョン（v1/v2/v3…） ===== */
-  const reviewVersions = () => (project && project.review && Array.isArray(project.review.versions)) ? project.review.versions : [];
+  const reviewVersions = (p) => { const pr = p || project; return (pr && pr.review && Array.isArray(pr.review.versions)) ? pr.review.versions : []; };
   const activeReviewVersions = () => reviewVersions().filter((v) => !v.trashedAt);
   const trashedReviewVersions = () => reviewVersions().filter((v) => v.trashedAt);
   const setVersions = (updater) => setProject((p) => { const rv = (p.review && p.review.versions) || []; const next = typeof updater === "function" ? updater(rv) : updater; return { ...p, review: { versions: next, comments: (p.review && p.review.comments) || [] } }; });
