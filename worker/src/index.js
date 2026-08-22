@@ -119,7 +119,7 @@ export default {
 
     try {
       // AI系エンドポイントのIPレート制限（無認証で叩けるためANTHROPIC/YT予算の焼却DoSを防ぐ）
-      if (parts[0] === "api" && ["parse", "assist", "review", "deliver", "hearing", "chat", "help", "yt", "ytsearch", "skeleton", "fillqa", "wizard"].includes(parts[1])) {
+      if (parts[0] === "api" && ["parse", "assist", "review", "preflight", "deliver", "hearing", "chat", "help", "yt", "ytsearch", "skeleton", "fillqa", "wizard"].includes(parts[1])) {
         // 緊急停止スイッチ（監査P0）：KV ops:kill = {"ai":true} で全AI系を503。
         // 有効化: cd worker && npx wrangler kv key put ops:kill '{"ai":true}' --namespace-id dae9e99997cc4ad29722f28f4c23476f --remote
         if (await opsKilled(env, "ai")) return json({ error: "AI機能は現在一時停止中です" }, 503);
@@ -128,14 +128,16 @@ export default {
         // 日次予算（監査P0「ユーザー別予算が無い」対応）：ログイン済みはsub単位、無認証はIP単位。
         // Claude課金ルートのみ対象（yt/ytsearchはYouTube APIかつボード表示で大量に飛ぶ＝KV書込枠を守るため除外）。
         // アプリのAI呼び出しは大半が無認証fetchなので、IP側は編集者・AKの実運用を妨げない値を既定にする
-        if (["parse", "assist", "review", "deliver", "hearing", "chat", "help", "skeleton", "fillqa", "wizard"].includes(parts[1])) {
+        if (["parse", "assist", "review", "preflight", "deliver", "hearing", "chat", "help", "skeleton", "fillqa", "wizard"].includes(parts[1])) {
           const du = await requireUser(request, env);
           const dayKey = du ? "u:" + du.sub : "ip:" + ip;
           const dayLimit = du ? +(env.AI_DAY_LIMIT_USER || 800) : +(env.AI_DAY_LIMIT_IP || 200);
           if (!(await rateLimit(env, dayKey, "aiday", dayLimit, 86400))) return json({ error: "本日のAI利用上限に達しました。明日また試すか、運営に連絡してください。" }, 429);
         }
       }
-      // GET /api/lab-manual?channel=オリックス → Flip-LABの保存済み編集ルールを中継して返す。
+      /* RETIRED 2026-08-21: Flip-LAB direct manual/rule routes were removed.
+         Canonical manuals now live in Obsidian; project execution lives in Studio OS. */
+      /* // GET /api/lab-manual?channel=オリックス → Flip-LABの保存済み編集ルールを中継して返す。
       // 編集者がものがたりっちで作業中に、そのチャンネルの蒸留済みルールを見れる。
       // トークン(FLIP_LAB_TOKEN)はサーバ側に秘匿。LABへはservice binding(env.LAB)で直結＝1042回避。
       // 認証：NGワード等クライアント固有の機密が乗るため無認証公開はNG。新規の認証方式は作らず既存の
@@ -207,13 +209,16 @@ export default {
         }
       }
 
-      // ── 質問ウィザード（本体アプリの質問タブ）中継 ──
+      */
+
+      // ── 質問ウィザード（本体アプリの質問タブ） ──
       // Stage1: GET /api/wizard/questions → LABの質問テンプレ（質問13）
       // Stage2: POST /api/wizard/scaffold {answers, performer, genre, ...} → 台本の骨を生成
       // 認証: 本体のAI系(assist/chat等)と同じ無認証+IPレート制限の流儀。
       // domainはサーバ側で台本設計に固定＝任意domain指定でLAB側の新規Opus生成を焼却されない。
       // scaffoldはOpus生成で重い＝rateLimitを別バケツできつめに。
-      if (request.method === "GET" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "questions") {
+      /* RETIRED 2026-08-21: LAB proxy removed. The UI keeps its migrated local template. */
+      /* if (request.method === "GET" && parts[0] === "api" && parts[1] === "wizard" && parts[2] === "questions") {
         // 分あたりの"ai"バケットは冒頭の共通ゲートが担当（ここで再実行すると1リクエスト2消費＝実質上限半減。Codex指摘で撤去）
         if (!env.FLIP_LAB_TOKEN) return json({ ok: false, error: "LAB未接続" }, 502);
         const qs = "domain=" + encodeURIComponent("台本設計");
@@ -247,6 +252,8 @@ export default {
           return json(d, r.ok ? 200 : 502);
         } catch (e) { return json({ ok: false, error: "生成失敗: " + e.message }, 502); }
       }
+
+      */
 
       // POST /api/wizard/suggest { questions:[{num,text,hint}], hearing, performer, genre }
       // ヒアリングタブの入力内容から質問13の答え候補を推測して返す（「こういうのじゃない？」提案）。
@@ -290,7 +297,9 @@ ${qList}
         } catch (e) { return json({ ok: false, error: "提案生成失敗: " + e.message }, 502); }
       }
 
-      // GET /api/schedule?id=<snapId> → Flip Board(D1正本)から担当案件の日程スライスを中継。
+      /* RETIRED 2026-08-21: F-board schedule/report/board proxy routes were removed.
+         Studio OS is now the production and delivery source of truth. */
+      /* // GET /api/schedule?id=<snapId> → Flip Board(D1正本)から担当案件の日程スライスを中継。
       // 編集者がものがたりっちの中だけで「撮影日・次の締切・次の一手」を見れる（窓表示・読み取り専用）。
       // MG_LIST_KEY はサーバ側に秘匿し、cron(birdflip-cron)へService Binding(env.CRON)で直結＝1042回避。
       // ログイン不要（共有台本と同等の見せ方＝チャンネル編集ライブモードでも見える）。
@@ -361,6 +370,8 @@ ${qList}
         }
       }
 
+      */
+
       // POST /api/parse  { raw }  → 生原稿をClaudeで構成台本(project JSON)に整形して返す
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "parse") {
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
@@ -428,6 +439,16 @@ ${qList}
         if (!project || !Array.isArray(project.rows)) return json({ error: "現在の案件が必要です" }, 400);
         const out = await reviewWithClaude(project, env);
         return json({ issues: Array.isArray(out.issues) ? out.issues : [], summary: (out.summary || "").toString() });
+      }
+
+      // POST /api/preflight { project } → Obsidian承認済みレギュレーションの配布版で公開前検査。
+      // AIは承認せず、懸念点だけを返す。最終判断はMONOGATARI画面で人が行う。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "preflight") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定" }, 500);
+        const b = await request.json().catch(() => ({}));
+        if (!b.project) return json({ error: "現在の案件が必要です" }, 400);
+        const out = await preflightWithClaude(b.project, env);
+        return json({ knowledgeVersion: "obsidian-human-documentary-1.0", concerns: Array.isArray(out.concerns) ? out.concerns : [], summary: (out.summary || "").toString() });
       }
 
       // POST /api/deliver  { project, transcript? }  → 台本からYouTube投稿用（タイトル・概要欄・ハッシュタグ）を生成。
@@ -2902,6 +2923,66 @@ async function reviewWithClaude(project, env) {
   }, env);
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
+  return block.input;
+}
+
+/* ===== 公開前チェック：Obsidian承認済み Human Documentary Regulation v1.0 ===== */
+const PREFLIGHT_SYSTEM = `あなたはBird Flipの公開前レギュレーション検査担当です。承認者ではありません。渡された案件JSONから、公開前に人間の判断が必要な懸念だけを report_preflight で返してください。
+
+# Obsidian承認済みナレッジ（Human Documentary Regulation v1.0）
+- 出演者が何者として認識されたいかという現在のブランドを最優先する
+- 居住地、住所、家族、個人情報は明示承認なしに公開しない
+- 医療・ワクチン・過去のトラウマは本編と広告訴求を分け、サムネ・タイトルには使わない
+- 本編掲載許可とサムネ掲載許可は別。タイトル・概要欄も個別承認する
+- CTRより出演者の信頼を優先し、煽り・センセーショナル表現を避ける
+- 一度共有されたNGと過去の修正事項は全工程へ反映する
+- 承認後に変更した項目は再承認が必要
+
+# 検査対象
+タイトル、タイトル案2、概要欄、ハッシュタグ、台本、サムネに付随する名称・メモ、取材情報、過去修正やコメント。
+
+# 厳守
+- 問題がない項目は出さない。懸念だけを返す
+- 根拠となる実際の語句を短く示す。案件に存在しない事実を作らない
+- severityはblock（原則公開不可）またはconfirm（人間確認があれば進める）
+- categoryは privacy / brand / sensitive / approval / past_correction / expression のいずれか
+- suggestionは具体的な修正案か確認方法にする`;
+
+const PREFLIGHT_TOOL = {
+  name: "report_preflight",
+  description: "公開前に人間が確認すべき懸念だけを返す",
+  input_schema: {
+    type: "object", additionalProperties: false,
+    properties: {
+      summary: { type: "string" },
+      concerns: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        id: { type: "string" }, category: { type: "string", enum: ["privacy", "brand", "sensitive", "approval", "past_correction", "expression"] },
+        severity: { type: "string", enum: ["block", "confirm"] }, title: { type: "string" }, reason: { type: "string" }, evidence: { type: "string" }, suggestion: { type: "string" }
+      }, required: ["id", "category", "severity", "title", "reason", "evidence", "suggestion"] } }
+    }, required: ["summary", "concerns"]
+  }
+};
+
+async function preflightWithClaude(project, env) {
+  const meta = project.meta || {};
+  const safeProject = {
+    name: project.name || "", channel: project.channel || "", format: project.format || "",
+    meta: {
+      deliverTitle: meta.deliverTitle || "", deliverTitle2: meta.deliverTitle2 || "",
+      deliverDescription: meta.deliverDescription || "", deliverHashtags: meta.deliverHashtags || "",
+      deliverChapters: meta.deliverChapters || "", note: meta.note || ""
+    },
+    plans: project.plans || [], rows: project.rows || [], talk: project.talk || null,
+    hearing: project.hearing || [], review: project.review || null,
+    manuals: project.manuals || []
+  };
+  const data = await claudeMessages({
+    model: env.PARSE_MODEL || "claude-sonnet-4-6", max_tokens: 5000,
+    system: PREFLIGHT_SYSTEM, tools: [PREFLIGHT_TOOL], tool_choice: { type: "tool", name: "report_preflight" },
+    messages: [{ role: "user", content: "----- 公開予定の案件(JSON) -----\n" + JSON.stringify(safeProject) + "\n----- ここまで -----\n懸念だけを report_preflight で返してください。" }]
+  }, env);
+  const block = (data.content || []).find((x) => x.type === "tool_use" && x.name === "report_preflight");
+  if (!block || !block.input) throw new Error("公開前チェック結果が返りませんでした");
   return block.input;
 }
 

@@ -2750,11 +2750,27 @@ function wizParseScaffoldRows(md) {
   return out;
 }
 
+const MIGRATED_WIZARD_QUESTIONS = [
+  [1, "いま、何を企画しようとしているのか？", "まず表層の建前を出す"],
+  [2, "それをやらないと、何が困るのか？", "願望ではなく欠落・痛みから掘る"],
+  [3, "本当に理解したい対象は、人か、状態か、構造か？", "属性から認知状態へ移す"],
+  [4, "この企画の種は、どの出来事から来ているのか？", "抽象から具体的な原体験へ戻す"],
+  [5, "複数の出来事に共通する構造は何か？", "企画の背骨を見つける"],
+  [6, "その構造の奥で、世界をどんな場所だと思っているか？", "無意識の世界モデルを言葉にする"],
+  [7, "相手の身体は何に反応するのか？", "思考より手前の一次反応まで降りる"],
+  [8, "この企画が壊そうとしている思い込みは何か？", "敵を人物ではなく古い認識に置く"],
+  [9, "受け手の世界モデルは、どこで矛盾しているか？", "すでにある揺れを特定する"],
+  [10, "受け手の世界モデルは、どこからどこへ更新されるか？", "認識のBefore/Afterを明示する"],
+  [11, "この企画の成果として、本当は何を欲しているか？", "数字の下にある本音の指標を定める"],
+  [12, "これは一度きりの企画か、それとも実験場か？", "継続して検証する装置として考える"],
+  [13, "受け手は、誰に何と言ってこれを差し出すか？", "共有の連鎖を設計する"],
+].map(([num, text, hint]) => ({ num: "Q" + num, text, hint }));
+
 function WizardPane({ project, setProject, theme, setTab }) {
   const wiz = project.wizard || newWizard();
   const m = wiz.meta || {};
   const ans = wiz.answers || {};
-  const [questions, setQuestions] = useState(null);
+  const [questions, setQuestions] = useState(MIGRATED_WIZARD_QUESTIONS);
   const [qErr, setQErr] = useState("");
   const [qIdx, setQIdx] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -2764,18 +2780,7 @@ function WizardPane({ project, setProject, theme, setTab }) {
   const [copied, setCopied] = useState(false);
   const taRef = useRef(null);
 
-  useEffect(() => {
-    let dead = false;
-    fetch(SHARE_API + "/api/wizard/questions")
-      .then((r) => r.json())
-      .then((d) => {
-        if (dead) return;
-        if (d && d.ok && d.template) { const qs = wizParseQuestions(d.template); if (qs.length) { setQuestions(qs); return; } }
-        setQErr((d && d.error) || "質問の読み込みに失敗しました");
-      })
-      .catch((e) => { if (!dead) setQErr(String((e && e.message) || e)); });
-    return () => { dead = true; };
-  }, []);
+  // 質問テンプレはFlip-LABからObsidianへ移行済み。実行時に旧Workerへ問い合わせない。
   useEffect(() => { if (view === "form" && taRef.current) taRef.current.focus(); }, [qIdx, questions, view]);
 
   const setMetaF = (k, v) => setProject((p) => { const w = p.wizard || newWizard(); return { ...p, wizard: { ...w, meta: { ...(w.meta || {}), [k]: v } } }; });
@@ -3263,6 +3268,8 @@ export default function App() {
   const [hearingBusy, setHearingBusy] = useState(false);
   /* 共有・コメント */
   const [shareModal, setShareModal] = useState(null);       // {url, id} or null
+  const [preflight, setPreflight] = useState(null);         // MONOGATARI内の公開前チェック画面
+  const [preflightBusy, setPreflightBusy] = useState(false);
   const [showHandoffEdit, setShowHandoffEdit] = useState(false); // 受け渡しプリセットのカスタマイズモーダル
   const [handoffs, setHandoffs] = useState(() => {          // 相手別の受け渡しプリセット（リンク＋文面）。mg:handoff に保存
     try { const s = localStorage.getItem(HANDOFF_KEY); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch (e) {}
@@ -3419,6 +3426,12 @@ export default function App() {
             fetch("https://studio-os-5dm.pages.dev/api/v1/public/mg-link", {
               method: "POST", headers: { "content-type": "application/json" },
               body: JSON.stringify({ token, mgProjectId: data.id }),
+            }).then((r) => r.json()).then(async (linked) => {
+              const gateToken = linked && linked.data && linked.data.gateToken;
+              if (!gateToken) return;
+              const linkedProject = { ...data, studioGateToken: gateToken };
+              setProject(linkedProject);
+              await window.storage.set(STORE_PROJ(data.id), JSON.stringify(linkedProject));
             }).catch((e) => console.error("Studio OSへの紐付け報告に失敗", e));
           }
         } catch (e) { showToast("案件を作成できませんでした（通信）。回線を確認してもう一度お試しください"); setLoaded(true); }
@@ -3471,6 +3484,11 @@ export default function App() {
           const rr = await window.storage.get(STORE_PROJ(hitId));
           const data = rr && rr.value ? migrateProject(JSON.parse(rr.value)) : null;
           if (data) {
+            const gateToken = new URLSearchParams(location.search).get("gateToken");
+            if (gateToken) {
+              data.studioGateToken = gateToken;
+              try { await window.storage.set(STORE_PROJ(hitId), JSON.stringify(data)); } catch (e) {}
+            }
             setActiveId(hitId); setProject(data); setView("editor");
             // Studio OS連携: ?tab=でタブ直接指定（香盤表/動画確認/納品等への1クリック遷移用）
             // 不正値は下の「保存した選択ページの正規化」useEffectがoverviewへ補正するので、
@@ -3823,16 +3841,9 @@ export default function App() {
     if (!loaded) return;
     (async () => { try { const r = await window.storage.get(STORE_MANUALS_GLOBAL); if (r && r.value) setGlobalManuals(JSON.parse(r.value)); } catch (e) {} })();
   }, [loaded, user]);
-  /* 決め事(確定ルール)をFlip-LABへ同期（会話AI・共有ビューが引ける固定事実に）。案件スコープは一時的なので送らない。 */
-  const syncRulesToLab = (channel, entries) => {
-    try {
-      if (!project.shareId || !project.shareToken || !channel) return; // 未発行なら送れない（発行後の編集で反映）
-      const text = (entries || []).map((m) => `【${m.cat || ""}】${(m.title || "").trim()}\n${(m.body || "").trim()}`.trim()).filter(Boolean).join("\n\n");
-      fetch(SHARE_API + "/api/lab-rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: project.shareId, token: project.shareToken, channel, text }) }).catch(() => {});
-    } catch (e) {}
-  };
-  const saveGlobalManuals = (next) => { setGlobalManuals(next); try { window.storage.set(STORE_MANUALS_GLOBAL, JSON.stringify(next)); } catch (e) {} syncRulesToLab("編集マニュアル", next); };
-  const setChannelManuals = (next) => { updateChannelInfo({ manuals: next }); syncRulesToLab(project.channel || DEFAULT_CHANNEL, next); };
+  // マニュアルの正本はObsidian。ものがたりっち内の案件コピーだけを保存する。
+  const saveGlobalManuals = (next) => { setGlobalManuals(next); try { window.storage.set(STORE_MANUALS_GLOBAL, JSON.stringify(next)); } catch (e) {} };
+  const setChannelManuals = (next) => { updateChannelInfo({ manuals: next }); };
   const setCaseManuals = (next) => setProject((p) => ({ ...p, manuals: next }));
 
   /* 現在の案件のチャンネルのコンセプト情報を取得／更新 */
@@ -5450,8 +5461,95 @@ export default function App() {
   /* アプリのタブ → share.html のペイン名 */
   const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files", deliver: "deliver" };
   const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (pane ? "&tab=" + pane : ""); };
+  const hashGateValue = async (value) => {
+    const bytes = new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value || null));
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+  };
+  const publishArtifactHashes = async () => {
+    const meta = project.meta || {};
+    const thumbs = Array.isArray(meta.deliverThumbImages) ? meta.deliverThumbImages : [];
+    const activeVideos = reviewVersions().filter((v) => v && !v.trashedAt).map((v) => ({ id: v.id, key: v.key, url: v.url, uid: v.uid, label: v.label }));
+    return {
+      structure: await hashGateValue({ plans: project.plans || [], rows: project.rows || [], talk: project.talk || null }),
+      video: await hashGateValue({ deliverVideoUrl: meta.deliverVideoUrl || "", versions: activeVideos }),
+      thumbnail: await hashGateValue(thumbs),
+      title: await hashGateValue(meta.deliverTitle || ""),
+      description: await hashGateValue(meta.deliverDescription || ""),
+    };
+  };
+  const checkPublishGate = async () => {
+    if (!project.studioGateToken) {
+      showToast("Studio OSの公開ゲートが未接続です。Studio OSの案件画面から接続してください");
+      return false;
+    }
+    const artifactHashes = await publishArtifactHashes();
+    try {
+      const res = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/check", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mgProjectId: project.id, gateToken: project.studioGateToken, artifactHashes }),
+      });
+      const payload = await res.json();
+      const result = payload && payload.data;
+      if (!res.ok || !result || !result.allowShare) {
+        const first = result && Array.isArray(result.checks) ? result.checks.find((c) => c.result !== "pass") : null;
+        showToast("公開チェック：" + ((result && result.result) || "UNKNOWN") + " — " + ((first && first.reason) || "Studio OSで承認を確認してください"));
+        return false;
+      }
+      showToast("公開チェック PASS：承認済みの版と一致しました");
+      return true;
+    } catch (e) {
+      showToast("公開チェックに接続できないためURL生成を停止しました");
+      return false;
+    }
+  };
+  const HUMAN_PREFLIGHT = [
+    ["talent", "出演者・クライアントの最新意向を確認した"],
+    ["separate", "本編・サムネ・タイトル・概要欄を別々に確認した"],
+    ["corrections", "過去の修正指示とNG事項を反映した"],
+    ["privacy", "個人情報・家族・場所・センシティブ情報を確認した"],
+  ];
+  const openPublishPreflight = async () => {
+    const saved = (project.meta && project.meta.publishHumanChecks) || {};
+    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "" });
+    setPreflightBusy(true);
+    try {
+      const r = await fetch(SHARE_API + "/api/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "AIチェックに失敗しました");
+      setPreflight((p) => ({ ...p, concerns: d.concerns || [], summary: d.summary || "", knowledgeVersion: d.knowledgeVersion || p.knowledgeVersion }));
+    } catch (e) { setPreflight((p) => ({ ...p, error: e.message || String(e) })); }
+    finally { setPreflightBusy(false); }
+  };
+  const toggleHumanPreflight = (key) => setPreflight((p) => {
+    const checks = { ...p.checks, [key]: !p.checks[key] };
+    setMeta("publishHumanChecks", checks);
+    return { ...p, checks };
+  });
+  const finishPublishPreflight = async () => {
+    if (!preflight || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k])) return showToast("人が確認する4項目を完了してください");
+    if (preflight.error) return showToast("AIチェックが完了していないためURL生成を停止しました");
+    if ((preflight.concerns || []).some((c) => c.severity === "block")) return showToast("要修正の項目があります。内容を直してもう一度チェックしてください");
+    if ((preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが見つけた懸念点を確認してください");
+    if (!project.studioGateToken) return showToast("この案件のStudio OS連携情報がありません。案件を開き直してください");
+    setPreflightBusy(true);
+    try {
+      const artifactHashes = await publishArtifactHashes();
+      const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/approve", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mgProjectId: project.id, gateToken: project.studioGateToken, artifactHashes }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d?.error?.message || "承認記録を保存できませんでした");
+      setPreflight(null);
+      await copyShareUrl("deliver", true);
+    } catch (e) { showToast("公開前チェックを完了できませんでした：" + (e.message || e)); }
+    finally { setPreflightBusy(false); }
+  };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー */
-  const copyShareUrl = async (t) => {
+  const copyShareUrl = async (t, preflightDone = false) => {
+    if (t === "deliver" && !preflightDone) return openPublishPreflight();
+    if ((!t || t === "review" || t === "deliver") && !(await checkPublishGate())) return;
     const had = !!project.shareId;
     // 既存リンクでも必ず再発行してから渡す。動画確認の版など最新状態をスナップに反映するため
     // （これが無いと「URLをコピーするだけ」になり、追加した確認動画が共有ページに出ず別動画にフォールバックする）
@@ -5852,6 +5950,9 @@ export default function App() {
 
   // 進行ストリップ：Flip Board(D1正本)から担当案件の日程スライスを引く。未公開(shareId無し)/未リンクは出さない（窓表示・読み取り専用）
   React.useEffect(() => {
+    // 2026-08-21廃止: 進行・納品状態はStudio OSで確認する。
+    setSched(null);
+    return;
     const id = project && project.shareId;
     if (!id) { setSched(null); return; }
     let live = true;
@@ -9216,7 +9317,7 @@ export default function App() {
                 <button onClick={() => copyShareUrl("deliver")}
                   title="先方に見せる確認ページのURLを発行してコピー（タイトル・サムネ・完成動画・概要欄だけが見えます）"
                   className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800">
-                  <Icon name="copy" className="w-3.5 h-3.5" />先方確認用URL
+                  <Icon name="copy" className="w-3.5 h-3.5" />確認用URLを生成
                 </button>
                 <button onClick={generateDeliverAll} disabled={deliverBusy}
                   className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50"
@@ -9606,10 +9707,10 @@ export default function App() {
             </div>
             <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件で共通のスタジオの決め事（テロップ・書き出し・命名規則など）。" : manualScope === "channel" ? "このクライアント（チャンネル）固有のルール。同じチャンネルの全案件で共有。" : "この案件だけの指示書・メモ。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
             <div className="p-5 overflow-y-auto mg-scroll">
-              {manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken}
+              {false && manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken}
                 onAdopt={(t) => saveGlobalManuals([...globalManuals, { ...newManual("その他"), body: t }])} />}
               {manualScope === "global" && <ManualPanel entries={globalManuals} onChange={saveGlobalManuals} main={theme.main} accent={theme.accent} />}
-              {manualScope === "channel" && curChannel !== DEFAULT_CHANNEL && <LabChannelRules channel={curChannel} main={theme.main}
+              {false && manualScope === "channel" && curChannel !== DEFAULT_CHANNEL && <LabChannelRules channel={curChannel} main={theme.main}
                 snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken}
                 liveId={project.liveId} liveToken={project.liveToken}
                 onAdopt={(t) => setChannelManuals([...(curChannelInfo.manuals || []), { ...newManual("その他"), body: t }])} />}
@@ -10224,6 +10325,58 @@ export default function App() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== 納品完了：公開前チェック（MONOGATARI内で完結） ===== */}
+      {preflight && (
+        <div className="fixed inset-0 z-[210] bg-black/45 flex items-center justify-center p-3 sm:p-5" onClick={() => !preflightBusy && setPreflight(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3.5 flex items-center gap-3 border-b border-stone-200" style={{ background: theme.main, color: mainText }}>
+              <div className="flex-1"><h3 className="text-sm font-bold">確認用URLを生成する前のチェック</h3><p className="text-[10px] opacity-70 mt-0.5">{project.name} ・ Obsidianナレッジ {preflight.knowledgeVersion}</p></div>
+              <button onClick={() => setPreflight(null)} disabled={preflightBusy} className="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/15 disabled:opacity-40"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
+              <section className="rounded-xl border border-stone-200 p-3.5">
+                <div className="text-[12px] font-bold text-stone-800 mb-2">あなたが確認すること</div>
+                <div className="space-y-2">
+                  {HUMAN_PREFLIGHT.map(([key, label]) => (
+                    <label key={key} className="flex items-start gap-2.5 cursor-pointer text-[12.5px] text-stone-700">
+                      <input type="checkbox" checked={!!preflight.checks[key]} onChange={() => toggleHumanPreflight(key)} className="mt-0.5 w-4 h-4 accent-emerald-600" />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+              <section className="rounded-xl border border-stone-200 p-3.5">
+                <div className="flex items-center gap-2 mb-2"><span className="text-[12px] font-bold text-stone-800">AIが自動で確認</span>{preflightBusy && <span className="text-[10px] text-indigo-500">確認中…</span>}</div>
+                <p className="text-[11px] text-stone-500 leading-relaxed">ブランド、個人情報、センシティブ情報、煽り表現、過去修正、個別承認の懸念をObsidianの承認済みルールと照合します。</p>
+                {!preflightBusy && !preflight.error && !(preflight.concerns || []).length && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">AIが確認を求める懸念はありませんでした</div>}
+                {preflight.error && <div className="mt-3 rounded-lg bg-red-50 text-red-700 px-3 py-2 text-[11px]">{preflight.error}。安全のためURL生成を停止します。</div>}
+              </section>
+              {(preflight.concerns || []).length > 0 && (
+                <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5">
+                  <div className="text-[12px] font-bold text-amber-900 mb-2">あなたに確認が必要な懸念だけ</div>
+                  <div className="space-y-2.5">
+                    {preflight.concerns.map((c) => (
+                      <label key={c.id} className="block rounded-lg border border-amber-200 bg-white p-3 cursor-pointer">
+                        <div className="flex items-start gap-2">{c.severity === "block" ? <span className="mt-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] grid place-items-center shrink-0">!</span> : <input type="checkbox" className="mt-0.5 w-4 h-4 accent-amber-600" checked={!!preflight.acknowledged[c.id]} onChange={() => setPreflight((p) => ({ ...p, acknowledged: { ...p.acknowledged, [c.id]: !p.acknowledged[c.id] } }))} />}
+                          <div className="min-w-0"><div className="text-[12px] font-bold text-stone-800">{c.severity === "block" ? "要修正" : "要確認"}：{c.title}</div><p className="text-[11px] text-stone-600 mt-1">{c.reason}</p>{c.evidence && <p className="text-[10px] text-stone-400 mt-1">根拠：{c.evidence}</p>}<p className="text-[11px] text-amber-800 mt-1">対応：{c.suggestion}</p></div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50">
+              <span className="text-[10px] text-stone-400">案件とクライアントは自動判定済みです</span>
+              <button onClick={finishPublishPreflight} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block" || !preflight.acknowledged[c.id])}
+                className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
+                {preflightBusy ? "AI確認中…" : "確認を完了してURL生成"}
+              </button>
             </div>
           </div>
         </div>
