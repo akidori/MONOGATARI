@@ -3335,7 +3335,7 @@ export default function App() {
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
   const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
-  const [manualScope, setManualScope] = useState("case");    // global | channel | case
+  const [manualScope, setManualScope] = useState("channel"); // global | channel | case（基本はクライアント単位）
 
   /* フォント */
   useEffect(() => {
@@ -7275,7 +7275,7 @@ export default function App() {
   );
 
   // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
-  const tabItemsAll = [["overview", "note", "概要", "概要"], ["regulations", "book", "レギュレーション", "規定"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["mindmap", "share", "マインドマップ", "MM"]]), ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["mindmap", "share", "マインドマップ", "MM"]]), ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
   // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
   const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
   const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
@@ -7517,6 +7517,12 @@ export default function App() {
           })}
         </div>
         <div className="px-3 py-2 border-t border-white/10 flex flex-col gap-0.5">
+          <button onClick={() => { setView("editor"); setTab("regulations"); setSidebarOpen(false); }}
+            className={"flex items-center gap-2 text-[12px] font-bold px-2.5 py-2 rounded-lg text-left w-full transition-colors " + (tab === "regulations" ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10")}
+            title="全社・クライアント・案件例外のレギュレーションをまとめて確認">
+            <Icon name="book" className="w-4 h-4 shrink-0" />
+            <span>レギュレーション一覧</span>
+          </button>
           <button onClick={() => setShowAccount(true)}
             className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10 text-left w-full">
             {user && user.picture
@@ -7833,10 +7839,11 @@ export default function App() {
             <div className="rounded-2xl p-5 sm:p-6 text-white shadow-sm" style={{ background: "linear-gradient(135deg,#1f2937,#111827)" }}>
               <div className="flex items-start gap-3">
                 <Icon name="book" className="w-6 h-6 mt-0.5 shrink-0" />
-                <div>
+                <div className="flex-1 min-w-0">
                   <h2 className="text-xl font-bold">レギュレーション一覧</h2>
-                  <p className="mt-1 text-[12px] text-stone-300 leading-relaxed">全案件共通 → クライアント／チャンネル共通 → 案件固有の順に自動適用されます。確認用URLの生成前チェックも、この順序で参照します。</p>
+                  <p className="mt-1 text-[12px] text-stone-300 leading-relaxed">登録の基本単位はクライアント／チャンネルです。全案件共通 → クライアント共通 → 案件固有の例外、の順に自動適用されます。</p>
                 </div>
+                <button onClick={() => { setManualScope("channel"); setShowManual(true); }} className="shrink-0 rounded-lg bg-white text-stone-900 px-3 py-2 text-[11px] font-bold hover:bg-stone-100">「{curChannel}」の規定を編集</button>
               </div>
             </div>
 
@@ -7877,7 +7884,7 @@ export default function App() {
                           const d = caseData(x.id);
                           const manuals = (d && d.manuals) || [];
                           return <div key={x.id} className={"rounded-lg border px-3 py-2 " + (x.id === activeId ? "border-rose-200 bg-rose-50/50" : "border-stone-200 bg-white")}>
-                            <div className="flex items-center gap-2"><span className="text-[12px] font-bold text-stone-800 truncate">{x.name}</span>{x.id === activeId && <span className="text-[9px] font-bold text-rose-600 shrink-0">開いている案件</span>}<span className="ml-auto text-[10px] text-stone-400 shrink-0">固有 {manuals.length}件</span></div>
+                            <div className="flex items-center gap-2"><span className="text-[12px] font-bold text-stone-800 truncate">{x.name}</span>{x.id === activeId && <span className="text-[9px] font-bold text-rose-600 shrink-0">開いている案件</span>}<span className="ml-auto text-[10px] text-stone-400 shrink-0">例外 {manuals.length}件</span></div>
                             {manuals.map((m, i) => <div key={i} className="mt-2 pl-2 border-l-2 border-rose-200"><div className="text-[11px] font-bold text-stone-700">{m.title || "名称未設定"}</div>{m.body && <div className="text-[10px] text-stone-500 whitespace-pre-wrap">{m.body}</div>}</div>)}
                             {!d && <div className="text-[9px] text-stone-400 mt-1">案件を開くと固有ルールを表示します</div>}
                           </div>;
@@ -7891,7 +7898,7 @@ export default function App() {
 
             <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-800 leading-relaxed">
               <span className="font-bold">現在の案件：</span>{project.name} ／ {curChannel}　
-              公開前チェックでは、上の全案件共通ルール・「{curChannel}」の共通ルール・この案件固有ルールを自動でまとめて確認します。
+              公開前チェックでは、上の全案件共通ルール・「{curChannel}」の共通ルール・この案件だけの例外を自動でまとめて確認します。
             </div>
           </div>
         )}
@@ -9778,13 +9785,13 @@ export default function App() {
               <button onClick={() => setShowManual(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="px-5 pt-3 shrink-0 flex gap-1.5 flex-wrap">
-              {[["case", "この案件", (project.manuals || []).length], ["channel", curChannel === DEFAULT_CHANNEL ? "チャンネル" : curChannel, (curChannelInfo.manuals || []).length], ["global", "全体の決め事", globalManuals.length]].map(([k, label, n]) => (
+              {[["channel", curChannel === DEFAULT_CHANNEL ? "クライアント／チャンネル" : curChannel, (curChannelInfo.manuals || []).length], ["global", "全案件共通", globalManuals.length], ["case", "案件だけの例外", (project.manuals || []).length]].map(([k, label, n]) => (
                 <button key={k} onClick={() => setManualScope(k)}
                   className={"text-[12px] font-bold px-3 py-1.5 rounded-lg border " + (manualScope === k ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-500")}
                   style={manualScope === k ? { background: theme.main } : {}}>{label}<span className="opacity-60 ml-1">{n}</span></button>
               ))}
             </div>
-            <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件で共通のスタジオの決め事（テロップ・書き出し・命名規則など）。" : manualScope === "channel" ? "このクライアント（チャンネル）固有のルール。同じチャンネルの全案件で共有。" : "この案件だけの指示書・メモ。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
+            <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件に適用する会社共通のルール。" : manualScope === "channel" ? "登録の基本はこちら。このクライアント（チャンネル）の配下にある全案件へ自動適用されます。" : "住所非公開など、この案件だけに必要な例外・追加条件に限定してください。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
             <div className="p-5 overflow-y-auto mg-scroll">
               {false && manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken}
                 onAdopt={(t) => saveGlobalManuals([...globalManuals, { ...newManual("その他"), body: t }])} />}
