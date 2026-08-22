@@ -7275,7 +7275,7 @@ export default function App() {
   );
 
   // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
-  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["mindmap", "share", "マインドマップ", "MM"]]), ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  const tabItemsAll = [["overview", "note", "概要", "概要"], ["regulations", "book", "レギュレーション", "規定"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["mindmap", "share", "マインドマップ", "MM"]]), ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
   // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
   const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
   const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
@@ -7824,6 +7824,75 @@ export default function App() {
               className="ml-auto h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-stone-200 hover:bg-stone-50 text-stone-600">
               <Icon name="download" className="w-3.5 h-3.5" />取り込み
             </button>
+          </div>
+        )}
+
+        {/* ================= レギュレーション一覧 ================= */}
+        {tab === "regulations" && (
+          <div className="max-w-[1100px] mx-auto mb-10 space-y-5">
+            <div className="rounded-2xl p-5 sm:p-6 text-white shadow-sm" style={{ background: "linear-gradient(135deg,#1f2937,#111827)" }}>
+              <div className="flex items-start gap-3">
+                <Icon name="book" className="w-6 h-6 mt-0.5 shrink-0" />
+                <div>
+                  <h2 className="text-xl font-bold">レギュレーション一覧</h2>
+                  <p className="mt-1 text-[12px] text-stone-300 leading-relaxed">全案件共通 → クライアント／チャンネル共通 → 案件固有の順に自動適用されます。確認用URLの生成前チェックも、この順序で参照します。</p>
+                </div>
+              </div>
+            </div>
+
+            <section className={cardCls}>
+              {cardHead("全案件共通", <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">Obsidian承認済み</span>)}
+              <div className="p-4 grid sm:grid-cols-2 gap-2.5">
+                {APPLIED_PREFLIGHT_RULES.map(([category, rule, scope], i) => (
+                  <div key={i} className="rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-3">
+                    <div className="flex items-center gap-2 mb-1"><span className="text-[10px] font-bold text-stone-500">{category}</span><span className="ml-auto text-[9px] text-stone-400">{scope}</span></div>
+                    <p className="text-[12px] font-bold text-stone-800 leading-relaxed">{rule}</p>
+                  </div>
+                ))}
+                {(globalManuals || []).map((m, i) => (
+                  <div key={"g" + i} className="rounded-xl border border-blue-100 bg-blue-50/40 px-3.5 py-3">
+                    <div className="text-[10px] font-bold text-blue-600 mb-1">{m.cat || "全社ルール"}</div>
+                    <p className="text-[12px] font-bold text-stone-800">{m.title || "名称未設定"}</p>{m.body && <p className="text-[11px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</p>}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className={cardCls}>
+              {cardHead("クライアント／チャンネル別", <span className="text-[10px] text-stone-400">{channelGroups.length}件</span>)}
+              <div className="p-4 space-y-3">
+                {channelGroups.map(({ channel, items }) => {
+                  const info = channelInfo[channel] || {};
+                  const rules = info.manuals || [];
+                  return <details key={channel} open={channel === curChannel} className="rounded-xl border border-stone-200 bg-white overflow-hidden">
+                    <summary className="cursor-pointer px-4 py-3 flex items-center gap-2 bg-stone-50 select-none">
+                      <Icon name="folder" className="w-4 h-4 text-stone-500" /><span className="text-[13px] font-bold text-stone-800">{channel}</span>
+                      <span className="text-[10px] text-stone-400 ml-auto">共通ルール {rules.length}件・案件 {items.length}件</span>
+                    </summary>
+                    <div className="p-3 space-y-2">
+                      {rules.length === 0 && <p className="text-[11px] text-stone-400 px-1">チャンネル共通の追加ルールはまだありません。</p>}
+                      {rules.map((m, i) => <div key={i} className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2"><span className="text-[10px] font-bold text-amber-700">{m.cat || "チャンネルルール"}</span><div className="text-[12px] font-bold text-stone-800">{m.title || "名称未設定"}</div>{m.body && <div className="text-[11px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</div>}</div>)}
+                      <div className="pt-1 grid sm:grid-cols-2 gap-2">
+                        {items.map((x) => {
+                          const d = caseData(x.id);
+                          const manuals = (d && d.manuals) || [];
+                          return <div key={x.id} className={"rounded-lg border px-3 py-2 " + (x.id === activeId ? "border-rose-200 bg-rose-50/50" : "border-stone-200 bg-white")}>
+                            <div className="flex items-center gap-2"><span className="text-[12px] font-bold text-stone-800 truncate">{x.name}</span>{x.id === activeId && <span className="text-[9px] font-bold text-rose-600 shrink-0">開いている案件</span>}<span className="ml-auto text-[10px] text-stone-400 shrink-0">固有 {manuals.length}件</span></div>
+                            {manuals.map((m, i) => <div key={i} className="mt-2 pl-2 border-l-2 border-rose-200"><div className="text-[11px] font-bold text-stone-700">{m.title || "名称未設定"}</div>{m.body && <div className="text-[10px] text-stone-500 whitespace-pre-wrap">{m.body}</div>}</div>)}
+                            {!d && <div className="text-[9px] text-stone-400 mt-1">案件を開くと固有ルールを表示します</div>}
+                          </div>;
+                        })}
+                      </div>
+                    </div>
+                  </details>;
+                })}
+              </div>
+            </section>
+
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-800 leading-relaxed">
+              <span className="font-bold">現在の案件：</span>{project.name} ／ {curChannel}　
+              公開前チェックでは、上の全案件共通ルール・「{curChannel}」の共通ルール・この案件固有ルールを自動でまとめて確認します。
+            </div>
           </div>
         )}
 
