@@ -8730,7 +8730,7 @@ export default function App() {
                 if (r.kind === "location") groups.push({ loc: r, idx, scenes: [] });
                 else { if (!groups.length) groups.push({ loc: null, idx: -1, scenes: [] }); groups[groups.length - 1].scenes.push({ r, idx }); }
               });
-              const GRID = "40px 52px 72px minmax(220px,300px) 112px 88px minmax(0,1fr) 64px";
+              const GRID = "36px 48px 64px minmax(170px,220px) 100px 86px minmax(0,1fr) 56px"; // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
               const pad2 = (n) => String(n).padStart(2, "0");
               const renderScene = ({ r, idx }, i, arr) => {
                 const t = sectionOf(r.type);
@@ -8778,7 +8778,7 @@ export default function App() {
                       <button onClick={() => setSecEdit(r.id)} title={"目安 " + target + "秒（クリックで編集）"}
                         className="text-[12.5px] font-semibold tabular-nums rounded px-1 -ml-1 hover:bg-stone-50" style={{ fontFamily: mono, color: "#3F4650" }}>{fmt(target)}</button>
                     )}
-                    <span className="text-[10.5px] tabular-nums px-1 -ml-1 rounded" style={{ fontFamily: mono, ...(over ? { color: "#E04C4C", background: "#FFF0F0", fontWeight: 600 } : { color: chars ? "#8C939D" : "#C2C7CD" }) }} title={over ? "目安の1.5倍を超えています" : "実測（文字数÷" + project.rate + "字/秒）"}>
+                    <span className="text-[10.5px] tabular-nums px-1 -ml-1 rounded whitespace-nowrap" style={{ fontFamily: mono, ...(over ? { color: "#E04C4C", background: "#FFF0F0", fontWeight: 600 } : { color: chars ? "#8C939D" : "#C2C7CD" }) }} title={over ? "目安の1.5倍を超えています" : "実測（文字数÷" + project.rate + "字/秒）"}>
                       {chars ? fmt(dur) : "—"} / {chars}字
                     </span>
                   </div>
@@ -8789,7 +8789,7 @@ export default function App() {
                     style={{ fontWeight: 650, color: "#171A1F", lineHeight: 1.35, textDecoration: sceneDone ? "line-through" : "none" }} />
                 );
                 const contentEl = (
-                  <div className="max-w-[820px] -ml-3 -mt-2">
+                  <div className="max-w-[980px] -ml-3 -mt-2">
                     <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={14} lineHeight={1.6} qaGutter />
                   </div>
                 );
@@ -8804,8 +8804,8 @@ export default function App() {
                 );
                 const timelineEl = (
                   <div className="relative self-stretch" aria-hidden>
-                    <span className="absolute left-[19px] w-px" style={{ background: hexA(t.dot, 0.45), top: first ? 22 : 0, bottom: last ? "calc(100% - 22px)" : 0 }} />
-                    <span className="absolute left-[16px] top-[18.5px] w-[7px] h-[7px] rounded-full" style={{ background: t.dot }} />
+                    <span className="absolute left-[17px] w-px" style={{ background: hexA(t.dot, 0.45), top: first ? 22 : 0, bottom: last ? "calc(100% - 22px)" : 0 }} />
+                    <span className="absolute left-[14px] top-[18.5px] w-[7px] h-[7px] rounded-full" style={{ background: t.dot }} />
                   </div>
                 );
                 const rowProps = {
@@ -8838,10 +8838,10 @@ export default function App() {
                         <span className="text-[15.5px] tabular-nums" style={{ fontFamily: mono, fontWeight: 650, color: "#1C2026" }}>{pad2(sceneNos[r.id])}</span>
                       </div>
                       <div className="pt-[3px]">{startTimeEl}</div>
-                      <div className="pr-4 min-w-0">{titleEl}</div>
+                      <div className="pr-3 min-w-0">{titleEl}</div>
                       <div className="pt-[1px]">{pillEl}</div>
                       <div className="pt-[2px]">{durEl}</div>
-                      <div className="min-w-0 pl-4 border-l" style={{ borderColor: BORDER }}>{contentEl}</div>
+                      <div className="min-w-0 pl-3 border-l" style={{ borderColor: BORDER }}>{contentEl}</div>
                       {actionsEl}
                     </div>
                   </div>
