@@ -1,5 +1,6 @@
 // ものがたりっち Service Worker — オフライン動作 & デスクトップアプリ化用
-const CACHE = "monogatari-v232-ime-controlled-input";
+// build:dist が app.js の内容ハッシュへ置換する。ソース上の値はローカル開発用。
+const CACHE = "monogatari-dev";
 const ASSETS = [
   "./",
   "./index.html",

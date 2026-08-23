@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback, startTransiti
 import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, useReactFlow, BackgroundVariant, Handle, Position, applyNodeChanges, NodeResizeControl, ResizeControlVariant } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
+import { buildStyledRuns, toggleInlineMarker } from "./src/inline-format.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -1246,27 +1247,6 @@ const textOn = (hex) => {
 };
 
 /* ---------- 原稿セル：◼︎自動挿入 + 質問行をアクセント色・太字で表示 ---------- */
-/* インライン書式: **太字** / !!赤文字!!（ネスト可・改行またぎ可）。
-   ** と !! をトグルとして全文を走査し、書式付きの run 配列に分解する。
-   マーカー文字（太字/赤文字の記号）自体もmarker:trueのrunとして返す（本文からは削除しない）。
-   これは下の透明textarea（value=生テキスト、マーカー込み）に重ねて表示するオーバーレイ層のため。
-   マーカーをここで消してしまうと、オーバーレイ側の文字数・幅が実textareaより少なくなり、
-   マーカー使用箇所より後ろでカーソル位置と表示文字がズレていく（marker:trueはopacity:0で
-   幅だけ確保して透明textareaと文字数を一致させる。呼び出し側で必ず処理すること） */
-function buildStyledRuns(text) {
-  const runs = [];
-  let bold = false, red = false, buf = "", bBold = false, bRed = false;
-  const flush = () => { if (buf) { runs.push({ text: buf, bold: bBold, red: bRed }); buf = ""; } };
-  for (let i = 0; i < text.length; ) {
-    if (text[i] === "*" && text[i + 1] === "*") { flush(); runs.push({ text: "**", marker: true }); bold = !bold; i += 2; continue; }
-    if (text[i] === "!" && text[i + 1] === "!") { flush(); runs.push({ text: "!!", marker: true }); red = !red; i += 2; continue; }
-    if (!buf) { bBold = bold; bRed = red; }
-    buf += text[i]; i++;
-  }
-  flush();
-  return runs;
-}
-
 /* ===== ピクトグラム（ライン系SVG・currentColorで配色追従）===== */
 const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
   const c = { className, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", style, "aria-hidden": true };
@@ -1592,14 +1572,12 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     const ta = taRef.current;
     if (!ta) return;
     const s = ta.selectionStart, e = ta.selectionEnd;
-    const v = val || "";
-    const sel = e > s ? v.slice(s, e) : "ここ";
-    const nv = v.slice(0, s) + mk + sel + mk + v.slice(e);
-    set(nv);
+    const next = toggleInlineMarker(val || "", s, e, mk);
+    set(next.value);
     requestAnimationFrame(() => {
       ta.focus();
-      ta.selectionStart = s + mk.length;
-      ta.selectionEnd = s + mk.length + sel.length;
+      ta.selectionStart = next.start;
+      ta.selectionEnd = next.end;
     });
   };
 
@@ -1636,8 +1614,9 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     const st = {};
     if (r.red) st.color = "#DC2645";
     else if (isQ) st.color = accent;
-    if (r.bold) st.fontWeight = 800;
-    else if (isQ) st.fontWeight = 700;
+    // 編集中は透明textareaと同じ字幅に固定する。太字はblur後に表示し、カーソルずれを防ぐ。
+    if (!focused && r.bold) st.fontWeight = 800;
+    else if (!focused && isQ) st.fontWeight = 700;
     return st;
   };
   const nodes = [];
@@ -1689,11 +1668,9 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
   const textStyle = { fontFamily: "inherit", fontSize, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" };
   const wrap = (mk) => {
     const ta = taRef.current; if (!ta) return;
-    const s = ta.selectionStart, e = ta.selectionEnd; const v = val || "";
-    const sel = e > s ? v.slice(s, e) : "ここ";
-    const nv = v.slice(0, s) + mk + sel + mk + v.slice(e);
-    set(nv);
-    requestAnimationFrame(() => { ta.focus(); ta.selectionStart = s + mk.length; ta.selectionEnd = s + mk.length + sel.length; });
+    const next = toggleInlineMarker(val || "", ta.selectionStart, ta.selectionEnd, mk);
+    set(next.value);
+    requestAnimationFrame(() => { ta.focus(); ta.selectionStart = next.start; ta.selectionEnd = next.end; });
   };
   // 選択行（複数可）の先頭に mk を付ける／既に付いていれば外すトグル。箇条書き「・」・コールアウト「> 」用。
   const prefixLines = (mk) => {
@@ -1717,7 +1694,7 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
   const nodes = []; let key = 0;
   runs.forEach((r) => {
     const st = r.marker ? { opacity: 0 } : {}; // マーカー文字は幅だけ確保して非表示（下の透明textareaと文字数を合わせる）
-    if (!r.marker) { if (r.red) st.color = "#DC2645"; if (r.bold) st.fontWeight = 800; }
+    if (!r.marker) { if (r.red) st.color = "#DC2645"; if (!focused && r.bold) st.fontWeight = 800; }
     r.text.split("\n").forEach((p, idx) => {
       if (idx > 0) nodes.push("\n");
       if (p) nodes.push(<span key={key++} style={st}>{p}</span>);

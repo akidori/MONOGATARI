@@ -1,13 +1,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "monogataritch",
+  "pages_build_output_dir": "./dist",
   "compatibility_date": "2026-06-24",
-  "observability": {
-    "enabled": true
-  },
-  "assets": {
-    "directory": "."
-  },
   "compatibility_flags": [
     "nodejs_compat"
   ]

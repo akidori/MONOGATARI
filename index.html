@@ -55,15 +55,44 @@ html,body{margin:0;padding:0;background:#E9E8E3;overscroll-behavior:none}
   border:3px solid #d6d4cc;border-top-color:#4f46e5;border-radius:50%;
   animation:mg-spin .8s linear infinite;
 }
+#mg-boot-error{display:none;position:fixed;inset:0;z-index:9998;background:#E9E8E3;place-items:center;padding:24px;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif}
+#mg-boot-error.show{display:grid}
+#mg-boot-error>div{max-width:420px;background:#fff;border:1px solid #ddd9cf;border-radius:18px;padding:24px;text-align:center;box-shadow:0 16px 50px rgba(0,0,0,.12)}
+#mg-boot-error button{border:0;border-radius:999px;background:#1f2937;color:#fff;font-weight:700;padding:11px 18px;cursor:pointer}
 @keyframes mg-spin{to{transform:rotate(360deg)}}
 </style>
 </head>
 <body>
 <div id="root"></div>
+<div id="mg-boot-error" role="alert"><div><h1 style="font-size:17px;margin:0 0 8px">画面を読み込めませんでした</h1><p style="font-size:13px;color:#666;margin:0 0 16px;line-height:1.7">入力データは消さずに、最新版を読み直します。</p><button type="button" id="mg-recover">最新版で再起動</button></div></div>
 <noscript><p style="text-align:center;font-family:sans-serif;padding:2rem">ものがたりっち！の利用には JavaScript を有効にしてください。</p></noscript>
 <script src="app.js?v=20260823-ime-controlled-input" defer></script>
 
 <script>
+/* Reactが起動できない真っ白画面を放置しない。案件データには触れず、SWだけ更新して再読込する。 */
+(() => {
+  const bootError = document.getElementById("mg-boot-error");
+  const showBootError = () => {
+    if (document.getElementById("root").childElementCount === 0) bootError.classList.add("show");
+  };
+  const timer = setTimeout(showBootError, 12000);
+  window.addEventListener("error", () => setTimeout(showBootError, 0));
+  window.addEventListener("unhandledrejection", () => setTimeout(showBootError, 0));
+  new MutationObserver(() => {
+    if (document.getElementById("root").childElementCount > 0) {
+      clearTimeout(timer);
+      bootError.classList.remove("show");
+    }
+  }).observe(document.getElementById("root"), { childList: true });
+  document.getElementById("mg-recover").onclick = async () => {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update();
+    } catch (_) {}
+    location.reload();
+  };
+})();
+
 /* Service Worker 登録＋更新の検知（2026-07-31）。
    デスクトップアプリ(PWA)の窓は何日も開きっぱなしになるので、こちらが本番に出しても
    窓がリロードされない限り古いJSが動き続ける＝「直したのに反映されない」。
@@ -72,6 +101,7 @@ if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("sw.js").then((reg) => {
       const check = () => { try { reg.update(); } catch (e) {} };
+      check();
       setInterval(check, 30 * 60 * 1000);
       document.addEventListener("visibilitychange", () => { if (!document.hidden) check(); });
       const notify = () => {

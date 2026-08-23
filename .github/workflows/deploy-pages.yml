@@ -1,4 +1,4 @@
-name: Deploy static site to Pages
+name: Redirect GitHub Pages to Cloudflare production
 on:
   push:
     branches: [main]
@@ -23,6 +23,7 @@ jobs:
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: '.'
+          # アプリ本体の本番はCloudflare Pagesのみ。GitHub Pagesは入口だけに固定する。
+          path: '.github/pages-redirect'
       - id: deployment
         uses: actions/deploy-pages@v4
