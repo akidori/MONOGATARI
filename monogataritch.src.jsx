@@ -5547,7 +5547,7 @@ export default function App() {
     ...APPLIED_PREFLIGHT_RULES.map(([cat, rule], i) => ({ key: "pf" + i, scope: "全社", cat, title: rule, body: "" })),
     ...(globalManuals || []).map((m) => ({ key: "gm:" + m.id, scope: "全社", cat: m.cat || "全社ルール", title: m.title || "名称未設定", body: m.body || "" })),
     ...(curChannelInfo.manuals || []).map((m) => ({ key: "cm:" + m.id, scope: curChannel, cat: m.cat || "クライアントルール", title: m.title || "名称未設定", body: m.body || "" })),
-    ...((project.manuals) || []).map((m) => ({ key: "pm:" + m.id, scope: "この案件", cat: m.cat || "案件ルール", title: m.title || "名称未設定", body: m.body || "" })),
+    ...((project && project.manuals) || []).map((m) => ({ key: "pm:" + m.id, scope: "この案件", cat: m.cat || "案件ルール", title: m.title || "名称未設定", body: m.body || "" })),
     // 08-22 AK指示（PRD実装順⑥）: Studio OSで登録・承認済みのregulation_rulesもここへ合流させる。
     // openPublishPreflightがproject.studioGateTokenを使って都度取得しstudioRegsへ保存している。
     ...(studioRegs.rules || []).map((r) => ({ key: "sr:" + r.id, scope: "Studio OS", cat: r.category, title: `${r.title}（${REG_DECISION_LABEL[r.decision] || r.decision}）`, body: r.description || "" })),
