@@ -737,6 +737,8 @@ const countChars = (s) => (s || "").replace(/\s/g, "").length;
 const fmtJP = (sec) => { const s = Math.round(sec); return Math.floor(s / 60) + "分" + String(s % 60).padStart(2, "0") + "秒"; };
 const fmtTC = (sec) => { const s = Math.round(sec); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
 const sectionOf = (type) => SECTION_TYPES[type] || SECTION_TYPES["解説系"];
+/* #RRGGBB に透明度を付ける（分類色を「薄く」使う用） */
+const hexA = (hex, a) => { const h = (hex || "#888888").replace("#", ""); const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; };
 const targetOf = (r) => (r.sec != null && r.sec !== "" ? Number(r.sec) : sectionOf(r.type).target);
 
 /* 物語フレームワーク：ロケブロックを各型のステップに比例配分して、物語の骨の穴を可視化する */
@@ -1555,9 +1557,10 @@ function AddressField({ loc, onChange }) {
    onChangeの中身は全て setProject の関数型更新＝古いクロージャが呼ばれても安全。 */
 const cellPropsEqual = (a, b) =>
   a.value === b.value && a.placeholder === b.placeholder && a.accent === b.accent &&
-  a.fontSize === b.fontSize && a.className === b.className && a.minHeight === b.minHeight;
+  a.fontSize === b.fontSize && a.className === b.className && a.minHeight === b.minHeight &&
+  a.lineHeight === b.lineHeight && a.qaGutter === b.qaGutter;
 
-const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13, lineHeight = 1.45 }) {
+const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13, lineHeight = 1.45, qaGutter = false }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush, ime] = useBufferedField(value, onChange);
@@ -1625,34 +1628,68 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
      - !!赤!! は従来どおり赤。太字/ウェイトは blur 後のみ（編集中は透明textareaと字幅を揃える）
      太字/赤文字は全文を run 化してから行に流すので、改行をまたぐ ** でも崩れない */
   const runs = buildStyledRuns(val || "");
-  const lineFlags = runs.map((r) => r.text).join("").split("\n").map((l) => /^\s*◼/.test(l) ? "q" : /^\s*★/.test(l) ? "star" : null);
+  /* 行の役割：q=質問（◼︎始まり）/ star=★採用候補 / a=質問の直後に来る最初の本文行（回答の頭）/ null */
+  const lineFlags = (() => {
+    const lines = runs.map((r) => r.text).join("").split("\n");
+    let pendingA = false;
+    return lines.map((l) => {
+      if (/^\s*◼/.test(l)) { pendingA = true; return "q"; }
+      if (/^\s*★/.test(l)) return "star";
+      if (pendingA && l.trim()) { pendingA = false; return "a"; }
+      return null;
+    });
+  })();
   const styleFor = (r, flag) => {
     if (r.marker) return { opacity: 0 }; // マーカー文字は幅だけ確保して非表示（下の透明textareaと文字数を合わせる）
     const st = {};
     if (r.red) st.color = "#DC2645";
     else if (flag === "q") st.color = "#171A1F";
-    else if (flag === "star") st.color = "#B27A24";
+    else if (flag === "star") st.color = "#5F5138";
     if (!focused && r.bold) st.fontWeight = 800;
     else if (!focused && flag === "q") st.fontWeight = 600;
     else if (!focused && flag === "star") st.fontWeight = 500;
     return st;
   };
+  /* Q./A. ラベル（qaGutter時）：textarea外の疑似UI。absolute＝行内の幅を1pxも取らない＝
+     selectionStart/End・カーソル位置に一切影響しない。本文データにも文字を足さない。
+     行頭で static position を使うので、その行の上端に揃う（line-heightを親と同じpx値にして上下中央） */
+  const lineBoxPx = Math.round(fontSize * lineHeight);
+  const gutterLabel = (flag, k) => {
+    if (!qaGutter || (flag !== "q" && flag !== "a")) return null;
+    const isQ = flag === "q";
+    return (
+      <span key={"g" + k} aria-hidden className="absolute select-none pointer-events-none"
+        style={{ left: 10, fontSize: 11, fontWeight: 700, lineHeight: lineBoxPx + "px", letterSpacing: "0.02em", color: isQ ? accent : "#6B7280", fontFamily: "inherit" }}>
+        {isQ ? "Q." : "A."}
+      </span>
+    );
+  };
   const nodes = [];
   let li = 0, key = 0;
+  const startLine = () => { const g = gutterLabel(lineFlags[li], key++); if (g) nodes.push(g); };
+  startLine();
   runs.forEach((r) => {
     r.text.split("\n").forEach((p, idx) => {
-      if (idx > 0) { nodes.push("\n"); li++; }
+      if (idx > 0) { nodes.push("\n"); li++; startLine(); }
       if (!p) return;
       const flag = lineFlags[li];
       const m = flag === "q" && !r.marker ? /^(\s*[◼■]\uFE0E?)([\s\S]*)$/.exec(p) : null;
       if (m) {
-        nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent }}>{m[1]}</span>);
+        // ◼︎ は種別色。Q.ラベルがある時は薄くして二重に主張させない（幅は保つ）
+        nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0.35 : 1 }}>{m[1]}</span>);
         if (m[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{m[2]}</span>);
+      } else if (flag === "star" && !r.marker) {
+        const sm = /^(\s*★)([\s\S]*)$/.exec(p);
+        if (sm) {
+          nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: "#B7812C" }}>{sm[1]}</span>);
+          if (sm[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{sm[2]}</span>);
+        } else nodes.push(<span key={key++} style={styleFor(r, flag)}>{p}</span>);
       } else {
         nodes.push(<span key={key++} style={styleFor(r, flag)}>{p}</span>);
       }
     });
   });
+  const padLeft = qaGutter ? 36 : undefined;
 
   const fmtBtn = "w-6 h-6 grid place-items-center rounded-md bg-white border border-stone-200 shadow-sm hover:bg-stone-50 text-[12px] leading-none";
 
@@ -1664,7 +1701,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
           <button type="button" onClick={() => wrap("!!")} title="赤文字（⌘⇧H）" className={fmtBtn} style={{ color: "#DC2645", fontWeight: 800 }}>A</button>
         </div>
       )}
-      <div aria-hidden className="px-3 py-2" style={{ ...textStyle, minHeight: 38, color: "#2A2E34" }}>
+      <div aria-hidden className="px-3 py-2" style={{ ...textStyle, minHeight: 38, color: "#2A2E34", paddingLeft: padLeft }}>
         {val ? nodes : <span className="text-stone-300">{placeholder || "クリックして原稿を入力（行頭に「・」で ◼︎ 質問行）"}</span>}
         {"\u200b"}
       </div>
@@ -1678,7 +1715,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
         onBlur={() => { setFocused(false); flush(); }}
         spellCheck={false}
         className="absolute inset-0 w-full h-full resize-none bg-transparent px-3 py-2 focus:outline-none"
-        style={{ ...textStyle, color: "transparent", caretColor: "#1C1C1E" }}
+        style={{ ...textStyle, color: "transparent", caretColor: "#1C1C1E", paddingLeft: padLeft }}
       />
     </div>
   );
@@ -8733,8 +8770,8 @@ export default function App() {
                 const opCls = "w-7 h-7 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors";
                 return (
                   <div key={r.id} id={"row-" + r.id}
-                    className="group relative rounded-2xl border mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_14px_rgba(0,0,0,0.05)] hover:-translate-y-px transition-[box-shadow,transform] duration-150 scroll-mt-24"
-                    style={{ borderColor: "rgba(17,24,39,0.06)", borderLeft: "3px solid " + t.dot, background: sceneDone ? "#F5F5F4" : t.card, ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "0 0 0 3px " + theme.accent } : {}) }}>
+                    className="group relative rounded-[14px] border mb-4 shadow-[0_1px_2px_rgba(0,0,0,0.015)] hover:shadow-[0_4px_12px_rgba(0,0,0,0.04)] hover:-translate-y-px transition-[box-shadow,transform] duration-150 scroll-mt-24"
+                    style={{ borderColor: "rgba(17,24,39,0.06)", borderLeft: "2px solid " + hexA(t.dot, 0.85), background: sceneDone ? "#F7F7F6" : "#FFFFFF", ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "0 0 0 3px " + theme.accent } : {}) }}>
                     {/* メタ1行（11-12px・グレー・存在感を下げる）：✓ / 番号 / 時刻 / 種別 / 秒 ……… 所要・文字数 */}
                     <div className="flex items-center gap-2 gap-y-1.5 flex-wrap px-4 sm:px-5 pt-[18px] leading-none">
                       <button
@@ -8743,9 +8780,9 @@ export default function App() {
                         className={"shrink-0 w-[22px] h-[22px] grid place-items-center rounded-md border transition-colors " + (r.done ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-200 text-stone-300 hover:text-stone-500 hover:border-stone-300")}>
                         <Icon name="check" className="w-3 h-3" />
                       </button>
-                      <span className="text-[11px] tabular-nums shrink-0" style={{ fontFamily: mono, color: "#9AA0A8" }}>#{sceneNos[r.id]}</span>
+                      <span className="text-[11px] tabular-nums shrink-0" style={{ fontFamily: mono, color: "#969CA5" }}>#{sceneNos[r.id]}</span>
                       {clocks[r.id] != null ? (
-                        <span className="text-[11px] tabular-nums shrink-0 font-medium" style={{ fontFamily: mono, color: "#7E858E" }} title="ロケ到着時刻＋尺の積み上げ（実時刻）">{fmtClock(clocks[r.id])}</span>
+                        <span className="text-[11px] tabular-nums shrink-0" style={{ fontFamily: mono, color: "#969CA5" }} title="ロケ到着時刻＋尺の積み上げ（実時刻）">{fmtClock(clocks[r.id])}</span>
                       ) : (
                         <input
                           key={(r.tc != null ? "m" : "a") + Math.round(tcs[r.id])}
@@ -8753,28 +8790,30 @@ export default function App() {
                           onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
                           onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
                           className="w-[52px] text-[11px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-white"
-                          style={{ fontFamily: mono, color: r.tc != null ? "#171A1F" : "#7E858E", fontWeight: r.tc != null ? 700 : 500 }}
+                          style={{ fontFamily: mono, color: r.tc != null ? "#171A1F" : "#969CA5", fontWeight: r.tc != null ? 700 : 400 }}
                           title="開始時刻を手入力で固定（空欄で自動）" />
                       )}
                       {/* 種別ピル：ドット6px＋名前。色は分類のためだけ */}
-                      <span className="relative inline-flex items-center shrink-0 h-6 rounded-full border" style={{ background: t.bg, borderColor: t.borderColor }}>
+                      {/* 種別ピル：1色から 背景10%/枠20%/文字100% を作る。分類の識別だけに働かせる */}
+                      <span className="relative inline-flex items-center shrink-0 h-[22px] rounded-full border" style={{ background: hexA(t.dot, 0.09), borderColor: hexA(t.dot, 0.22) }}>
                         <span className="w-1.5 h-1.5 rounded-full ml-2.5 shrink-0" style={{ background: t.dot }} />
                         <select
                           value={r.type}
                           onChange={(e) => updateRow(r.id, { type: e.target.value, sec: null })}
-                          className="text-[11.5px] font-semibold bg-transparent pl-1.5 pr-5 h-full cursor-pointer focus:outline-none appearance-none"
-                          style={{ color: t.color }}>
+                          className="text-[11px] font-semibold bg-transparent pl-1.5 pr-5 h-full cursor-pointer focus:outline-none appearance-none"
+                          style={{ color: t.dot }}>
                           {TYPE_KEYS.map((k) => <option key={k} value={k}>{SECTION_TYPES[k].full}</option>)}
                         </select>
-                        <span className="pointer-events-none absolute right-2 text-[8px]" style={{ color: t.color, opacity: 0.7 }}>▾</span>
+                        <span className="pointer-events-none absolute right-2 text-[8px]" style={{ color: t.dot, opacity: 0.7 }}>▾</span>
                       </span>
-                      <label className="inline-flex items-center gap-1 shrink-0 text-[11px]" style={{ color: "#9AA0A8" }}>
+                      {/* 目安秒数：裸の数値が浮かないよう枠なし・「秒」を直後に。フォーカスで枠が出る */}
+                      <label className="inline-flex items-center shrink-0 text-[11px] rounded-md px-1 -ml-1 focus-within:bg-white focus-within:ring-1 focus-within:ring-stone-300" style={{ color: "#969CA5" }}>
                         <input
                           type="number" min="1"
                           value={target}
                           onChange={(e) => updateRow(r.id, { sec: e.target.value === "" ? null : Number(e.target.value) })}
-                          className="w-11 h-6 text-[11px] text-center rounded-md px-1 tabular-nums focus:outline-none focus:ring-1 focus:ring-stone-300"
-                          style={{ fontFamily: mono, background: "#F7F8FA", color: "#727984" }}
+                          className="w-8 h-[22px] text-[11px] text-right bg-transparent tabular-nums focus:outline-none"
+                          style={{ fontFamily: mono, color: "#969CA5" }}
                           title="このシーンの目安秒数" />秒
                       </label>
                       <div className="flex-1" />
@@ -8785,8 +8824,8 @@ export default function App() {
                         <button className={opCls} title="下にシーンを追加" onClick={() => insertBelow(idx, newScene(r.type))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
                         <button className={opCls + " hover:bg-red-50 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
                       </div>
-                      <span className={"text-[11px] tabular-nums shrink-0 px-1.5 py-0.5 rounded-md " + (over ? "font-semibold" : "")} style={{ fontFamily: mono, ...(over ? { color: "#E04C4C", background: "#FFF0F0" } : { color: chars ? "#6D747D" : "#C2C7CD" }) }} title={over ? "目安秒数の1.5倍を超えています" : "所要（文字数÷" + project.rate + "字/秒）"}>
-                        {chars ? fmt(dur) : "—"}<span style={{ color: over ? "#E04C4C" : "#9AA0A8", opacity: over ? 0.75 : 1 }}> / {chars}字</span>
+                      <span className={"text-[11px] tabular-nums shrink-0 px-1.5 py-0.5 rounded-md " + (over ? "font-semibold" : "")} style={{ fontFamily: mono, ...(over ? { color: "#E04C4C", background: "#FFF0F0" } : { color: chars ? "#7B828B" : "#C2C7CD" }) }} title={over ? "目安秒数の1.5倍を超えています" : "所要（文字数÷" + project.rate + "字/秒）"}>
+                        {chars ? fmt(dur) : "—"}<span style={{ color: over ? "#E04C4C" : "#969CA5", opacity: over ? 0.75 : 1 }}> / {chars}字</span>
                       </span>
                     </div>
                     {/* 見出し＝主役（17.5px・650・黒） */}
@@ -8798,8 +8837,8 @@ export default function App() {
                       className="block w-full resize-none bg-transparent text-[17.5px] px-4 sm:px-5 pt-3.5 pb-2 focus:outline-none placeholder:text-stone-300 placeholder:font-normal"
                       style={{ fontWeight: 650, color: "#171A1F", lineHeight: 1.4 }} />
                     {/* 原稿（15px・行間1.6・黒系・幅760まで） */}
-                    <div className="px-1.5 sm:px-2.5 pb-3 max-w-[780px]">
-                      <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={15} lineHeight={1.6} />
+                    <div className="px-1.5 sm:px-2.5 pb-3 max-w-[800px]">
+                      <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={15} lineHeight={1.6} qaGutter />
                     </div>
                   </div>
                 );
