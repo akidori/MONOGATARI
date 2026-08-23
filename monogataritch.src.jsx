@@ -735,6 +735,8 @@ const parseImportText = (text) => {
 
 const countChars = (s) => (s || "").replace(/\s/g, "").length;
 const fmtJP = (sec) => { const s = Math.round(sec); return Math.floor(s / 60) + "分" + String(s % 60).padStart(2, "0") + "秒"; };
+/* 尺の現場向け表記：5秒 / 30秒 / 1分 / 2分30秒（撮影時刻 06:30 と見間違えない形） */
+const fmtDurJP = (sec) => { const s = Math.round(sec || 0); const m = Math.floor(s / 60), r = s % 60; return m === 0 ? r + "秒" : r === 0 ? m + "分" : m + "分" + r + "秒"; };
 const fmtTC = (sec) => { const s = Math.round(sec); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
 const sectionOf = (type) => SECTION_TYPES[type] || SECTION_TYPES["解説系"];
 /* #RRGGBB に透明度を付ける（分類色を「薄く」使う用） */
@@ -3266,6 +3268,9 @@ export default function App() {
   const [caseMenu, setCaseMenu] = useState(null);          // 案件行の右クリックメニュー {id, channel, x, y}
   const [rowMenu, setRowMenu] = useState(null);             // 構成テーブル行の右クリックメニュー {id, idx, kind, sceneType, x, y}
   const [secEdit, setSecEdit] = useState(null);             // Scene Row の尺をクリック編集中のシーンid
+  const [insertEdit, setInsertEdit] = useState(null);       // インサートカードを原稿編集に切り替えているシーンid
+  const [insertCollapsed, setInsertCollapsed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem("mg:insertCollapsed") || "[]")); } catch (e) { return new Set(); } });
+  const toggleInsertCollapsed = (id) => setInsertCollapsed((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); try { localStorage.setItem("mg:insertCollapsed", JSON.stringify([...nx])); } catch (e) {} return nx; });
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
   /* ===== サイドバーのツリービュー化（2026-07-31）=====
      案件一覧と工程タブが左右2本のレールに分かれていて、現在地を掴むのに視線を横移動させられていた。
@@ -8590,7 +8595,7 @@ export default function App() {
                 if (r.kind === "location") groups.push({ loc: r, idx, scenes: [] });
                 else { if (!groups.length) groups.push({ loc: null, idx: -1, scenes: [] }); groups[groups.length - 1].scenes.push({ r, idx }); }
               });
-              const GRID = "36px 44px 56px minmax(150px,200px) 104px 90px minmax(0,1fr) 52px"; // 列間は gap-x-3 で確保（ピル/尺がめり込まないように） // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
+              const GRID = "36px 24px 84px minmax(150px,210px) 104px 76px minmax(0,1fr) 52px"; // タイムライン｜つまみ｜開始時刻｜タイトル(#番号)｜種別｜尺｜内容｜操作。列間は gap-x-3 // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
               const pad2 = (n) => String(n).padStart(2, "0");
               const renderScene = ({ r, idx }, i, arr) => {
                 const t = sectionOf(r.type);
@@ -8602,8 +8607,12 @@ export default function App() {
                 const first = i === 0, last = i === arr.length - 1;
                 const isDragOver = dragOverIndex === idx && dragIds && !dragIds.includes(r.id);
                 const openMenu = (e) => { e.preventDefault(); e.stopPropagation(); const b = e.currentTarget.getBoundingClientRect(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: b.left, y: b.bottom + 4 }); };
+                /* 撮影時刻＝「06:30 開始」（現実の時刻）。動画内TCしか無い時は「00:18 TC」と明示して尺と混同させない */
                 const startTimeEl = clocks[r.id] != null ? (
-                  <span className="text-[11.5px] tabular-nums font-medium" style={{ fontFamily: mono, color: "#59616C" }} title="ロケ到着時刻＋尺の積み上げ（実時刻）">{fmtClock(clocks[r.id])}</span>
+                  <span className="inline-flex items-baseline gap-1 whitespace-nowrap" title="撮影予定時刻（ロケ到着時刻＋尺の積み上げ）">
+                    <span className="text-[12px] tabular-nums font-medium" style={{ fontFamily: mono, color: "#59616C" }}>{fmtClock(clocks[r.id]).padStart(5, "0")}</span>
+                    <span className="text-[10px]" style={{ color: "#969CA5" }}>開始</span>
+                  </span>
                 ) : (
                   <input
                     key={(r.tc != null ? "m" : "a") + Math.round(tcs[r.id])}
@@ -8611,9 +8620,12 @@ export default function App() {
                     draggable={false}
                     onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
                     onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                    className="w-[52px] text-[11.5px] tabular-nums bg-transparent rounded px-0.5 focus:outline-none focus:bg-stone-50"
+                    className="w-[46px] text-[12px] tabular-nums bg-transparent rounded px-0.5 focus:outline-none focus:bg-stone-50"
                     style={{ fontFamily: mono, color: r.tc != null ? "#171A1F" : "#59616C", fontWeight: r.tc != null ? 700 : 500 }}
-                    title="開始時刻を手入力で固定（空欄で自動）" />
+                    title="動画内の開始位置（TC）。手入力で固定、空欄で自動。撮影時刻はロケ見出しの時刻を入れると出ます" />
+                );
+                const startTimeWrap = clocks[r.id] != null ? startTimeEl : (
+                  <span className="inline-flex items-baseline gap-0.5 whitespace-nowrap">{startTimeEl}<span className="text-[10px]" style={{ color: "#969CA5" }}>TC</span></span>
                 );
                 const pillEl = (
                   <span className="relative inline-flex items-center shrink-0 h-[22px] rounded-full border" style={{ background: hexA(t.dot, 0.09), borderColor: hexA(t.dot, 0.22) }}>
@@ -8635,22 +8647,82 @@ export default function App() {
                         className="w-14 h-6 text-[12px] text-right rounded-md px-1 tabular-nums bg-white focus:outline-none"
                         style={{ fontFamily: mono, border: "1px solid rgba(74,145,235,0.45)", color: "#171A1F" }} title="秒で入力" />
                     ) : (
-                      <button onClick={() => setSecEdit(r.id)} title={"目安 " + target + "秒（クリックで編集）"}
-                        className="text-[12.5px] font-semibold tabular-nums rounded px-1 -ml-1 hover:bg-stone-50" style={{ fontFamily: mono, color: "#3F4650" }}>{fmt(target)}</button>
+                      <button onClick={() => setSecEdit(r.id)} title={"動画内の想定尺 " + target + "秒（クリックで秒編集）"}
+                        className="text-[12px] font-semibold tabular-nums rounded px-1 -ml-1 hover:bg-stone-50 whitespace-nowrap" style={{ color: "#3F4650" }}>{fmtDurJP(target)}</button>
                     )}
-                    <span className="text-[10.5px] tabular-nums px-1 -ml-1 rounded whitespace-nowrap" style={{ fontFamily: mono, ...(over ? { color: "#E04C4C", background: "#FFF0F0", fontWeight: 600 } : { color: chars ? "#8C939D" : "#C2C7CD" }) }} title={over ? "目安の1.5倍を超えています" : "実測（文字数÷" + project.rate + "字/秒）"}>
-                      {chars ? fmt(dur) : "—"} / {chars}字
-                    </span>
+                    {/* 撮影画面では文字数を出さない。実測は目安の1.5倍を超えた時だけ赤で知らせる */}
+                    {over && (
+                      <span className="text-[10.5px] px-1 -ml-1 rounded whitespace-nowrap font-semibold" style={{ color: "#E04C4C", background: "#FFF0F0" }} title={"原稿量から実測 " + fmtDurJP(dur) + "（" + chars + "字）。目安の1.5倍超"}>
+                        実測 {fmtDurJP(dur)}
+                      </span>
+                    )}
                   </div>
                 );
                 const titleEl = (
-                  <BufferedTextarea value={r.label} onChange={(v) => updateRow(r.id, { label: v })} rows={1} placeholder="シーンタイトル"
-                    className="block w-full resize-none bg-transparent text-[15px] focus:outline-none placeholder:text-stone-300 placeholder:font-normal"
-                    style={{ fontWeight: 650, color: "#171A1F", lineHeight: 1.35, textDecoration: sceneDone ? "line-through" : "none" }} />
+                  <div className="flex items-start gap-2 min-w-0">
+                    <BufferedTextarea value={r.label} onChange={(v) => updateRow(r.id, { label: v })} rows={1} placeholder="シーンタイトル"
+                      className="block flex-1 min-w-0 resize-none bg-transparent text-[15px] focus:outline-none placeholder:text-stone-300 placeholder:font-normal"
+                      style={{ fontWeight: 650, color: "#171A1F", lineHeight: 1.35, textDecoration: sceneDone ? "line-through" : "none" }} />
+                    <span className="shrink-0 text-[11px] tabular-nums pt-[3px]" style={{ fontFamily: mono, color: "#A3A9B1" }}>#{pad2(sceneNos[r.id])}</span>
+                  </div>
                 );
-                const contentEl = (
+                const scriptEl = (
                   <div className="max-w-[980px] -ml-3 -mt-2">
                     <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={14} lineHeight={1.6} qaGutter />
+                  </div>
+                );
+                /* インサートだけカード＋チェックリスト（撮り忘れ防止）。原稿の各行＝撮るカット。
+                   ※/★/◼︎/> で始まる行はメモ扱いでカードの下に素の文字で出す。チェックは r.insertChecks（行テキストをキー）に保存。
+                   編集は鉛筆で原稿編集に切り替え（原稿データはそのまま＝共有/マインドマップ/AIとの互換維持） */
+                const isInsert = r.type === "インサート";
+                const insertLines = isInsert ? (r.script || "").split("\n").map((l) => l.trim()).filter(Boolean) : [];
+                const isNoteLine = (l) => /^[※★◼■>＞]/.test(l);
+                const insertItems = insertLines.filter((l) => !isNoteLine(l));
+                const insertNotes = insertLines.filter(isNoteLine);
+                const checks = r.insertChecks || {};
+                const doneN = insertItems.filter((l) => checks[l]).length;
+                const collapsed = insertCollapsed.has(r.id);
+                const stripParen = (l) => l.replace(/^[（(]\s*/, "").replace(/\s*[)）]$/, "");
+                const contentEl = (!isInsert || insertEdit === r.id || insertItems.length === 0) ? (
+                  <div>
+                    {scriptEl}
+                    {isInsert && insertEdit === r.id && (
+                      <button onClick={() => setInsertEdit(null)} className="mt-1 ml-0 text-[11px] underline" style={{ color: "#626A75" }}>チェックリストに戻る</button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="-mt-1">
+                    <div className="rounded-lg border max-w-[560px]" style={{ borderColor: "rgba(17,24,39,0.08)", background: "#FFFFFF" }}>
+                      <div className="flex items-center gap-2 px-3 h-8">
+                        <button onClick={() => toggleInsertCollapsed(r.id)} className="inline-flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: t.dot }} title={collapsed ? "開く" : "畳む"}>
+                          <span className="text-[9px] inline-block transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}>▾</span>
+                          インサート（{insertItems.length}）
+                        </button>
+                        {doneN > 0 && <span className="text-[10.5px] tabular-nums" style={{ color: doneN === insertItems.length ? "#2E9E5B" : "#8C939D" }}>{doneN}/{insertItems.length} 撮影済</span>}
+                        <div className="flex-1" />
+                        <button onClick={() => setInsertEdit(r.id)} title="カットの一覧を編集（1行＝1カット）" className="w-6 h-6 grid place-items-center rounded text-stone-300 hover:text-stone-600 hover:bg-stone-100 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
+                      </div>
+                      {!collapsed && (
+                        <ul className="px-2 pb-2">
+                          {insertItems.map((l, i) => {
+                            const on = !!checks[l];
+                            return (
+                              <li key={i}>
+                                <label className="flex items-start gap-2 px-1 py-[3px] rounded cursor-pointer hover:bg-stone-50">
+                                  <input type="checkbox" checked={on}
+                                    onChange={() => { const nx = { ...checks }; if (on) delete nx[l]; else nx[l] = true; updateRow(r.id, { insertChecks: nx }); }}
+                                    className="mt-[3px] w-4 h-4 shrink-0 rounded accent-emerald-600 cursor-pointer" />
+                                  <span className="text-[13.5px] leading-[1.5]" style={{ color: on ? "#A3A9B1" : "#30353C", textDecoration: on ? "line-through" : "none" }}>{stripParen(l)}</span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                    </div>
+                    {insertNotes.length > 0 && (
+                      <div className="mt-2 text-[13px] leading-[1.6] whitespace-pre-wrap" style={{ color: "#4A515B" }}>{insertNotes.join("\n")}</div>
+                    )}
                   </div>
                 );
                 const actionsEl = (
@@ -8679,8 +8751,8 @@ export default function App() {
                   return (
                     <div key={r.id} {...rowProps}>
                       <div className="flex items-center gap-2 px-3 pt-3 flex-wrap">
-                        <span className="cursor-grab active:cursor-grabbing text-[15px] font-semibold tabular-nums" style={{ fontFamily: mono, color: "#1C2026" }} {...rowDragProps(idx, r.id)} title="ドラッグで移動">{pad2(sceneNos[r.id])}</span>
-                        {startTimeEl}{pillEl}
+                        <span className="cursor-grab active:cursor-grabbing grid place-items-center w-6 h-6" {...rowDragProps(idx, r.id)} title="ドラッグで移動"><Icon name="grip" className="w-3.5 h-3.5 text-stone-300" /></span>
+                        {startTimeWrap}{pillEl}
                         <div className="flex-1" />
                         {durEl}{actionsEl}
                       </div>
@@ -8693,11 +8765,10 @@ export default function App() {
                   <div key={r.id} {...rowProps}>
                     <div className="grid items-start py-3 pr-2 gap-x-3" style={{ gridTemplateColumns: GRID }}>
                       {timelineEl}
-                      <div className="flex items-center gap-1 pt-[1px] cursor-grab active:cursor-grabbing select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">
-                        <Icon name="grip" className="w-3 h-3 text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                        <span className="text-[15.5px] tabular-nums" style={{ fontFamily: mono, fontWeight: 650, color: "#1C2026" }}>{pad2(sceneNos[r.id])}</span>
+                      <div className="h-6 grid place-items-center cursor-grab active:cursor-grabbing select-none -ml-1" {...rowDragProps(idx, r.id)} title="ドラッグで移動">
+                        <Icon name="grip" className="w-3.5 h-3.5 text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
-                      <div className="pt-[3px]">{startTimeEl}</div>
+                      <div className="pt-[3px]">{startTimeWrap}</div>
                       <div className="min-w-0">{titleEl}</div>
                       <div className="pt-[1px]">{pillEl}</div>
                       <div className="pt-[2px]">{durEl}</div>
@@ -8715,14 +8786,14 @@ export default function App() {
                   const lc = r ? locations.find((l) => l.id === r.id) : null;
                   const isDragOver = r && dragOverIndex === g.idx && dragIds && !dragIds.includes(r.id);
                   return (
-                    <div key={r ? r.id : "nolocation"} className={gi === 0 ? "" : "mt-6"}>
+                    <div key={r ? r.id : "nolocation"} className={gi === 0 ? "" : "mt-9"}>
                       {r && maxDay > 1 && dayStarts[r.id] != null && (
                         <div className="mb-2">{dayBannerEl(dayStarts[r.id])}</div>
                       )}
                       {r && (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className="group/loc flex items-center gap-2.5 py-2.5 mb-2 border-t scroll-mt-24"
+                          className="group/loc flex items-center gap-2.5 pt-2.5 pb-1.5 mb-1.5 border-t scroll-mt-24"
                           style={{ borderColor: BORDER, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span className="w-10 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
                             <Icon name="pin" className="w-4 h-4" style={{ color: "#8C939D" }} />
@@ -8797,7 +8868,7 @@ export default function App() {
             </div>
 
             <p className="mt-3 text-[10.5px] leading-relaxed" style={{ color: "#8C939D" }}>
-              原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」で ◼︎ 質問行（Q.）　／　番号をドラッグで並べ替え（場所は📍をドラッグで配下ごと移動）・右クリックでメニュー　／　尺はクリックで秒編集。実測 ＝ 文字数 ÷ {project.rate}字/秒　／　場所の時刻＝香盤表と連動、各シーンは到着時刻＋尺の積み上げ　／　自動保存
+              原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」で ◼︎ 質問行（Q.）　／　行頭の⋮⋮をドラッグで並べ替え（場所は📍をドラッグで配下ごと移動）・右クリックでメニュー　／　尺（動画内の想定）はクリックで秒編集、目安の1.5倍を超えた時だけ実測を赤表示（{project.rate}字/秒換算）　／　インサートは1行＝1カット、チェックで撮影済み　／　場所の時刻＝香盤表と連動、各シーンは到着時刻＋尺の積み上げ　／　自動保存
             </p>
             </>)}
           </div>
