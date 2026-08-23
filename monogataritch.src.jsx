@@ -8730,7 +8730,7 @@ export default function App() {
                 if (r.kind === "location") groups.push({ loc: r, idx, scenes: [] });
                 else { if (!groups.length) groups.push({ loc: null, idx: -1, scenes: [] }); groups[groups.length - 1].scenes.push({ r, idx }); }
               });
-              const GRID = "36px 48px 64px minmax(170px,220px) 100px 86px minmax(0,1fr) 56px"; // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
+              const GRID = "36px 44px 60px minmax(150px,190px) 94px 84px minmax(0,1fr) 52px"; // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
               const pad2 = (n) => String(n).padStart(2, "0");
               const renderScene = ({ r, idx }, i, arr) => {
                 const t = sectionOf(r.type);
