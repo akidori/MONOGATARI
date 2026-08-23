@@ -7827,6 +7827,38 @@ export default function App() {
         {/* 工程タブの縦レールは廃止（2026-07-31）。案件一覧と工程が左右2本に分かれていたのを
             サイドバーのツリー1本に統合した＝視線の横移動が消え、本文の幅がレール分(188px)広がる。
             モバイルは従来どおりヘッダーの横バーで切り替える。 */}
+      {!isNarrow && tocItems.length >= 3 && (
+        <aside className="hidden sm:block shrink-0 sticky self-start w-10 h-fit z-40" style={{ top: "50%", transform: "translateY(-50%)" }} aria-label="このページの目次">
+          <div className="group relative flex flex-col items-center gap-0.5">
+            {tocItems.map((it, si) => {
+              const active = tocActive === it.id;
+              const lineWidth = it.group ? 26 : 10 + ((si * 7) % 15);
+              return (
+                <button key={it.id} onClick={() => jumpToToc(it.id)} title={it.label}
+                  className="relative w-10 h-[11px] shrink-0 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
+                  aria-label={it.label}>
+                  <span className="block rounded-full transition-all hover:scale-x-110"
+                    style={{ width: lineWidth, height: it.group ? 3 : 2, backgroundColor: active ? theme.accent : (it.group ? "#8c8880" : "#b9b7b3") }} />
+                </button>
+              );
+            })}
+            {/* ホバーで開く一覧（左中央配置・右へ開く。2026-08-23 AK指示）。absolute＝本文の幅を1pxも削らない */}
+            <div className="pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity absolute left-9 top-0 w-56 max-h-[70vh] overflow-y-auto rounded-xl border border-stone-200 bg-white/95 backdrop-blur shadow-xl p-1.5 z-50">
+              <div className="text-[9px] font-bold tracking-widest text-stone-300 px-2 pb-1">目次</div>
+              {tocItems.map((it) => {
+                const active = tocActive === it.id;
+                return (
+                  <button key={it.id} onClick={() => jumpToToc(it.id)}
+                    className={"block w-full text-left text-[11.5px] leading-snug px-2 py-1 rounded-lg hover:bg-stone-100 " + (it.group ? "font-bold mt-1 " : "") + (active ? "font-bold text-stone-900 bg-stone-50" : "text-stone-500")}
+                    style={active || it.group ? { color: it.group && !active ? theme.accent : undefined } : {}}>
+                    {it.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+      )}
       <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
@@ -9666,38 +9698,6 @@ export default function App() {
 
       </main>
       {/* 目次レール（全タブ）：普段は細い線だけ＝場所を取らない。触るとラベルが本文の上に浮いて出る */}
-      {!isNarrow && tocItems.length >= 3 && (
-        <aside className="hidden sm:block shrink-0 sticky w-10 h-fit mt-5" style={{ top: headerH + 20 }} aria-label="このページの目次">
-          <div className="group relative flex flex-col items-center gap-0.5">
-            {tocItems.map((it, si) => {
-              const active = tocActive === it.id;
-              const lineWidth = it.group ? 26 : 10 + ((si * 7) % 15);
-              return (
-                <button key={it.id} onClick={() => jumpToToc(it.id)} title={it.label}
-                  className="relative w-10 h-[11px] shrink-0 flex items-center justify-center rounded focus:outline-none focus-visible:ring-2"
-                  aria-label={it.label}>
-                  <span className="block rounded-full transition-all hover:scale-x-110"
-                    style={{ width: lineWidth, height: it.group ? 3 : 2, backgroundColor: active ? theme.accent : (it.group ? "#8c8880" : "#b9b7b3") }} />
-                </button>
-              );
-            })}
-            {/* ホバーで開く一覧。absolute＝本文の幅を1pxも削らない */}
-            <div className="pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity absolute right-9 top-0 w-56 max-h-[70vh] overflow-y-auto rounded-xl border border-stone-200 bg-white/95 backdrop-blur shadow-xl p-1.5 z-50">
-              <div className="text-[9px] font-bold tracking-widest text-stone-300 px-2 pb-1">目次</div>
-              {tocItems.map((it) => {
-                const active = tocActive === it.id;
-                return (
-                  <button key={it.id} onClick={() => jumpToToc(it.id)}
-                    className={"block w-full text-left text-[11.5px] leading-snug px-2 py-1 rounded-lg hover:bg-stone-100 " + (it.group ? "font-bold mt-1 " : "") + (active ? "font-bold text-stone-900 bg-stone-50" : "text-stone-500")}
-                    style={active || it.group ? { color: it.group && !active ? theme.accent : undefined } : {}}>
-                    {it.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </aside>
-      )}
       </div>{/* /工程タブ縦レール＋本文の flex */}
       </div>{/* /content wrapper */}
 
