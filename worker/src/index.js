@@ -715,7 +715,19 @@ ${qList}
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "editor-link" && !parts[2]) {
         const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
         if (!env.MG_EDITOR_KEY || bearer !== env.MG_EDITOR_KEY) return json({ error: "forbidden" }, 403);
-        const id = (url.searchParams.get("id") || "").trim();
+        let id = (url.searchParams.get("id") || "").trim();
+        // 2026-08-23: Studio OS は deliverables.mg_project_id（案件ID）しか持たないので proj= でも引けるようにする。
+        // 案件ID → project JSON の shareId（共有スナップID）に解決。共有未発行なら 409（AKが「共有▾」で発行する必要がある）。
+        const proj = (url.searchParams.get("proj") || "").trim();
+        if (!id && proj) {
+          if (!/^[A-Za-z0-9]{3,32}$/.test(proj)) return json({ error: "proj不正" }, 400);
+          const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1").bind(proj).first();
+          if (!row) return json({ error: "not found" }, 404);
+          let p = null; try { p = JSON.parse(row.value); } catch (e) {}
+          if (!p) return json({ error: "invalid project data" }, 500);
+          if (!p.shareId) return json({ error: "share_missing", message: "共有が未発行です。ものがたりっちで「共有 ▾」→「アップだけ」を一度発行してください" }, 409);
+          id = p.shareId;
+        }
         if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ error: "id不正" }, 400);
         const snap = await env.SNAPS.get("snap:" + id, "json");
         if (!snap) return json({ error: "not found" }, 404);
@@ -804,6 +816,18 @@ ${qList}
         }
         const snap = await env.SNAPS.get("snap:" + parts[2], "json");
         if (!snap) return json({ error: "not found" }, 404);
+        // 2026-08-23: 編集者用リンク（&up=）で実際に開かれた印を1回だけ残す（upseen:<id>）。
+        // 「AKがリンクを発行した」と「編集者の手に渡って開いた」は別物で、後者が無い案件を Studio OS が
+        // 「編集者の入口の穴」として朝に出す。KV put は初回のみ（1,000回/日の枠を食わない）。値は時刻だけ。
+        try {
+          const upParam = url.searchParams.get("up") || "";
+          if (upParam) {
+            const uptok = await env.SNAPS.get("uptok:" + parts[2]);
+            if (uptok && uptok === upParam && !(await env.SNAPS.get("upseen:" + parts[2]))) {
+              await env.SNAPS.put("upseen:" + parts[2], new Date().toISOString());
+            }
+          }
+        } catch (e) {}
         // 自己治癒：発行時点で「Stream変換中」のまま凍結した版が snap に残ると、先方ページが
         // 生mp4フォールバック＝激重になる。配信時にStreamの現状を確認し ready/hls を書き戻す。
         try {
@@ -1194,6 +1218,42 @@ ${qList}
       // GET /api/public/summary/{projId} — 認証不要。Studio OSが構成台本タブ表示時に都度取得する
       // 読み取り専用サマリー。安全な集計値のみ返し、本文・タイトル・サムネ文言・取材メモ等の
       // クリエイティブ内容は一切含めない（redactForNonAdminと同じ「絶対に漏らさない」原則）。
+      // ===== 編集者の入口が用意されているかを Studio OS が一括で確認する（2026-08-23）=====
+      // 勇人さんがdl_fb50で「mg案件未紐付け→自力ログイン→個人案件に上げて弾かれる」で詰まった事故の再発防止。
+      // Studio OS は deliverables.mg_project_id を持つが「共有/編集者リンクが発行済みか」は mg 側の
+      // project JSON（shareId / shareUpToken / liveId）にしか無いので、ここで返す。値そのもの（トークン）は返さない。
+      // POST {ids:[projId...]} → {items:{[projId]:{found,shareIssued,editorLinkIssued,liveLinkIssued,updatedAt}}}
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "public" && parts[2] === "links-batch" && !parts[3]) {
+        let body = {};
+        try { body = await request.json(); } catch (e) {}
+        const ids = Array.from(new Set((Array.isArray(body.ids) ? body.ids : []).map((x) => String(x || "").trim()).filter((x) => /^[a-z0-9]{4,32}$/i.test(x)))).slice(0, 100);
+        const items = {};
+        for (const id of ids) items[id] = { found: false };
+        if (ids.length) {
+          const placeholders = ids.map(() => "?").join(",");
+          const { results } = await env.DB.prepare(
+            "SELECT proj_id, value FROM mg_kv WHERE proj_id IN (" + placeholders + ") ORDER BY updated_at ASC"
+          ).bind(...ids).all();
+          for (const row of results || []) {
+            let p = null;
+            try { p = JSON.parse(row.value); } catch (e) {}
+            if (!p) continue;
+            // 同じproj_idが複数sub（所有者/共同編集）にある場合は updated_at 昇順で回すので最後＝最新が残る
+            let editorOpenedAt = null;
+            if (p.shareId) { try { editorOpenedAt = (await env.SNAPS.get("upseen:" + p.shareId)) || null; } catch (e) {} }
+            items[row.proj_id] = {
+              found: true,
+              shareIssued: !!p.shareId,          // 共有スナップ発行済み＝編集者に渡せるリンクが存在しうる
+              editorLinkIssued: !!p.shareUpToken, // 何らかの共有を発行した（発行時にuptokが付く）
+              liveLinkIssued: !!p.liveId,         // 編集リンク（同時編集）を発行した
+              editorOpenedAt,                     // 編集者用リンク(&up=)が実際に開かれた時刻（無ければ未到達）
+              updatedAt: p.updatedAt || null,
+            };
+          }
+        }
+        return json({ items });
+      }
+
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "public" && parts[2] === "summary" && parts[3]) {
         const projId = parts[3];
         const row = await env.DB.prepare(

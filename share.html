@@ -65,7 +65,10 @@ const params = new URLSearchParams(location.search);
 const ID = params.get("id");
 const CHID = params.get("ch");
 const R = params.get("r") || "";  // 閲覧トークン（新方式snap）。無い旧snapはサーバ側graceで従来通り読める
-const RQ = R ? ("?r=" + encodeURIComponent(R)) : "";
+const _UP_FOR_RQ = params.get("up") || "";
+// 2026-08-23: &up=（編集者用トークン）も snap 読み取りに添える。Worker 側が「編集者が実際にこのリンクを開いた」
+// 印（upseen）を1回だけ記録し、Studio OS の「編集者の入口の穴」検知に使う。値の検証は Worker が行う。
+const RQ = (R ? ("?r=" + encodeURIComponent(R)) : "") + (_UP_FOR_RQ ? ((R ? "&" : "?") + "up=" + encodeURIComponent(_UP_FOR_RQ)) : "");
 const LOCK_TAB = params.get("tab");  // 単一タブ共有（&tab=script等）。指定時はそのペインだけ表示しタブバー非表示
 const ALLOW_TABS = (params.get("tabs")||"").split(",").map(s=>s.trim()).filter(Boolean);  // 複数タブ束ね共有（&tabs=video,script）。指定タブだけ見せる（その中での切替は可）
 const START_TAB = params.get("start");  // 着地タブ（&start=video）。最初に開くタブ
