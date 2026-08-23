@@ -441,6 +441,19 @@ ${qList}
         return json({ issues: Array.isArray(out.issues) ? out.issues : [], summary: (out.summary || "").toString() });
       }
 
+      // POST /api/autofix { project, issues } → 校正の指摘を「具体的な修正操作」に変換して返す（2026-08-23 AK「ボタン1つでAIが直す」）
+      // 返すのは ops（replace_text / set_label / delete_row / set_script / set_time）だけ。適用はフロントで安全確認のうえ行う。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "autofix") {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json().catch(() => ({}));
+        const project = b && b.project;
+        const issues = Array.isArray(b && b.issues) ? b.issues : [];
+        if (!project || !Array.isArray(project.rows)) return json({ error: "現在の案件が必要です" }, 400);
+        if (!issues.length) return json({ ops: [], note: "指摘がありません" });
+        const out = await autofixWithClaude(project, issues, env);
+        return json({ ops: Array.isArray(out.ops) ? out.ops : [], note: (out.note || "").toString() });
+      }
+
       // POST /api/preflight { project } → Obsidian承認済みレギュレーションの配布版で公開前検査。
       // AIは承認せず、懸念点だけを返す。最終判断はMONOGATARI画面で人が行う。
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "preflight") {
@@ -2985,6 +2998,71 @@ async function reviewWithClaude(project, env) {
     messages: [{ role: "user", content: ctx }],
   }, env);
   const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "report_review");
+  if (!block || !block.input) throw new Error("tool_use が返りませんでした");
+  return block.input;
+}
+
+/* ===== 自動修正：校正の指摘 → 具体的な修正操作（ops） ===== */
+const AUTOFIX_SYSTEM = `あなたは一日密着ドキュメンタリー構成台本の修正担当です。渡された「構成台本(JSON)」と「指摘リスト」をもとに、指摘を解消する最小の修正操作だけを apply_fixes ツールで返してください。
+
+# 使える操作
+- replace_text: rowId の原稿(script)内で find を replace に置換（誤字脱字・表記ゆれ用。find は原稿に1回だけ現れる短い語句にする。前後の文脈を含めて一意にする）
+- set_label: rowId のシーン見出し(label)を設定（見出しが空で原稿に中身があるシーンに、原稿の内容から10〜15字の見出しを付ける。原稿も空なら見出しを創作せず delete_row）
+- set_script: rowId の原稿(script)を丸ごと差し替え（インサートのカット不足に、見出し・前後のシーンから撮るべきカットを3〜5行、1行1カット「（〜）」形式で作る。インサート以外の原稿を丸ごと書き換えてはいけない）
+- delete_row: rowId の行を削除（見出しも原稿も空のシーン＝使われていない空の枠だけ。中身のある行は絶対に削除しない）
+- set_time: rowId のロケ行の時刻(time, "HH:MM")を設定（撮影順の矛盾で、前後のロケから妥当な時刻が明らかに推定できる時だけ）
+
+# 厳守
+- 指摘に対応する操作だけ。指摘に無い箇所は触らない
+- 判断できない指摘は skipped に rowId と理由を入れて飛ばす（無理に直さない）
+- 「質問と回答の逆転」は replace_text で ◼︎ の付け替え（行頭の「◼︎ 」を移す）で直せる時だけ直す
+- 回答が空の質問（撮影前に普通）は直さない（skipped）
+- note に何をしたか1〜2行`;
+
+const AUTOFIX_TOOL = {
+  name: "apply_fixes",
+  description: "指摘を解消する修正操作のリストを返す",
+  input_schema: {
+    type: "object",
+    properties: {
+      ops: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            op: { type: "string", enum: ["replace_text", "set_label", "set_script", "delete_row", "set_time"] },
+            rowId: { type: "string" },
+            find: { type: "string" },
+            replace: { type: "string" },
+            label: { type: "string" },
+            script: { type: "string" },
+            time: { type: "string" },
+            reason: { type: "string", description: "何を直したか（人が読む用・短く）" },
+          },
+          required: ["op", "rowId", "reason"],
+        },
+      },
+      skipped: { type: "array", items: { type: "object", properties: { rowId: { type: "string" }, reason: { type: "string" } } } },
+      note: { type: "string" },
+    },
+    required: ["ops"],
+  },
+};
+
+async function autofixWithClaude(project, issues, env) {
+  const model = env.PARSE_MODEL || "claude-sonnet-4-6";
+  const ctx = "----- 台本(JSON) -----\n" + JSON.stringify(slim(project)) +
+    "\n----- 指摘リスト(JSON) -----\n" + JSON.stringify(issues) +
+    "\n----- ここまで -----\n\n指摘を解消する修正操作を apply_fixes で返してください。";
+  const data = await claudeMessages({
+    model,
+    max_tokens: 8000,
+    system: AUTOFIX_SYSTEM,
+    tools: [AUTOFIX_TOOL],
+    tool_choice: { type: "tool", name: "apply_fixes" },
+    messages: [{ role: "user", content: ctx }],
+  }, env);
+  const block = (data.content || []).find((b) => b.type === "tool_use" && b.name === "apply_fixes");
   if (!block || !block.input) throw new Error("tool_use が返りませんでした");
   return block.input;
 }

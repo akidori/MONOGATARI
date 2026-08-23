@@ -5672,6 +5672,61 @@ export default function App() {
     } catch (e) { setPreflight((p) => ({ ...p, error: e.message || String(e) })); }
     finally { setPreflightBusy(false); }
   };
+  /* AIがまとめて直す（2026-08-23 AK「1件ずつ直すのが大変。ボタン1つで自動で直して/消して」）。
+     Worker /api/autofix が指摘→修正操作(ops)を返し、ここで安全条件つきで適用。直前の rows を保持して「元に戻す」可能 */
+  const autofixUndoRef = useRef(null);
+  const applyAutofixOps = (rows, ops) => {
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const applied = [];
+    let next = rows.map((r) => ({ ...r }));
+    const get = (id) => next.find((r) => r.id === id);
+    ops.forEach((o) => {
+      const r = o && o.rowId ? get(o.rowId) : null;
+      if (!r) return;
+      if (o.op === "replace_text" && o.find && typeof o.replace === "string") {
+        const sc = r.script || "";
+        if (sc.split(o.find).length === 2) { r.script = sc.replace(o.find, o.replace); applied.push({ ...o, label: r.label }); }
+      } else if (o.op === "set_label" && o.label && !(r.label || "").trim()) {
+        r.label = o.label; applied.push({ ...o, label: o.label });
+      } else if (o.op === "set_script" && o.script && r.kind === "scene" && r.type === "インサート" && !(r.script || "").split("\n").some((l) => l.trim() && !/^[※★◼■>＞]/.test(l.trim()))) {
+        r.script = ((r.script || "").trim() ? o.script.trim() + "\n" + (r.script || "").trim() : o.script.trim()); applied.push({ ...o, label: r.label });
+      } else if (o.op === "delete_row" && !(r.label || "").trim() && !(r.script || "").trim()) {
+        next = next.filter((x) => x.id !== r.id); applied.push({ ...o, label: "（空のシーン）" });
+      } else if (o.op === "set_time" && r.kind === "location" && /^\d{1,2}:\d{2}$/.test(o.time || "")) {
+        r.time = o.time.padStart(5, "0"); applied.push({ ...o, label: r.label });
+      }
+    });
+    return { rows: next, applied };
+  };
+  const runAutofix = async () => {
+    if (!preflight || !preflight.review) return;
+    const targets = preflight.review.issues.filter((it) => !it.soft);
+    if (!targets.length) return;
+    setPreflight((p) => ({ ...p, review: { ...p.review, fixing: true, fixError: "" } }));
+    try {
+      const r = await fetch(SHARE_API + "/api/autofix", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project, issues: targets }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "自動修正に失敗");
+      const { rows, applied } = applyAutofixOps(project.rows || [], d.ops || []);
+      if (!applied.length) { setPreflight((p) => ({ ...p, review: { ...p.review, fixing: false, fixError: "AIが安全に直せる箇所がありませんでした（" + (d.note || "手で確認してください") + "）" } })); return; }
+      autofixUndoRef.current = project.rows;
+      const nextProject = { ...project, rows };
+      setProject(nextProject);
+      const fixedIds = new Set(applied.map((o) => o.rowId));
+      const remainAi = preflight.review.issues.filter((it) => !it.soft && !structuralCategory(it.category) && !fixedIds.has(it.rowId));
+      setPreflight((p) => ({ ...p, review: { ...p.review, fixing: false, applied, issues: [...structuralReview(nextProject), ...remainAi], canUndo: true } }));
+      showToast("AIが " + applied.length + " 箇所を直しました");
+    } catch (e) { setPreflight((p) => ({ ...p, review: { ...p.review, fixing: false, fixError: e.message || String(e) } })); }
+  };
+  const structuralCategory = (c) => ["ロケ漏れ", "シーン漏れ", "インサート不足", "回答なし", "撮影順"].includes(c);
+  const undoAutofix = () => {
+    if (!autofixUndoRef.current) return;
+    const rows = autofixUndoRef.current; autofixUndoRef.current = null;
+    const nextProject = { ...project, rows };
+    setProject(nextProject);
+    setPreflight((p) => p ? { ...p, review: { ...p.review, applied: null, canUndo: false, issues: [...structuralReview(nextProject), ...p.review.issues.filter((it) => !structuralCategory(it.category))] } } : p);
+    showToast("自動修正を元に戻しました");
+  };
   const toggleHumanPreflight = (key) => setPreflight((p) => {
     const checks = { ...p.checks, [key]: !p.checks[key] };
     setMeta("publishHumanChecks", checks);
@@ -8620,7 +8675,7 @@ export default function App() {
                 const target = targetOf(r);
                 const chars = countChars(r.script);
                 const dur = chars / project.rate;
-                const over = chars > 0 && dur > target * 1.5;
+                const over = r.type !== "インサート" && chars > 0 && dur > target * 1.5; // インサートの行はカット説明＝台詞ではないので尺超過を出さない
                 const sceneDone = !!r.done;
                 const first = i === 0, last = i === arr.length - 1;
                 const isDragOver = dragOverIndex === idx && dragIds && !dragIds.includes(r.id);
@@ -10678,9 +10733,32 @@ export default function App() {
                     </div>
                     <p className="text-[11px] text-stone-500 leading-relaxed">誤字脱字・表記ゆれ・質問と回答の逆転・シーン/ロケの記入漏れ・インサートのカット不足・撮影順の矛盾を自動で確認します。</p>
                     {!rv.busy && rv.issues.length === 0 && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">問題ありません。</div>}
+                    {rv.applied && rv.applied.length > 0 && (
+                      <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[12px] font-bold text-emerald-800">AIが {rv.applied.length} 箇所を直しました</span>
+                          {rv.canUndo && <button onClick={undoAutofix} className="ml-auto text-[11px] underline text-emerald-800">元に戻す</button>}
+                        </div>
+                        <ul className="mt-1 space-y-0.5">
+                          {rv.applied.map((o, i) => (
+                            <li key={i} onClick={() => { if (o.op !== "delete_row") { setPreflight(null); jumpToRow(o.rowId); } }} className={"text-[11.5px] text-emerald-900 " + (o.op !== "delete_row" ? "cursor-pointer hover:underline" : "")}>
+                              <span className="opacity-70">{o.op === "delete_row" ? "削除" : o.op === "set_label" ? "見出し" : o.op === "set_script" ? "カット追加" : o.op === "set_time" ? "時刻" : "置換"}</span>　{o.label ? <span className="font-bold">{o.label}</span> : null}　{o.reason}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {rv.fixError && <div className="mt-2 text-[11px] text-rose-700">{rv.fixError}</div>}
                     {hard.length > 0 && (
                       <div className="mt-3">
-                        <div className="text-[12px] font-bold text-rose-700 mb-1.5">共有前に修正が必要な項目があります（{hard.length}件）</div>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          <div className="text-[12px] font-bold text-rose-700">共有前に修正が必要な項目があります（{hard.length}件）</div>
+                          <button onClick={runAutofix} disabled={rv.fixing}
+                            className="ml-auto h-7 px-3 rounded-lg text-[11.5px] font-bold text-white shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
+                            <Icon name="sparkle" className="w-3.5 h-3.5" />{rv.fixing ? "AIが直しています…" : "AIがまとめて直す" + (rv.busy ? "（校正の結果は後から追加）" : "")}
+                          </button>
+                        </div>
+                        <p className="text-[10.5px] text-stone-400 mb-1.5">誤字の置換・空の見出し付け・空のシーン削除・インサートのカット案・時刻の整合だけを自動で行い、中身のある原稿は書き換えません。直した後に「元に戻す」できます。</p>
                         <ul className="space-y-1.5">
                           {hard.map((it, i) => (
                             <li key={i} onClick={() => { if (it.rowId) { setPreflight(null); jumpToRow(it.rowId); } }}
