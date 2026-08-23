@@ -8730,7 +8730,7 @@ export default function App() {
                 if (r.kind === "location") groups.push({ loc: r, idx, scenes: [] });
                 else { if (!groups.length) groups.push({ loc: null, idx: -1, scenes: [] }); groups[groups.length - 1].scenes.push({ r, idx }); }
               });
-              const GRID = "36px 44px 60px minmax(150px,190px) 94px 84px minmax(0,1fr) 52px"; // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
+              const GRID = "36px 44px 56px minmax(150px,200px) 104px 90px minmax(0,1fr) 52px"; // 列間は gap-x-3 で確保（ピル/尺がめり込まないように） // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
               const pad2 = (n) => String(n).padStart(2, "0");
               const renderScene = ({ r, idx }, i, arr) => {
                 const t = sectionOf(r.type);
@@ -8831,17 +8831,17 @@ export default function App() {
                 }
                 return (
                   <div key={r.id} {...rowProps}>
-                    <div className="grid items-start py-3 pr-3" style={{ gridTemplateColumns: GRID }}>
+                    <div className="grid items-start py-3 pr-2 gap-x-3" style={{ gridTemplateColumns: GRID }}>
                       {timelineEl}
                       <div className="flex items-center gap-1 pt-[1px] cursor-grab active:cursor-grabbing select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">
                         <Icon name="grip" className="w-3 h-3 text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                         <span className="text-[15.5px] tabular-nums" style={{ fontFamily: mono, fontWeight: 650, color: "#1C2026" }}>{pad2(sceneNos[r.id])}</span>
                       </div>
                       <div className="pt-[3px]">{startTimeEl}</div>
-                      <div className="pr-3 min-w-0">{titleEl}</div>
+                      <div className="min-w-0">{titleEl}</div>
                       <div className="pt-[1px]">{pillEl}</div>
                       <div className="pt-[2px]">{durEl}</div>
-                      <div className="min-w-0 pl-3 border-l" style={{ borderColor: BORDER }}>{contentEl}</div>
+                      <div className="min-w-0 pl-2 border-l" style={{ borderColor: BORDER }}>{contentEl}</div>
                       {actionsEl}
                     </div>
                   </div>
