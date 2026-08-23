@@ -1247,14 +1247,19 @@ const textOn = (hex) => {
 
 /* ---------- 原稿セル：◼︎自動挿入 + 質問行をアクセント色・太字で表示 ---------- */
 /* インライン書式: **太字** / !!赤文字!!（ネスト可・改行またぎ可）。
-   ** と !! をトグルとして全文を走査し、書式付きの run 配列に分解する */
+   ** と !! をトグルとして全文を走査し、書式付きの run 配列に分解する。
+   マーカー文字（太字/赤文字の記号）自体もmarker:trueのrunとして返す（本文からは削除しない）。
+   これは下の透明textarea（value=生テキスト、マーカー込み）に重ねて表示するオーバーレイ層のため。
+   マーカーをここで消してしまうと、オーバーレイ側の文字数・幅が実textareaより少なくなり、
+   マーカー使用箇所より後ろでカーソル位置と表示文字がズレていく（marker:trueはopacity:0で
+   幅だけ確保して透明textareaと文字数を一致させる。呼び出し側で必ず処理すること） */
 function buildStyledRuns(text) {
   const runs = [];
   let bold = false, red = false, buf = "", bBold = false, bRed = false;
   const flush = () => { if (buf) { runs.push({ text: buf, bold: bBold, red: bRed }); buf = ""; } };
   for (let i = 0; i < text.length; ) {
-    if (text[i] === "*" && text[i + 1] === "*") { flush(); bold = !bold; i += 2; continue; }
-    if (text[i] === "!" && text[i + 1] === "!") { flush(); red = !red; i += 2; continue; }
+    if (text[i] === "*" && text[i + 1] === "*") { flush(); runs.push({ text: "**", marker: true }); bold = !bold; i += 2; continue; }
+    if (text[i] === "!" && text[i + 1] === "!") { flush(); runs.push({ text: "!!", marker: true }); red = !red; i += 2; continue; }
     if (!buf) { bBold = bold; bRed = red; }
     buf += text[i]; i++;
   }
@@ -1622,6 +1627,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
   const runs = buildStyledRuns(val || "");
   const qFlags = runs.map((r) => r.text).join("").split("\n").map((l) => /^\s*◼/.test(l));
   const styleFor = (r, isQ) => {
+    if (r.marker) return { opacity: 0 }; // マーカー文字は幅だけ確保して非表示（下の透明textareaと文字数を合わせる）
     const st = {};
     if (r.red) st.color = "#DC2645";
     else if (isQ) st.color = accent;
@@ -1705,7 +1711,8 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
   const runs = buildStyledRuns(val || "");
   const nodes = []; let key = 0;
   runs.forEach((r) => {
-    const st = {}; if (r.red) st.color = "#DC2645"; if (r.bold) st.fontWeight = 800;
+    const st = r.marker ? { opacity: 0 } : {}; // マーカー文字は幅だけ確保して非表示（下の透明textareaと文字数を合わせる）
+    if (!r.marker) { if (r.red) st.color = "#DC2645"; if (r.bold) st.fontWeight = 800; }
     r.text.split("\n").forEach((p, idx) => {
       if (idx > 0) nodes.push("\n");
       if (p) nodes.push(<span key={key++} style={st}>{p}</span>);
