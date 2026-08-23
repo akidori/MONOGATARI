@@ -3,9 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="0;url=https://monogataritch.pages.dev/">
   <link rel="canonical" href="https://monogataritch.pages.dev/">
   <title>ものがたりっち！</title>
+  <script>
+  /* 本番は Cloudflare Pages。ここは入口だけ。
+     ?case= / ?new=1&token= / &gateToken= / ?tab= など Studio OS からの深いリンクを
+     meta refresh で捨てると「紐付け済みなのに案件が開かない」「新規作成が無言で失敗」になる
+     （2026-08-23 ディアーズブレイン勇人さん事故）。クエリとハッシュを必ず引き継ぐ。 */
+  location.replace("https://monogataritch.pages.dev/" + location.search + location.hash);
+  </script>
+  <noscript><meta http-equiv="refresh" content="0;url=https://monogataritch.pages.dev/"></noscript>
 </head>
 <body>
   <p><a href="https://monogataritch.pages.dev/">ものがたりっち！を開く</a></p>

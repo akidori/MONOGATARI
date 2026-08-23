@@ -6507,8 +6507,19 @@ export default function App() {
       // 例外＝live編集リンクで開いている編集者：所有者の案件への完成動画アップなので所有者のR2/Streamに保存
       // （share.htmlの&up=編集者アップと同じ設計。ここを塞ぐと「編集権限なのに動画が上げられない」）
       if (!cfStream.legacyAllowed && !projLive) {
-        setShowAccount(true);
-        throw new Error(user ? "先にアカウント画面で自分のCloudflare Streamを接続してください" : "動画アップロードにはGoogleログインと自分のCloudflare Stream接続が必要です");
+        // 2026-08-23 勇人さん事故：Bird Flipの編集者が直接ログイン→初回自動生成の「案件1」に動画を上げようとして
+        // ここで弾かれ「Stream接続しろ」としか言われず、YouTube限定公開で回避した。ここに来る人の大半は
+        // 「依頼主の案件に上げたい人」なので、まず正しい入口（依頼主から受け取る編集リンク）を案内し、
+        // 自分の案件として使う人だけStream接続へ誘導する。アカウント画面を勝手に開くのもやめる（混乱の元）。
+        // トーストは2.2秒で消えて読めないので、ここだけは読み切れるダイアログで出す
+        try {
+          window.alert(
+            "この案件はあなた個人の案件のため、ここには動画を上げられません。\n\n"
+            + "依頼された案件の動画は、依頼主（ディレクター）から受け取った「編集リンク」で案件を開いてアップしてください（依頼主側に保存されます）。\n\n"
+            + (user ? "自分の案件として動画を使う場合は、アカウント画面で自分のCloudflare Streamを接続してください。" : "自分の案件として使う場合はGoogleログイン後、アカウント画面で自分のCloudflare Streamを接続してください。")
+          );
+        } catch (e) {}
+        throw new Error("編集リンクから開いた案件にアップしてください");
       }
       // 確認用バージョン＝納品URLにもなる金看板。保存期限で消えると先方に渡したURLが死ぬため無期限固定
       const meta = await uploadToR2(file, "", onProgress, sh.id, sh.token, { retention: 90 });
