@@ -5616,9 +5616,46 @@ export default function App() {
   /* resumeを渡すと、チェック完了直後にその関数を呼び直して元々やろうとしていた共有処理を続行する
      （08-22 AK指示: 納品タブだけでなく全ての共有経路をこのチェックリストに通すため、
      どの共有操作から呼ばれても戻れるようにresumeで汎用化した）。 */
+  /* 台本の構造チェック（AI不要・即時）。共有URL発行の前に自動で走る（2026-08-23 AK「AIは裏側で」）。
+     ロケ名未記入／シーンタイトル未記入／インサートのカット未記入／回答が空の質問／撮影時刻の逆転 */
+  const structuralReview = (pr) => {
+    const issues = [];
+    const rows = (pr && pr.rows) || [];
+    let prevTime = null, prevDay = null;
+    rows.forEach((r) => {
+      if (r.kind === "location") {
+        if (!(r.label || "").trim()) issues.push({ category: "ロケ漏れ", detail: "ロケーション名が空のままです", rowId: r.id, sceneLabel: "（ロケ名未入力）" });
+        const d = dayOf(r);
+        if (r.time) {
+          if (prevTime && prevDay === d && r.time < prevTime) issues.push({ category: "撮影順", detail: "撮影時刻（" + r.time + "）が前のロケ（" + prevTime + "）より早くなっています", rowId: r.id, sceneLabel: r.label });
+          prevTime = r.time; prevDay = d;
+        } else if (prevDay !== d) { prevTime = null; prevDay = d; }
+        return;
+      }
+      const label = (r.label || "").trim();
+      const script = r.script || "";
+      const lines = script.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!label) issues.push({ category: "シーン漏れ", detail: "シーンタイトルが空のままです", rowId: r.id, sceneLabel: "（無題のシーン）" });
+      if (r.type === "インサート" && !lines.some((l) => !/^[※★◼■>＞]/.test(l))) issues.push({ category: "インサート不足", detail: "撮るカットが1つも書かれていません（1行＝1カット）", rowId: r.id, sceneLabel: label || "（無題）" });
+      // 質問（◼︎行）の直後に本文が無い＝回答欄が空
+      let open = null, emptyQ = 0;
+      lines.forEach((l) => {
+        if (/^[◼■]/.test(l)) { if (open) emptyQ++; open = l; }
+        else if (open && !/^[※★>＞]/.test(l)) open = null;
+      });
+      if (open) emptyQ++;
+      if (emptyQ) issues.push({ category: "回答なし", detail: "回答が空の質問が " + emptyQ + " 件あります（撮影前なら問題ありません）", rowId: r.id, sceneLabel: label || "（無題）", soft: true });
+    });
+    return issues;
+  };
   const openPublishPreflight = async (resume) => {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
-    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "", resume: resume || null });
+    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "", resume: resume || null, review: { busy: true, issues: structuralReview(project), aiError: "" } });
+    // 台本レビュー（誤字脱字・表記ゆれ・質問と回答の逆転・未記入）を裏で同時に走らせる。失敗しても共有は止めない（構造チェック分は出る）
+    fetch(SHARE_API + "/api/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) })
+      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error || "AI校正に失敗"); return Array.isArray(d.issues) ? d.issues : []; })
+      .then((ai) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, issues: [...p.review.issues, ...ai.map((it) => ({ ...it, category: it.category || "校正" }))] } } : p))
+      .catch((e) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, aiError: e.message || String(e) } } : p));
     setPreflightBusy(true);
     // PRD実装順⑥: Studio OSで承認済みのregulation_rulesを取得してチェックリストへ合流させる。
     // 失敗してもローカルのmanualsベースのチェックリストは動くので、ここは静かに諦める。
@@ -5676,7 +5713,7 @@ export default function App() {
     if (!id) return;
     const u = buildShareUrl(id, t);
     setShareModal({ id, url: u, updated: had, tab: t || "" });
-    try { await navigator.clipboard.writeText(u); showToast((t ? "このタブの" : "案件まるごとの") + "共有URLを更新してコピーしたよ"); } catch (e) {}
+    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + (t ? "このタブの" : "案件まるごとの") + "共有URLを発行してコピーしました"); } catch (e) {}
   };
   /* 切り抜きショートだけをまとめて見せる先方用URL（mg-share workerの /shorts/{snap}?r=<rtok> ギャラリー
      ページ、全本を1画面で再生・DLできる）。ShortsPanelの「共有URL」ボタンから呼ばれる。
@@ -7819,26 +7856,7 @@ export default function App() {
             <span className="hidden sm:inline">{project.collab ? "共同編集中" : "招待"}</span>
             {project.collab && (project.members || []).length > 1 && <span className="text-[10px] tabular-nums opacity-70">{(project.members || []).length}</span>}
           </button>
-          {/* AIメニュー（校正 / 反映） */}
-          <div className="relative">
-            <button onClick={() => setAiMenu((v) => !v)} title="AI機能"
-              className="h-8 px-3 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 text-[12px] font-bold whitespace-nowrap" style={{ color: mainText }}>
-              <Icon name="sparkle" className="w-4 h-4 shrink-0" /> <span className="hidden sm:inline">AI</span> <span className="opacity-50 text-[9px]">▾</span>
-            </button>
-            {aiMenu && (<>
-              <div className="fixed inset-0 z-40" onClick={() => setAiMenu(false)} />
-              <div className="mg-pop absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700">
-                <button onClick={() => { setAiMenu(false); setShowReview(true); if (!reviewBusy) runReview(); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2 border-b border-stone-100">
-                  <Icon name="spellcheck" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
-                  <span><span className="block text-[12px] font-bold">AI校正チェック</span><span className="block text-[10px] text-stone-400">誤字脱字・未記入・構成の弱点を確認</span></span>
-                </button>
-                <button onClick={() => { setAiMenu(false); setShowAssistant(true); setAssistantSummary(""); }} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2">
-                  <Icon name="robot" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
-                  <span><span className="block text-[12px] font-bold">AIで反映</span><span className="block text-[10px] text-stone-400">LINE文面やメモを貼って構成に反映</span></span>
-                </button>
-              </div>
-            </>)}
-          </div>
+          {/* 右上のAIボタンは撤去（2026-08-23 AK「AIは裏側で自動実行、見せない」）。校正は共有前に自動で走り、AI校正/AIで反映は右クリック・⋮メニューから */}
           <button onClick={() => setShowTheme((s) => !s)} title="テーマカラー変更"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ color: mainText }}>
@@ -10492,6 +10510,8 @@ export default function App() {
             </div>
             <button onClick={() => { const idx = rowMenu.idx, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(rowMenu.kind === "location" ? "解説系" : (sceneType || "解説系"))); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />下にシーンを追加</button>
             <button onClick={() => { const idx = rowMenu.idx; setRowMenu(null); insertBelow(idx, newLocation("")); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />下にロケ（セクション）を追加</button>
+            <button onClick={() => { setRowMenu(null); setShowReview(true); if (!reviewBusy) runReview(); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="spellcheck" className="w-3.5 h-3.5 text-stone-400" />AI校正チェック（台本全体）</button>
+            <button onClick={() => { setRowMenu(null); setShowAssistant(true); setAssistantSummary(""); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="robot" className="w-3.5 h-3.5 text-stone-400" />AIで反映（メッセージを貼る）</button>
             <button onClick={() => { const id = rowMenu.id; setRowMenu(null); deleteRow(id); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[12px] font-bold text-red-500 flex items-center gap-2"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
           </div>
         </>
@@ -10644,6 +10664,54 @@ export default function App() {
                 {!preflightBusy && !preflight.error && !(preflight.concerns || []).length && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">AIが確認を求める懸念はありませんでした</div>}
                 {preflight.error && <div className="mt-3 rounded-lg bg-red-50 text-red-700 px-3 py-2 text-[11px]">{preflight.error}。安全のためURL生成を停止します。</div>}
               </section>
+              {/* 台本の自動レビュー（構造チェック＋AI校正）。共有前に裏で走る。修正は任意＝「そのまま共有」もできる */}
+              {preflight.review && (() => {
+                const rv = preflight.review;
+                const hard = rv.issues.filter((it) => !it.soft), soft = rv.issues.filter((it) => it.soft);
+                const catCol = (c) => c === "誤字脱字" ? "#B45309" : c === "質問と回答の逆転" ? "#9333EA" : c === "未記入" || c === "シーン漏れ" || c === "ロケ漏れ" ? "#0EA5E9" : c === "インサート不足" ? "#EB5D5D" : c === "撮影順" ? "#D97706" : "#6B7280";
+                return (
+                  <section className="rounded-xl border p-3.5" style={{ borderColor: hard.length ? "#F6CCCC" : "#E5E7EB" }}>
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[12px] font-bold text-stone-800">台本の自動レビュー</span>
+                      {rv.busy && <span className="text-[10px] text-indigo-500">AI校正中…（10〜20秒）</span>}
+                      {!rv.busy && rv.aiError && <span className="text-[10px] text-stone-400" title={rv.aiError}>AI校正は接続できず（構造チェックのみ）</span>}
+                    </div>
+                    <p className="text-[11px] text-stone-500 leading-relaxed">誤字脱字・表記ゆれ・質問と回答の逆転・シーン/ロケの記入漏れ・インサートのカット不足・撮影順の矛盾を自動で確認します。</p>
+                    {!rv.busy && rv.issues.length === 0 && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">問題ありません。</div>}
+                    {hard.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-[12px] font-bold text-rose-700 mb-1.5">共有前に修正が必要な項目があります（{hard.length}件）</div>
+                        <ul className="space-y-1.5">
+                          {hard.map((it, i) => (
+                            <li key={i} onClick={() => { if (it.rowId) { setPreflight(null); jumpToRow(it.rowId); } }}
+                              className={"rounded-lg border border-stone-200 px-3 py-2 " + (it.rowId ? "cursor-pointer hover:bg-stone-50" : "")}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: catCol(it.category) }}>{it.category}</span>
+                                {it.sceneLabel && <span className="text-[11.5px] font-bold text-stone-700 truncate">{it.sceneLabel}</span>}
+                                {it.rowId && <span className="text-[10px] text-stone-400 ml-auto shrink-0">修正する ↗</span>}
+                              </div>
+                              <div className="text-[12px] text-stone-700 mt-0.5 leading-relaxed">{it.detail}</div>
+                              {it.suggestion && <div className="text-[11.5px] text-emerald-800 mt-0.5">→ {it.suggestion}</div>}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {soft.length > 0 && (
+                      <details className="mt-2">
+                        <summary className="text-[11px] text-stone-500 cursor-pointer">参考：{soft.length}件（回答が空の質問など・撮影前なら通常）</summary>
+                        <ul className="mt-1.5 space-y-1">
+                          {soft.map((it, i) => (
+                            <li key={i} onClick={() => { if (it.rowId) { setPreflight(null); jumpToRow(it.rowId); } }} className="text-[11.5px] text-stone-600 px-2 py-1 rounded hover:bg-stone-50 cursor-pointer">
+                              <span className="font-bold">{it.sceneLabel}</span>：{it.detail}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </section>
+                );
+              })()}
               {(preflight.concerns || []).length > 0 && (
                 <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5">
                   <div className="text-[12px] font-bold text-amber-900 mb-2">あなたに確認が必要な懸念だけ</div>
@@ -10663,7 +10731,7 @@ export default function App() {
               <span className="text-[10px] text-stone-400">案件とクライアントは自動判定済みです</span>
               <button onClick={finishPublishPreflight} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || regulationChecklist.some((r) => !preflight.checks[r.key]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block" || !preflight.acknowledged[c.id])}
                 className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
-                {preflightBusy ? "AI確認中…" : "確認を完了してURL生成"}
+                {preflightBusy ? "AI確認中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "確認を完了してURL生成"}
               </button>
             </div>
           </div>
