@@ -3671,6 +3671,9 @@ export default function App() {
         // updatedAt を送信時に打刻する（2026-08-18・Codex指摘）。ゲスト編集は saveProjectData を通らず
         // 打刻ゼロだったため、DOスナップの updatedAt が実際より古く見え、鮮度比較で共同編集分を潰す穴になっていた
         try { if (liveWS.current && liveWS.current.readyState === 1) liveWS.current.send(JSON.stringify({ t: "full", project: { ...cleanProj(project), updatedAt: Date.now() } })); } catch (e) {}
+        // live中はここでしか止まった瞬間を拾えない（通常モードのrecordHistoryはproject.live=trueだと丸ごとスキップされる）。
+        // これが抜けていたため、共同編集中にタイトル/ハイライトがマージで消えても履歴に何も残らなかった（08-23 森川さん案件）。
+        recordHistory(project);
       }, 400);
       // 所有者なら本体（クラウド保存）も10秒デバウンスで追従させる（2026-08-18）。
       // 旧実装はライブ中の保存を完全停止＝「DOだけが正本」で、DO消滅・別リンク閲覧・共有スナップ再発行が
