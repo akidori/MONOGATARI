@@ -55,11 +55,11 @@
 <script>
 const API = (() => { try { const o = localStorage.getItem("mg:shareApi"); if (o) return o.replace(/\/$/, ""); } catch(e){} return "https://mg-share.aki-surf89315.workers.dev"; })();
 const SECTION_TYPES = {
-  "インサート": { full: "インサート（3~5秒）",   target: 5,   color: "#71717A", bg: "#F0F0F2" },
-  "ブリッジ":   { full: "ブリッジ（5~10秒）",    target: 10,  color: "#0D9488", bg: "#E0F2EF" },
-  "VLOG":      { full: "VLOG（15~30秒）",       target: 30,  color: "#D97706", bg: "#FCF0DC" },
-  "解説系":     { full: "解説系（30秒~1分）",    target: 60,  color: "#2563EB", bg: "#E3EBFC" },
-  "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#DC2645", bg: "#FBE5EA" },
+  "インサート": { full: "インサート（3~5秒）",   target: 5,   color: "#D94D4D", bg: "#FFF0F0" },
+  "ブリッジ":   { full: "ブリッジ（5~10秒）",    target: 10,  color: "#B58A16", bg: "#FFF8D8" },
+  "VLOG":      { full: "VLOG（15~30秒）",       target: 30,  color: "#D8762B", bg: "#FFF2E5" },
+  "解説系":     { full: "解説系（30秒~1分）",    target: 60,  color: "#3277D4", bg: "#EAF3FF" },
+  "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#348C53", bg: "#EAF8EE" },
 };
 const params = new URLSearchParams(location.search);
 const ID = params.get("id");
