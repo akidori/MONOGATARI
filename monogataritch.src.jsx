@@ -1246,7 +1246,7 @@ const textOn = (hex) => {
   } catch { return "#FFFFFF"; }
 };
 
-/* ---------- 原稿セル：◼︎自動挿入 + 質問行をアクセント色・太字で表示 ---------- */
+/* ---------- 原稿セル：行頭「・」→◼︎変換 + 質問行（◼︎始まり）をアクセント色・太字で表示 ---------- */
 /* ===== ピクトグラム（ライン系SVG・currentColorで配色追従）===== */
 const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, strokeWidth = 1.8 }) {
   const c = { className, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", style, "aria-hidden": true };
@@ -1585,26 +1585,36 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
   const handleKeyDown = (e) => {
     if ((e.metaKey || e.ctrlKey) && (e.key === "b" || e.key === "B")) { e.preventDefault(); wrap("**"); return; }
     if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "h" || e.key === "H")) { e.preventDefault(); wrap("!!"); return; }
-    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
-    const ta = e.target;
-    const { selectionStart: pos, value: v } = ta;
-    const lineStart = v.lastIndexOf("\n", pos - 1) + 1;
-    if (v.slice(lineStart, pos).trim() === "") {
-      e.preventDefault();
-      const insert = "\n◼︎ ";
-      set(v.slice(0, pos) + insert + v.slice(pos));
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = pos + insert.length; });
-    }
   };
 
-  const handleFocus = (e) => {
-    setFocused(true);
-    if (!val) {
-      set("◼︎ ");
-      const ta = e.target;
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = 3; });
-    }
+  /* ◼︎（質問行）の作り方（2026-08-23 AK指示で変更）：
+     旧＝フォーカス時や空行Enterで「◼︎ 」を勝手に挿入 → 「勝手に◼︎と赤文字になる」と不評のため廃止。
+     新＝行頭に「・」を打った瞬間だけ「◼︎ 」に置き換える（・はJISキーボードで打ちやすい）。
+     IME変換中は触らない（確定時 compositionEnd で改めて判定）。 */
+  const composingRef = useRef(false);
+  const bulletToQ = (ta) => {
+    if (!ta || composingRef.current) return false;
+    const v = ta.value;
+    const pos = ta.selectionStart;
+    if (ta.selectionEnd !== pos) return false;
+    const lineStart = v.lastIndexOf("\n", pos - 1) + 1;
+    if (v.slice(lineStart, pos) !== "・") return false;
+    const nv = v.slice(0, lineStart) + "◼︎ " + v.slice(pos);
+    set(nv);
+    const caret = lineStart + 3;
+    requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = caret; });
+    return true;
   };
+  const handleChange = (e) => {
+    set(e.target.value);
+    bulletToQ(e.target);
+  };
+  const imeWrapped = {
+    onCompositionStart: (e) => { composingRef.current = true; ime.onCompositionStart(e); },
+    onCompositionEnd: (e) => { composingRef.current = false; ime.onCompositionEnd(e); bulletToQ(e.target); },
+  };
+
+  const handleFocus = () => { setFocused(true); };
 
   /* 質問行（◼︎始まり）に色と太字をつけた表示レイヤー。
      太字/赤文字は全文を run 化してから行に流すので、改行をまたぐ ** でも崩れない */
@@ -1640,14 +1650,14 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
         </div>
       )}
       <div aria-hidden className="px-3 py-2 text-stone-800" style={{ ...textStyle, minHeight: 38 }}>
-        {val ? nodes : <span className="text-stone-300">{placeholder || "クリックして原稿を入力"}</span>}
+        {val ? nodes : <span className="text-stone-300">{placeholder || "クリックして原稿を入力（行頭に「・」で ◼︎ 質問行）"}</span>}
         {"\u200b"}
       </div>
       <textarea
         ref={taRef}
-        {...ime}
+        {...imeWrapped}
         value={val}
-        onChange={(e) => set(e.target.value)}
+        onChange={handleChange}
         onKeyDown={handleKeyDown}
         onFocus={handleFocus}
         onBlur={() => { setFocused(false); flush(); }}
@@ -1662,11 +1672,11 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
 /* 太字(**)・赤文字(!!)の装飾に対応し、内容に合わせて高さが伸びる入力欄。
    ScriptCellと同じマークアップ（⌘B / ⌘⇧H・ツールバーB/A）だが、構成台本特有の◼︎質問行の自動処理は持たない。
    ヒアリング等の自由記述で「全文が見える＋太字・色付け」を使いたい箇所向け。 */
-const RichCell = React.memo(function RichCell({ value, onChange, placeholder, className = "", minHeight = 44, fontSize = 13 }) {
+const RichCell = React.memo(function RichCell({ value, onChange, placeholder, className = "", minHeight = 44, fontSize = 13, lineHeight = 1.45 }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush, ime] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
-  const textStyle = { fontFamily: "inherit", fontSize, lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" };
+  const textStyle = { fontFamily: "inherit", fontSize, lineHeight, whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" };
   const wrap = (mk) => {
     const ta = taRef.current; if (!ta) return;
     const next = toggleInlineMarker(val || "", ta.selectionStart, ta.selectionEnd, mk);
@@ -8379,7 +8389,7 @@ export default function App() {
                 </span>
               ), toggleHighlight)}
               {!highlightCollapsed && (
-                <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（空行でEnter → ◼︎ 自動挿入）" />
+                <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（行頭に「・」で ◼︎ 質問行）" />
               )}
             </section>
             </>)}
@@ -8766,7 +8776,7 @@ export default function App() {
             </div>
 
             <p className="mt-3 text-[11px] text-stone-400 leading-relaxed">
-              原稿：太字 ⌘B／赤文字 ⌘⇧H（空行Enterで「◼︎ 」自動挿入）　／　ロケ見出しの「1日目」で撮影日を割り当て（2日目にすると台本・香盤表が日別に区切られ、時刻・移動も日ごとにリセット）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の⋮⋮をドラッグで移動・左の✓で撮影完了（グレーアウト）　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
+              原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」を打つと「◼︎ 」質問行に変換　／　ロケ見出しの「1日目」で撮影日を割り当て（2日目にすると台本・香盤表が日別に区切られ、時刻・移動も日ごとにリセット）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の⋮⋮をドラッグで移動・左の✓で撮影完了（グレーアウト）　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
             </p>
             </>)}
           </>
@@ -9147,7 +9157,7 @@ export default function App() {
 
         {/* ================= ヒアリングタブ（演者の事前聞き取り→構成のネタ元） ================= */}
         {(tab === "hearing" || tab === "wizard") && (
-          <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1">
+          <div className="max-w-[1120px] mx-auto px-1 sm:px-0 py-1">
             {/* 取材メモ＝ヒアリング＋質問ウィザードを統合（どちらも構成前のメモ）。中で切替 */}
             <div className="inline-flex gap-1 mb-4 p-1 rounded-xl bg-stone-100">
               {[["hearing", "聞き取りシート"], ["wizard", "質問ウィザード"]].map(([k, lab]) => (
@@ -9191,13 +9201,16 @@ export default function App() {
             {prepView === "wizard" ? (
               <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
             ) : (
-          <div className="space-y-4">
-            <div className="flex items-start justify-between gap-2 flex-wrap">
-              <p className="text-[12px] text-stone-500">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
+          <div className="space-y-5">
+            {/* 取材メモ リーディング／カード型（2026-08-23）。データ構造・ハンドラは従来のまま、表示だけ
+               「質問(Q)＋回答」のカードに分解し、本文幅を760pxに制限・文字を大きく・行間1.7に。
+               長文を横幅いっぱいに流さない／全部同じ文字サイズにしない／罫線で区切らない、が方針 */}
+            <div className="flex items-start justify-between gap-3 flex-wrap">
+              <p className="text-[13px] text-stone-500 leading-relaxed max-w-[760px]">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold text-stone-700">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
               <button onClick={resetHearing} className="shrink-0 text-[11px] font-bold text-stone-400 hover:text-stone-600 underline">初期テンプレに戻す</button>
             </div>
             <button onClick={() => setHearingImport({ raw: "" })}
-              className="w-full rounded-xl border border-dashed p-3 text-[12px] font-bold inline-flex items-center justify-center gap-2 transition-colors"
+              className="w-full rounded-xl border border-dashed p-3.5 text-[13px] font-bold inline-flex items-center justify-center gap-2 transition-colors hover:bg-stone-50"
               style={{ borderColor: theme.accent, color: theme.accent }}>
               <Icon name="sparkle" className="w-4 h-4" />文字起こしを貼ってAIに自動でまとめてもらう
             </button>
@@ -9210,8 +9223,8 @@ export default function App() {
                 <Icon name="download" className="w-3.5 h-3.5" />CSVで書き出し
               </button>
             </div>
-            {/* タブの下に置く横型目次。背景や枠を使わず、本文幅を狭めない */}
-            <aside className="relative w-full sm:hidden" aria-label="取材メモの目次">
+            {/* スマホ用の横型目次（デスクトップは右に固定目次） */}
+            <aside className="relative w-full lg:hidden" aria-label="取材メモの目次">
               <nav className="flex flex-wrap items-center gap-1.5 min-h-7 py-0.5">
                 <span className="text-[9px] font-bold tracking-widest text-stone-300 mr-1">目次</span>
                   {(project.hearing || []).map((sec, si) => {
@@ -9233,34 +9246,73 @@ export default function App() {
                   })}
               </nav>
             </aside>
-            {/* ドキュメント風の1枚シート：全セクションを1枚に流し込む。箱枠なし・見出し＋罫線区切り・入力欄はボーダーレス */}
-            <div className="rounded-2xl border border-stone-200 bg-white px-5 sm:px-8 py-6 sm:py-8 shadow-sm">
-              {(project.hearing || []).map((sec) => (
-                <div key={sec.id} id={"hearing-sec-" + sec.id} data-toc={sec.title || "無題のセクション"} className="group/sec mt-7 first:mt-0 scroll-mt-20 rounded-lg transition-shadow">
-                  <div className="flex items-center gap-2 mb-2 pb-1.5 border-b-2 border-stone-100">
-                    <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)}
-                      className="flex-1 min-w-0 text-[15px] font-bold text-stone-800 bg-transparent focus:outline-none py-0.5" />
-                    <button onClick={() => removeHearingSection(sec.id)} title="セクション削除" className="shrink-0 opacity-0 group-hover/sec:opacity-100 text-stone-300 hover:text-rose-500 transition-opacity"><Icon name="trash" className="w-4 h-4" /></button>
-                  </div>
-                  <div className="divide-y divide-stone-100">
-                    {sec.items.map((it) => (
-                      <div key={it.id} id={"hearing-item-" + it.id} className="group py-2 scroll-mt-24 rounded-md transition-shadow">
-                        <div className="flex items-center gap-2">
-                          <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)}
-                            className="flex-1 min-w-0 text-[11px] font-bold text-stone-400 bg-transparent focus:outline-none" />
-                          <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500"><Icon name="close" className="w-3.5 h-3.5" /></button>
-                        </div>
-                        {it.hint && <div className="text-[10px] text-stone-400 leading-snug whitespace-pre-wrap break-words">{it.hint}</div>}
-                        <RichCell value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
-                          placeholder={it.hint || "ここに聞き取った内容を入力…"} minHeight={30}
-                          className="w-full bg-transparent" />
+            <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_220px] lg:gap-6 lg:items-start">
+              {/* 本文：セクション見出し＋項目カード。カード＝左アクセント線＋Q/回答の2段 */}
+              <div className="min-w-0 space-y-9">
+                {(project.hearing || []).map((sec, si) => {
+                  const filled = sec.items.filter((it) => (it.value || "").trim()).length;
+                  return (
+                    <section key={sec.id} id={"hearing-sec-" + sec.id} data-toc={sec.title || "無題のセクション"} className="group/sec scroll-mt-24 rounded-xl transition-shadow">
+                      <div className="flex items-center gap-2.5 mb-3">
+                        <span className="shrink-0 w-9 h-9 rounded-xl grid place-items-center bg-stone-100 text-stone-600"><Icon name="note" className="w-[18px] h-[18px]" /></span>
+                        <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)} placeholder="セクション名"
+                          className="flex-1 min-w-0 text-[19px] font-bold text-stone-800 bg-transparent focus:outline-none leading-tight placeholder:text-stone-300" />
+                        <span className="shrink-0 text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md" style={filled === sec.items.length && sec.items.length ? { background: "#F0FBF4", color: "#2E9E5B" } : { background: "#F4F4F3", color: "#8A8A86" }}>{filled}/{sec.items.length}</span>
+                        <button onClick={() => removeHearingSection(sec.id)} title="セクション削除" className="shrink-0 opacity-0 group-hover/sec:opacity-100 text-stone-300 hover:text-rose-500 transition-opacity"><Icon name="trash" className="w-4 h-4" /></button>
                       </div>
-                    ))}
+                      <div className="space-y-3">
+                        {sec.items.map((it) => (
+                          <div key={it.id} id={"hearing-item-" + it.id}
+                            className="group relative rounded-xl border border-[#E8E8E8] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.07)] transition-shadow scroll-mt-24 overflow-hidden">
+                            {/* 質問 */}
+                            <div className="flex items-start gap-3 px-4 sm:px-5 pt-4 pb-3 border-l-4" style={{ borderLeftColor: "#EF4055" }}>
+                              <span className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-[15px] font-black leading-none" style={{ background: "#FFF1F3", color: "#EF4055" }}>Q</span>
+                              <div className="flex-1 min-w-0 max-w-[760px] pt-1">
+                                <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)} placeholder="質問・項目名"
+                                  className="w-full text-[15.5px] font-bold text-stone-800 bg-transparent focus:outline-none leading-snug placeholder:text-stone-300" />
+                                {it.hint && <div className="mt-1 text-[12px] text-stone-400 leading-relaxed whitespace-pre-wrap break-words">{it.hint}</div>}
+                              </div>
+                              <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500 transition-opacity"><Icon name="close" className="w-4 h-4" /></button>
+                            </div>
+                            {/* 回答 */}
+                            <div className="flex items-start gap-3 px-4 sm:px-5 pt-3 pb-4 border-l-4" style={{ borderLeftColor: "#4E9CFB", background: "#FAFCFF" }}>
+                              <span className="shrink-0 w-8 h-8 rounded-lg grid place-items-center" style={{ background: "#EEF6FF", color: "#4E9CFB" }}><Icon name="chat" className="w-4 h-4" /></span>
+                              <div className="flex-1 min-w-0 max-w-[760px] -ml-3 -mt-1.5">
+                                <RichCell value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
+                                  placeholder="ここに聞き取った内容を入力…" minHeight={44} fontSize={14.5} lineHeight={1.7}
+                                  className="w-full bg-transparent" />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={() => addHearingItem(sec.id)} className="mt-3 text-[12px] font-bold text-stone-400 hover:text-stone-700 inline-flex items-center gap-1 transition-colors"><Icon name="plus" className="w-3.5 h-3.5" />項目を追加</button>
+                    </section>
+                  );
+                })}
+                <button onClick={addHearingSection} className="text-[13px] font-bold text-stone-500 hover:text-stone-800 inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 hover:border-stone-400 px-4 py-3 w-full justify-center transition-colors"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
+              </div>
+              {/* デスクトップ右固定の目次（セクション→該当位置へ） */}
+              <aside className="hidden lg:block sticky top-24" aria-label="取材メモの目次">
+                <div className="rounded-xl border border-stone-200 p-3" style={{ background: "#FAFAFA" }}>
+                  <div className="text-[10px] font-bold tracking-widest text-stone-400 mb-1.5 px-1.5">目次</div>
+                  <div className="space-y-0.5">
+                    {(project.hearing || []).map((sec, si) => {
+                      const active = hearingTocActive === sec.id;
+                      const filled = sec.items.filter((it) => (it.value || "").trim()).length;
+                      return (
+                        <button key={sec.id}
+                          onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
+                          className={"w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12.5px] leading-snug transition-colors " + (active ? "bg-white shadow-sm text-stone-800 font-bold" : "text-stone-600 hover:bg-white hover:text-stone-800")}>
+                          <span className="shrink-0 w-5 h-5 rounded-md grid place-items-center text-[10px] font-bold tabular-nums" style={active ? { background: theme.accent, color: accentText } : { background: "#ECECEA", color: "#6B6B68" }}>{si + 1}</span>
+                          <span className="flex-1 min-w-0 truncate">{sec.title || "無題のセクション"}</span>
+                          <span className="shrink-0 text-[10px] tabular-nums text-stone-400">{filled}/{sec.items.length}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <button onClick={() => addHearingItem(sec.id)} className="mt-2 text-[11px] font-bold text-stone-300 hover:text-stone-600 inline-flex items-center gap-1 transition-colors"><Icon name="plus" className="w-3 h-3" />項目を追加</button>
                 </div>
-              ))}
-              <button onClick={addHearingSection} className="mt-8 text-[12px] font-bold text-stone-400 hover:text-stone-700 inline-flex items-center gap-1"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
+              </aside>
             </div>
           </div>
             )}
