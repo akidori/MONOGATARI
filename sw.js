@@ -1,5 +1,5 @@
 // ものがたりっち Service Worker — オフライン動作 & デスクトップアプリ化用
-const CACHE = "monogatari-v231-live-history-record";
+const CACHE = "monogatari-v232-ime-controlled-input";
 const ASSETS = [
   "./",
   "./index.html",

@@ -1372,15 +1372,14 @@ function useBufferedField(value, onChange, delay = 220) {
     pending.current = null;
   };
   const set = (nv) => {
-    // 変換中（IME未確定）はローカルstate(val)も更新しない。setValするとcontrolledな
-    // <textarea value={val}>が再レンダーでDOMの.valueへ書き戻され、ブラウザが「外部から値を
-    // 書き換えられた」と判断してIMEの変換セッションを強制終了させてしまう（変換候補が出ずに
-    // 生のローマ字がそのまま確定してしまう不具合の原因）。変換中はpendingにだけ積んで、
-    // onCompositionEndで確定後の値を一度だけsetValする（下のimeハンドラ参照）。
+    // controlled input は onChange ごとに value と同じローカルstateを更新する必要がある。
+    // 変換中に setVal を止めると、React が古い value をDOMへ書き戻し、未確定文字列を
+    // ローマ字のまま確定させたり入力自体を巻き戻したりする。親の巨大stateへの反映だけを
+    // compositionEnd まで止め、画面上のローカル値は変換中も常にDOMへ追従させる。
     pending.current = nv;
     if (timer.current) clearTimeout(timer.current);
-    if (composing.current) return;       // 変換中はdebounceを回さない（確定後にまとめて送る）
     setVal(nv);
+    if (composing.current) return;       // 親へのdebounceは確定後にまとめて開始する
     timer.current = setTimeout(flush, delay);
   };
   // IMEハンドラ。入力要素に {...ime} で挿すこと（textarea/input 全部）。
