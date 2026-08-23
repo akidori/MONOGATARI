@@ -7872,7 +7872,7 @@ export default function App() {
 
         {/* ===== 構成台本の指標（TOTAL尺・字数・字/秒・取り込み）：構成台本タブの中に内包 ===== */}
         {tab === "script" && (
-          <div className="max-w-[1500px] mx-auto mb-4 rounded-xl border border-stone-200 bg-white px-3 sm:px-4 py-2 flex items-center gap-3 flex-wrap text-[12px]">
+          <div className={(stacked && project.format !== "talk" ? "max-w-[1040px]" : "max-w-[1500px]") + " mx-auto mb-4 rounded-xl border border-stone-200 bg-white px-3 sm:px-4 py-2 flex items-center gap-3 flex-wrap text-[12px]"}>
             <div className="flex items-baseline gap-1.5" style={{ fontFamily: mono }}>
               <span className="text-[9px] tracking-widest text-stone-400">TOTAL</span>
               <span className="text-base sm:text-xl font-bold tabular-nums leading-none text-stone-800">{fmt(totalEst)}</span>
@@ -8195,7 +8195,7 @@ export default function App() {
 
         {/* ================= 構成台本タブ ================= */}
         {tab === "script" && project.format !== "talk" && (
-          <>
+          <div className={scriptView === "mindmap" ? "" : stacked ? "max-w-[1040px] mx-auto" : "max-w-[1500px] mx-auto"}>
             {scriptView !== "mindmap" && (<>
             {/* 物語フレームワーク（背骨）：ロケブロックを選んだ型に比例配分して「穴」を可視化。クリックで該当ロケへ */}
             {(() => {
@@ -8624,46 +8624,52 @@ export default function App() {
                 表に戻したい時はヘッダーの表示切替で戻せる。 */}
             {stacked && (
             <section className="flex flex-col">
+              {/* 2026-08-23 カード刷新（AK指示「構成台本のUI/UXを徹底的に」）。
+                  ロケ＝セクション見出し（大きめ・時刻/日/完了を右に）、シーン＝1枚のカード：
+                  メタ1行（✓ / # / 時刻 / 種別 / 秒 ／ 右端に所要・文字数）→ 見出し16px → 原稿15px。
+                  操作（上下/追加/削除）はホバー時だけ右上に出す（スマホは常時）。幅は1040pxで頭打ち */}
               {project.rows.map((r, idx) => {
                 if (r.kind === "location") {
+                  const lc = locations.find((l) => l.id === r.id);
                   return (
                     <React.Fragment key={r.id}>
                     {maxDay > 1 && dayStarts[r.id] != null && (
-                      <div className="mt-4 mb-0.5">{dayBannerEl(dayStarts[r.id])}</div>
+                      <div className="mt-6 mb-1">{dayBannerEl(dayStarts[r.id])}</div>
                     )}
                     <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"}
                       onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                      className="flex items-stretch overflow-hidden rounded-lg mt-3 mb-1.5 shadow-sm"
+                      className="flex items-stretch overflow-hidden rounded-xl mt-7 first:mt-0 mb-3 shadow-sm scroll-mt-24"
                       style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1, ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
                       <div className="w-1.5 shrink-0" style={{ background: stripe }} />
+                      <span className="shrink-0 self-center ml-3 text-[10px] font-bold tracking-widest opacity-60" style={{ color: mainText, fontFamily: mono }}>LOC</span>
                       <BufferedInput
                         value={r.label}
                         onChange={(v) => updateRow(r.id, { label: v })}
                         placeholder="ロケーション名（例：ご自宅）"
-                        className="flex-1 min-w-0 bg-transparent text-[13px] font-bold tracking-[0.06em] px-2.5 py-2 focus:outline-none"
+                        className="flex-1 min-w-0 bg-transparent text-[16px] font-bold tracking-[0.04em] px-3 py-2.5 focus:outline-none placeholder:opacity-40"
                         style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                       />
+                      {lc && lc.scenes.length > 0 && (
+                        <span className="shrink-0 self-center mr-2 text-[11px] whitespace-nowrap opacity-70 tabular-nums" style={{ color: mainText, fontFamily: mono }}>
+                          {lc.scenes.length}シーン・{fmt(lc.secSum)}
+                        </span>
+                      )}
                       {dayPickerEl(r, true)}
                       <input
                         type="time"
                         value={r.time || ""}
                         onChange={(e) => updateRow(r.id, { time: e.target.value })}
                         title="到着・開始予定時刻（香盤表と連動）"
-                        className="shrink-0 w-[58px] self-center bg-transparent text-[12px] font-bold tabular-nums text-center rounded px-0 py-0.5 focus:outline-none focus:bg-white/15 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                        className="shrink-0 w-[64px] self-center bg-transparent text-[13px] font-bold tabular-nums text-center rounded px-0 py-0.5 focus:outline-none focus:bg-white/15 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                         style={{ fontFamily: mono, color: mainText, opacity: r.time ? 1 : 0.5 }} />
                       <button
                         onClick={() => updateRow(r.id, { done: !r.done })}
                         title={r.done ? "撮影完了を取り消す" : "このロケを撮影完了にする"}
-                        className={"shrink-0 self-center text-[10px] font-bold px-2 py-1 my-1 mr-2 ml-1 rounded-md whitespace-nowrap " + (r.done ? "bg-white/15 text-white/80" : "bg-white text-stone-700 shadow-sm")}>
+                        className={"shrink-0 self-center text-[11px] font-bold px-2.5 py-1.5 my-1 mr-2 ml-1 rounded-lg whitespace-nowrap " + (r.done ? "bg-white/15 text-white/80" : "bg-white text-stone-700 shadow-sm")}>
                         {r.done
-                          ? <span className="inline-flex items-center gap-0.5"><Icon name="checkCircle" className="w-3 h-3" />済</span>
-                          : <span className="inline-flex items-center gap-0.5"><Icon name="check" className="w-3 h-3" />完了</span>}
+                          ? <span className="inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />済</span>
+                          : <span className="inline-flex items-center gap-1"><Icon name="check" className="w-3.5 h-3.5" />完了</span>}
                       </button>
-                      {r.done && (() => { const lc = locations.find((l) => l.id === r.id); return (
-                        <span className="shrink-0 self-center mr-2 text-[10px] whitespace-nowrap opacity-60" style={{ color: mainText, fontFamily: mono }}>
-                          {lc ? lc.scenes.length : 0}シーン・{fmt(lc ? lc.secSum : 0)} ▾
-                        </span>
-                      ); })()}
                     </div>
                     </React.Fragment>
                   );
@@ -8677,78 +8683,84 @@ export default function App() {
                 const locDone = sceneLocDone[r.id];
                 if (locDone) return null; // 所属ロケが撮影完了 → 畳んで非表示
                 const sceneDone = !!r.done;
+                const opCls = "w-7 h-7 grid place-items-center rounded-md text-stone-400 hover:bg-stone-100 hover:text-stone-700 transition-colors";
                 return (
                   <div key={r.id} id={"row-" + r.id}
-                    className="rounded-xl border overflow-hidden mb-2"
-                    style={{ borderColor: t.borderColor || "#E4E4E7", borderLeft: "3px solid " + t.color, background: sceneDone ? "#F5F5F4" : "#FFFFFF", ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}) }}>
-                    {/* メタ：撮影完了・番号・時刻・所要 */}
-                    <div className="flex items-center gap-2 px-3 pt-2">
+                    className="group relative rounded-2xl border mb-3 bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_6px_20px_rgba(0,0,0,0.07)] transition-shadow scroll-mt-24"
+                    style={{ borderColor: "#E8E8E8", borderLeft: "4px solid " + t.color, background: sceneDone ? "#F5F5F4" : "#FFFFFF", ...(sceneDone ? { opacity: 0.55 } : {}), ...(flashId === r.id ? { boxShadow: "0 0 0 3px " + theme.accent } : {}) }}>
+                    {/* メタ1行：✓ / 番号 / 時刻 / 種別 / 秒 ……… 所要・文字数（スマホは折り返し） */}
+                    <div className="flex items-center gap-2 gap-y-1.5 flex-wrap px-4 sm:px-5 pt-3.5">
                       <button
                         onClick={() => updateRow(r.id, { done: !r.done })}
                         title={r.done ? "撮影完了を取り消す" : "このシーンを撮影完了にする"}
-                        className={"shrink-0 w-6 h-6 grid place-items-center rounded-md border transition-colors " + (r.done ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-300 text-stone-400")}>
+                        className={"shrink-0 w-6 h-6 grid place-items-center rounded-md border transition-colors " + (r.done ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-300 text-stone-300 hover:text-stone-500")}>
                         <Icon name="check" className="w-3.5 h-3.5" />
                       </button>
-                      <span className="text-[10px] text-stone-300 tabular-nums shrink-0" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
+                      <span className="text-[11px] text-stone-400 tabular-nums shrink-0 font-bold" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
                       {clocks[r.id] != null ? (
-                        <span className="text-[11px] tabular-nums shrink-0" style={{ fontFamily: mono, color: "#9CA3AF" }} title="ロケ到着時刻＋尺の積み上げ（実時刻）">{fmtClock(clocks[r.id])}</span>
+                        <span className="text-[12px] tabular-nums shrink-0 text-stone-500" style={{ fontFamily: mono }} title="ロケ到着時刻＋尺の積み上げ（実時刻）">{fmtClock(clocks[r.id])}</span>
                       ) : (
                         <input
                           key={(r.tc != null ? "m" : "a") + Math.round(tcs[r.id])}
                           defaultValue={fmt(tcs[r.id])}
                           onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
                           onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                          className="w-[52px] text-[11px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-stone-100"
+                          className="w-[56px] text-[12px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-stone-100"
                           style={{ fontFamily: mono, color: r.tc != null ? theme.accent : "#9CA3AF", fontWeight: r.tc != null ? 700 : 400 }}
                           title="開始時刻を手入力で固定（空欄で自動）" />
                       )}
-                      <span className={"ml-auto text-[11px] tabular-nums shrink-0 " + (over ? "text-red-500 font-bold" : chars ? "text-stone-600 font-semibold" : "text-stone-300")} style={{ fontFamily: mono }}>
+                      <span className="w-px h-4 bg-stone-200 shrink-0 mx-0.5" />
+                      {/* 種別：色ドット＋select（幅は中身なり。全幅センタリングはやめた） */}
+                      <span className="relative inline-flex items-center shrink-0 rounded-full border" style={{ background: t.bg, borderColor: t.borderColor || "#E4E4E7" }}>
+                        <span className="w-2 h-2 rounded-full ml-2.5 shrink-0" style={{ background: t.color }} />
+                        <select
+                          value={r.type}
+                          onChange={(e) => updateRow(r.id, { type: e.target.value, sec: null })}
+                          className="text-[12px] font-bold bg-transparent pl-1.5 pr-6 py-1 cursor-pointer focus:outline-none appearance-none"
+                          style={{ color: t.color }}>
+                          {TYPE_KEYS.map((k) => <option key={k} value={k}>{SECTION_TYPES[k].full}</option>)}
+                        </select>
+                        <span className="pointer-events-none absolute right-2 text-[9px]" style={{ color: t.color }}>▾</span>
+                      </span>
+                      <label className="inline-flex items-center gap-1 shrink-0 text-[11px] text-stone-400">
+                        <input
+                          type="number" min="1"
+                          value={target}
+                          onChange={(e) => updateRow(r.id, { sec: e.target.value === "" ? null : Number(e.target.value) })}
+                          className="w-12 text-[12px] text-center bg-stone-50 border border-stone-200 rounded-md px-1 py-0.5 tabular-nums focus:outline-none focus:border-stone-400"
+                          style={{ fontFamily: mono }}
+                          title="このシーンの目安秒数" />秒
+                      </label>
+                      <div className="flex-1" />
+                      {/* 操作：ホバー時だけ出す（スマホは常時） */}
+                      <div className={"flex items-center gap-0.5 shrink-0 transition-opacity " + (isNarrow ? "" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100")}>
+                        <button className={opCls} title="上へ" onClick={() => moveRow(idx, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
+                        <button className={opCls} title="下へ" onClick={() => moveRow(idx, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
+                        <button className={opCls} title="下にシーンを追加" onClick={() => insertBelow(idx, newScene(r.type))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
+                        <button className={opCls + " hover:bg-red-50 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                      </div>
+                      <span className={"text-[12px] tabular-nums shrink-0 px-2 py-0.5 rounded-md " + (over ? "bg-red-50 text-red-600 font-bold" : chars ? "text-stone-700 font-bold" : "text-stone-300")} style={{ fontFamily: mono }} title={over ? "目安秒数の1.5倍を超えています" : "所要（文字数÷" + project.rate + "字/秒）"}>
                         {chars ? fmt(dur) : "—"}<span className="text-stone-400 font-normal"> / {chars}字</span>
                       </span>
                     </div>
-                    {/* シーン種別・秒数 */}
-                    <div className="flex items-center gap-2 px-3 pt-2">
-                      <select
-                        value={r.type}
-                        onChange={(e) => updateRow(r.id, { type: e.target.value, sec: null })}
-                        className="flex-1 min-w-0 text-[11px] font-bold rounded-full px-2.5 py-1 cursor-pointer focus:outline-none appearance-none text-center"
-                        style={{ background: t.bg, color: t.color, maxWidth: isNarrow ? undefined : 240 }}>
-                        {TYPE_KEYS.map((k) => <option key={k} value={k}>{SECTION_TYPES[k].full}</option>)}
-                      </select>
-                      <input
-                        type="number" min="1"
-                        value={target}
-                        onChange={(e) => updateRow(r.id, { sec: e.target.value === "" ? null : Number(e.target.value) })}
-                        className="w-14 shrink-0 text-[12px] text-center bg-stone-50 rounded-md px-1 py-1 tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-300"
-                        style={{ fontFamily: mono }}
-                        title="このシーンの目安秒数" />
-                    </div>
-                    {/* 内容 */}
+                    {/* 見出し */}
                     <BufferedTextarea
                       value={r.label}
                       onChange={(v) => updateRow(r.id, { label: v })}
                       rows={1}
-                      placeholder="内容（シーンの見出し）"
-                      className="block w-full resize-none bg-transparent text-[13px] font-bold leading-snug px-3 pt-2 pb-1 focus:outline-none placeholder:text-stone-300 placeholder:font-normal" />
-                    {/* 原稿（全幅・スマホは大きめフォントで読みやすく） */}
-                    <div className="border-t border-stone-100 mt-1">
+                      placeholder="シーンの見出し"
+                      className="block w-full resize-none bg-transparent text-[16px] font-bold leading-snug text-stone-800 px-4 sm:px-5 pt-2.5 pb-1 focus:outline-none placeholder:text-stone-300 placeholder:font-normal" />
+                    {/* 原稿 */}
+                    <div className="px-1.5 sm:px-2.5 pb-2">
                       <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} fontSize={15} />
-                    </div>
-                    {/* 操作 */}
-                    <div className="flex items-center gap-1 px-2 py-1 border-t border-stone-100 bg-stone-50/60">
-                      <button className={opBtn} title="上へ" onClick={() => moveRow(idx, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
-                      <button className={opBtn} title="下へ" onClick={() => moveRow(idx, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
-                      <div className="flex-1" />
-                      <button className={opBtn} title="下に行を追加" onClick={() => insertBelow(idx, newScene(r.type))}><Icon name="plus" className="w-3.5 h-3.5" /></button>
-                      <button className={opBtn + " hover:bg-red-100 hover:text-red-500"} title="削除" onClick={() => deleteRow(r.id)}><Icon name="trash" className="w-3.5 h-3.5" /></button>
                     </div>
                   </div>
                 );
               })}
               {/* 合計 */}
-              <div className="flex items-center gap-3 rounded-lg px-3 py-2.5 mt-1 text-[11px] tabular-nums" style={{ background: theme.main, color: mainText, fontFamily: mono }}>
+              <div className="flex items-center gap-3 rounded-xl px-4 py-3 mt-2 text-[12px] tabular-nums" style={{ background: theme.main, color: mainText, fontFamily: mono }}>
                 <span className="font-bold tracking-wider">合計</span>
-                <span className="ml-auto">想定 {fmt(totalEst)}</span>
+                <span className="ml-auto text-[14px] font-bold">想定 {fmt(totalEst)}</span>
                 <span className="opacity-70">{totalChars.toLocaleString()}字</span>
               </div>
             </section>
@@ -8779,7 +8791,7 @@ export default function App() {
               原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」を打つと「◼︎ 」質問行に変換　／　ロケ見出しの「1日目」で撮影日を割り当て（2日目にすると台本・香盤表が日別に区切られ、時刻・移動も日ごとにリセット）　／　ロケ見出しの時刻＝香盤表と連動。各シーンの時間はロケ到着時刻＋尺の積み上げで実時刻表示（時刻未設定なら動画内TC、空欄で自動に戻る）　／　左の⋮⋮をドラッグで移動・左の✓で撮影完了（グレーアウト）　／　所要時間 ＝ 文字数 ÷ {project.rate}字/秒　／　自動保存
             </p>
             </>)}
-          </>
+          </div>
         )}
 
         {/* ================= マインドマップタブ（構成台本と同じデータをフルページで） ================= */}
