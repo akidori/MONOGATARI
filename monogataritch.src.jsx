@@ -1561,7 +1561,8 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
   const textStyle = {
     fontFamily: "inherit",
     fontSize,
-    lineHeight: 1.8,
+    // 原稿の複数行が「空行」に見えない密度。表示層とtextareaで必ず同じ値を使う。
+    lineHeight: 1.45,
     whiteSpace: "pre-wrap",
     overflowWrap: "break-word",
     wordBreak: "break-word",
@@ -1665,7 +1666,7 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush, ime] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
-  const textStyle = { fontFamily: "inherit", fontSize, lineHeight: 1.7, whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" };
+  const textStyle = { fontFamily: "inherit", fontSize, lineHeight: 1.45, whiteSpace: "pre-wrap", overflowWrap: "break-word", wordBreak: "break-word" };
   const wrap = (mk) => {
     const ta = taRef.current; if (!ta) return;
     const next = toggleInlineMarker(val || "", ta.selectionStart, ta.selectionEnd, mk);
