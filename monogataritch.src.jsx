@@ -1643,9 +1643,9 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     });
   })();
   const styleFor = (r, flag) => {
-    // マーカー文字（** / !!）：編集中は幅だけ確保して透明（透明textareaと文字数を合わせカーソル位置を保つ）。
-    // 読み時（blur）は幅ごと消す＝行頭の !! で空白が出ない（2026-08-24 AK指摘）
-    if (r.marker) return focused ? { opacity: 0 } : { display: "none" };
+    // マーカー文字（** / !!）：読み時（blur）は幅ごと消す＝空白も四角も出ない。
+    // 編集中は「薄いグレーで見せる」＝透明だと選択時に::selectionの桃色の箱だけが浮いて見える（2026-08-24 AK指摘）ため、隠さない
+    if (r.marker) return focused ? { color: "#C6CBD1" } : { display: "none" };
     const st = {};
     if (r.red) st.color = "#DC2645";
     else if (flag === "q") st.color = "#171A1F";
@@ -1707,8 +1707,8 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
           const rest = m[2] ? m[2].replace(/^\s+/, "") : "";
           if (rest) nodes.push(<span key={key++} style={styleFor(r, flag)}>{rest}</span>);
         } else {
-          // 編集中は幅だけ確保して完全透明（カーソル位置は幅で決まる。四角は見せない＝2026-08-24 AK指摘）
-          nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0 : 1 }}>{m[1]}</span>);
+          // 編集中の◼︎は薄いグレー（透明だと選択時に桃色の箱が浮く／字下げの理由も見えない）。非gutter（表モード・ハイライト）は従来どおり種別色
+          nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: qaGutter ? "#C6CBD1" : accent }}>{m[1]}</span>);
           if (m[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{m[2]}</span>);
         }
       } else if (flag === "star" && !r.marker) {
@@ -1789,8 +1789,8 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
   const runs = buildStyledRuns(val || "");
   const nodes = []; let key = 0;
   runs.forEach((r) => {
-    // マーカー: 編集中=透明で幅確保／読み時=幅ごと消す（行頭の!!や**で空白が出ないように）
-    const st = r.marker ? (focused ? { opacity: 0 } : { display: "none" }) : {};
+    // マーカー: 編集中=薄いグレーで見せる（透明だと選択時に色の箱だけ浮く）／読み時=幅ごと消す
+    const st = r.marker ? (focused ? { color: "#C6CBD1" } : { display: "none" }) : {};
     if (!r.marker) { if (r.red) st.color = "#DC2645"; if (!focused && r.bold) st.fontWeight = 800; }
     r.text.split("\n").forEach((p, idx) => {
       if (idx > 0) nodes.push("\n");
