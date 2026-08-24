@@ -10196,7 +10196,7 @@ export default function App() {
                     <ul className="space-y-2">
                       {reviewResult.issues.map((it, i) => {
                         const cat = it.category || "その他";
-                        const col = cat === "誤字脱字" ? "#B45309" : cat === "質問と回答の逆転" ? "#9333EA" : cat === "未記入" ? "#0EA5E9" : "#6B7280";
+                        const col = cat === "重複" ? "#DC2645" : cat === "誤字脱字" ? "#B45309" : cat === "質問と回答の逆転" ? "#9333EA" : cat === "未記入" ? "#0EA5E9" : "#6B7280";
                         return (
                           <li key={i}
                             onClick={() => jumpToRow(it.rowId)}
@@ -10809,7 +10809,7 @@ export default function App() {
               {preflight.review && (() => {
                 const rv = preflight.review;
                 const hard = rv.issues.filter((it) => !it.soft), soft = rv.issues.filter((it) => it.soft);
-                const catCol = (c) => c === "誤字脱字" ? "#B45309" : c === "質問と回答の逆転" ? "#9333EA" : c === "未記入" || c === "シーン漏れ" || c === "ロケ漏れ" ? "#0EA5E9" : c === "インサート不足" ? "#EB5D5D" : c === "撮影順" ? "#D97706" : "#6B7280";
+                const catCol = (c) => c === "重複" ? "#DC2645" : c === "誤字脱字" ? "#B45309" : c === "質問と回答の逆転" ? "#9333EA" : c === "未記入" || c === "シーン漏れ" || c === "ロケ漏れ" ? "#0EA5E9" : c === "インサート不足" ? "#EB5D5D" : c === "撮影順" ? "#D97706" : "#6B7280";
                 return (
                   <section className="rounded-xl border p-3.5" style={{ borderColor: hard.length ? "#F6CCCC" : "#E5E7EB" }}>
                     <div className="flex items-center gap-2 mb-1.5">
@@ -10817,7 +10817,7 @@ export default function App() {
                       {rv.busy && <span className="text-[10px] text-indigo-500">AI校正中…（10〜20秒）</span>}
                       {!rv.busy && rv.aiError && <span className="text-[10px] text-stone-400" title={rv.aiError}>AI校正は接続できず（構造チェックのみ）</span>}
                     </div>
-                    <p className="text-[11px] text-stone-500 leading-relaxed">誤字脱字・表記ゆれ・質問と回答の逆転・シーン/ロケの記入漏れ・インサートのカット不足・撮影順の矛盾を自動で確認します。</p>
+                    <p className="text-[11px] text-stone-500 leading-relaxed"><span className="font-bold text-stone-600">別シーンでの内容の重複</span>・誤字脱字・質問と回答の逆転・シーン/ロケの記入漏れ・インサートのカット不足・撮影順の矛盾を自動で確認します。</p>
                     {!rv.busy && rv.issues.length === 0 && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">問題ありません。</div>}
                     {rv.applied && rv.applied.length > 0 && (
                       <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
