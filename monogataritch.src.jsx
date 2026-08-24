@@ -8029,11 +8029,13 @@ export default function App() {
               )}
             </button>
           )}
-          {/* コンテキストパネル再表示（隠した時だけ出す） */}
+          {/* コンテキストパネル再表示（隠した時だけ出す）。前はアイコンのみで幅も狭く、
+              「閉じた後どう戻すか分からない」＋隣接ボタンと幅が揃わず見た目が悪かった
+              （2026-08-24 AK指摘）。規定一覧／マニュアルと同じ形（アイコン+ラベル・px-3）に揃える。 */}
           {!isNarrow && !contextPanelOpen && (
             <button onClick={() => setContextPanelOpen(true)} title="前回の続き・進捗サマリーを表示"
-              className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
-              <Icon name="up" className="w-3.5 h-3.5 shrink-0 -rotate-90" />
+              className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
+              <Icon name="up" className="w-3.5 h-3.5 shrink-0 -rotate-90" /><span>パネル</span>
             </button>
           )}
           {/* マニュアル／決め事 */}
