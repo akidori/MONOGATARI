@@ -1677,8 +1677,8 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
       const flag = lineFlags[li];
       const m = flag === "q" && !r.marker ? /^(\s*[◼■]\uFE0E?)([\s\S]*)$/.exec(p) : null;
       if (m) {
-        // ◼︎ は種別色。Q.ラベルがある時は薄くして二重に主張させない（幅は保つ）
-        nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0.35 : 1 }}>{m[1]}</span>);
+        // Q.ラベルがある時は ◼︎ を非表示（2026-08-24 AK指示）。文字は残し幅も保つ＝カーソル位置は不変
+        nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0 : 1 }}>{m[1]}</span>);
         if (m[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{m[2]}</span>);
       } else if (flag === "star" && !r.marker) {
         const sm = /^(\s*★)([\s\S]*)$/.exec(p);
