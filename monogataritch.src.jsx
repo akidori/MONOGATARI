@@ -1560,9 +1560,9 @@ function AddressField({ loc, onChange }) {
 const cellPropsEqual = (a, b) =>
   a.value === b.value && a.placeholder === b.placeholder && a.accent === b.accent &&
   a.fontSize === b.fontSize && a.className === b.className && a.minHeight === b.minHeight &&
-  a.lineHeight === b.lineHeight && a.qaGutter === b.qaGutter;
+  a.lineHeight === b.lineHeight && a.qaGutter === b.qaGutter && a.shotChecks === b.shotChecks;
 
-const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13, lineHeight = 1.45, qaGutter = false }) {
+const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder, accent = "#E63946", fontSize = 13, lineHeight = 1.45, qaGutter = false, shotChecks = null, onToggleShot = null }) {
   const taRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [val, set, flush, ime] = useBufferedField(value, onChange);
@@ -1637,6 +1637,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     return lines.map((l) => {
       if (/^\s*◼/.test(l)) { pendingA = true; return "q"; }
       if (/^\s*★/.test(l)) return "star";
+      if (/^\s*・/.test(l)) return "shot"; // 箇条書き＝撮る/拾うものリスト（チェック対象）。回答の頭判定は消費しない
       if (pendingA && l.trim()) { pendingA = false; return "a"; }
       return null;
     });
@@ -1647,6 +1648,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     if (r.red) st.color = "#DC2645";
     else if (flag === "q") st.color = "#171A1F";
     else if (flag === "star") st.color = "#5F5138";
+    else if (flag === "shot" && shotChecks && shotChecks[(lineTextAt(li) || "").trim()]) { st.color = "#A3A9B1"; st.textDecoration = "line-through"; }
     if (!focused && r.bold) st.fontWeight = 800;
     else if (!focused && flag === "q") st.fontWeight = 600;
     else if (!focused && flag === "star") st.fontWeight = 500;
@@ -1656,8 +1658,27 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
      selectionStart/End・カーソル位置に一切影響しない。本文データにも文字を足さない。
      行頭で static position を使うので、その行の上端に揃う（line-heightを親と同じpx値にして上下中央） */
   const lineBoxPx = Math.round(fontSize * lineHeight);
+  const allLines = (val || "").split("\n");
+  const lineTextAt = (i) => allLines[i];
   const gutterLabel = (flag, k) => {
-    if (!qaGutter || (flag !== "q" && flag !== "a")) return null;
+    if (!qaGutter) return null;
+    /* 「・」箇条書き行＝撮る/拾うものチェック（2026-08-24 AK「インタビューの中にもインサートのチェックを」）。
+       チェックはtextareaの上（z-index）に置いてクリック可能に。onMouseDown抑止でカーソルを奪わない */
+    if (flag === "shot" && onToggleShot) {
+      const line = (lineTextAt(li) || "").trim();
+      const on = !!(shotChecks && shotChecks[line]);
+      return (
+        <span key={"g" + k} className="absolute inline-flex items-center" style={{ left: 8, zIndex: 3, height: lineBoxPx, pointerEvents: "auto" }}>
+          <button type="button" tabIndex={-1} title={on ? "撮影済みを取り消す" : "撮影済みにする"}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleShot(line); }}
+            className={"w-[15px] h-[15px] rounded-[4px] border grid place-items-center transition-colors " + (on ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-300 hover:border-stone-400")}>
+            {on && <svg viewBox="0 0 24 24" className="w-[10px] h-[10px]" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
+          </button>
+        </span>
+      );
+    }
+    if (flag !== "q" && flag !== "a") return null;
     const isQ = flag === "q";
     return (
       <span key={"g" + k} aria-hidden className="absolute select-none pointer-events-none"
@@ -1677,9 +1698,16 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
       const flag = lineFlags[li];
       const m = flag === "q" && !r.marker ? /^(\s*[◼■]\uFE0E?)([\s\S]*)$/.exec(p) : null;
       if (m) {
-        // Q.ラベルがある時は ◼︎ を非表示（2026-08-24 AK指示）。文字は残し幅も保つ＝カーソル位置は不変
-        nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0 : 1 }}>{m[1]}</span>);
-        if (m[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{m[2]}</span>);
+        // Q.ラベルがある時の ◼︎（2026-08-24 AK指示）：
+        // 読み時（blur）＝マーカーとスペースの幅ごと畳んで「Q. 質問文」が詰めて並ぶ。
+        // 編集中（focus）＝透明textareaと字幅を揃える必要があるので、薄く表示して幅を保つ
+        if (qaGutter && !focused) {
+          const rest = m[2] ? m[2].replace(/^\s+/, "") : "";
+          if (rest) nodes.push(<span key={key++} style={styleFor(r, flag)}>{rest}</span>);
+        } else {
+          nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0.35 : 1 }}>{m[1]}</span>);
+          if (m[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{m[2]}</span>);
+        }
       } else if (flag === "star" && !r.marker) {
         const sm = /^(\s*★)([\s\S]*)$/.exec(p);
         if (sm) {
@@ -8792,9 +8820,10 @@ export default function App() {
                     <span className="shrink-0 text-[11px] tabular-nums pt-[3px]" style={{ fontFamily: mono, color: "#A3A9B1" }}>#{pad2(sceneNos[r.id])}</span>
                   </div>
                 );
+                const toggleShot = (line) => { const cur = r.insertChecks || {}; const nx = { ...cur }; if (nx[line]) delete nx[line]; else nx[line] = true; updateRow(r.id, { insertChecks: nx }); };
                 const scriptEl = (
                   <div className="max-w-[980px] -ml-3 -mt-2">
-                    <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={14} lineHeight={1.6} qaGutter />
+                    <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={14} lineHeight={1.6} qaGutter shotChecks={r.insertChecks || null} onToggleShot={toggleShot} />
                   </div>
                 );
                 /* インサートだけカード＋チェックリスト（撮り忘れ防止）。原稿の各行＝撮るカット。
