@@ -5024,23 +5024,6 @@ export default function App() {
   const [boardCache, setBoardCache] = useState({});          // {id: 案件本体}（アクティブ以外の同チャンネル案件）
   const [brokenIds, setBrokenIds] = useState({});            // {id:true} 本体がKVから消えた幽霊案件（無限ロード回避＝削除誘導）
   const [recentIds, setRecentIds] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:recent") || "[]"); } catch (e) { return []; } }); // 最近触った案件id（新しい順）
-  // 08-24 AK提供モックアップ対応: 中央コンテキストパネル用のページ単位（案件+タブ）の最近アクセス記録。
-  // recentIdsは案件単位だが、こちらはタブまで含めた粒度で「前回の続き」「最近開いたページ」を出すため別管理にする。
-  const [recentPages, setRecentPages] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:recentPages") || "[]"); } catch (e) { return []; } });
-  // 「前回の続き」カードは起動時点の先頭だけを固定して使う（このセッション中のナビゲーションで動かさない）
-  const [lastPosition] = useState(() => (JSON.parse((() => { try { return localStorage.getItem("mg:recentPages") || "[]"; } catch (e) { return "[]"; } })())[0]) || null);
-  const [contextPanelOpen, setContextPanelOpen] = useState(() => { try { return localStorage.getItem("mg:contextPanelOpen") !== "0"; } catch (e) { return true; } });
-  useEffect(() => { try { localStorage.setItem("mg:contextPanelOpen", contextPanelOpen ? "1" : "0"); } catch (e) {} }, [contextPanelOpen]);
-  // 案件+タブが変わるたび先頭へ積む（同じ組み合わせは移動のみ・重複させない）。openPage経由でも
-  // タブバー直クリック経由でも、どの経路のナビゲーションも同じ効果で拾えるようactiveId/tab監視にする。
-  useEffect(() => {
-    if (!activeId || !tab || view !== "editor") return;
-    setRecentPages((rp) => {
-      const next = [{ caseId: activeId, tab, at: Date.now() }, ...rp.filter((r) => !(r.caseId === activeId && r.tab === tab))].slice(0, 30);
-      try { localStorage.setItem("mg:recentPages", JSON.stringify(next)); } catch (e) {}
-      return next;
-    });
-  }, [activeId, tab, view]);
   const pushRecent = (id) => setRecentIds((r) => { const n = [id, ...r.filter((x) => x !== id)].slice(0, 12); try { localStorage.setItem("mg:recent", JSON.stringify(n)); } catch (e) {} return n; });
   const [collapseActive, setCollapseActive] = useState(false); // アクティブ案件カードを畳むか
   const boardSaveTimers = useRef({});
@@ -5323,23 +5306,6 @@ export default function App() {
   }, [index, channelInfo]);
   /* お気に入り（案件=人物単位のフラットリスト、どのチャンネルに属していても表示） */
   const favoriteCases = useMemo(() => index.filter((x) => x.favorite), [index]);
-  /* 08-24 AK提供モックアップ対応: 中央パネルの進捗サマリー。実在するデータだけを根拠にする
-     （撮影完了・原稿の埋まり具合・レビュー対応状況の3軸。編集の完了度は案件データから信頼できる
-     指標が無いため対象外＝存在しないデータを埋めない）。 */
-  const progressSummary = useMemo(() => {
-    if (!project) return null;
-    const rows = project.rows || [];
-    const scenes = rows.filter((r) => r.kind !== "location");
-    const locations = rows.filter((r) => r.kind === "location");
-    const structure = { done: scenes.filter((r) => countChars(r.script) > 0).length, total: scenes.length };
-    const shoot = { done: locations.filter((r) => r.done).length, total: locations.length };
-    const review = { done: comments.filter((c) => c.resolved).length, total: comments.length };
-    const metrics = [["構成", structure], ["撮影", shoot], ["レビュー", review]].filter(([, m]) => m.total > 0);
-    if (!metrics.length) return null;
-    const overall = Math.round((metrics.reduce((s, [, m]) => s + m.done / m.total, 0) / metrics.length) * 100);
-    return { overall, metrics };
-  }, [project && project.id, project && project.rows, comments]);
-
   /* 案件カード用：本体（アクティブ=project / 他=boardCache）を引く。未読込はindexだけ */
   const caseData = (id) => (id === activeId && project) ? project : boardCache[id];
   const daysLeft = (d) => { if (!d) return null; const t = new Date(d + "T23:59:59").getTime(); if (isNaN(t)) return null; return Math.ceil((t - Date.now()) / 86400000); };
@@ -8029,15 +7995,6 @@ export default function App() {
               )}
             </button>
           )}
-          {/* コンテキストパネル再表示（隠した時だけ出す）。前はアイコンのみで幅も狭く、
-              「閉じた後どう戻すか分からない」＋隣接ボタンと幅が揃わず見た目が悪かった
-              （2026-08-24 AK指摘）。規定一覧／マニュアルと同じ形（アイコン+ラベル・px-3）に揃える。 */}
-          {!isNarrow && !contextPanelOpen && (
-            <button onClick={() => setContextPanelOpen(true)} title="前回の続き・進捗サマリーを表示"
-              className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
-              <Icon name="up" className="w-3.5 h-3.5 shrink-0 -rotate-90" /><span>パネル</span>
-            </button>
-          )}
           {/* マニュアル／決め事 */}
           <button onClick={() => setShowManual(true)} title="マニュアル・決め事（全体／チャンネル／案件）"
             className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
@@ -8187,89 +8144,6 @@ export default function App() {
       </header>
 
       <div className="max-w-[1500px] mx-auto flex">
-        {/* ===== コンテキストパネル（08-24 AK提供モックアップ対応）: 前回の続き・最近開いたページ・
-            進捗サマリー・クイックアクション。案件を開いている間、次に何をすべきか考えずに済むように。
-            デスクトップのみ・折りたためる（サイドバーの外側なのでモバイルの1カラムには影響しない）。 */}
-        {!isNarrow && project && contextPanelOpen && (
-          <aside className="hidden sm:block shrink-0 w-[260px] pt-5 pr-4">
-            <div className="sticky top-20 space-y-4">
-              <button onClick={() => setContextPanelOpen(false)} title="このパネルを閉じる（右上のボタンで再表示できます）"
-                className="w-full flex items-center justify-end gap-1 text-[11px] font-semibold text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg px-2 py-1.5 -mt-1 -mr-1 transition-colors">
-                <Icon name="close" className="w-3.5 h-3.5" />閉じる
-              </button>
-              {lastPosition && (lastPosition.caseId !== activeId || lastPosition.tab !== tab) && (index.find((x) => x.id === lastPosition.caseId) || caseData(lastPosition.caseId)) && (
-                <div className="rounded-xl border border-rose-100 p-3.5" style={{ background: "linear-gradient(135deg,#fff,#FEF2F2)" }}>
-                  <div className="text-[10px] font-bold mb-1.5" style={{ color: theme.accent }}>前回の続きから再開しますか？</div>
-                  <div className="text-[13px] font-bold text-stone-800">{TAB_LABEL[lastPosition.tab] || lastPosition.tab}</div>
-                  {/* 案件名は軽量なindex（常時ロード済み）優先・本体データがキャッシュ済みならそちらで補完 */}
-                  <div className="text-[10.5px] text-stone-500 mt-0.5 truncate">{(index.find((x) => x.id === lastPosition.caseId) || caseData(lastPosition.caseId) || {}).name}</div>
-                  <button onClick={() => openPage(lastPosition.caseId, lastPosition.tab)}
-                    className="w-full text-[11px] font-bold py-1.5 rounded-lg mt-2.5"
-                    style={{ background: theme.accent, color: accentText }}>続きから開く</button>
-                </div>
-              )}
-              {recentPages.length > 0 && (
-                <div>
-                  <div className="text-[10.5px] font-bold text-stone-400 mb-1.5 tracking-wide px-0.5">最近開いたページ</div>
-                  <div className="space-y-0.5">
-                    {recentPages.filter((r) => index.some((x) => x.id === r.caseId)).slice(0, 6).map((r) => {
-                      // 案件本体(caseData)はアクティブ/キャッシュ済みの時だけ取れる。無ければ軽量なindexの
-                      // 名前だけで表示する（別案件へ移動した直後などboardCacheが未取得のケースを拾うため）。
-                      const d = caseData(r.caseId);
-                      const idxEntry = index.find((x) => x.id === r.caseId);
-                      const on = r.caseId === activeId && r.tab === tab;
-                      const pageDef = d ? (pagesFor(d) || []).find(([k]) => k === r.tab) : null;
-                      return (
-                        <button key={r.caseId + ":" + r.tab} onClick={() => openPage(r.caseId, r.tab)}
-                          className={"w-full text-left rounded-lg px-2 py-1.5 flex items-center gap-2 transition-colors " + (on ? "" : "hover:bg-stone-50")}
-                          style={on ? { background: "#FEF2F2" } : {}}>
-                          <Icon name={(pageDef && pageDef[1]) || "file"} className="w-3.5 h-3.5 shrink-0" style={{ color: on ? theme.accent : "#a8a29e" }} />
-                          <div className="min-w-0 flex-1">
-                            <div className={"text-[11.5px] truncate " + (on ? "font-bold text-stone-900" : "font-semibold text-stone-700")}>{TAB_LABEL[r.tab] || r.tab}</div>
-                            <div className="text-[9.5px] text-stone-400 truncate">{(d || idxEntry).name} ・ {relTime(r.at)}</div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {progressSummary && (
-                <div>
-                  <div className="text-[10.5px] font-bold text-stone-400 mb-1.5 tracking-wide px-0.5">進捗サマリー（{project.name}）</div>
-                  <div className="rounded-xl border border-stone-200 bg-white p-3.5">
-                    <div className="flex items-center gap-3 mb-2.5">
-                      <div className="relative w-12 h-12 shrink-0 rounded-full" style={{ background: `conic-gradient(${theme.accent} ${progressSummary.overall * 3.6}deg, #f0efec 0deg)` }}>
-                        <div className="absolute inset-[3px] rounded-full bg-white flex items-center justify-center text-[11px] font-bold text-stone-800">{progressSummary.overall}%</div>
-                      </div>
-                      <div className="text-[10px] text-stone-400 leading-relaxed">構成・撮影・レビューの<br />対応状況から算出</div>
-                    </div>
-                    <div className="space-y-1.5">
-                      {progressSummary.metrics.map(([label, m]) => (
-                        <div key={label} className="flex items-center gap-2 text-[10.5px]">
-                          <span className="w-9 shrink-0 text-stone-400">{label}</span>
-                          <span className="flex-1 h-1.5 rounded-full bg-stone-100 overflow-hidden"><span className="block h-full rounded-full" style={{ width: (m.done / m.total * 100) + "%", background: theme.accent }} /></span>
-                          <span className="w-9 shrink-0 text-right text-stone-500 tabular-nums">{m.done}/{m.total}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div>
-                <div className="text-[10.5px] font-bold text-stone-400 mb-1.5 tracking-wide px-0.5">クイックアクション</div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(pagesFor(project) || []).filter(([k]) => k === "script" || k === "review").map(([k, ic, label]) => (
-                    <button key={k} onClick={() => openPage(activeId, k)}
-                      className="text-left text-[11px] font-medium text-stone-600 bg-stone-50 hover:bg-stone-100 rounded-lg py-2 px-2.5 flex items-center gap-1.5">
-                      <Icon name={ic} className="w-3.5 h-3.5 shrink-0 text-stone-400" />{label}を開く
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </aside>
-        )}
         {/* 工程タブの縦レールは廃止（2026-07-31）。案件一覧と工程が左右2本に分かれていたのを
             サイドバーのツリー1本に統合した＝視線の横移動が消え、本文の幅がレール分(188px)広がる。
             モバイルは従来どおりヘッダーの横バーで切り替える。 */}
