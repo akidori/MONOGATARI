@@ -7,7 +7,7 @@
     "build:dist": "npm run build && node tools/build-dist.mjs",
     "css": "tailwindcss -i src/tw.css -o tailwind.css --minify",
     "dev": "esbuild src/entry.jsx --bundle --charset=utf8 --format=iife --outfile=app.js --loader:.jsx=jsx --jsx=transform --watch",
-    "test": "node tools/test-inline-format.mjs",
+    "test": "node tools/test-inline-format.mjs && node tools/test-app-mode.mjs",
     "deploy": "npm run build:dist && wrangler pages deploy dist --project-name monogataritch --branch main",
     "verify:prod": "node tools/verify-deploy.mjs",
     "preview": "npm run build:dist && wrangler pages dev dist"

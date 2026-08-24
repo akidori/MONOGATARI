@@ -3,6 +3,7 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, use
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 import { buildStyledRuns, toggleInlineMarker } from "./src/inline-format.js";
+import { getAppMode } from "./src/app-mode.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -104,8 +105,11 @@ const migrate = (p) => {
 };
 
 const STORAGE_KEY = "kousei-project-v1";        // 旧：単一プロジェクト（移行元）
-// Fボード埋め込み（iframe）判定。埋め込み時はサイドバー/ハンバーガー/チャンネルチップを出さない
-const IS_EMBED = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+// 通常／共有編集／チャンネル編集／埋め込みのレイアウト判定をここへ集約する。
+const APP_MODE = (() => {
+  try { return getAppMode(window.location.search, window.self !== window.top); }
+  catch (e) { return getAppMode("", true); }
+})();
 const STORE_INDEX = "monogataritch-index-v1";   // 案件の並び順とメタ
 const STORE_PROJ = (id) => "monogataritch-proj-" + id; // 各案件の本体
 const STORE_CHANNELS = "monogataritch-channels-v1"; // チャンネル(クライアント)単位のコンセプト情報 {name:{...}}
@@ -3281,10 +3285,8 @@ export default function App() {
   const [importFileName, setImportFileName] = useState("");
   const importFileRef = useRef(null);
   const [importValidation, setImportValidation] = useState(null); // { isValid: bool, error: string, format: 'json' | 'text' | null }
-  /* 編集用リンク（?live=）・チャンネル編集リンク（?ch=）で開いたゲストには左の案件サイドバーを出さない
-     （2026-08-24 AK指示。ゲストには自分の案件ツリーが無く「0件」が見えるだけ＝ノイズ） */
-  const guestEditMode = useMemo(() => { try { const sp = new URLSearchParams(location.search); return sp.has("live") || sp.has("ch"); } catch (e) { return false; } }, []);
-  const [sidebarOpen, setSidebarOpen] = useState(() => { try { return window.self === window.top && !(new URLSearchParams(location.search).has("live") || new URLSearchParams(location.search).has("ch")); } catch (e) { return true; } });  // Fボード埋め込み・編集リンクは初期閉じ
+  /* 通常画面だけ案件ナビゲーションを持つ。?live= は編集対象に集中する共有編集レイアウト。 */
+  const [sidebarOpen, setSidebarOpen] = useState(APP_MODE.showProjectNavigation);
   const [user, setUser] = useState(null);                   // ログイン中のGoogleユーザー（null=未ログイン）
   const [showAccount, setShowAccount] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
@@ -7078,7 +7080,7 @@ export default function App() {
 
   /* スマホ：スワイプでサイドバー（案件一覧）を開閉。左端から右スワイプで表示／左スワイプで非表示 */
   useEffect(() => {
-    if (!isNarrow || typeof window === "undefined") return;
+    if (!APP_MODE.showProjectNavigation || !isNarrow || typeof window === "undefined") return;
     let sx = 0, sy = 0, st = 0;
     const onStart = (e) => { const t = e.touches[0]; if (!t) return; sx = t.clientX; sy = t.clientY; st = Date.now(); };
     const onEnd = (e) => {
@@ -7614,13 +7616,13 @@ export default function App() {
       </datalist>
 
       {/* ===== 案件サイドバー ===== */}
+      {APP_MODE.showProjectNavigation && (
       <aside
         className="fixed top-0 left-0 h-full z-40 flex flex-col"
         style={{
           width: sidebarW,
           background: "#15181D",
           color: "#fff",
-          display: (() => { try { return (window.self !== window.top || guestEditMode) ? "none" : ""; } catch (e) { return ""; } })(),  // Fボード埋め込み・編集リンク（?live=/?ch=）はサイドバー自体を出さない
           transform: sidebarOpen ? "translateX(0)" : "translateX(-" + sidebarW + "px)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
           willChange: "transform",
@@ -7862,20 +7864,23 @@ export default function App() {
           title="ドラッグで幅を変更（ダブルクリックで既定に戻す）"
           className="hidden sm:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-white/20 active:bg-white/30" />
       </aside>
+      )}
 
       {/* サイドバー開閉オーバーレイ（モバイル・フェード） */}
+      {APP_MODE.showProjectNavigation && (
       <div
         className={"fixed inset-0 z-30 bg-black/40 sm:hidden transition-opacity duration-300 ease-out " + (sidebarOpen ? "opacity-100" : "opacity-0 pointer-events-none")}
         onClick={() => setSidebarOpen(false)} />
+      )}
 
       {/* ===== コンテンツ（サイドバー分シフト） ===== */}
-      <div className="pb-28" style={{ marginLeft: (() => { try { if (window.self !== window.top) return 0; } catch (e) {} return sidebarOpen && !isNarrow ? sidebarW : 0; })(), transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
+      <div className="pb-28" style={{ marginLeft: APP_MODE.showProjectNavigation && sidebarOpen && !isNarrow ? sidebarW : 0, transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
 
       {/* ===== ツールバー ===== */}
       <header ref={headerRef} className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
         <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Fボード埋め込み・編集リンク（?live=/?ch=）ではハンバーガーを出さない（ゲストに案件ツリーは無い） */}
-          {!IS_EMBED && !guestEditMode && (
+          {APP_MODE.showProjectNavigation && (
           <button onClick={() => setSidebarOpen((s) => !s)} title="案件リスト"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 shrink-0">
             <Icon name="menu" className="w-[18px] h-[18px]" />
