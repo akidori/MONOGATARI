@@ -25,7 +25,7 @@
 | リアルタイム共同編集 | Cloudflare Durable Objects | AK |
 | 台本生成・校正・相談 | Workerに設定した共通Anthropic APIキー | AK |
 | YouTube調査 | Workerに設定した共通YouTube APIキー | AK |
-| Flip-LAB／Flip Board連携 | AKの別WorkerへのService Binding | AK |
+| Studio OS／Obsidian連携 | 固定リンクと案件スナップによる疎結合 | AK |
 | `cases.html` の任意同期 | 利用者が設定したGAS→Google Sheets | GASを設定した利用者 |
 | `settings.html` のAI接続テスト | ブラウザから各AIへ直接 | 入力したキーの持ち主 |
 
@@ -130,4 +130,3 @@
 
 - 個人版（無料／低価格）: 自分のGoogle Drive＋自分のAIキー。Streamなし。
 - 運営版（有料）: AKのR2／Stream／AIを利用。容量・生成回数に上限。
-

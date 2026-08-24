@@ -203,7 +203,7 @@
 | Anthropic API | AI生成・整理・校正 | 現在は運営 |
 | YouTube Data API | 動画・チャンネル調査 | 現在は運営 |
 | Google Maps | 場所、経路 | 運営設定 |
-| Flip Board／Flip LAB | 制作進行、ルール、質問 | 運営 |
+| Studio OS／Obsidian | 制作進行、ルール・質問テンプレの正本 | 運営 |
 | Google Drive | 将来の利用者保存先 | 未接続 |
 
 ## 8. 非機能要件

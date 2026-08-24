@@ -27,3 +27,6 @@ worker/err.log
 
 # 案件データ（顧客情報＝公開リポに載せない。ローカル専用）
 cases/
+
+# Claude Codeのworktree管理用ディレクトリ（アプリのソースではない）
+.claude/

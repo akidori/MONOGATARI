@@ -27,7 +27,7 @@ LEGACY_STREAM_OWNER_EMAIL = "aki.surf89315@gmail.com"
 binding = "SNAPS"
 id = "dae9e99997cc4ad29722f28f4c23476f"
 
-# 案件台帳D1（Flip Boardと同じ正本）。案件のクラウド保存先＝ここ。
+# ものがたりっち案件JSONのクラウド保存用D1。制作進行の正本はStudio OS。
 # KV(SNAPS)は put 1,000回/日で07-27に焼き切って編集が消えたので、書込はD1へ移した。
 # 読みはD1優先→無ければKVフォールバック（移行期）。詳細は migrations/0003_mg_kv.sql
 [[d1_databases]]
@@ -44,19 +44,6 @@ bucket_name = "mg-files"
 # 期限切れファイルの自動削除（毎日 UTC18:00 = JST3:00）
 [triggers]
 crons = ["0 18 * * *"]
-
-# Flip-LAB（第二の脳）への直結。編集ルールをチャンネル別に取得して編集者に表示。
-# worker間fetchはworkers.dev公開URLだと1042で弾かれるためService Bindingで直結。
-# 認証トークンは秘密： wrangler secret put FLIP_LAB_TOKEN
-[[services]]
-binding = "LAB"
-service = "flip-lens"
-
-# Flip Board(案件台帳D1)の日程を読むための直結。birdflip-cron が D1 を持ち /api/case-schedule を返す。
-# worker間fetchは公開URLだと1042で弾かれるためService Bindingで直結。認証は MG_LIST_KEY(secret)。
-[[services]]
-binding = "CRON"
-service = "birdflip-cron"
 
 # リアルタイム共同編集（共有リンクの編集モード）。SQLite-backed=無料プラン枠
 [[durable_objects.bindings]]

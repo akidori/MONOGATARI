@@ -4,6 +4,8 @@ import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 import { buildStyledRuns, toggleInlineMarker } from "./src/inline-format.js";
 import { getAppMode } from "./src/app-mode.js";
+import { buildPublishGatePayload } from "./src/publish-gate.js";
+import { auditShareProject } from "./src/share-audit.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -1289,6 +1291,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
     case "up": return (<svg {...c}><path d="M6 14l6-6 6 6" /></svg>);
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     case "folder": return (<svg {...c}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /></svg>);
+    case "star": return (<svg {...c} fill="currentColor" stroke="none"><path d="M12 2.5l2.95 6.32 6.97.68-5.26 4.73 1.56 6.87L12 17.6l-6.22 3.5 1.56-6.87L2.08 9.5l6.97-.68L12 2.5z" /></svg>);
     case "share": return (<svg {...c}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 13.2l7.6 4.6M15.8 6.2L8.2 10.8" /></svg>);
     case "grip": return (<svg {...c} strokeWidth="0" fill="currentColor"><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>);
     case "pencil": return (<svg {...c}><path d="M4 20l1-4L16.5 4.5a2.12 2.12 0 0 1 3 3L8 19l-4 1z" /><path d="M14.5 6.5l3 3" /></svg>);
@@ -3196,7 +3199,6 @@ export default function App() {
   const [channelInfo, setChannelInfo] = useState({}); // {channelName: {name,url,concept,target,purpose,competitors[]}}
   const [loaded, setLoaded] = useState(false);
   const [toast, setToast] = useState("");
-  const [highlightCollapsed, setHighlightCollapsed] = useState(() => { try { return localStorage.getItem("mg:hlCollapsed") !== "0"; } catch (e) { return true; } }); // 既定=最小化・状態記憶
   const [spineOpen, setSpineOpen] = useState(() => { try { return localStorage.getItem("mg:spineOpen") === "1"; } catch (e) { return false; } }); // 既定=最小化・状態記憶
   // マインドマップ（Studio OS Phase 1実装の移植・2026-08-15）。Studio OS内では構成台本タブの
   // 独自編集UI廃止（Q10）に伴い表示先を失い退役していたが、AK「理想はものがたりっち内に入れて
@@ -3209,7 +3211,6 @@ export default function App() {
   const [collapsedFolders, setCollapsedFolders] = useState({}); // 素材管理：フォルダ(シーン)ごとの開閉
   const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
   const toggleMm = () => setMmOpen((v) => { const nv = !v; try { localStorage.setItem("mg:mmOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
-  const toggleHighlight = () => setHighlightCollapsed((v) => { const nv = !v; try { localStorage.setItem("mg:hlCollapsed", nv ? "1" : "0"); } catch (e) {} return nv; });
   // PC縦タブレールの sticky 追従用にヘッダー実高さを測る（flex-wrapで高さ可変のため固定値にしない）
   const headerRef = useRef(null);
   const [headerH, setHeaderH] = useState(56);
@@ -3362,6 +3363,9 @@ export default function App() {
   const [insertCollapsed, setInsertCollapsed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem("mg:insertCollapsed") || "[]")); } catch (e) { return new Set(); } });
   const toggleInsertCollapsed = (id) => setInsertCollapsed((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); try { localStorage.setItem("mg:insertCollapsed", JSON.stringify([...nx])); } catch (e) {} return nx; });
   const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
+  // サイドバーのセクション(お気に入り/進行中/保留/完了)折りたたみ。08-24 AK提供モックアップ対応
+  const [sectionCollapsed, setSectionCollapsed] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:sectionCollapsed") || "{}"); } catch (_) { return {}; } });
+  useEffect(() => { try { localStorage.setItem("mg:sectionCollapsed", JSON.stringify(sectionCollapsed)); } catch (_) {} }, [sectionCollapsed]);
   /* ===== サイドバーのツリービュー化（2026-07-31）=====
      案件一覧と工程タブが左右2本のレールに分かれていて、現在地を掴むのに視線を横移動させられていた。
      チャンネル → 案件 → 案件内ページ を1本のツリーに畳んで、本文の幅も広げる。
@@ -3383,6 +3387,16 @@ export default function App() {
     if (!valid.includes(tab)) setTab(valid[0] || "overview");
   }, [project && project.format, project && project.id, tab]);
   useEffect(() => { try { localStorage.setItem("mg:sidebarW", String(sidebarW)); } catch (_) {} }, [sidebarW]);
+  // サイドバーの⌘K(検索にフォーカス)・⌘N(新規案件メニュー)。08-24 AK提供モックアップ対応。
+  const sidebarSearchRef = useRef(null);
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); sidebarSearchRef.current?.focus(); }
+      else if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) { e.preventDefault(); setNewMenu((v) => !v); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // サイドバー幅のドラッグ。ポインタイベントをwindowで拾う＝速く動かしても外れない
   useEffect(() => {
     const onMove = (e) => { if (!resizingRef.current) return; e.preventDefault(); setSidebarW(Math.max(220, Math.min(420, e.clientX))); };
@@ -3420,6 +3434,7 @@ export default function App() {
   const [preflight, setPreflight] = useState(null);         // MONOGATARI内の公開前チェック画面
   const [preflightBusy, setPreflightBusy] = useState(false);
   const [studioRegs, setStudioRegs] = useState({ rules: [] }); // Studio OSで承認済みのregulation_rules（PRD実装順⑥、openPublishPreflightで都度取得）
+  const [shareAudit, setShareAudit] = useState({ status: "idle", issues: [], checkedAt: 0 });
   const [showHandoffEdit, setShowHandoffEdit] = useState(false); // 受け渡しプリセットのカスタマイズモーダル
   const [handoffs, setHandoffs] = useState(() => {          // 相手別の受け渡しプリセット（リンク＋文面）。mg:handoff に保存
     try { const s = localStorage.getItem(HANDOFF_KEY); if (s) { const a = JSON.parse(s); if (Array.isArray(a) && a.length) return a; } } catch (e) {}
@@ -3432,6 +3447,27 @@ export default function App() {
   const [showComments, setShowComments] = useState(false);
   const saveTimer = useRef(null);
   const pendingSaveRef = useRef(null);   // クラウド保存に失敗したデータ。オンライン復帰で自動再送（silent lost根絶）
+
+  // 定期監査はしない。案件が変わって入力が止まった時だけ、端末内の決定的監査を1回実行する。
+  useEffect(() => {
+    if (!project) { setShareAudit({ status: "idle", issues: [], checkedAt: 0 }); return; }
+    setShareAudit((current) => ({ ...current, status: "checking" }));
+    const timer = setTimeout(() => {
+      setShareAudit({ status: "ready", issues: auditShareProject(project, dayOf), checkedAt: Date.now() });
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [project]);
+
+  // Studio OSの適用ルールも共有ボタンを押してから取得せず、案件を開いた時だけ先読みする。
+  useEffect(() => {
+    if (!project || !project.studioGateToken) { setStudioRegs({ rules: [] }); return; }
+    let active = true;
+    fetch("https://studio-os-5dm.pages.dev/api/v1/public/regulations?mg_project_id=" + encodeURIComponent(project.id) + "&gate_token=" + encodeURIComponent(project.studioGateToken))
+      .then((response) => response.json())
+      .then((data) => { if (active && data && data.data) setStudioRegs(data.data); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [project && project.id, project && project.studioGateToken]);
   /* KV書込み枠（無料枠1,000回/日）の枯渇対策。2026-07-27に実際に枯れて、
      その日の編集がまるごと保存されず消えた（矢内さん案件）。原因は
      ①0.7秒デバウンスの案件保存 ②4秒デバウンスの共有自動再発行(1回2書込)
@@ -4988,6 +5024,23 @@ export default function App() {
   const [boardCache, setBoardCache] = useState({});          // {id: 案件本体}（アクティブ以外の同チャンネル案件）
   const [brokenIds, setBrokenIds] = useState({});            // {id:true} 本体がKVから消えた幽霊案件（無限ロード回避＝削除誘導）
   const [recentIds, setRecentIds] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:recent") || "[]"); } catch (e) { return []; } }); // 最近触った案件id（新しい順）
+  // 08-24 AK提供モックアップ対応: 中央コンテキストパネル用のページ単位（案件+タブ）の最近アクセス記録。
+  // recentIdsは案件単位だが、こちらはタブまで含めた粒度で「前回の続き」「最近開いたページ」を出すため別管理にする。
+  const [recentPages, setRecentPages] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:recentPages") || "[]"); } catch (e) { return []; } });
+  // 「前回の続き」カードは起動時点の先頭だけを固定して使う（このセッション中のナビゲーションで動かさない）
+  const [lastPosition] = useState(() => (JSON.parse((() => { try { return localStorage.getItem("mg:recentPages") || "[]"; } catch (e) { return "[]"; } })())[0]) || null);
+  const [contextPanelOpen, setContextPanelOpen] = useState(() => { try { return localStorage.getItem("mg:contextPanelOpen") !== "0"; } catch (e) { return true; } });
+  useEffect(() => { try { localStorage.setItem("mg:contextPanelOpen", contextPanelOpen ? "1" : "0"); } catch (e) {} }, [contextPanelOpen]);
+  // 案件+タブが変わるたび先頭へ積む（同じ組み合わせは移動のみ・重複させない）。openPage経由でも
+  // タブバー直クリック経由でも、どの経路のナビゲーションも同じ効果で拾えるようactiveId/tab監視にする。
+  useEffect(() => {
+    if (!activeId || !tab || view !== "editor") return;
+    setRecentPages((rp) => {
+      const next = [{ caseId: activeId, tab, at: Date.now() }, ...rp.filter((r) => !(r.caseId === activeId && r.tab === tab))].slice(0, 30);
+      try { localStorage.setItem("mg:recentPages", JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+  }, [activeId, tab, view]);
   const pushRecent = (id) => setRecentIds((r) => { const n = [id, ...r.filter((x) => x !== id)].slice(0, 12); try { localStorage.setItem("mg:recent", JSON.stringify(n)); } catch (e) {} return n; });
   const [collapseActive, setCollapseActive] = useState(false); // アクティブ案件カードを畳むか
   const boardSaveTimers = useRef({});
@@ -5219,6 +5272,16 @@ export default function App() {
     }
   };
 
+  /* 08-24 AK提供モックアップ対応: サイドバーの「お気に入り」用トグル（案件=人物単位）。
+     案件内容には影響しないためindexだけで完結させる（本体storageへの書き戻し不要）。 */
+  const toggleFavorite = (id) => {
+    const idx = index.map((x) => (x.id === id ? { ...x, favorite: !x.favorite } : x));
+    setIndex(idx); persistIndex(idx);
+  };
+  /* サイドバーの進行中/保留/完了セクション分け用。チャンネル(クライアント)単位のライフサイクル状態。
+     updateChannelInfoはcurChannel固定なので、任意チャンネルを変更できるようこちらを別途用意。 */
+  const setChannelStatus = (channel, status) => setChannelInfo((ci) => ({ ...ci, [channel]: { ...emptyChannelInfo(), name: channel, ...(ci[channel] || {}), status } }));
+
   /* 案件のチャンネル（クライアント）を変更 */
   const setProjectChannel = async (id, channel) => {
     const ch = (channel || "").trim() || DEFAULT_CHANNEL;
@@ -5256,8 +5319,26 @@ export default function App() {
     Object.keys(channelInfo || {}).forEach((ch) => { if (ch && ch !== DEFAULT_CHANNEL && !map[ch]) { map[ch] = []; order.push(ch); } });
     // 未分類は末尾へ
     order.sort((a, b) => (a === DEFAULT_CHANNEL ? 1 : b === DEFAULT_CHANNEL ? -1 : 0));
-    return order.map((channel) => ({ channel, items: map[channel] }));
+    return order.map((channel) => ({ channel, items: map[channel], status: (channelInfo[channel] && channelInfo[channel].status) || "active" }));
   }, [index, channelInfo]);
+  /* お気に入り（案件=人物単位のフラットリスト、どのチャンネルに属していても表示） */
+  const favoriteCases = useMemo(() => index.filter((x) => x.favorite), [index]);
+  /* 08-24 AK提供モックアップ対応: 中央パネルの進捗サマリー。実在するデータだけを根拠にする
+     （撮影完了・原稿の埋まり具合・レビュー対応状況の3軸。編集の完了度は案件データから信頼できる
+     指標が無いため対象外＝存在しないデータを埋めない）。 */
+  const progressSummary = useMemo(() => {
+    if (!project) return null;
+    const rows = project.rows || [];
+    const scenes = rows.filter((r) => r.kind !== "location");
+    const locations = rows.filter((r) => r.kind === "location");
+    const structure = { done: scenes.filter((r) => countChars(r.script) > 0).length, total: scenes.length };
+    const shoot = { done: locations.filter((r) => r.done).length, total: locations.length };
+    const review = { done: comments.filter((c) => c.resolved).length, total: comments.length };
+    const metrics = [["構成", structure], ["撮影", shoot], ["レビュー", review]].filter(([, m]) => m.total > 0);
+    if (!metrics.length) return null;
+    const overall = Math.round((metrics.reduce((s, [, m]) => s + m.done / m.total, 0) / metrics.length) * 100);
+    return { overall, metrics };
+  }, [project && project.id, project && project.rows, comments]);
 
   /* 案件カード用：本体（アクティブ=project / 他=boardCache）を引く。未読込はindexだけ */
   const caseData = (id) => (id === activeId && project) ? project : boardCache[id];
@@ -5655,7 +5736,7 @@ export default function App() {
     try {
       const res = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/check", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mgProjectId: pr.id, gateToken: pr.studioGateToken, artifactHashes }),
+        body: JSON.stringify(buildPublishGatePayload({ projectId: pr.id, gateToken: pr.studioGateToken, artifactHashes })),
       });
       const payload = await res.json();
       const result = payload && payload.data;
@@ -5706,64 +5787,11 @@ export default function App() {
   /* resumeを渡すと、チェック完了直後にその関数を呼び直して元々やろうとしていた共有処理を続行する
      （08-22 AK指示: 納品タブだけでなく全ての共有経路をこのチェックリストに通すため、
      どの共有操作から呼ばれても戻れるようにresumeで汎用化した）。 */
-  /* 台本の構造チェック（AI不要・即時）。共有URL発行の前に自動で走る（2026-08-23 AK「AIは裏側で」）。
-     ロケ名未記入／シーンタイトル未記入／インサートのカット未記入／回答が空の質問／撮影時刻の逆転 */
-  const structuralReview = (pr) => {
-    const issues = [];
-    const rows = (pr && pr.rows) || [];
-    // 時刻は分に直して比較する（文字列比較だと "10:00" < "8:45" になり誤検知＝2026-08-24 AK報告）
-    const toMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec((t || "").trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; };
-    let prevTime = null, prevDay = null;
-    rows.forEach((r) => {
-      if (r.kind === "location") {
-        if (!(r.label || "").trim()) issues.push({ category: "ロケ漏れ", detail: "ロケーション名が空のままです", rowId: r.id, sceneLabel: "（ロケ名未入力）" });
-        const d = dayOf(r);
-        const tm = toMin(r.time);
-        if (tm != null) {
-          if (prevTime != null && prevDay === d && tm < prevTime) issues.push({ category: "撮影順", detail: "撮影時刻（" + r.time + "）が前のロケ（" + Math.floor(prevTime / 60) + ":" + String(prevTime % 60).padStart(2, "0") + "）より早くなっています", rowId: r.id, sceneLabel: r.label });
-          prevTime = tm; prevDay = d;
-        } else if (prevDay !== d) { prevTime = null; prevDay = d; }
-        return;
-      }
-      const label = (r.label || "").trim();
-      const script = r.script || "";
-      const lines = script.split("\n").map((l) => l.trim()).filter(Boolean);
-      if (!label) issues.push({ category: "シーン漏れ", detail: "シーンタイトルが空のままです", rowId: r.id, sceneLabel: "（無題のシーン）" });
-      if (r.type === "インサート" && !lines.some((l) => !/^[※★◼■>＞]/.test(l))) issues.push({ category: "インサート不足", detail: "撮るカットが1つも書かれていません（1行＝1カット）", rowId: r.id, sceneLabel: label || "（無題）" });
-      // 質問（◼︎行）の直後に本文が無い＝回答欄が空
-      let open = null, emptyQ = 0;
-      lines.forEach((l) => {
-        if (/^[◼■]/.test(l)) { if (open) emptyQ++; open = l; }
-        else if (open && !/^[※★>＞]/.test(l)) open = null;
-      });
-      if (open) emptyQ++;
-      if (emptyQ) issues.push({ category: "回答なし", detail: "回答が空の質問が " + emptyQ + " 件あります（撮影前なら問題ありません）", rowId: r.id, sceneLabel: label || "（無題）", soft: true });
-    });
-    return issues;
-  };
+  const structuralReview = (pr) => auditShareProject(pr, dayOf);
   const openPublishPreflight = async (resume) => {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
-    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "", resume: resume || null, review: { busy: true, issues: structuralReview(project), aiError: "" } });
-    // 台本レビュー（誤字脱字・表記ゆれ・質問と回答の逆転・未記入）を裏で同時に走らせる。失敗しても共有は止めない（構造チェック分は出る）
-    fetch(SHARE_API + "/api/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }), signal: AbortSignal.timeout(60000) })
-      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error || "AI校正に失敗"); return Array.isArray(d.issues) ? d.issues : []; })
-      .then((ai) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, issues: [...p.review.issues, ...ai.map((it) => ({ ...it, category: it.category || "校正" }))] } } : p))
-      .catch((e) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, aiError: e.message || String(e) } } : p));
-    setPreflightBusy(true);
-    // PRD実装順⑥: Studio OSで承認済みのregulation_rulesを取得してチェックリストへ合流させる。
-    // 失敗してもローカルのmanualsベースのチェックリストは動くので、ここは静かに諦める。
-    if (project.studioGateToken) {
-      fetch("https://studio-os-5dm.pages.dev/api/v1/public/regulations?mg_project_id=" + encodeURIComponent(project.id) + "&gate_token=" + encodeURIComponent(project.studioGateToken))
-        .then((r) => r.json()).then((d) => { if (d && d.data) setStudioRegs(d.data); })
-        .catch(() => {});
-    }
-    try {
-      const r = await fetch(SHARE_API + "/api/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }), signal: AbortSignal.timeout(60000) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || "AIチェックに失敗しました");
-      setPreflight((p) => ({ ...p, concerns: d.concerns || [], summary: d.summary || "", knowledgeVersion: d.knowledgeVersion || p.knowledgeVersion }));
-    } catch (e) { setPreflight((p) => ({ ...p, error: (e && e.name === "TimeoutError") ? "AIチェックに接続できませんでした（電波が弱い等）" : (e.message || String(e)) })); }
-    finally { setPreflightBusy(false); }
+    const issues = structuralReview(project);
+    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "local-deterministic-audit-1.0", error: "", resume: resume || null, review: { busy: false, issues, aiError: "" } });
   };
   /* AIがまとめて直す（2026-08-23 AK「1件ずつ直すのが大変。ボタン1つで自動で直して/消して」）。
      Worker /api/autofix が指摘→修正操作(ops)を返し、ここで安全条件つきで適用。直前の rows を保持して「元に戻す」可能 */
@@ -5834,13 +5862,13 @@ export default function App() {
     if (!skipAi && preflight.error) return showToast("AIチェックが完了していません。「AIを待たずに共有」からも進めます");
     if (!skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが見つけた懸念点を確認してください");
     if (skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが既に見つけた懸念点だけは確認してください");
-    if (!project.studioGateToken) return showToast("この案件のStudio OS連携情報がありません。案件を開き直してください");
     setPreflightBusy(true);
     try {
+      if (!project.studioGateToken) throw new Error("この案件のStudio OS連携情報がありません。案件を開き直してください");
       const artifactHashes = await publishArtifactHashes();
       const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/approve", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mgProjectId: project.id, gateToken: project.studioGateToken, artifactHashes }),
+        body: JSON.stringify(buildPublishGatePayload({ projectId: project.id, gateToken: project.studioGateToken, artifactHashes })),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d?.error?.message || "承認記録を保存できませんでした");
@@ -7618,47 +7646,48 @@ export default function App() {
       {/* ===== 案件サイドバー ===== */}
       {APP_MODE.showProjectNavigation && (
       <aside
-        className="fixed top-0 left-0 h-full z-40 flex flex-col"
+        className="fixed top-0 left-0 h-full z-40 flex flex-col border-r border-stone-200"
         style={{
           width: sidebarW,
-          background: "#15181D",
-          color: "#fff",
+          background: "#fff",
+          color: "#292524",
           transform: sidebarOpen ? "translateX(0)" : "translateX(-" + sidebarW + "px)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
           willChange: "transform",
         }}>
-        <div className="px-3 py-2.5 border-b border-white/10">
+        <div className="px-3 py-2.5 border-b border-stone-100">
           <button onClick={() => setView("home")} title="ホーム（チャンネル一覧）へ"
-            className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors">
+            className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">
             <img src="logo-header.png" alt="" className="w-7 h-7 rounded-lg shrink-0" />
-            <span className="font-black tracking-[0.08em] text-[14px]">ものがたりっち！</span>
-            <svg className="w-4 h-4 ml-auto text-white/40 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+            <span className="font-black tracking-[0.08em] text-[14px] text-stone-800">ものがたりっち！</span>
+            <svg className="w-4 h-4 ml-auto text-stone-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
         {!chanLive && (<>
-        <div className="px-3 py-2 flex gap-1.5 relative">
+        <div className="px-3 pt-2.5 pb-1.5 flex gap-1.5 relative">
           <button onClick={() => setNewMenu((v) => !v)}
-            className="flex-1 inline-flex items-center justify-center gap-1 text-[11px] font-bold py-2 rounded-lg"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 text-[12px] font-bold py-2.5 rounded-lg shadow-sm"
             style={{ background: theme.accent, color: accentText }}>
             <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
+            <span className="ml-auto text-[9.5px] font-normal opacity-70 tracking-wide">⌘N</span>
           </button>
           <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
             title="新しいチャンネル（フォルダ）を作成"
-            className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20">
+            className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600">
             <Icon name="plus" className="w-3.5 h-3.5" />ch
           </button>
           {newMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setNewMenu(false)} />
               <div className="mg-pop absolute left-3 right-3 top-full mt-1 z-50 bg-white border border-stone-200 rounded-xl shadow-2xl overflow-hidden" style={{ transformOrigin: "top left" }}>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-white/40">どのタイプの台本？</div>
-                <button onClick={() => createProject(true, DEFAULT_CHANNEL, "documentary")} className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-start gap-2">
-                  <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-white/60" />
-                  <span><span className="block text-[12px] font-bold text-white">一日密着</span><span className="block text-[10px] text-white/45">ロケ・シーン構成のドキュメンタリー</span></span>
+                <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-stone-400">どのタイプの台本？</div>
+                <button onClick={() => createProject(true, DEFAULT_CHANNEL, "documentary")} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2">
+                  <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
+                  <span><span className="block text-[12px] font-bold text-stone-800">一日密着</span><span className="block text-[10px] text-stone-400">ロケ・シーン構成のドキュメンタリー</span></span>
                 </button>
-                <button onClick={() => createProject(true, DEFAULT_CHANNEL, "talk")} className="w-full text-left px-3 py-2.5 hover:bg-white/10 flex items-start gap-2 border-t border-white/10">
-                  <Icon name="mic" className="w-4 h-4 shrink-0 mt-0.5 text-white/60" />
-                  <span><span className="block text-[12px] font-bold text-white">トーク系</span><span className="block text-[10px] text-white/45">ハイライト/冒頭/目次/本編/CTA構成</span></span>
+                <button onClick={() => createProject(true, DEFAULT_CHANNEL, "talk")} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2 border-t border-stone-100">
+                  <Icon name="mic" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
+                  <span><span className="block text-[12px] font-bold text-stone-800">トーク系</span><span className="block text-[10px] text-stone-400">ハイライト/冒頭/目次/本編/CTA構成</span></span>
                 </button>
               </div>
             </>
@@ -7666,11 +7695,15 @@ export default function App() {
         </div>
         </>)}
 
-        {/* 案件の絞り込み（件数が増えてもスクロールで探さない） */}
-        {!chanLive && index.length > 6 && (
+        {/* 案件の絞り込み（⌘K・件数に関わらず常設。使用頻度が上がるほど効く） */}
+        {!chanLive && (
           <div className="px-3 pb-2">
-            <input value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件を検索"
-              className="w-full bg-white/10 text-[11.5px] text-white placeholder-white/35 rounded-lg px-2.5 py-1.5 focus:outline-none focus:bg-white/15" />
+            <div className="relative">
+              <Icon name="search" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-300 pointer-events-none" />
+              <input ref={sidebarSearchRef} value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件を検索..."
+                className="w-full bg-stone-50 border border-stone-200 text-[11.5px] text-stone-800 placeholder-stone-400 rounded-lg pl-8 pr-10 py-1.5 focus:outline-none focus:bg-white focus:border-stone-300" />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9.5px] font-medium text-stone-300 pointer-events-none">⌘K</span>
+            </div>
           </div>
         )}
 
@@ -7679,178 +7712,239 @@ export default function App() {
           {channelOptions.map((c) => <option key={c} value={c} />)}
         </datalist>
 
-        {/* ===== チャンネル → 案件 ネスト ===== */}
+        {/* ===== お気に入り／進行中／保留／完了 セクション → チャンネル → 案件 ネスト ===== */}
         <div className="mg-scroll flex-1 overflow-y-auto px-2 pb-3">
           {chanLive ? (
             <div className="pt-1">
-              <div className="px-2 py-1.5 text-[11px] font-bold text-white/50 truncate flex items-center gap-1">
-                {channelIconOf(chanLive.name) || "📁"}<span className="truncate">{chanLive.name}</span>
-                <span className="ml-auto text-[10px] text-white/30 tabular-nums">{chanLive.cases.length}</span>
+              <div className="px-2 py-1.5 text-[11px] font-bold text-stone-400 truncate flex items-center gap-1.5">
+                {channelIconOf(chanLive.name) || <Icon name="folder" className="w-3.5 h-3.5 text-stone-300 shrink-0" />}
+                <span className="truncate">{chanLive.name}</span>
+                <span className="ml-auto text-[10px] text-stone-300 tabular-nums">{chanLive.cases.length}</span>
               </div>
               {chanLive.cases.map((c) => {
                 const active = chanActiveCase === c.id;
                 return (
                   <button key={c.id} onClick={() => openChanCase(c)}
-                    className={"w-full text-left rounded-lg mb-0.5 px-3 py-2 flex items-center gap-2 transition-colors " + (active ? "" : "hover:bg-white/5")}
-                    style={active ? { background: "rgba(255,255,255,0.12)" } : {}}>
-                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? theme.accent : "rgba(255,255,255,0.3)" }} />
-                    <span className="flex-1 min-w-0 truncate text-[12.5px] font-medium">{c.name}</span>
+                    className={"w-full text-left rounded-lg mb-0.5 px-3 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-stone-50")}
+                    style={{ borderLeftColor: active ? theme.accent : "transparent", ...(active ? { background: "#FEF2F2" } : {}) }}>
+                    <span className={"flex-1 min-w-0 truncate text-[12.5px] " + (active ? "font-semibold text-stone-900" : "font-medium text-stone-700")}>{c.name}</span>
                   </button>
                 );
               })}
             </div>
-          ) : channelGroups.map(({ channel, items: allItems }) => {
-            // 検索中は一致した案件だけ／一致ゼロのチャンネルは畳まず消す（探し物だけが残る）
+          ) : (() => {
             const q = caseQuery.trim().toLowerCase();
-            const items = q ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
-            if (q && !items.length && !channel.toLowerCase().includes(q)) return null;
-            const hasActive = items.some((x) => x.id === activeId);
-            // 既定はすべて畳む（開いている案件のチャンネルだけ自動展開）。タップで開閉（アコーディオン＝1つだけ開く）
-            // 検索中は畳まない（ヒットしたのに見えない、を防ぐ）
-            const isCollapsed = caseQuery.trim() ? false : (collapsed[channel] !== undefined ? !!collapsed[channel] : !hasActive);
-            const toggleChannel = () => setCollapsed(() => {
-              const next = {};
-              channelGroups.forEach((g) => { next[g.channel] = true; });
-              if (isCollapsed) next[channel] = false; // 畳んでいたら開く（他は畳む）
-              return next;
-            });
-            return (
-              <div key={channel} className="mb-1.5">
-                {/* チャンネル見出し（タップでそのチャンネルの台本一覧を開閉） */}
-                <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-white/5 cursor-pointer select-none"
-                  onClick={toggleChannel}
-                  onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
-                  <button title={isCollapsed ? "案件を表示" : "案件を隠す"} onClick={(e) => { e.stopPropagation(); toggleChannel(); }}
-                    className="w-3.5 shrink-0 text-white/40 text-[10px] transition-transform grid place-items-center hover:text-white/80" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}>▾</button>
-                  {channelIconOf(channel) ? (
-                    <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }}
-                      className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[12px] leading-none hover:scale-125 transition-transform">{channelIconOf(channel)}</button>
-                  ) : (
-                    <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }} className="w-3.5 h-3.5 shrink-0 grid place-items-center hover:text-white/80">
-                      <svg className="w-3.5 h-3.5 text-white/45" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-                      </svg>
-                    </button>
-                  )}
-                  <span className="flex-1 min-w-0 truncate text-[11.5px] font-bold tracking-wide cursor-pointer hover:underline"
-                    style={{ color: hasActive ? "#fff" : "rgba(255,255,255,0.7)" }}
-                    title="このチャンネルの企画・サムネ一覧を開く"
-                    onClick={(e) => { e.stopPropagation(); if (isCollapsed) toggleChannel(); openChannelBoard(channel); }}>
-                    {channel}
-                  </span>
-                  <span className="text-[10px] text-white/30 tabular-nums">{items.length}</span>
-                  <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
-                    <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px]">✎</button>
-                  </div>
-                </div>
-
-                {/* 案件リスト */}
-                {!isCollapsed && items.map((p) => {
-                  const active = p.id === activeId;
-                  return (
-                    <div key={p.id}>
-                    <div
-                      draggable
-                      onDragStart={(e) => { e.stopPropagation(); setDragCaseId(p.id); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", p.id); } catch (_) {} }}
-                      onDragOver={(e) => { if (dragCaseId && dragCaseId !== p.id) { e.preventDefault(); e.stopPropagation(); setDragOverCaseId(p.id); } }}
-                      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderCaseByDrag(dragCaseId, p.id); setDragCaseId(null); setDragOverCaseId(null); }}
-                      onDragEnd={() => { setDragCaseId(null); setDragOverCaseId(null); }}
-                      className={"group/p rounded-lg mb-0.5 ml-3 pl-2.5 pr-2 py-1.5 cursor-pointer transition-colors border-l border-white/10 " + (active ? "" : "hover:bg-white/5")}
-                      style={{
-                        ...(active ? { background: "rgba(255,255,255,0.12)" } : {}),
-                        ...(dragCaseId === p.id ? { opacity: 0.4 } : {}),
-                        ...(dragOverCaseId === p.id && dragCaseId !== p.id ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}),
-                      }}
-                      onClick={() => switchProject(p.id)}
-                      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCaseMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); }}
-                      title="右クリックで操作（名前変更・複製・移動・削除）">
-                      <div className="flex items-center gap-2">
-                        <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-white/60 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
-                        {/* 開閉：この案件の中のページ（概要〜納品完了）を出し入れする */}
-                        <button title={isCaseOpen(p.id) ? "ページを隠す" : "ページを表示"}
-                          onClick={(e) => { e.stopPropagation(); toggleCaseOpen(p.id); }}
-                          className="w-3.5 shrink-0 text-white/40 text-[10px] grid place-items-center hover:text-white/80 transition-transform"
-                          style={{ transform: isCaseOpen(p.id) ? "none" : "rotate(-90deg)" }}>▾</button>
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: active ? theme.accent : "rgba(255,255,255,0.3)" }} />
-                        {renamingId === p.id ? (
-                          <input
-                            autoFocus
-                            defaultValue={p.name}
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => { renameProject(p.id, e.target.value || p.name); setRenamingId(null); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                            className="flex-1 min-w-0 bg-black/30 text-[12px] px-1.5 py-1 rounded focus:outline-none"
-                          />
-                        ) : channelEditId === p.id ? (
-                          <input
-                            autoFocus
-                            list="mg-channels"
-                            defaultValue={p.channel || DEFAULT_CHANNEL}
-                            placeholder="チャンネル名"
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => { setProjectChannel(p.id, e.target.value); setChannelEditId(null); }}
-                            onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.preventDefault(); setChannelEditId(null); } }}
-                            className="flex-1 min-w-0 bg-black/30 text-[12px] px-1.5 py-1 rounded focus:outline-none"
-                          />
-                        ) : (
-                          <span className="flex-1 min-w-0 truncate text-[12.5px] font-medium inline-flex items-center gap-1"
-                            onDoubleClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }}>
-                            {p.collab && <span title={p.role === "owner" ? "共同編集（あなたがオーナー）" : "共有された案件（" + (p.ownerEmail || "") + "）"} className="shrink-0 text-white/50"><Icon name="user" className="w-3 h-3" /></span>}
-                            <span className="truncate">{p.name}</span>
-                          </span>
-                        )}
-                        {/* 操作(名前変更・複製・移動・削除)は行の右クリック → caseMenu に集約 */}
-                      </div>
-                    </div>
-                    {/* 案件内ページ（ツリーの葉）。ここが工程タブの新しい住所＝右の縦レールは廃止した */}
-                    {isCaseOpen(p.id) && (
-                      <div className="ml-[26px] mb-1.5 pl-1.5 border-l border-white/10">
-                        {pagesFor(p).map(([k, ic, label]) => {
-                          const on = active && tab === k;
-                          return (
-                            <button key={k} onClick={(e) => { e.stopPropagation(); openPage(p.id, k); }} title={label}
-                              className={"w-full text-left rounded-md px-2 py-1 mb-px flex items-center gap-1.5 text-[11.5px] transition-colors " + (on ? "font-bold" : "text-white/55 hover:bg-white/5 hover:text-white/85")}
-                              style={on ? { background: "rgba(255,255,255,0.14)", color: "#fff" } : {}}>
-                              <span className="w-0.5 h-3.5 rounded-full shrink-0" style={{ background: on ? theme.accent : "transparent" }} />
-                              <Icon name={ic} className="w-3.5 h-3.5 shrink-0" style={on ? { color: theme.accent } : {}} />
-                              <span className="truncate">{label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
+            /* チャンネル1件分のツリー（見出し＋案件＋ページ）。ステータス別セクションから使い回す */
+            const renderChannelGroup = (channel, allItems) => {
+              const items = q ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
+              if (q && !items.length && !channel.toLowerCase().includes(q)) return null;
+              const hasActive = items.some((x) => x.id === activeId);
+              // 既定はすべて畳む（開いている案件のチャンネルだけ自動展開）。タップで開閉（アコーディオン＝1つだけ開く）
+              // 検索中は畳まない（ヒットしたのに見えない、を防ぐ）
+              const isCollapsed = q ? false : (collapsed[channel] !== undefined ? !!collapsed[channel] : !hasActive);
+              const toggleChannel = () => setCollapsed(() => {
+                const next = {};
+                channelGroups.forEach((g) => { next[g.channel] = true; });
+                if (isCollapsed) next[channel] = false; // 畳んでいたら開く（他は畳む）
+                return next;
+              });
+              return (
+                <div key={channel} className="mb-0.5">
+                  {/* チャンネル見出し（タップでそのチャンネルの台本一覧を開閉） */}
+                  <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-stone-50 cursor-pointer select-none"
+                    onClick={toggleChannel}
+                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
+                    <button title={isCollapsed ? "案件を表示" : "案件を隠す"} onClick={(e) => { e.stopPropagation(); toggleChannel(); }}
+                      className="w-3.5 shrink-0 text-stone-300 text-[10px] transition-transform grid place-items-center hover:text-stone-600" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}>▾</button>
+                    {channelIconOf(channel) ? (
+                      <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }}
+                        className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[12px] leading-none hover:scale-125 transition-transform">{channelIconOf(channel)}</button>
+                    ) : (
+                      <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }} className="w-3.5 h-3.5 shrink-0 grid place-items-center hover:text-stone-600">
+                        <Icon name="folder" className="w-3.5 h-3.5 text-stone-300" />
+                      </button>
                     )}
+                    <span className={"flex-1 min-w-0 truncate text-[12.5px] cursor-pointer hover:underline " + (hasActive ? "font-bold text-stone-900" : "font-semibold text-stone-500")}
+                      title="このチャンネルの企画・サムネ一覧を開く"
+                      onClick={(e) => { e.stopPropagation(); if (isCollapsed) toggleChannel(); openChannelBoard(channel); }}>
+                      {channel}
+                    </span>
+                    <span className="text-[10px] text-stone-300 group-hover/ch:text-stone-500 tabular-nums transition-colors">{items.length}</span>
+                    <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
+                      <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-stone-200 text-[10px] text-stone-500">✎</button>
+                    </div>
+                  </div>
+
+                  {/* 案件（人物）リスト */}
+                  {!isCollapsed && items.map((p) => {
+                    const active = p.id === activeId;
+                    return (
+                      <div key={p.id}>
+                      <div
+                        draggable
+                        onDragStart={(e) => { e.stopPropagation(); setDragCaseId(p.id); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", p.id); } catch (_) {} }}
+                        onDragOver={(e) => { if (dragCaseId && dragCaseId !== p.id) { e.preventDefault(); e.stopPropagation(); setDragOverCaseId(p.id); } }}
+                        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderCaseByDrag(dragCaseId, p.id); setDragCaseId(null); setDragOverCaseId(null); }}
+                        onDragEnd={() => { setDragCaseId(null); setDragOverCaseId(null); }}
+                        className={"group/p rounded-lg mb-0.5 ml-3 pl-2.5 pr-2 py-2 cursor-pointer transition-colors border-l-2 " + (active ? "" : "hover:bg-stone-50")}
+                        style={{
+                          borderLeftColor: active ? theme.accent : "#f0efec",
+                          ...(active ? { background: "#FEF2F2" } : {}),
+                          ...(dragCaseId === p.id ? { opacity: 0.4 } : {}),
+                          ...(dragOverCaseId === p.id && dragCaseId !== p.id ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}),
+                        }}
+                        onClick={() => switchProject(p.id)}
+                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCaseMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); }}
+                        title="右クリックで操作（名前変更・複製・移動・削除）">
+                        <div className="flex items-center gap-2">
+                          <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-stone-400 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
+                          {/* 開閉：この案件の中のページ（概要〜納品完了）を出し入れする */}
+                          <button title={isCaseOpen(p.id) ? "ページを隠す" : "ページを表示"}
+                            onClick={(e) => { e.stopPropagation(); toggleCaseOpen(p.id); }}
+                            className="w-3.5 shrink-0 text-stone-300 text-[10px] grid place-items-center hover:text-stone-600 transition-transform"
+                            style={{ transform: isCaseOpen(p.id) ? "none" : "rotate(-90deg)" }}>▾</button>
+                          <Icon name="user" className={"w-3 h-3 shrink-0 " + (active ? "text-rose-500" : "text-stone-300")} />
+                          {renamingId === p.id ? (
+                            <input
+                              autoFocus
+                              defaultValue={p.name}
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => { renameProject(p.id, e.target.value || p.name); setRenamingId(null); }}
+                              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
+                              className="flex-1 min-w-0 bg-stone-100 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                            />
+                          ) : channelEditId === p.id ? (
+                            <input
+                              autoFocus
+                              list="mg-channels"
+                              defaultValue={p.channel || DEFAULT_CHANNEL}
+                              placeholder="チャンネル名"
+                              onClick={(e) => e.stopPropagation()}
+                              onBlur={(e) => { setProjectChannel(p.id, e.target.value); setChannelEditId(null); }}
+                              onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.preventDefault(); setChannelEditId(null); } }}
+                              className="flex-1 min-w-0 bg-stone-100 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                            />
+                          ) : (
+                            <span className={"flex-1 min-w-0 truncate text-[13px] inline-flex items-center gap-1 " + (active ? "font-semibold text-stone-900" : "font-medium text-stone-700")}
+                              onDoubleClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }}>
+                              {p.collab && <span title={p.role === "owner" ? "共同編集（あなたがオーナー）" : "共有された案件（" + (p.ownerEmail || "") + "）"} className="shrink-0 text-stone-400"><Icon name="user" className="w-3 h-3" /></span>}
+                              <span className="truncate">{p.name}</span>
+                            </span>
+                          )}
+                          {/* お気に入りトグル（ホバー時のみ表示・お気に入り済みは常時表示） */}
+                          <button title={p.favorite ? "お気に入りから外す" : "お気に入りに追加"}
+                            onClick={(e) => { e.stopPropagation(); toggleFavorite(p.id); }}
+                            className={"shrink-0 transition-opacity " + (p.favorite ? "opacity-100" : "opacity-0 group-hover/p:opacity-60 hover:opacity-100")}>
+                            <Icon name="star" className="w-3.5 h-3.5" style={{ color: p.favorite ? "#f59e0b" : "#a8a29e" }} />
+                          </button>
+                          {/* 操作(名前変更・複製・移動・削除)は行の右クリック → caseMenu に集約 */}
+                        </div>
+                      </div>
+                      {/* 案件内ページ（ツリーの葉）。ここが工程タブの新しい住所＝右の縦レールは廃止した */}
+                      {isCaseOpen(p.id) && (
+                        <div className="ml-[26px] mb-1.5 pl-1.5 border-l border-stone-100">
+                          {pagesFor(p).map(([k, ic, label]) => {
+                            const on = active && tab === k;
+                            return (
+                              <button key={k} onClick={(e) => { e.stopPropagation(); openPage(p.id, k); }} title={label}
+                                className={"w-full text-left rounded-md px-2 py-1 mb-px flex items-center gap-1.5 text-[11.5px] transition-colors " + (on ? "font-bold" : "text-stone-500 hover:bg-stone-50 hover:text-stone-800")}
+                                style={on ? { background: "#FEF2F2", color: theme.accent } : {}}>
+                                <span className="w-0.5 h-3.5 rounded-full shrink-0" style={{ background: on ? theme.accent : "transparent" }} />
+                                <Icon name={ic} className="w-3.5 h-3.5 shrink-0" style={on ? { color: theme.accent } : { color: "#a8a29e" }} />
+                                <span className="truncate">{label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            };
+            /* セクション見出し（お気に入り以外）。折りたたみ可・件数表示 */
+            const renderSectionHeader = (key, label, count) => {
+              const isClosed = !!sectionCollapsed[key];
+              return (
+                <button onClick={() => setSectionCollapsed((s) => ({ ...s, [key]: !s[key] }))}
+                  className="w-full flex items-center gap-1 px-1.5 py-1 mt-3 mb-1 rounded hover:bg-stone-50 group/sec">
+                  <span className="w-3 text-stone-300 text-[9px] transition-transform" style={{ transform: isClosed ? "rotate(-90deg)" : "none" }}>▾</span>
+                  <span className="text-[11px] font-semibold text-stone-400 tracking-wide">{label}</span>
+                  <span className="ml-auto text-[10px] text-stone-300 group-hover/sec:text-stone-500 tabular-nums">{count}</span>
+                </button>
+              );
+            };
+            const SECTIONS = [["active", "進行中"], ["hold", "保留"], ["done", "完了"]];
+            return (
+              <>
+                {favoriteCases.length > 0 && (
+                  <div className="mb-1">
+                    {renderSectionHeader("favorites", "お気に入り", favoriteCases.length)}
+                    {!sectionCollapsed.favorites && favoriteCases.map((p) => {
+                      const active = p.id === activeId;
+                      return (
+                        <button key={p.id} onClick={() => switchProject(p.id)}
+                          className={"w-full text-left rounded-lg mb-0.5 pl-2.5 pr-2 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-stone-50")}
+                          style={{ borderLeftColor: active ? theme.accent : "transparent", ...(active ? { background: "#FEF2F2" } : {}) }}>
+                          <Icon name="star" className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
+                          <span className={"flex-1 min-w-0 truncate text-[13px] " + (active ? "font-semibold text-stone-900" : "font-medium text-stone-700")}>{p.name}</span>
+                          <span className="text-[10px] text-stone-300 truncate max-w-[64px]">{p.channel || DEFAULT_CHANNEL}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {SECTIONS.map(([key, label]) => {
+                  const groups = channelGroups.filter((g) => g.status === key);
+                  const caseCount = groups.reduce((n, g) => n + g.items.length, 0);
+                  if (!groups.length) return null;
+                  return (
+                    <div key={key}>
+                      {renderSectionHeader(key, label, caseCount)}
+                      {!sectionCollapsed[key] && groups.map((g) => renderChannelGroup(g.channel, g.items))}
                     </div>
                   );
                 })}
-              </div>
+              </>
             );
-          })}
+          })()}
         </div>
-        <div className="px-3 py-2 border-t border-white/10 flex flex-col gap-0.5">
-          <button onClick={() => { setView("editor"); setTab("regulations"); setSidebarOpen(false); }}
-            className={"flex items-center gap-2 text-[12px] font-bold px-2.5 py-2 rounded-lg text-left w-full transition-colors " + (tab === "regulations" ? "bg-white/15 text-white" : "text-white/80 hover:bg-white/10")}
-            title="全社・クライアント・案件例外のレギュレーションをまとめて確認">
-            <Icon name="book" className="w-4 h-4 shrink-0" />
-            <span>レギュレーション一覧</span>
-          </button>
-          <button onClick={() => setShowAccount(true)}
-            className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10 text-left w-full">
-            {user && user.picture
-              ? <img src={user.picture} alt="" className="w-4 h-4 rounded-full shrink-0" referrerPolicy="no-referrer" />
-              : <Icon name="user" className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{user ? user.name + "（クラウド同期中）" : "Googleでログイン"}</span>
-          </button>
-          <a href="settings.html"
-            className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/80 hover:bg-white/10">
-            <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <div className="px-2 py-1.5 border-t border-stone-100">
+          <button onClick={() => setSectionCollapsed((s) => ({ ...s, settings: !s.settings }))}
+            className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg hover:bg-stone-50">
+            <svg className="w-3.5 h-3.5 shrink-0 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
             </svg>
-            共有・連携設定
-          </a>
+            <span className="text-[11px] font-semibold text-stone-500 tracking-wide">設定</span>
+            <span className="ml-auto text-stone-300 text-[9px] transition-transform" style={{ transform: sectionCollapsed.settings ? "rotate(-90deg)" : "none" }}>▾</span>
+          </button>
+          {!sectionCollapsed.settings && (
+            <div className="flex flex-col gap-0.5 pb-1">
+              <button onClick={() => { setView("editor"); setTab("regulations"); setSidebarOpen(false); }}
+                className={"flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-left w-full transition-colors " + (tab === "regulations" ? "bg-stone-100 text-stone-900 font-bold" : "text-stone-600 hover:bg-stone-50")}
+                title="全社・クライアント・案件例外のレギュレーションをまとめて確認">
+                <Icon name="book" className="w-4 h-4 shrink-0 text-stone-400" />
+                <span>レギュレーション一覧</span>
+              </button>
+              <a href="settings.html"
+                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-stone-600 hover:bg-stone-50">
+                <svg className="w-4 h-4 shrink-0 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                共有・連携設定
+              </a>
+              <button onClick={() => setShowAccount(true)}
+                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-stone-600 hover:bg-stone-50 text-left w-full">
+                {user && user.picture
+                  ? <img src={user.picture} alt="" className="w-4 h-4 rounded-full shrink-0" referrerPolicy="no-referrer" />
+                  : <Icon name="user" className="w-4 h-4 shrink-0 text-stone-400" />}
+                <span className="truncate">{user ? "アカウント設定（" + user.name + "）" : "アカウント設定（未ログイン）"}</span>
+              </button>
+            </div>
+          )}
         </div>
         {/* 保存できていない事実を正直に出す。旧実装はKV書込上限で落ちていても「電波待ち」と表示していて、
             回線のせいだと誤認したまま編集を続け、その日の作業が丸ごと消えた（2026-07-27 矢内さん案件）。 */}
-        <div className={"px-3 py-2 border-t border-white/10 text-[10px] " + (saveState === "quota" ? "text-rose-400 font-bold" : saveState === "error" ? "text-amber-400" : "text-white/40")}>
+        <div className={"px-3 py-2 border-t border-stone-100 text-[10px] " + (saveState === "quota" ? "text-rose-500 font-bold" : saveState === "error" ? "text-amber-600" : "text-stone-300")}>
           {saveState === "quota"
             ? "保存できません（本日の書き込み上限）。朝9時まで回復しません。編集を続けても消えます — 台本コピーで退避を"
             : saveState === "error"
@@ -7862,7 +7956,7 @@ export default function App() {
           onPointerDown={(e) => { e.preventDefault(); resizingRef.current = true; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
           onDoubleClick={() => setSidebarW(280)}
           title="ドラッグで幅を変更（ダブルクリックで既定に戻す）"
-          className="hidden sm:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-white/20 active:bg-white/30" />
+          className="hidden sm:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-stone-200 active:bg-stone-300" />
       </aside>
       )}
 
@@ -7929,6 +8023,13 @@ export default function App() {
               )}
             </button>
           )}
+          {/* コンテキストパネル再表示（隠した時だけ出す） */}
+          {!isNarrow && !contextPanelOpen && (
+            <button onClick={() => setContextPanelOpen(true)} title="前回の続き・進捗サマリーを表示"
+              className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
+              <Icon name="up" className="w-3.5 h-3.5 shrink-0 -rotate-90" />
+            </button>
+          )}
           {/* マニュアル／決め事 */}
           <button onClick={() => setShowManual(true)} title="マニュアル・決め事（全体／チャンネル／案件）"
             className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
@@ -7937,13 +8038,26 @@ export default function App() {
           {/* 共有メニュー（共有リンク発行 / 台本コピー） */}
           <div className="relative">
             <button onClick={() => setShareMenu((v) => !v)} disabled={sharing} title="共有・書き出し"
-              className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 disabled:opacity-50" style={{ color: mainText }}>
+              className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border shadow-sm hover:brightness-110 disabled:opacity-50" style={{ color: "#FFFFFF", background: "#DC2645", borderColor: "#EF4763" }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
-              {sharing ? "発行中…" : "共有"} <span className="opacity-50 text-[9px]">▾</span>
+              {sharing ? "発行中…" : "共有"}
+              {!sharing && <span className={"text-[9px] px-1.5 py-0.5 rounded-full " + (shareAudit.status === "checking" ? "bg-white/10" : shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-400/25 text-amber-100" : "bg-emerald-400/25 text-emerald-100")}>
+                {shareAudit.status === "checking" ? "確認中" : shareAudit.issues.some((issue) => !issue.soft) ? "要確認" + shareAudit.issues.filter((issue) => !issue.soft).length : "準備OK"}
+              </span>}
+              <span className="opacity-50 text-[9px]">▾</span>
             </button>
             {shareMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
               <div className="mg-pop mg-scroll absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 max-h-[80vh] overflow-y-auto">
+                <div className={"px-3 py-2.5 border-b text-[11px] " + (shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-50 text-amber-800 border-amber-100" : "bg-emerald-50 text-emerald-800 border-emerald-100")}>
+                  <div className="font-bold">{shareAudit.status === "checking" ? "変更内容を確認中…" : shareAudit.issues.some((issue) => !issue.soft) ? "共有前の要確認が " + shareAudit.issues.filter((issue) => !issue.soft).length + "件あります" : "共有準備OK"}</div>
+                  <div className="text-[10px] opacity-75 mt-0.5">端末内で自動確認済み・AI待ちはありません</div>
+                  {shareAudit.issues.filter((issue) => !issue.soft).slice(0, 3).map((issue, index) => (
+                    <button key={issue.rowId + ":" + index} onClick={() => { setShareMenu(false); if (issue.rowId) jumpToRow(issue.rowId); }} className="block w-full text-left mt-1.5 hover:underline">
+                      ・{issue.sceneLabel || issue.category}：{issue.detail}
+                    </button>
+                  ))}
+                </div>
                 {/* ===== 2択だけ（2026-07-17 AK指示：このタブだけ／全体、それだけでいい） ===== */}
                 {TAB_SHARE_PANE[tab] && (
                   <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
@@ -8065,6 +8179,89 @@ export default function App() {
       </header>
 
       <div className="max-w-[1500px] mx-auto flex">
+        {/* ===== コンテキストパネル（08-24 AK提供モックアップ対応）: 前回の続き・最近開いたページ・
+            進捗サマリー・クイックアクション。案件を開いている間、次に何をすべきか考えずに済むように。
+            デスクトップのみ・折りたためる（サイドバーの外側なのでモバイルの1カラムには影響しない）。 */}
+        {!isNarrow && project && contextPanelOpen && (
+          <aside className="hidden sm:block shrink-0 w-[260px] pt-5 pr-4">
+            <div className="sticky top-20 space-y-4">
+              <button onClick={() => setContextPanelOpen(false)} title="コンテキストパネルを隠す"
+                className="text-[9.5px] text-stone-300 hover:text-stone-500 flex items-center gap-1">
+                <Icon name="close" className="w-3 h-3" />隠す
+              </button>
+              {lastPosition && (lastPosition.caseId !== activeId || lastPosition.tab !== tab) && (index.find((x) => x.id === lastPosition.caseId) || caseData(lastPosition.caseId)) && (
+                <div className="rounded-xl border border-rose-100 p-3.5" style={{ background: "linear-gradient(135deg,#fff,#FEF2F2)" }}>
+                  <div className="text-[10px] font-bold mb-1.5" style={{ color: theme.accent }}>前回の続きから再開しますか？</div>
+                  <div className="text-[13px] font-bold text-stone-800">{TAB_LABEL[lastPosition.tab] || lastPosition.tab}</div>
+                  {/* 案件名は軽量なindex（常時ロード済み）優先・本体データがキャッシュ済みならそちらで補完 */}
+                  <div className="text-[10.5px] text-stone-500 mt-0.5 truncate">{(index.find((x) => x.id === lastPosition.caseId) || caseData(lastPosition.caseId) || {}).name}</div>
+                  <button onClick={() => openPage(lastPosition.caseId, lastPosition.tab)}
+                    className="w-full text-[11px] font-bold py-1.5 rounded-lg mt-2.5"
+                    style={{ background: theme.accent, color: accentText }}>続きから開く</button>
+                </div>
+              )}
+              {recentPages.length > 0 && (
+                <div>
+                  <div className="text-[10.5px] font-bold text-stone-400 mb-1.5 tracking-wide px-0.5">最近開いたページ</div>
+                  <div className="space-y-0.5">
+                    {recentPages.filter((r) => index.some((x) => x.id === r.caseId)).slice(0, 6).map((r) => {
+                      // 案件本体(caseData)はアクティブ/キャッシュ済みの時だけ取れる。無ければ軽量なindexの
+                      // 名前だけで表示する（別案件へ移動した直後などboardCacheが未取得のケースを拾うため）。
+                      const d = caseData(r.caseId);
+                      const idxEntry = index.find((x) => x.id === r.caseId);
+                      const on = r.caseId === activeId && r.tab === tab;
+                      const pageDef = d ? (pagesFor(d) || []).find(([k]) => k === r.tab) : null;
+                      return (
+                        <button key={r.caseId + ":" + r.tab} onClick={() => openPage(r.caseId, r.tab)}
+                          className={"w-full text-left rounded-lg px-2 py-1.5 flex items-center gap-2 transition-colors " + (on ? "" : "hover:bg-stone-50")}
+                          style={on ? { background: "#FEF2F2" } : {}}>
+                          <Icon name={(pageDef && pageDef[1]) || "file"} className="w-3.5 h-3.5 shrink-0" style={{ color: on ? theme.accent : "#a8a29e" }} />
+                          <div className="min-w-0 flex-1">
+                            <div className={"text-[11.5px] truncate " + (on ? "font-bold text-stone-900" : "font-semibold text-stone-700")}>{TAB_LABEL[r.tab] || r.tab}</div>
+                            <div className="text-[9.5px] text-stone-400 truncate">{(d || idxEntry).name} ・ {relTime(r.at)}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {progressSummary && (
+                <div>
+                  <div className="text-[10.5px] font-bold text-stone-400 mb-1.5 tracking-wide px-0.5">進捗サマリー（{project.name}）</div>
+                  <div className="rounded-xl border border-stone-200 bg-white p-3.5">
+                    <div className="flex items-center gap-3 mb-2.5">
+                      <div className="relative w-12 h-12 shrink-0 rounded-full" style={{ background: `conic-gradient(${theme.accent} ${progressSummary.overall * 3.6}deg, #f0efec 0deg)` }}>
+                        <div className="absolute inset-[3px] rounded-full bg-white flex items-center justify-center text-[11px] font-bold text-stone-800">{progressSummary.overall}%</div>
+                      </div>
+                      <div className="text-[10px] text-stone-400 leading-relaxed">構成・撮影・レビューの<br />対応状況から算出</div>
+                    </div>
+                    <div className="space-y-1.5">
+                      {progressSummary.metrics.map(([label, m]) => (
+                        <div key={label} className="flex items-center gap-2 text-[10.5px]">
+                          <span className="w-9 shrink-0 text-stone-400">{label}</span>
+                          <span className="flex-1 h-1.5 rounded-full bg-stone-100 overflow-hidden"><span className="block h-full rounded-full" style={{ width: (m.done / m.total * 100) + "%", background: theme.accent }} /></span>
+                          <span className="w-9 shrink-0 text-right text-stone-500 tabular-nums">{m.done}/{m.total}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div>
+                <div className="text-[10.5px] font-bold text-stone-400 mb-1.5 tracking-wide px-0.5">クイックアクション</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(pagesFor(project) || []).filter(([k]) => k === "script" || k === "review").map(([k, ic, label]) => (
+                    <button key={k} onClick={() => openPage(activeId, k)}
+                      className="text-left text-[11px] font-medium text-stone-600 bg-stone-50 hover:bg-stone-100 rounded-lg py-2 px-2.5 flex items-center gap-1.5">
+                      <Icon name={ic} className="w-3.5 h-3.5 shrink-0 text-stone-400" />{label}を開く
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </aside>
+        )}
         {/* 工程タブの縦レールは廃止（2026-07-31）。案件一覧と工程が左右2本に分かれていたのを
             サイドバーのツリー1本に統合した＝視線の横移動が消え、本文の幅がレール分(188px)広がる。
             モバイルは従来どおりヘッダーの横バーで切り替える。 */}
@@ -8516,14 +8713,8 @@ export default function App() {
 
             {/* ハイライト（独立カード） */}
             <section className={cardCls + " mb-4"}>
-              {cardHead("ハイライト（冒頭フック）", (
-                <span className="w-6 h-6 shrink-0 grid place-items-center text-stone-400" title={highlightCollapsed ? "開く" : "畳む"}>
-                  <span className="text-[10px] transition-transform inline-block" style={{ transform: highlightCollapsed ? "rotate(-90deg)" : "none" }}>▾</span>
-                </span>
-              ), toggleHighlight)}
-              {!highlightCollapsed && (
-                <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（行頭に「・」で ◼︎ 質問行）" />
-              )}
+              {cardHead("ハイライト（冒頭フック）")}
+              <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（行頭に「・」で ◼︎ 質問行）" />
             </section>
             </>)}
 
@@ -10596,7 +10787,19 @@ export default function App() {
             )}
             <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); createProject(true, ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />この中に案件を追加</button>
             <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); renameChannel(ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2">✎ フォルダ名を変更</button>
-            <button onClick={(e) => { const ch = ctxMenu.channel; const x = ctxMenu.x, y = ctxMenu.y; setCtxMenu(null); setIconPick({ channel: ch, x, y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span>{channelIconOf(ctxMenu.channel) || "📁"}</span>アイコンを変更</button>
+            <button onClick={(e) => { const ch = ctxMenu.channel; const x = ctxMenu.x, y = ctxMenu.y; setCtxMenu(null); setIconPick({ channel: ch, x, y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2">{channelIconOf(ctxMenu.channel) ? <span>{channelIconOf(ctxMenu.channel)}</span> : <Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />}アイコンを変更</button>
+            {ctxMenu.channel !== DEFAULT_CHANNEL && (
+              <div className="border-t border-stone-100 mt-1 pt-1">
+                <div className="px-3 pt-0.5 pb-1 text-[9.5px] font-bold text-stone-400">サイドバーの分類</div>
+                {[["active", "進行中"], ["hold", "保留"], ["done", "完了"]].map(([v, label]) => (
+                  <button key={v} onClick={() => { setChannelStatus(ctxMenu.channel, v); setCtxMenu(null); }}
+                    className={"w-full text-left px-3 py-1.5 hover:bg-stone-50 text-[12px] flex items-center gap-2 " + (((channelInfo[ctxMenu.channel] && channelInfo[ctxMenu.channel].status) || "active") === v ? "font-bold text-stone-800" : "text-stone-500")}>
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: ((channelInfo[ctxMenu.channel] && channelInfo[ctxMenu.channel].status) || "active") === v ? theme.accent : "#d6d3d1" }} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {ctxMenu.channel !== DEFAULT_CHANNEL && (
               <div className="flex border-t border-stone-100 mt-1">
                 <button onClick={() => { moveChannel(ctxMenu.channel, -1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
@@ -10813,13 +11016,11 @@ export default function App() {
                   {regulationChecklist.length === 0 && <p className="text-[11px] text-stone-400 py-3">適用されるレギュレーションはありません。</p>}
                 </div>
               </details>
-              <section className="rounded-xl border border-stone-200 p-3.5">
-                <div className="flex items-center gap-2 mb-2"><span className="text-[12px] font-bold text-stone-800">AIが自動で確認</span>{preflightBusy && <span className="text-[10px] text-indigo-500">確認中…</span>}</div>
-                <p className="text-[11px] text-stone-500 leading-relaxed">ブランド、個人情報、センシティブ情報、煽り表現、過去修正、個別承認の懸念をObsidianの承認済みルールと照合します。</p>
-                {!preflightBusy && !preflight.error && !(preflight.concerns || []).length && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">AIが確認を求める懸念はありませんでした</div>}
-                {preflight.error && <div className="mt-3 rounded-lg bg-red-50 text-red-700 px-3 py-2 text-[11px]">{preflight.error}。安全のためURL生成を停止します。</div>}
+              <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5">
+                <div className="text-[12px] font-bold text-emerald-800">コード監査は完了しています</div>
+                <p className="text-[11px] text-emerald-700 mt-1 leading-relaxed">制作中の変更に合わせて端末内で確認済みです。AI通信や定期監査は行っていません。</p>
               </section>
-              {/* 台本の自動レビュー（構造チェック＋AI校正）。共有前に裏で走る。修正は任意＝「そのまま共有」もできる */}
+              {/* 台本の自動レビュー（端末内の構造チェック）。修正は任意＝「そのまま共有」もできる */}
               {preflight.review && (() => {
                 const rv = preflight.review;
                 const hard = rv.issues.filter((it) => !it.soft), soft = rv.issues.filter((it) => it.soft);
@@ -10828,10 +11029,8 @@ export default function App() {
                   <section className="rounded-xl border p-3.5" style={{ borderColor: hard.length ? "#F6CCCC" : "#E5E7EB" }}>
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-[12px] font-bold text-stone-800">台本の自動レビュー</span>
-                      {rv.busy && <span className="text-[10px] text-indigo-500">AI校正中…（10〜20秒）</span>}
-                      {!rv.busy && rv.aiError && <span className="text-[10px] text-stone-400" title={rv.aiError}>AI校正は接続できず（構造チェックのみ）</span>}
                     </div>
-                    <p className="text-[11px] text-stone-500 leading-relaxed"><span className="font-bold text-stone-600">別シーンでの内容の重複</span>・誤字脱字・質問と回答の逆転・シーン/ロケの記入漏れ・インサートのカット不足・撮影順の矛盾を自動で確認します。</p>
+                    <p className="text-[11px] text-stone-500 leading-relaxed">シーン/ロケの記入漏れ・インサートのカット不足・回答欄・撮影順の矛盾を端末内で確認します。</p>
                     {!rv.busy && rv.issues.length === 0 && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">問題ありません。</div>}
                     {rv.applied && rv.applied.length > 0 && (
                       <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
@@ -10908,16 +11107,9 @@ export default function App() {
             <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50 flex-wrap">
               <span className="text-[10px] text-stone-400">案件とクライアントは自動判定済みです</span>
               <div className="flex items-center gap-3 ml-auto">
-                {(preflightBusy || preflight.error || (preflight.review && preflight.review.busy)) && !HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) && !regulationChecklist.some((r) => !preflight.checks[r.key]) && (
-                  <button onClick={() => finishPublishPreflight(true)}
-                    title="AIチェックの完了を待たずにURLを生成します（電波が弱い時など）。AIの結果は届き次第この画面に出ます"
-                    className="text-[11.5px] font-bold underline text-stone-500 hover:text-stone-800">
-                    AIを待たずに共有する
-                  </button>
-                )}
                 <button onClick={() => finishPublishPreflight(false)} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || regulationChecklist.some((r) => !preflight.checks[r.key]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block") || (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])}
                   className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
-                  {preflightBusy ? "AI確認中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "確認を完了してURL生成"}
+                  {preflightBusy ? "URL生成中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "確認を完了してURL生成"}
                 </button>
               </div>
             </div>

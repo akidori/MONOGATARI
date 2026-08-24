@@ -18,7 +18,7 @@ flowchart LR
   AI["Anthropic API"]
   YT["YouTube Data API"]
   MAP["Google Maps"]
-  LAB["Flip LAB / Flip Board"]
+  LAB["Obsidian / Studio OS"]
   GD["Google Drive<br/>未接続"]
 
   U --> WEB
@@ -109,7 +109,7 @@ sequenceDiagram
 | Anthropic | AI | 入力テキスト、案件情報 | 現在は運営 |
 | YouTube Data API | 調査 | 動画ID、検索語 | 現在は運営 |
 | Google Maps | 場所 | 住所、座標 | 運営設定 |
-| Flip LAB／Board | 制作進行 | 案件ID、工程、ルール | 運営 |
+| Obsidian／Studio OS | 知識正本／制作進行 | マニュアル、案件ID、工程 | 運営 |
 | Google Drive | 将来保存 | 現在なし | 未定 |
 
 ## 5. 認証・権限の種類

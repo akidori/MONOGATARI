@@ -1637,9 +1637,31 @@ async function del(fileKey, btn) {
           const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
           if (doc.ownerSub !== u.sub) return json({ error: "オーナーのみ招待できます" }, 403);
           const em = lc(b.email); if (!em || !em.includes("@")) return json({ error: "メールアドレスが不正です" }, 400);
-          if (!doc.members.includes(em)) doc.members.push(em);
+          const isNew = !doc.members.includes(em);
+          if (isNew) doc.members.push(em);
           await env.SNAPS.put(docKey(doc.id), JSON.stringify(doc));
           await addIdx(em, doc.id);
+          // 招待メール送信（2026-08-24）：メンバー追加だけだと相手が気づく手段が無かった穴を埋める。
+          // ZHC bot(BOT_API_URL) 中継のGmail送信。失敗しても招待自体は成立済みなので握りつぶす。
+          if (isNew && env.BOT_API_URL && env.BOT_API_KEY) {
+            const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+            const inviterName = u.name || myEmail;
+            const projectName = doc.name || "無題の企画";
+            const body = `${inviterName}さんが「ものがたりっち！」の企画「${projectName}」にあなたを共同編集者として招待しました。
+
+以下のGoogleアカウント（${em}）でログインすると、自分の案件一覧に表示されます。
+
+${appOrigin}
+
+Bird Flip / ものがたりっち！`;
+            try {
+              await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
+                method: "POST",
+                headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
+                body: JSON.stringify({ to: em, subject: `【ものがたりっち】「${projectName}」に招待されました`, body, audit_target: "monogataritch:invite:" + doc.id }),
+              });
+            } catch (e) { /* メール失敗はログのみ・招待は成立済み */ }
+          }
           return json({ members: doc.members });
         }
         if (op === "uninvite") {
