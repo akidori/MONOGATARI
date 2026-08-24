@@ -1643,7 +1643,9 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     });
   })();
   const styleFor = (r, flag) => {
-    if (r.marker) return { opacity: 0 }; // マーカー文字は幅だけ確保して非表示（下の透明textareaと文字数を合わせる）
+    // マーカー文字（** / !!）：編集中は幅だけ確保して透明（透明textareaと文字数を合わせカーソル位置を保つ）。
+    // 読み時（blur）は幅ごと消す＝行頭の !! で空白が出ない（2026-08-24 AK指摘）
+    if (r.marker) return focused ? { opacity: 0 } : { display: "none" };
     const st = {};
     if (r.red) st.color = "#DC2645";
     else if (flag === "q") st.color = "#171A1F";
@@ -1705,7 +1707,8 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
           const rest = m[2] ? m[2].replace(/^\s+/, "") : "";
           if (rest) nodes.push(<span key={key++} style={styleFor(r, flag)}>{rest}</span>);
         } else {
-          nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0.35 : 1 }}>{m[1]}</span>);
+          // 編集中は幅だけ確保して完全透明（カーソル位置は幅で決まる。四角は見せない＝2026-08-24 AK指摘）
+          nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: accent, opacity: qaGutter ? 0 : 1 }}>{m[1]}</span>);
           if (m[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{m[2]}</span>);
         }
       } else if (flag === "star" && !r.marker) {
@@ -1786,7 +1789,8 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
   const runs = buildStyledRuns(val || "");
   const nodes = []; let key = 0;
   runs.forEach((r) => {
-    const st = r.marker ? { opacity: 0 } : {}; // マーカー文字は幅だけ確保して非表示（下の透明textareaと文字数を合わせる）
+    // マーカー: 編集中=透明で幅確保／読み時=幅ごと消す（行頭の!!や**で空白が出ないように）
+    const st = r.marker ? (focused ? { opacity: 0 } : { display: "none" }) : {};
     if (!r.marker) { if (r.red) st.color = "#DC2645"; if (!focused && r.bold) st.fontWeight = 800; }
     r.text.split("\n").forEach((p, idx) => {
       if (idx > 0) nodes.push("\n");
