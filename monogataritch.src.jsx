@@ -5706,14 +5706,17 @@ export default function App() {
   const structuralReview = (pr) => {
     const issues = [];
     const rows = (pr && pr.rows) || [];
+    // 時刻は分に直して比較する（文字列比較だと "10:00" < "8:45" になり誤検知＝2026-08-24 AK報告）
+    const toMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec((t || "").trim()); return m ? (+m[1]) * 60 + (+m[2]) : null; };
     let prevTime = null, prevDay = null;
     rows.forEach((r) => {
       if (r.kind === "location") {
         if (!(r.label || "").trim()) issues.push({ category: "ロケ漏れ", detail: "ロケーション名が空のままです", rowId: r.id, sceneLabel: "（ロケ名未入力）" });
         const d = dayOf(r);
-        if (r.time) {
-          if (prevTime && prevDay === d && r.time < prevTime) issues.push({ category: "撮影順", detail: "撮影時刻（" + r.time + "）が前のロケ（" + prevTime + "）より早くなっています", rowId: r.id, sceneLabel: r.label });
-          prevTime = r.time; prevDay = d;
+        const tm = toMin(r.time);
+        if (tm != null) {
+          if (prevTime != null && prevDay === d && tm < prevTime) issues.push({ category: "撮影順", detail: "撮影時刻（" + r.time + "）が前のロケ（" + Math.floor(prevTime / 60) + ":" + String(prevTime % 60).padStart(2, "0") + "）より早くなっています", rowId: r.id, sceneLabel: r.label });
+          prevTime = tm; prevDay = d;
         } else if (prevDay !== d) { prevTime = null; prevDay = d; }
         return;
       }
