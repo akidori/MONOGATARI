@@ -2422,7 +2422,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const verComments = comments.filter(belongs);
   const counts = CMT_STATUSES.reduce((o, s) => { o[s] = verComments.filter((c) => cstat(c) === s).length; return o; }, {});
   const seek = (t) => {
-    if (sel && sel.type === "youtube") { const p = ytPlayerRef.current; if (p && p.seekTo) { p.seekTo(+t || 0, true); if (p.pauseVideo) p.pauseVideo(); setCur(+t || 0); } return; }
+    if (sel && sel.type === "youtube") { const p = ytPlayerRef.current; if (p && p.seekTo) { ytSeekGuard.current = Date.now() + 800; p.seekTo(+t || 0, true); if (p.pauseVideo) p.pauseVideo(); setCur(+t || 0); } return; }
     if (vref.current) { vref.current.currentTime = +t || 0; vref.current.pause(); setCur(+t || 0); }
   };
   const isMp4 = sel && sel.type !== "youtube";
@@ -2473,6 +2473,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   // YouTubeは IFrame API で制御（再生/停止・速度・タイムコード）。※YouTubeは仕様上2倍速まで
   const ytDivRef = React.useRef(null);
   const ytPlayerRef = React.useRef(null);
+  const ytSeekGuard = React.useRef(0); // 手動シーク直後はポーリングで表示を巻き戻さない（未再生のcued動画はgetCurrentTimeが古い値を返す）
   React.useEffect(() => {
     if (!isYT || !ytDivRef.current) return;
     let timer, destroyed = false;
@@ -2481,12 +2482,51 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
       ytPlayerRef.current = new YT.Player(ytDivRef.current, {
         videoId: ytIdFromUrl(sel.url) || "",
         playerVars: { rel: 0, modestbranding: 1, iv_load_policy: 3, playsinline: 1 },
-        events: { onReady: () => { timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) { setCur(p.getCurrentTime() || 0); if (p.getDuration) setDur(p.getDuration() || 0); } }, 200); } },
+        events: { onReady: () => { timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) { if (Date.now() > ytSeekGuard.current) setCur(p.getCurrentTime() || 0); if (p.getDuration) setDur(p.getDuration() || 0); } }, 200); } },
       });
     });
     return () => { destroyed = true; if (timer) clearInterval(timer); try { ytPlayerRef.current && ytPlayerRef.current.destroy && ytPlayerRef.current.destroy(); } catch (e) {} ytPlayerRef.current = null; };
   }, [sel && sel.id, isYT]);
   const getTime = () => isYT ? (ytPlayerRef.current && ytPlayerRef.current.getCurrentTime ? ytPlayerRef.current.getCurrentTime() : 0) : (vref.current ? vref.current.currentTime : 0);
+  /* スマホ判定＋版履歴の折りたたみ（2026-08-24 AK「スマホで履歴表示がうざい→トグルで最小化」） */
+  const [isNarrowRB, setIsNarrowRB] = React.useState(() => { try { return window.matchMedia("(max-width: 640px)").matches; } catch (e) { return false; } });
+  React.useEffect(() => {
+    try { const mq = window.matchMedia("(max-width: 640px)"); const on = () => setIsNarrowRB(mq.matches); mq.addEventListener("change", on); return () => mq.removeEventListener("change", on); } catch (e) {}
+  }, []);
+  const [histOpen, setHistOpen] = React.useState(false);
+  /* ±5秒シーク（キーボード←→と、動画の左右ダブルタップの共通処理） */
+  const seekBy = (d) => {
+    if (isYT) { const p = ytPlayerRef.current; if (p && p.getCurrentTime && p.seekTo) { const base = Date.now() > ytSeekGuard.current ? (p.getCurrentTime() || 0) : cur; const nt = Math.max(0, base + d); ytSeekGuard.current = Date.now() + 800; p.seekTo(nt, true); setCur(nt); } }
+    else if (vref.current) { const v = vref.current; const nt = Math.max(0, Math.min(v.duration || 1e9, (v.currentTime || 0) + d)); v.currentTime = nt; setCur(nt); }
+  };
+  /* 動画の左右ダブルタップで±5秒（YouTubeアプリ風）。中央や1回タップは従来どおり再生/停止。
+     1回目のタップは260ms待って再生切替＝ダブルタップ時に再生/停止が誤発火しないようにする */
+  const [skipFlash, setSkipFlash] = React.useState(null); // {side:'l'|'r', n}
+  const tapRef = React.useRef({ t: 0, side: null, timer: null });
+  const skipTimer = React.useRef(null);
+  const onVideoTap = (e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - r.left) / Math.max(1, r.width);
+    const side = x < 0.35 ? "l" : x > 0.65 ? "r" : "c";
+    const now = Date.now();
+    const tp = tapRef.current;
+    if (side !== "c" && now - tp.t < 300 && side === tp.side) {
+      if (tp.timer) { clearTimeout(tp.timer); tp.timer = null; }
+      tp.t = 0;
+      seekBy(side === "l" ? -5 : 5);
+      setSkipFlash((f) => ({ side, n: (f && f.side === side ? f.n : 0) + 5 }));
+      if (skipTimer.current) clearTimeout(skipTimer.current);
+      skipTimer.current = setTimeout(() => setSkipFlash(null), 700);
+      return;
+    }
+    tp.t = now; tp.side = side;
+    if (tp.timer) { clearTimeout(tp.timer); tp.timer = null; }
+    // 中央タップ＝即時に再生/停止（遅らせるとYouTubeの「ユーザー操作による再生」扱いが切れて再生できない）。
+    // 左右タップだけダブルタップ判定のため260ms待つ
+    if (side === "c") { togglePlay(); return; }
+    tp.timer = setTimeout(() => { tp.timer = null; togglePlay(); }, 260);
+  };
+  React.useEffect(() => () => { const tp = tapRef.current; if (tp.timer) clearTimeout(tp.timer); if (skipTimer.current) clearTimeout(skipTimer.current); }, []);
   const applyRate = (r) => { if (isYT) { try { ytPlayerRef.current && ytPlayerRef.current.setPlaybackRate(r); } catch (e) {} } else if (vref.current) vref.current.playbackRate = r; setRate(r); };
   const togglePlay = () => {
     if (isYT) { const p = ytPlayerRef.current; if (!p || !p.getPlayerState) return; if (p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo(); }
@@ -2494,10 +2534,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   };
   // キーボード操作：Enter/Space=再生停止、←→=5秒シーク(Shiftで1秒)。テキスト入力欄のみ無効（シークバー=range は対象にする）
   React.useEffect(() => {
-    const seekBy = (d) => {
-      if (isYT) { const p = ytPlayerRef.current; if (p && p.getCurrentTime && p.seekTo) { const nt = Math.max(0, (p.getCurrentTime() || 0) + d); p.seekTo(nt, true); setCur(nt); } }
-      else if (vref.current) { const v = vref.current; const nt = Math.max(0, Math.min(v.duration || 1e9, (v.currentTime || 0) + d)); v.currentTime = nt; setCur(nt); }
-    };
     const onKey = (e) => {
       const t = e.target, tag = (t && t.tagName || "").toLowerCase(), typ = (t && t.type || "").toLowerCase();
       const typing = tag === "textarea" || tag === "select" || (t && t.isContentEditable) || (tag === "input" && typ !== "range");
@@ -2541,6 +2577,16 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const rates = isYT ? [0.5, 1, 1.5, 2] : [0.5, 1, 1.5, 2, 3, 4];
   return (
     <div>
+      {/* スマホ：版の履歴・サマリーは1行に畳む（既定=閉）。開くと従来の表示が出る */}
+      {isNarrowRB && (
+        <button onClick={() => setHistOpen((v) => !v)}
+          className="w-full flex items-center gap-2 mb-2 px-3 h-9 rounded-lg border border-stone-200 bg-white text-left">
+          <span className="text-[12px] font-bold text-stone-700 truncate">{sel ? sel.label : ""}<span className="font-normal text-stone-400 ml-1">{sel && sel.name && sel.name !== sel.label ? sel.name : ""}</span></span>
+          {counts["未対応"] > 0 && <span className="text-[10px] font-bold px-1.5 rounded-full text-white shrink-0" style={{ background: accent }}>{counts["未対応"]}</span>}
+          <span className="ml-auto text-[11px] text-stone-400 shrink-0">{histOpen ? "閉じる ▴" : "履歴・追加 ▾"}</span>
+        </button>
+      )}
+      {(!isNarrowRB || histOpen) && (<>
       {/* バージョンタブ（ドラッグ&ドロップで動画追加OK） */}
       <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 rounded-lg transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "3px" } : {}}
         onDragOver={onDragOverVideo} onDragLeave={() => setDropOver(false)} onDrop={onDropVideo}>
@@ -2591,6 +2637,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
         <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（7日間はゴミ箱から復元できます。コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
       </div>
       <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
+      </>)}
       <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
         {/* 左：プレイヤー */}
         <div>
@@ -2598,13 +2645,19 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             {isYT
               ? <><div ref={ytDivRef} className="w-full h-full pointer-events-none" />
                   {/* 透明レイヤーでYouTubeのhover検知を遮断＝タイトル/関連動画などの情報を非表示に。クリックで再生/停止 */}
-                  <div className="absolute inset-0 cursor-pointer" onClick={togglePlay} title="クリックで再生/停止" /></>
+                  <div className="absolute inset-0 cursor-pointer" onClick={onVideoTap} style={{ touchAction: "manipulation" }} title="クリックで再生/停止・左右ダブルタップで±5秒" /></>
               : streamPending
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
-                  : <video ref={vref} src={rawSrc} playsInline preload="auto" onClick={togglePlay} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
+                  ? <video ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
+                  : <video ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
+            {/* 左右ダブルタップの±5秒インジケータ */}
+            {skipFlash && (
+              <div className={"absolute inset-y-0 grid place-items-center pointer-events-none " + (skipFlash.side === "l" ? "left-0 w-1/3" : "right-0 w-1/3")}>
+                <span className="text-[13px] font-bold px-3 py-2 rounded-full bg-black/60 text-white">{skipFlash.side === "l" ? "◀◀ -" + skipFlash.n + "秒" : "+" + skipFlash.n + "秒 ▶▶"}</span>
+              </div>
+            )}
             {/* シーク/バッファ待ちの間の「移動中」表示（生mp4は数秒かかる＝固まったと誤解されるのを防ぐ） */}
             {!isYT && !streamPending && seeking && (
               <div className="absolute inset-0 grid place-items-center pointer-events-none">
