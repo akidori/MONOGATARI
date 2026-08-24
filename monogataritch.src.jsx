@@ -7646,21 +7646,21 @@ export default function App() {
       {/* ===== 案件サイドバー ===== */}
       {APP_MODE.showProjectNavigation && (
       <aside
-        className="fixed top-0 left-0 h-full z-40 flex flex-col border-r border-stone-200"
+        className="fixed top-0 left-0 h-full z-40 flex flex-col border-r border-white/10"
         style={{
           width: sidebarW,
-          background: "#fff",
-          color: "#292524",
+          background: theme.main,
+          color: mainText,
           transform: sidebarOpen ? "translateX(0)" : "translateX(-" + sidebarW + "px)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
           willChange: "transform",
         }}>
-        <div className="px-3 py-2.5 border-b border-stone-100">
+        <div className="px-3 py-2.5 border-b border-white/10">
           <button onClick={() => setView("home")} title="ホーム（チャンネル一覧）へ"
-            className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-stone-50 transition-colors">
+            className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors">
             <img src="logo-header.png" alt="" className="w-7 h-7 rounded-lg shrink-0" />
-            <span className="font-black tracking-[0.08em] text-[14px] text-stone-800">ものがたりっち！</span>
-            <svg className="w-4 h-4 ml-auto text-stone-300 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+            <span className="font-black tracking-[0.08em] text-[14px]" style={{ color: mainText }}>ものがたりっち！</span>
+            <svg className="w-4 h-4 ml-auto text-white/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
         {!chanLive && (<>
@@ -7673,7 +7673,7 @@ export default function App() {
           </button>
           <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
             title="新しいチャンネル（フォルダ）を作成"
-            className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600">
+            className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20" style={{ color: mainText }}>
             <Icon name="plus" className="w-3.5 h-3.5" />ch
           </button>
           {newMenu && (
@@ -7699,10 +7699,11 @@ export default function App() {
         {!chanLive && (
           <div className="px-3 pb-2">
             <div className="relative">
-              <Icon name="search" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-300 pointer-events-none" />
+              <Icon name="search" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
               <input ref={sidebarSearchRef} value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件を検索..."
-                className="w-full bg-stone-50 border border-stone-200 text-[11.5px] text-stone-800 placeholder-stone-400 rounded-lg pl-8 pr-10 py-1.5 focus:outline-none focus:bg-white focus:border-stone-300" />
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9.5px] font-medium text-stone-300 pointer-events-none">⌘K</span>
+                className="w-full bg-white/10 border border-white/10 text-[11.5px] placeholder-white/30 rounded-lg pl-8 pr-10 py-1.5 focus:outline-none focus:bg-white/15 focus:border-white/25"
+                style={{ color: mainText }} />
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9.5px] font-medium text-white/30 pointer-events-none">⌘K</span>
             </div>
           </div>
         )}
@@ -7716,18 +7717,18 @@ export default function App() {
         <div className="mg-scroll flex-1 overflow-y-auto px-2 pb-3">
           {chanLive ? (
             <div className="pt-1">
-              <div className="px-2 py-1.5 text-[11px] font-bold text-stone-400 truncate flex items-center gap-1.5">
-                {channelIconOf(chanLive.name) || <Icon name="folder" className="w-3.5 h-3.5 text-stone-300 shrink-0" />}
+              <div className="px-2 py-1.5 text-[11px] font-bold text-white/45 truncate flex items-center gap-1.5">
+                {channelIconOf(chanLive.name) || <Icon name="folder" className="w-3.5 h-3.5 text-white/30 shrink-0" />}
                 <span className="truncate">{chanLive.name}</span>
-                <span className="ml-auto text-[10px] text-stone-300 tabular-nums">{chanLive.cases.length}</span>
+                <span className="ml-auto text-[10px] text-white/30 tabular-nums">{chanLive.cases.length}</span>
               </div>
               {chanLive.cases.map((c) => {
                 const active = chanActiveCase === c.id;
                 return (
                   <button key={c.id} onClick={() => openChanCase(c)}
-                    className={"w-full text-left rounded-lg mb-0.5 px-3 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-stone-50")}
-                    style={{ borderLeftColor: active ? theme.accent : "transparent", ...(active ? { background: "#FEF2F2" } : {}) }}>
-                    <span className={"flex-1 min-w-0 truncate text-[12.5px] " + (active ? "font-semibold text-stone-900" : "font-medium text-stone-700")}>{c.name}</span>
+                    className={"w-full text-left rounded-lg mb-0.5 px-3 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
+                    style={{ borderLeftColor: active ? theme.accent : "transparent", color: mainText, ...(active ? { background: "rgba(255,255,255,0.12)" } : {}) }}>
+                    <span className={"flex-1 min-w-0 truncate text-[12.5px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{c.name}</span>
                   </button>
                 );
               })}
@@ -7751,27 +7752,28 @@ export default function App() {
               return (
                 <div key={channel} className="mb-0.5">
                   {/* チャンネル見出し（タップでそのチャンネルの台本一覧を開閉） */}
-                  <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-stone-50 cursor-pointer select-none"
+                  <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer select-none"
                     onClick={toggleChannel}
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
                     <button title={isCollapsed ? "案件を表示" : "案件を隠す"} onClick={(e) => { e.stopPropagation(); toggleChannel(); }}
-                      className="w-3.5 shrink-0 text-stone-300 text-[10px] transition-transform grid place-items-center hover:text-stone-600" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}>▾</button>
+                      className="w-3.5 shrink-0 text-white/30 text-[10px] transition-transform grid place-items-center hover:text-white/70" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}>▾</button>
                     {channelIconOf(channel) ? (
                       <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }}
                         className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[12px] leading-none hover:scale-125 transition-transform">{channelIconOf(channel)}</button>
                     ) : (
-                      <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }} className="w-3.5 h-3.5 shrink-0 grid place-items-center hover:text-stone-600">
-                        <Icon name="folder" className="w-3.5 h-3.5 text-stone-300" />
+                      <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }} className="w-3.5 h-3.5 shrink-0 grid place-items-center hover:text-white/70">
+                        <Icon name="folder" className="w-3.5 h-3.5 text-white/30" />
                       </button>
                     )}
-                    <span className={"flex-1 min-w-0 truncate text-[12.5px] cursor-pointer hover:underline " + (hasActive ? "font-bold text-stone-900" : "font-semibold text-stone-500")}
+                    <span className={"flex-1 min-w-0 truncate text-[12.5px] cursor-pointer hover:underline " + (hasActive ? "font-bold" : "font-semibold opacity-60")}
+                      style={{ color: mainText }}
                       title="このチャンネルの企画・サムネ一覧を開く"
                       onClick={(e) => { e.stopPropagation(); if (isCollapsed) toggleChannel(); openChannelBoard(channel); }}>
                       {channel}
                     </span>
-                    <span className="text-[10px] text-stone-300 group-hover/ch:text-stone-500 tabular-nums transition-colors">{items.length}</span>
+                    <span className="text-[10px] text-white/30 group-hover/ch:text-white/60 tabular-nums transition-colors">{items.length}</span>
                     <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
-                      <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-stone-200 text-[10px] text-stone-500">✎</button>
+                      <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px] text-white/60">✎</button>
                     </div>
                   </div>
 
@@ -7786,10 +7788,11 @@ export default function App() {
                         onDragOver={(e) => { if (dragCaseId && dragCaseId !== p.id) { e.preventDefault(); e.stopPropagation(); setDragOverCaseId(p.id); } }}
                         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderCaseByDrag(dragCaseId, p.id); setDragCaseId(null); setDragOverCaseId(null); }}
                         onDragEnd={() => { setDragCaseId(null); setDragOverCaseId(null); }}
-                        className={"group/p rounded-lg mb-0.5 ml-3 pl-2.5 pr-2 py-2 cursor-pointer transition-colors border-l-2 " + (active ? "" : "hover:bg-stone-50")}
+                        className={"group/p rounded-lg mb-0.5 ml-3 pl-2.5 pr-2 py-2 cursor-pointer transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
                         style={{
-                          borderLeftColor: active ? theme.accent : "#f0efec",
-                          ...(active ? { background: "#FEF2F2" } : {}),
+                          borderLeftColor: active ? theme.accent : "rgba(255,255,255,0.14)",
+                          color: mainText,
+                          ...(active ? { background: "rgba(255,255,255,0.12)" } : {}),
                           ...(dragCaseId === p.id ? { opacity: 0.4 } : {}),
                           ...(dragOverCaseId === p.id && dragCaseId !== p.id ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}),
                         }}
@@ -7797,13 +7800,13 @@ export default function App() {
                         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCaseMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); }}
                         title="右クリックで操作（名前変更・複製・移動・削除）">
                         <div className="flex items-center gap-2">
-                          <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-stone-400 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
+                          <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-white/40 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
                           {/* 開閉：この案件の中のページ（概要〜納品完了）を出し入れする */}
                           <button title={isCaseOpen(p.id) ? "ページを隠す" : "ページを表示"}
                             onClick={(e) => { e.stopPropagation(); toggleCaseOpen(p.id); }}
-                            className="w-3.5 shrink-0 text-stone-300 text-[10px] grid place-items-center hover:text-stone-600 transition-transform"
+                            className="w-3.5 shrink-0 text-white/30 text-[10px] grid place-items-center hover:text-white/70 transition-transform"
                             style={{ transform: isCaseOpen(p.id) ? "none" : "rotate(-90deg)" }}>▾</button>
-                          <Icon name="user" className={"w-3 h-3 shrink-0 " + (active ? "text-rose-500" : "text-stone-300")} />
+                          <Icon name="user" className={"w-3 h-3 shrink-0 " + (active ? "text-rose-400" : "text-white/30")} />
                           {renamingId === p.id ? (
                             <input
                               autoFocus
@@ -7811,7 +7814,8 @@ export default function App() {
                               onClick={(e) => e.stopPropagation()}
                               onBlur={(e) => { renameProject(p.id, e.target.value || p.name); setRenamingId(null); }}
                               onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                              className="flex-1 min-w-0 bg-stone-100 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                              className="flex-1 min-w-0 bg-white/10 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                              style={{ color: mainText }}
                             />
                           ) : channelEditId === p.id ? (
                             <input
@@ -7822,12 +7826,13 @@ export default function App() {
                               onClick={(e) => e.stopPropagation()}
                               onBlur={(e) => { setProjectChannel(p.id, e.target.value); setChannelEditId(null); }}
                               onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.preventDefault(); setChannelEditId(null); } }}
-                              className="flex-1 min-w-0 bg-stone-100 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                              className="flex-1 min-w-0 bg-white/10 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                              style={{ color: mainText }}
                             />
                           ) : (
-                            <span className={"flex-1 min-w-0 truncate text-[13px] inline-flex items-center gap-1 " + (active ? "font-semibold text-stone-900" : "font-medium text-stone-700")}
+                            <span className={"flex-1 min-w-0 truncate text-[13px] inline-flex items-center gap-1 " + (active ? "font-semibold" : "font-medium opacity-80")}
                               onDoubleClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }}>
-                              {p.collab && <span title={p.role === "owner" ? "共同編集（あなたがオーナー）" : "共有された案件（" + (p.ownerEmail || "") + "）"} className="shrink-0 text-stone-400"><Icon name="user" className="w-3 h-3" /></span>}
+                              {p.collab && <span title={p.role === "owner" ? "共同編集（あなたがオーナー）" : "共有された案件（" + (p.ownerEmail || "") + "）"} className="shrink-0 text-white/40"><Icon name="user" className="w-3 h-3" /></span>}
                               <span className="truncate">{p.name}</span>
                             </span>
                           )}
@@ -7835,22 +7840,22 @@ export default function App() {
                           <button title={p.favorite ? "お気に入りから外す" : "お気に入りに追加"}
                             onClick={(e) => { e.stopPropagation(); toggleFavorite(p.id); }}
                             className={"shrink-0 transition-opacity " + (p.favorite ? "opacity-100" : "opacity-0 group-hover/p:opacity-60 hover:opacity-100")}>
-                            <Icon name="star" className="w-3.5 h-3.5" style={{ color: p.favorite ? "#f59e0b" : "#a8a29e" }} />
+                            <Icon name="star" className="w-3.5 h-3.5" style={{ color: p.favorite ? "#f59e0b" : "rgba(255,255,255,0.35)" }} />
                           </button>
                           {/* 操作(名前変更・複製・移動・削除)は行の右クリック → caseMenu に集約 */}
                         </div>
                       </div>
                       {/* 案件内ページ（ツリーの葉）。ここが工程タブの新しい住所＝右の縦レールは廃止した */}
                       {isCaseOpen(p.id) && (
-                        <div className="ml-[26px] mb-1.5 pl-1.5 border-l border-stone-100">
+                        <div className="ml-[26px] mb-1.5 pl-1.5 border-l border-white/10">
                           {pagesFor(p).map(([k, ic, label]) => {
                             const on = active && tab === k;
                             return (
                               <button key={k} onClick={(e) => { e.stopPropagation(); openPage(p.id, k); }} title={label}
-                                className={"w-full text-left rounded-md px-2 py-1 mb-px flex items-center gap-1.5 text-[11.5px] transition-colors " + (on ? "font-bold" : "text-stone-500 hover:bg-stone-50 hover:text-stone-800")}
-                                style={on ? { background: "#FEF2F2", color: theme.accent } : {}}>
+                                className={"w-full text-left rounded-md px-2 py-1 mb-px flex items-center gap-1.5 text-[11.5px] transition-colors " + (on ? "font-bold" : "text-white/60 hover:bg-white/10 hover:text-white")}
+                                style={on ? { background: "rgba(255,255,255,0.12)", color: mainText } : {}}>
                                 <span className="w-0.5 h-3.5 rounded-full shrink-0" style={{ background: on ? theme.accent : "transparent" }} />
-                                <Icon name={ic} className="w-3.5 h-3.5 shrink-0" style={on ? { color: theme.accent } : { color: "#a8a29e" }} />
+                                <Icon name={ic} className="w-3.5 h-3.5 shrink-0" style={on ? { color: theme.accent } : { color: "rgba(255,255,255,0.35)" }} />
                                 <span className="truncate">{label}</span>
                               </button>
                             );
@@ -7868,10 +7873,10 @@ export default function App() {
               const isClosed = !!sectionCollapsed[key];
               return (
                 <button onClick={() => setSectionCollapsed((s) => ({ ...s, [key]: !s[key] }))}
-                  className="w-full flex items-center gap-1 px-1.5 py-1 mt-3 mb-1 rounded hover:bg-stone-50 group/sec">
-                  <span className="w-3 text-stone-300 text-[9px] transition-transform" style={{ transform: isClosed ? "rotate(-90deg)" : "none" }}>▾</span>
-                  <span className="text-[11px] font-semibold text-stone-400 tracking-wide">{label}</span>
-                  <span className="ml-auto text-[10px] text-stone-300 group-hover/sec:text-stone-500 tabular-nums">{count}</span>
+                  className="w-full flex items-center gap-1 px-1.5 py-1 mt-3 mb-1 rounded hover:bg-white/10 group/sec">
+                  <span className="w-3 text-white/30 text-[9px] transition-transform" style={{ transform: isClosed ? "rotate(-90deg)" : "none" }}>▾</span>
+                  <span className="text-[11px] font-semibold text-white/45 tracking-wide">{label}</span>
+                  <span className="ml-auto text-[10px] text-white/30 group-hover/sec:text-white/60 tabular-nums">{count}</span>
                 </button>
               );
             };
@@ -7885,11 +7890,11 @@ export default function App() {
                       const active = p.id === activeId;
                       return (
                         <button key={p.id} onClick={() => switchProject(p.id)}
-                          className={"w-full text-left rounded-lg mb-0.5 pl-2.5 pr-2 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-stone-50")}
-                          style={{ borderLeftColor: active ? theme.accent : "transparent", ...(active ? { background: "#FEF2F2" } : {}) }}>
+                          className={"w-full text-left rounded-lg mb-0.5 pl-2.5 pr-2 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
+                          style={{ borderLeftColor: active ? theme.accent : "transparent", color: mainText, ...(active ? { background: "rgba(255,255,255,0.12)" } : {}) }}>
                           <Icon name="star" className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
-                          <span className={"flex-1 min-w-0 truncate text-[13px] " + (active ? "font-semibold text-stone-900" : "font-medium text-stone-700")}>{p.name}</span>
-                          <span className="text-[10px] text-stone-300 truncate max-w-[64px]">{p.channel || DEFAULT_CHANNEL}</span>
+                          <span className={"flex-1 min-w-0 truncate text-[13px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{p.name}</span>
+                          <span className="text-[10px] text-white/30 truncate max-w-[64px]">{p.channel || DEFAULT_CHANNEL}</span>
                         </button>
                       );
                     })}
@@ -7910,33 +7915,34 @@ export default function App() {
             );
           })()}
         </div>
-        <div className="px-2 py-1.5 border-t border-stone-100">
+        <div className="px-2 py-1.5 border-t border-white/10">
           <button onClick={() => setSectionCollapsed((s) => ({ ...s, settings: !s.settings }))}
-            className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg hover:bg-stone-50">
-            <svg className="w-3.5 h-3.5 shrink-0 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg hover:bg-white/10">
+            <svg className="w-3.5 h-3.5 shrink-0 text-white/45" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
             </svg>
-            <span className="text-[11px] font-semibold text-stone-500 tracking-wide">設定</span>
-            <span className="ml-auto text-stone-300 text-[9px] transition-transform" style={{ transform: sectionCollapsed.settings ? "rotate(-90deg)" : "none" }}>▾</span>
+            <span className="text-[11px] font-semibold text-white/60 tracking-wide">設定</span>
+            <span className="ml-auto text-white/30 text-[9px] transition-transform" style={{ transform: sectionCollapsed.settings ? "rotate(-90deg)" : "none" }}>▾</span>
           </button>
           {!sectionCollapsed.settings && (
             <div className="flex flex-col gap-0.5 pb-1">
               <button onClick={() => { setView("editor"); setTab("regulations"); setSidebarOpen(false); }}
-                className={"flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-left w-full transition-colors " + (tab === "regulations" ? "bg-stone-100 text-stone-900 font-bold" : "text-stone-600 hover:bg-stone-50")}
+                className={"flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-left w-full transition-colors " + (tab === "regulations" ? "bg-white/15 font-bold" : "text-white/70 hover:bg-white/10")}
+                style={tab === "regulations" ? { color: mainText } : {}}
                 title="全社・クライアント・案件例外のレギュレーションをまとめて確認">
-                <Icon name="book" className="w-4 h-4 shrink-0 text-stone-400" />
+                <Icon name="book" className="w-4 h-4 shrink-0 text-white/45" />
                 <span>レギュレーション一覧</span>
               </button>
               <a href="settings.html"
-                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-stone-600 hover:bg-stone-50">
-                <svg className="w-4 h-4 shrink-0 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/70 hover:bg-white/10">
+                <svg className="w-4 h-4 shrink-0 text-white/45" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                 共有・連携設定
               </a>
               <button onClick={() => setShowAccount(true)}
-                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-stone-600 hover:bg-stone-50 text-left w-full">
+                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/70 hover:bg-white/10 text-left w-full">
                 {user && user.picture
                   ? <img src={user.picture} alt="" className="w-4 h-4 rounded-full shrink-0" referrerPolicy="no-referrer" />
-                  : <Icon name="user" className="w-4 h-4 shrink-0 text-stone-400" />}
+                  : <Icon name="user" className="w-4 h-4 shrink-0 text-white/45" />}
                 <span className="truncate">{user ? "アカウント設定（" + user.name + "）" : "アカウント設定（未ログイン）"}</span>
               </button>
             </div>
@@ -7944,7 +7950,7 @@ export default function App() {
         </div>
         {/* 保存できていない事実を正直に出す。旧実装はKV書込上限で落ちていても「電波待ち」と表示していて、
             回線のせいだと誤認したまま編集を続け、その日の作業が丸ごと消えた（2026-07-27 矢内さん案件）。 */}
-        <div className={"px-3 py-2 border-t border-stone-100 text-[10px] " + (saveState === "quota" ? "text-rose-500 font-bold" : saveState === "error" ? "text-amber-600" : "text-stone-300")}>
+        <div className={"px-3 py-2 border-t border-white/10 text-[10px] " + (saveState === "quota" ? "text-rose-400 font-bold" : saveState === "error" ? "text-amber-400" : "text-white/30")}>
           {saveState === "quota"
             ? "保存できません（本日の書き込み上限）。朝9時まで回復しません。編集を続けても消えます — 台本コピーで退避を"
             : saveState === "error"
@@ -7956,7 +7962,7 @@ export default function App() {
           onPointerDown={(e) => { e.preventDefault(); resizingRef.current = true; document.body.style.cursor = "col-resize"; document.body.style.userSelect = "none"; }}
           onDoubleClick={() => setSidebarW(280)}
           title="ドラッグで幅を変更（ダブルクリックで既定に戻す）"
-          className="hidden sm:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-stone-200 active:bg-stone-300" />
+          className="hidden sm:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-white/15 active:bg-white/25" />
       </aside>
       )}
 
@@ -8185,9 +8191,9 @@ export default function App() {
         {!isNarrow && project && contextPanelOpen && (
           <aside className="hidden sm:block shrink-0 w-[260px] pt-5 pr-4">
             <div className="sticky top-20 space-y-4">
-              <button onClick={() => setContextPanelOpen(false)} title="コンテキストパネルを隠す"
-                className="text-[9.5px] text-stone-300 hover:text-stone-500 flex items-center gap-1">
-                <Icon name="close" className="w-3 h-3" />隠す
+              <button onClick={() => setContextPanelOpen(false)} title="このパネルを閉じる（右上のボタンで再表示できます）"
+                className="w-full flex items-center justify-end gap-1 text-[11px] font-semibold text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg px-2 py-1.5 -mt-1 -mr-1 transition-colors">
+                <Icon name="close" className="w-3.5 h-3.5" />閉じる
               </button>
               {lastPosition && (lastPosition.caseId !== activeId || lastPosition.tab !== tab) && (index.find((x) => x.id === lastPosition.caseId) || caseData(lastPosition.caseId)) && (
                 <div className="rounded-xl border border-rose-100 p-3.5" style={{ background: "linear-gradient(135deg,#fff,#FEF2F2)" }}>
