@@ -5737,7 +5737,7 @@ export default function App() {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
     setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "", resume: resume || null, review: { busy: true, issues: structuralReview(project), aiError: "" } });
     // 台本レビュー（誤字脱字・表記ゆれ・質問と回答の逆転・未記入）を裏で同時に走らせる。失敗しても共有は止めない（構造チェック分は出る）
-    fetch(SHARE_API + "/api/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) })
+    fetch(SHARE_API + "/api/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }), signal: AbortSignal.timeout(60000) })
       .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error || "AI校正に失敗"); return Array.isArray(d.issues) ? d.issues : []; })
       .then((ai) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, issues: [...p.review.issues, ...ai.map((it) => ({ ...it, category: it.category || "校正" }))] } } : p))
       .catch((e) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, aiError: e.message || String(e) } } : p));
@@ -5750,11 +5750,11 @@ export default function App() {
         .catch(() => {});
     }
     try {
-      const r = await fetch(SHARE_API + "/api/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }) });
+      const r = await fetch(SHARE_API + "/api/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }), signal: AbortSignal.timeout(60000) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "AIチェックに失敗しました");
       setPreflight((p) => ({ ...p, concerns: d.concerns || [], summary: d.summary || "", knowledgeVersion: d.knowledgeVersion || p.knowledgeVersion }));
-    } catch (e) { setPreflight((p) => ({ ...p, error: e.message || String(e) })); }
+    } catch (e) { setPreflight((p) => ({ ...p, error: (e && e.name === "TimeoutError") ? "AIチェックに接続できませんでした（電波が弱い等）" : (e.message || String(e)) })); }
     finally { setPreflightBusy(false); }
   };
   /* AIがまとめて直す（2026-08-23 AK「1件ずつ直すのが大変。ボタン1つで自動で直して/消して」）。
@@ -5817,12 +5817,15 @@ export default function App() {
     setMeta("publishHumanChecks", checks);
     return { ...p, checks };
   });
-  const finishPublishPreflight = async () => {
+  /* skipAi=true：AIチェックの完了を待たず（または失敗を無視して）共有へ進む（2026-08-24 AK「AI待ちで共有できないのはきつい」）。
+     人の4項目とレギュレーションは必須のまま。AIが既に見つけた block 懸念だけは skip でも止める（見つかっているのに無視はさせない） */
+  const finishPublishPreflight = async (skipAi = false) => {
     if (!preflight || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k])) return showToast("人が確認する4項目を完了してください");
     if (regulationChecklist.some((r) => !preflight.checks[r.key])) return showToast("レギュレーションのチェックが残っています");
-    if (preflight.error) return showToast("AIチェックが完了していないためURL生成を停止しました");
     if ((preflight.concerns || []).some((c) => c.severity === "block")) return showToast("要修正の項目があります。内容を直してもう一度チェックしてください");
-    if ((preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが見つけた懸念点を確認してください");
+    if (!skipAi && preflight.error) return showToast("AIチェックが完了していません。「AIを待たずに共有」からも進めます");
+    if (!skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが見つけた懸念点を確認してください");
+    if (skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが既に見つけた懸念点だけは確認してください");
     if (!project.studioGateToken) return showToast("この案件のStudio OS連携情報がありません。案件を開き直してください");
     setPreflightBusy(true);
     try {
@@ -10891,12 +10894,21 @@ export default function App() {
                 </section>
               )}
             </div>
-            <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50">
+            <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50 flex-wrap">
               <span className="text-[10px] text-stone-400">案件とクライアントは自動判定済みです</span>
-              <button onClick={finishPublishPreflight} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || regulationChecklist.some((r) => !preflight.checks[r.key]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block" || !preflight.acknowledged[c.id])}
-                className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
-                {preflightBusy ? "AI確認中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "確認を完了してURL生成"}
-              </button>
+              <div className="flex items-center gap-3 ml-auto">
+                {(preflightBusy || preflight.error || (preflight.review && preflight.review.busy)) && !HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) && !regulationChecklist.some((r) => !preflight.checks[r.key]) && (
+                  <button onClick={() => finishPublishPreflight(true)}
+                    title="AIチェックの完了を待たずにURLを生成します（電波が弱い時など）。AIの結果は届き次第この画面に出ます"
+                    className="text-[11.5px] font-bold underline text-stone-500 hover:text-stone-800">
+                    AIを待たずに共有する
+                  </button>
+                )}
+                <button onClick={() => finishPublishPreflight(false)} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || regulationChecklist.some((r) => !preflight.checks[r.key]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block") || (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])}
+                  className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
+                  {preflightBusy ? "AI確認中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "確認を完了してURL生成"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
