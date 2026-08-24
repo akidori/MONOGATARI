@@ -3281,7 +3281,10 @@ export default function App() {
   const [importFileName, setImportFileName] = useState("");
   const importFileRef = useRef(null);
   const [importValidation, setImportValidation] = useState(null); // { isValid: bool, error: string, format: 'json' | 'text' | null }
-  const [sidebarOpen, setSidebarOpen] = useState(() => { try { return window.self === window.top; } catch (e) { return true; } });  // Fボード埋め込み時は初期閉じ（左ツリーとダブらせない）
+  /* 編集用リンク（?live=）・チャンネル編集リンク（?ch=）で開いたゲストには左の案件サイドバーを出さない
+     （2026-08-24 AK指示。ゲストには自分の案件ツリーが無く「0件」が見えるだけ＝ノイズ） */
+  const guestEditMode = useMemo(() => { try { const sp = new URLSearchParams(location.search); return sp.has("live") || sp.has("ch"); } catch (e) { return false; } }, []);
+  const [sidebarOpen, setSidebarOpen] = useState(() => { try { return window.self === window.top && !(new URLSearchParams(location.search).has("live") || new URLSearchParams(location.search).has("ch")); } catch (e) { return true; } });  // Fボード埋め込み・編集リンクは初期閉じ
   const [user, setUser] = useState(null);                   // ログイン中のGoogleユーザー（null=未ログイン）
   const [showAccount, setShowAccount] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
@@ -7617,7 +7620,7 @@ export default function App() {
           width: sidebarW,
           background: "#15181D",
           color: "#fff",
-          display: (() => { try { return window.self !== window.top ? "none" : ""; } catch (e) { return ""; } })(),  // Fボード埋め込み時はサイドバー自体を出さない（左タブ二重防止）
+          display: (() => { try { return (window.self !== window.top || guestEditMode) ? "none" : ""; } catch (e) { return ""; } })(),  // Fボード埋め込み・編集リンク（?live=/?ch=）はサイドバー自体を出さない
           transform: sidebarOpen ? "translateX(0)" : "translateX(-" + sidebarW + "px)",
           transition: "transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)",
           willChange: "transform",
@@ -7871,8 +7874,8 @@ export default function App() {
       {/* ===== ツールバー ===== */}
       <header ref={headerRef} className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
         <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap">
-          {/* Fボード埋め込み時はハンバーガーとチャンネルチップを出さない（左ツリーが案件切替を担う 2026-07-17 AK指示） */}
-          {!IS_EMBED && (
+          {/* Fボード埋め込み・編集リンク（?live=/?ch=）ではハンバーガーを出さない（ゲストに案件ツリーは無い） */}
+          {!IS_EMBED && !guestEditMode && (
           <button onClick={() => setSidebarOpen((s) => !s)} title="案件リスト"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 shrink-0">
             <Icon name="menu" className="w-[18px] h-[18px]" />
