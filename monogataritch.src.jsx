@@ -11178,7 +11178,15 @@ export default function App() {
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]" style={{ background: theme.main, color: mainText }}>
                       {c.sceneLabel || "全体"}
                     </span>
-                    <span className="text-[10px] text-stone-400 shrink-0">{(c.createdAt || "").slice(5, 16).replace("T", " ")}</span>
+                    {/* 動画コメントのタイムコード。2026-08-25 青山さん「秒数がわからない」：データには timecode が
+                        入っているのにここが「全体」チップだけで捨てていた。押すと動画確認タブへ移動（該当秒はチップ表記）。 */}
+                    {typeof c.timecode === "number" && c.timecode > 0 && (
+                      <button onClick={() => { setShowComments(false); setTab("review"); }} title="動画確認タブを開く"
+                        className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-stone-800 text-white hover:opacity-80">
+                        ▶ {fmtTC(c.timecode)}
+                      </button>
+                    )}
+                    <span className="text-[10px] text-stone-400 shrink-0 ml-auto">{(c.createdAt || "").slice(5, 16).replace("T", " ")}</span>
                   </div>
                   <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words text-stone-800">{c.text}</p>
                   <div className="mt-1.5 flex items-center justify-between">
