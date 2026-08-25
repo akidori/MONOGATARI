@@ -118,6 +118,27 @@ export default {
     }
 
     try {
+      // 案件JSONを proj_id から引く共通ヘルパー（2026-08-25）。
+      // 共同編集に昇格した案件は ensureCollab が個人保存(mg_kv)を消して col:<id>(KV) だけになり、
+      // mg_kv しか見ない summary / links-batch / editor-link?proj= が全部404になっていた
+      // （08-25 ゆきさん招待でStudio OS連携が黙って壊れた事故）。D1→col: の順で必ず両方を見る。
+      const getMgProject = async (projId) => {
+        const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1").bind(projId).first();
+        if (row) { try { const p = JSON.parse(row.value); if (p) return p; } catch (e) {} }
+        const doc = await env.SNAPS.get("col:" + projId, "json");
+        if (doc && doc.project) {
+          // 自己治癒：mg_kv行が消えていたらオーナー行として復元しておく（次回からD1で引ける）
+          try {
+            const js = JSON.stringify(doc.project);
+            await env.DB.prepare(
+              "INSERT OR REPLACE INTO mg_kv (sub,key,value,proj_id,name,channel,bytes,updated_at) VALUES (?,?,?,?,?,?,?,datetime('now','+9 hours'))"
+            ).bind(doc.ownerSub, "monogataritch-proj-" + projId, js, projId, doc.name || null, doc.channel || null, js.length).run();
+          } catch (e) {}
+          return doc.project;
+        }
+        return null;
+      };
+
       // AI系エンドポイントのIPレート制限（無認証で叩けるためANTHROPIC/YT予算の焼却DoSを防ぐ）
       if (parts[0] === "api" && ["parse", "assist", "review", "preflight", "deliver", "hearing", "chat", "help", "yt", "ytsearch", "skeleton", "fillqa", "wizard"].includes(parts[1])) {
         // 緊急停止スイッチ（監査P0）：KV ops:kill = {"ai":true} で全AI系を503。
@@ -734,10 +755,8 @@ ${qList}
         const proj = (url.searchParams.get("proj") || "").trim();
         if (!id && proj) {
           if (!/^[A-Za-z0-9]{3,32}$/.test(proj)) return json({ error: "proj不正" }, 400);
-          const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1").bind(proj).first();
-          if (!row) return json({ error: "not found" }, 404);
-          let p = null; try { p = JSON.parse(row.value); } catch (e) {}
-          if (!p) return json({ error: "invalid project data" }, 500);
+          const p = await getMgProject(proj);
+          if (!p) return json({ error: "not found" }, 404);
           if (!p.shareId) return json({ error: "share_missing", message: "共有が未発行です。ものがたりっちで「共有 ▾」→「アップだけ」を一度発行してください" }, 409);
           id = p.shareId;
         }
@@ -1263,19 +1282,24 @@ ${qList}
               updatedAt: p.updatedAt || null,
             };
           }
+          // D1に無かったid＝共同編集へ昇格した案件の可能性。col:<id> を見る（2026-08-25）
+          for (const id of ids) {
+            if (items[id].found) continue;
+            const doc = await env.SNAPS.get("col:" + id, "json");
+            const p = doc && doc.project;
+            if (!p) continue;
+            let editorOpenedAt = null;
+            if (p.shareId) { try { editorOpenedAt = (await env.SNAPS.get("upseen:" + p.shareId)) || null; } catch (e) {} }
+            items[id] = { found: true, shareIssued: !!p.shareId, editorLinkIssued: !!p.shareUpToken, liveLinkIssued: !!p.liveId, editorOpenedAt, updatedAt: p.updatedAt || null };
+          }
         }
         return json({ items });
       }
 
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "public" && parts[2] === "summary" && parts[3]) {
         const projId = parts[3];
-        const row = await env.DB.prepare(
-          "SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1"
-        ).bind(projId).first();
-        if (!row) return json({ error: "not found" }, 404);
-        let p = null;
-        try { p = JSON.parse(row.value); } catch (e) {}
-        if (!p) return json({ error: "invalid project data" }, 500);
+        const p = await getMgProject(projId);
+        if (!p) return json({ error: "not found" }, 404);
         // フロント（monogataritch.src.jsx）のTOTAL尺(totalEst)と同じ式をそのまま踏襲する
         // （台本にscriptが入っていれば文字数÷読み上げ速度、無ければ種別の目安秒数にフォールバック）。
         // 独自の簡易式を作らず、実際に画面へ表示されている数値と一致させる。
@@ -1631,6 +1655,15 @@ async function del(fileKey, btn) {
             doc.project = project; doc.name = project.name || doc.name; doc.channel = project.channel || doc.channel; doc.updatedAt = now();
           }
           await env.SNAPS.put(docKey(id), JSON.stringify(doc));
+          // D1 mg_kv も同期（2026-08-25）：共同編集昇格後も Studio OS 等の mg_kv 直読み
+          // （links-batch/summary/editor-link/タイトル同期スクリプト）が生き続けるようにする。
+          // 行の所有subはオーナー固定（メンバー保存でもオーナー行を更新）。失敗しても保存自体は成立済み。
+          try {
+            const js = JSON.stringify(doc.project);
+            await env.DB.prepare(
+              "INSERT OR REPLACE INTO mg_kv (sub,key,value,proj_id,name,channel,bytes,updated_at) VALUES (?,?,?,?,?,?,?,datetime('now','+9 hours'))"
+            ).bind(doc.ownerSub, "monogataritch-proj-" + id, js, id, doc.name || null, doc.channel || null, js.length).run();
+          } catch (e) {}
           return json({ id, updatedAt: doc.updatedAt, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
         }
         if (op === "invite") {

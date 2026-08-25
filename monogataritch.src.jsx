@@ -3666,9 +3666,20 @@ export default function App() {
             }
           }
         }
+        // 共同編集に昇格した案件は個人ストレージに無い＝collabから直接引く（2026-08-25。
+        // Studio OSの「ものがたりっちで開く」(?case=)が招待後に黙って別案件を開いていた）
+        let data = null;
         if (hitId) {
           const rr = await window.storage.get(STORE_PROJ(hitId));
-          const data = rr && rr.value ? migrateProject(JSON.parse(rr.value)) : null;
+          data = rr && rr.value ? migrateProject(JSON.parse(rr.value)) : null;
+        }
+        if (!data && MG_SESSION) {
+          try {
+            const r = await collabGet(urlCase);
+            if (r && r.project) { hitId = urlCase; data = { ...migrateProject(r.project), id: urlCase, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }; }
+          } catch (e) {}
+        }
+        if (hitId) {
           if (data) {
             const gateToken = new URLSearchParams(location.search).get("gateToken");
             if (gateToken) {
@@ -4198,7 +4209,9 @@ export default function App() {
     if (!project) return null;
     if (project.collab) return { members: project.members || [], role: project.collabRole || "owner", ownerEmail: project.ownerEmail };
     const r = await authFetch("/api/collab/upsert", { id: project.id, project });
-    try { if (typeof window.storage !== "undefined") await window.storage.delete(STORE_PROJ(project.id)); } catch (e) {}
+    // 旧実装はここで個人保存(STORE_PROJ=mg_kv行)を消していたが、Studio OS連携（summary/links-batch/
+    // editor-link/タイトル同期）が全部mg_kv直読みのため招待の瞬間に404になっていた（2026-08-25）。
+    // 以後は残す＝worker側のcollab upsertが同row を同期し続ける。
     setProject((p) => ({ ...p, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }));
     setIndex((cur) => { const nx = cur.map((x) => (x.id === project.id ? { ...x, collab: true, role: r.role, ownerEmail: r.ownerEmail, members: r.members } : x)); persistIndex(nx); return nx; });
     return r;
@@ -6670,7 +6683,7 @@ export default function App() {
       if (!go) return;
     }
     const targetId = activeIdRef.current;
-    const projLive = !!project.live;
+    const projLive = !!project.live || !!project.collab;   // 共同編集メンバーも所有者の案件へのアップ＝所有者のR2/Streamへ（2026-08-25 ゆきさん招待事故）
     const sh = await ensureShare(); if (!sh) return;   // 確認用URLは動画アップの副産物として自動発行（先に手で発行させない）
     const queued = uploadQueuePendingRef.current > 0;
     uploadQueuePendingRef.current += 1;
