@@ -782,7 +782,19 @@ ${qList}
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "share-links" && !parts[2]) {
         const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
         if (!env.MG_EDITOR_KEY || bearer !== env.MG_EDITOR_KEY) return json({ error: "forbidden" }, 403);
-        const id = (url.searchParams.get("id") || "").trim();
+        let id = (url.searchParams.get("id") || "").trim();
+        // 2026-08-25: 遥のStudio OS付け替えで、呼び出し元が持つのは mg_project_id（案件ID）になった。
+        // editor-link と同じく proj= でも引けるようにする（案件ID→shareId解決、共有未発行は409）。
+        const proj = (url.searchParams.get("proj") || "").trim();
+        if (!id && proj) {
+          if (!/^[A-Za-z0-9]{3,32}$/.test(proj)) return json({ error: "proj不正" }, 400);
+          const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1").bind(proj).first();
+          let p = null; try { p = row ? JSON.parse(row.value) : null; } catch (e) {}
+          if (!p) { const doc = await env.SNAPS.get("col:" + proj, "json"); p = doc && doc.project; }
+          if (!p) return json({ error: "not found" }, 404);
+          if (!p.shareId) return json({ error: "share_missing", message: "共有が未発行です。ものがたりっちで一度「共有」を発行してください" }, 409);
+          id = p.shareId;
+        }
         if (!/^[A-Za-z0-9]{3,32}$/.test(id)) return json({ error: "id不正" }, 400);
         const snap = await env.SNAPS.get("snap:" + id, "json");
         if (!snap) return json({ error: "not found", alive: false }, 404);
