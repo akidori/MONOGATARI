@@ -5705,8 +5705,28 @@ export default function App() {
   };
   /* silent=trueはチャンネル一括共有の事前チェックなど、案件ごとにトーストを出したくない場面用。
      pを渡すと現在開いていない案件も検査できる（publishArtifactHashesと同じ理由）。 */
+  /* 公開ゲートトークンの自己修復（2026-08-26 金澤さん#8）。Studio OSのURL経由でしか
+     gateTokenが入らず、サイドバー直開きだと確認用URL生成が止まっていた。無ければmg-share経由で
+     サーバー間取得して案件に保存する（要ログイン。失敗時はnull＝従来のエラーメッセージへ）。 */
+  const ensureStudioGate = async (p) => {
+    const pr = p || project;
+    if (!pr) return null;
+    if (pr.studioGateToken) return pr.studioGateToken;
+    if (!MG_SESSION) return null;
+    try {
+      const r = await authFetch("/api/studio-gate", { proj: pr.id });
+      const tok = r && r.gateToken;
+      if (!tok) return null;
+      const next = { ...pr, studioGateToken: tok };
+      if (!p || p.id === (project && project.id)) setProject((cur) => (cur && cur.id === pr.id ? { ...cur, studioGateToken: tok } : cur));
+      try { if (!next.collab && typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
+      pr.studioGateToken = tok;   // 呼び出し元がこの後すぐ使えるように（setProjectは非同期）
+      return tok;
+    } catch (e) { return null; }
+  };
   const checkPublishGate = async (p, silent = false) => {
     const pr = p || project;
+    if (!pr.studioGateToken) await ensureStudioGate(pr);
     if (!pr.studioGateToken) {
       if (!silent) showToast("Studio OSの公開ゲートが未接続です。Studio OSの案件画面から接続してください");
       return false;
@@ -5843,7 +5863,8 @@ export default function App() {
     if (skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが既に見つけた懸念点だけは確認してください");
     setPreflightBusy(true);
     try {
-      if (!project.studioGateToken) throw new Error("この案件のStudio OS連携情報がありません。案件を開き直してください");
+      if (!project.studioGateToken) await ensureStudioGate();
+      if (!project.studioGateToken) throw new Error("この案件のStudio OS連携情報がありません。Studio OSの案件画面から一度開くか、ログインし直してください");
       const artifactHashes = await publishArtifactHashes();
       const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/approve", {
         method: "POST", headers: { "content-type": "application/json" },
