@@ -5855,8 +5855,9 @@ export default function App() {
   /* skipAi=true：AIチェックの完了を待たず（または失敗を無視して）共有へ進む（2026-08-24 AK「AI待ちで共有できないのはきつい」）。
      人の4項目とレギュレーションは必須のまま。AIが既に見つけた block 懸念だけは skip でも止める（見つかっているのに無視はさせない） */
   const finishPublishPreflight = async (skipAi = false) => {
-    if (!preflight || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k])) return showToast("人が確認する4項目を完了してください");
-    if (regulationChecklist.some((r) => !preflight.checks[r.key])) return showToast("レギュレーションのチェックが残っています");
+    // 2026-08-26 AK「チェック押すだけだと確認してないのに押すことがある」→誓約チェックボックスは全廃。
+    // 代わりにモーダルへ“実物”（タイトル・概要欄・サムネ）を出し、見た上でボタン1つで進む形にした。
+    if (!preflight) return;
     if ((preflight.concerns || []).some((c) => c.severity === "block")) return showToast("要修正の項目があります。内容を直してもう一度チェックしてください");
     if (!skipAi && preflight.error) return showToast("AIチェックが完了していません。「AIを待たずに共有」からも進めます");
     if (!skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが見つけた懸念点を確認してください");
@@ -10904,30 +10905,60 @@ export default function App() {
               <button onClick={() => setPreflight(null)} disabled={preflightBusy} className="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/15 disabled:opacity-40"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
-              <section className="rounded-xl border border-stone-200 p-3.5">
-                <div className="text-[12px] font-bold text-stone-800 mb-2">あなたが確認すること</div>
-                <div className="space-y-2">
-                  {HUMAN_PREFLIGHT.map(([key, label]) => (
-                    <label key={key} className="flex items-start gap-2.5 cursor-pointer text-[12.5px] text-stone-700">
-                      <input type="checkbox" checked={!!preflight.checks[key]} onChange={() => toggleHumanPreflight(key)} className="mt-0.5 w-4 h-4 accent-emerald-600" />
-                      <span>{label}</span>
-                    </label>
-                  ))}
-                </div>
-              </section>
-              <details open className="rounded-xl border border-stone-200 bg-stone-50/50 overflow-hidden">
-                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-800 select-none">今回確認するレギュレーション <span className="ml-1 text-[10px] font-normal text-stone-400">{regulationChecklist.length}件・{regulationChecklist.filter((r) => preflight.checks[r.key]).length}件確認済み</span></summary>
+              {/* 実物プレビュー（2026-08-26 AK「チェックだけだと確認せず押す。毎回チェックすべき概要欄とかを出して」）。
+                  誓約チェックの羅列を廃止し、先方に出る“実物”をここに並べる。確認＝これを見ること。 */}
+              {(() => {
+                const m = project.meta || {};
+                const thumbs = (Array.isArray(m.deliverThumbImages) ? m.deliverThumbImages : []).filter((t) => t && t.key && t.use !== false);
+                const missing = [];
+                if (!(m.deliverTitle || "").trim()) missing.push("タイトル");
+                if (!(m.deliverDescription || "").trim()) missing.push("概要欄");
+                if (!thumbs.length) missing.push("サムネ");
+                return (
+                  <section className="rounded-xl border border-stone-200 p-3.5 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="text-[12px] font-bold text-stone-800">先方に出る実物（これを確認してからURL生成）</div>
+                      {missing.length > 0 && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">未記入: {missing.join("・")}</span>}
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-bold text-stone-400 mb-0.5">タイトル</div>
+                      <div className="text-[13.5px] font-bold text-stone-800 leading-snug">{(m.deliverTitle || "").trim() || <span className="text-stone-300">（未記入）</span>}</div>
+                    </div>
+                    {thumbs.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-bold text-stone-400 mb-1">サムネ（使用分）</div>
+                        <div className="flex gap-2 flex-wrap">
+                          {thumbs.slice(0, 3).map((t, i2) => (
+                            <img key={i2} src={SHARE_API + "/api/file/" + t.key} alt="" className="h-24 rounded-lg border border-stone-200 object-cover" />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <div className="text-[10px] font-bold text-stone-400 mb-0.5">概要欄</div>
+                      <div className="text-[12px] text-stone-700 whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto rounded-lg bg-stone-50 border border-stone-100 p-2.5">{(m.deliverDescription || "").trim() || <span className="text-stone-300">（未記入）</span>}</div>
+                    </div>
+                    {(m.deliverHashtags || "").trim() && (
+                      <div>
+                        <div className="text-[10px] font-bold text-stone-400 mb-0.5">ハッシュタグ</div>
+                        <div className="text-[12px] text-stone-700 whitespace-pre-wrap">{m.deliverHashtags}</div>
+                      </div>
+                    )}
+                  </section>
+                );
+              })()}
+              <details className="rounded-xl border border-stone-200 bg-stone-50/50 overflow-hidden">
+                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-600 select-none">レギュレーション {regulationChecklist.length}件（読み物・チェック不要）</summary>
                 <div className="border-t border-stone-200 bg-white px-3.5 py-1">
                   {regulationChecklist.map((r, i) => (
-                    <label key={r.key} className={"flex items-start gap-2.5 py-2.5 cursor-pointer " + (i ? "border-t border-stone-100" : "")}>
-                      <input type="checkbox" checked={!!preflight.checks[r.key]} onChange={() => toggleHumanPreflight(r.key)} className="mt-0.5 w-4 h-4 accent-emerald-600 shrink-0" />
+                    <div key={r.key} className={"flex items-start gap-2.5 py-2.5 " + (i ? "border-t border-stone-100" : "")}>
                       <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">{r.cat}</span>
                       <span className="flex-1 min-w-0 text-[11.5px] leading-relaxed text-stone-700">
                         {r.title}
                         {r.body && <span className="block text-[10.5px] text-stone-500 mt-0.5 whitespace-pre-wrap">{r.body}</span>}
                       </span>
                       <span className="shrink-0 text-[9px] text-stone-400">{r.scope}</span>
-                    </label>
+                    </div>
                   ))}
                   {regulationChecklist.length === 0 && <p className="text-[11px] text-stone-400 py-3">適用されるレギュレーションはありません。</p>}
                 </div>
@@ -11021,11 +11052,11 @@ export default function App() {
               )}
             </div>
             <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50 flex-wrap">
-              <span className="text-[10px] text-stone-400">案件とクライアントは自動判定済みです</span>
+              <span className="text-[10px] text-stone-400">内容を変えていなければ次回からこの画面は出ません</span>
               <div className="flex items-center gap-3 ml-auto">
-                <button onClick={() => finishPublishPreflight(false)} disabled={preflightBusy || HUMAN_PREFLIGHT.some(([k]) => !preflight.checks[k]) || regulationChecklist.some((r) => !preflight.checks[r.key]) || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block") || (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])}
+                <button onClick={() => finishPublishPreflight(false)} disabled={preflightBusy || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block") || (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])}
                   className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
-                  {preflightBusy ? "URL生成中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "確認を完了してURL生成"}
+                  {preflightBusy ? "URL生成中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "実物を確認した — URL生成"}
                 </button>
               </div>
             </div>
