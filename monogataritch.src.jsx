@@ -6143,8 +6143,17 @@ export default function App() {
     if (a && a.key) { try { await fetch(SHARE_API + "/api/file/" + a.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
   };
   // 納品完了タブ：サムネ画像アップロード（候補は最大6枚・実際に使うのは最大3枚）
+  // 2026-08-26 AK「2枚ずつ、インパクト重視/ノーマル/他要素の3ジャンルに分けて作成するように」
+  // → 候補6枚を「ジャンル×2枚」の枠で管理する。t.genre が無い旧データは「未分類」枠に出して振り分けてもらう
   const DELIVER_THUMB_MAX = 6;
   const DELIVER_THUMB_USE_MAX = 3;
+  const THUMB_GENRES = [["impact", "インパクト重視"], ["normal", "ノーマル"], ["other", "他要素"]];
+  const THUMB_GENRE_MAX = 2;
+  const setThumbGenre = (idx, genre) => {
+    const cur = deliverThumbs();
+    if (cur.filter((x, i) => i !== idx && x.genre === genre).length >= THUMB_GENRE_MAX) { showToast("このジャンルは2枚までです"); return; }
+    setMeta("deliverThumbImages", cur.map((x, i) => (i === idx ? { ...x, genre } : x)));
+  };
   const deliverThumbs = () => (m.deliverThumbImages && Array.isArray(m.deliverThumbImages)) ? m.deliverThumbImages : (m.deliverThumbImage ? [m.deliverThumbImage] : []);
   // useフィールドが無い（アップ済みの旧データ）は先頭3枚を使用中扱いにする＝移行直後もいきなり全部「未選択」にならない
   const deliverThumbUsed = (t, idx) => (t.use !== undefined ? t.use : idx < DELIVER_THUMB_USE_MAX);
@@ -6158,11 +6167,13 @@ export default function App() {
     }
     setMeta("deliverThumbImages", cur.map((x, i) => (i === idx ? { ...x, use: !nowUsed } : x)));
   };
-  const uploadDeliverThumbs = async (files) => {
+  const uploadDeliverThumbs = async (files, genre) => {
     const list = Array.from(files || []).filter((f) => /^image\//.test(f.type));
     if (!list.length) { showToast("画像ファイルを選んでね"); return; }
-    const room = DELIVER_THUMB_MAX - deliverThumbs().length;
-    if (room <= 0) { showToast(`サムネ画像は最大${DELIVER_THUMB_MAX}枚まで`); return; }
+    const room = genre
+      ? THUMB_GENRE_MAX - deliverThumbs().filter((x) => x.genre === genre).length
+      : DELIVER_THUMB_MAX - deliverThumbs().length;
+    if (room <= 0) { showToast(genre ? "このジャンルは2枚までです" : `サムネ画像は最大${DELIVER_THUMB_MAX}枚まで`); return; }
     const todo = list.slice(0, room);
     if (list.length > todo.length) showToast(`最大${DELIVER_THUMB_MAX}枚までのため${todo.length}枚だけアップします`);
     const sh = await ensureShare();
@@ -6172,7 +6183,7 @@ export default function App() {
       setThumbUp({ i: i + 1, n: todo.length, pct: 0 });
       try {
         const meta = await uploadToR2(todo[i], "", (p) => setThumbUp({ i: i + 1, n: todo.length, pct: p }), sh.id, sh.token);
-        current = [...current, { key: meta.key, name: meta.name, mime: meta.mime || todo[i].type }];
+        current = [...current, { key: meta.key, name: meta.name, mime: meta.mime || todo[i].type, ...(genre ? { genre } : {}) }];
         setMeta("deliverThumbImages", current);
       } catch (e) { showToast(todo[i].name + " のアップロードに失敗：" + (e.message || e)); }
     }
@@ -9904,6 +9915,31 @@ export default function App() {
                 const [key, label, placeholder, multiline, auto, kind] = row;
                 const filled = isFilled(row);
                 const thumbs = kind === "image" ? deliverThumbs() : null;
+                // 候補順位（未使用のみ通し番号）とタイル描画。ジャンル枠(2026-08-26)から共通で使う
+                const thumbRanks = (() => { const rks = {}; let r = 0; (thumbs || []).forEach((t, ti) => { if (!deliverThumbUsed(t, ti)) { r++; rks[ti] = r; } }); return rks; })();
+                const renderThumbTile = (t, ti) => {
+                  const used = deliverThumbUsed(t, ti);
+                  const rankLabel = used ? "使用中" : `候補${thumbRanks[ti]}位`;
+                  return (
+                    <div key={t.key} className="relative aspect-video group">
+                      <button type="button" className="block w-full h-full cursor-zoom-in" title="クリックで拡大"
+                        onClick={() => { let r = 0; setThumbLightbox({ idx: ti, items: thumbs.map((x, xi) => { const u = deliverThumbUsed(x, xi); if (!u) r++; return { key: x.key, label: u ? "使用中" : `候補${r}位` }; }) }); }}>
+                        <img src={SHARE_API + "/api/file/" + t.key} alt="" className={"w-full h-full object-contain bg-stone-100 rounded-md border-2 " + (used ? "border-emerald-400" : "border-stone-200")} />
+                      </button>
+                      <label onClick={(e) => e.stopPropagation()} title="画像を差し替え"
+                        className="absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
+                        差替<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
+                      </label>
+                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
+                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
+                        title={used ? "候補に戻す" : "この画像を使用する"}
+                        className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
+                        {rankLabel}
+                      </button>
+                    </div>
+                  );
+                };
                 return (
                   <div key={key} className={"flex items-start gap-2 px-3 sm:px-4 py-2.5 " + (i === 0 ? "" : "border-t border-stone-100")}>
                     <span className={"shrink-0 w-5 h-5 mt-1 grid place-items-center rounded-md " + (filled ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-300")}>
@@ -9921,39 +9957,41 @@ export default function App() {
                           onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
                           {/* 2026-08-19 AK「サムネ見づらい・クリックで拡大」: 2列に拡大、候補の減光(opacity-70)を廃止、
                               画像クリック=全画面ライトボックス。差し替えはホバーで出る「差替」ボタンへ分離 */}
-                          <div className="grid grid-cols-2 gap-3 max-w-3xl">
-                            {(() => { let candRank = 0; return thumbs.map((t, ti) => {
-                              const used = deliverThumbUsed(t, ti);
-                              if (!used) candRank++;
-                              const rankLabel = used ? "使用中" : `候補${candRank}位`;
-                              return (
-                              <div key={t.key} className="relative aspect-video group">
-                                <button type="button" className="block w-full h-full cursor-zoom-in" title="クリックで拡大"
-                                  onClick={() => { let r = 0; setThumbLightbox({ idx: ti, items: thumbs.map((x, xi) => { const u = deliverThumbUsed(x, xi); if (!u) r++; return { key: x.key, label: u ? "使用中" : `候補${r}位` }; }) }); }}>
-                                  {/* object-contain: 画像の縦横比が16:9でなくても切り取らず全体を見せる（coverだと勝手にクロップされ画角が合わない） */}
-                                  <img src={SHARE_API + "/api/file/" + t.key} alt="" className={"w-full h-full object-contain bg-stone-100 rounded-md border-2 " + (used ? "border-emerald-400" : "border-stone-200")} />
-                                </button>
-                                <label onClick={(e) => e.stopPropagation()} title="画像を差し替え"
-                                  className="absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
-                                  差替<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
-                                </label>
-                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
-                                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
-                                <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
-                                  title={used ? "候補に戻す" : "この画像を使用する"}
-                                  className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
-                                  {rankLabel}
-                                </button>
+                          {THUMB_GENRES.map(([gKey, gLabel]) => {
+                            const gThumbs = thumbs.map((t, ti) => [t, ti]).filter(([t]) => t.genre === gKey);
+                            return (
+                              <div key={gKey} className="mb-3">
+                                <div className="text-[11px] font-bold text-stone-500 mb-1">{gLabel} <span className="text-[9px] font-normal text-stone-400">{gThumbs.length}/{THUMB_GENRE_MAX}枚</span></div>
+                                <div className="grid grid-cols-2 gap-3 max-w-3xl">
+                                  {gThumbs.map(([t, ti]) => renderThumbTile(t, ti))}
+                                  {gThumbs.length < THUMB_GENRE_MAX && thumbs.length < DELIVER_THUMB_MAX && (
+                                    <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-sm">
+                                      ＋ {gLabel}
+                                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files, gKey); e.target.value = ""; }} />
+                                    </label>
+                                  )}
+                                </div>
                               </div>
-                              );
-                            }); })()}
-                            {thumbs.length < DELIVER_THUMB_MAX && (
-                              <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-xl leading-none">
-                                +
-                                <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files); e.target.value = ""; }} />
-                              </label>
-                            )}
-                          </div>
+                            );
+                          })}
+                          {thumbs.some((t) => !t.genre) && (
+                            <div className="mb-3">
+                              <div className="text-[11px] font-bold text-amber-600 mb-1">未分類（ジャンルを選んでください）</div>
+                              <div className="grid grid-cols-2 gap-3 max-w-3xl">
+                                {thumbs.map((t, ti) => [t, ti]).filter(([t]) => !t.genre).map(([t, ti]) => (
+                                  <div key={t.key}>
+                                    {renderThumbTile(t, ti)}
+                                    <div className="flex gap-1 mt-1">
+                                      {THUMB_GENRES.map(([gk, gl]) => (
+                                        <button key={gk} onClick={() => setThumbGenre(ti, gk)} className="text-[10px] font-bold px-2 py-1 rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200">{gl}</button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
                           <div className="text-[10px] text-stone-400 mt-1">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}/{DELIVER_THUMB_MAX}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
                           {/* 全画面ライトボックス（背景クリック/Esc/×で閉・←→で前後） */}
                           {thumbLightbox && (
