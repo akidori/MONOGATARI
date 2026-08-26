@@ -1262,6 +1262,27 @@ ${qList}
       // GET /api/public/summary/{projId} — 認証不要。Studio OSが構成台本タブ表示時に都度取得する
       // 読み取り専用サマリー。安全な集計値のみ返し、本文・タイトル・サムネ文言・取材メモ等の
       // クリエイティブ内容は一切含めない（redactForNonAdminと同じ「絶対に漏らさない」原則）。
+      // ===== 公開ゲートトークンの自己修復（2026-08-26）=====
+      // gateTokenはStudio OSの画面から開いたURLでしか渡らず、サイドバー直開きだと確認用URL生成が
+      // 「Studio OS連携情報がありません」で止まっていた（金澤さん#8）。ログイン済みユーザーの求めに応じ、
+      // サーバー間（Bearer STUDIO_AGENT_KEY）でStudio OSから取得して返す。トークンはローテートしない。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "studio-gate" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_AGENT_KEY) return json({ error: "STUDIO_AGENT_KEY未設定" }, 500);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const proj = String((b && b.proj) || "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(proj)) return json({ error: "proj不正" }, 400);
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/agent/mg-gate?mg_project_id=" + encodeURIComponent(proj), {
+            headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY },
+          });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || j.success === false) return json({ error: (j && j.error && j.error.message) || ("Studio OS " + r.status) }, r.status === 404 ? 404 : 502);
+          return json({ gateToken: j.data.gateToken, deliverableId: j.data.deliverableId });
+        } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
+      }
+
       // ===== 編集者の入口が用意されているかを Studio OS が一括で確認する（2026-08-23）=====
       // 勇人さんがdl_fb50で「mg案件未紐付け→自力ログイン→個人案件に上げて弾かれる」で詰まった事故の再発防止。
       // Studio OS は deliverables.mg_project_id を持つが「共有/編集者リンクが発行済みか」は mg 側の
