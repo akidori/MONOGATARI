@@ -1304,14 +1304,14 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
 });
 
 /* 入力内容に応じて高さが伸びる textarea（全文が常に見える） */
-function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title }) {
+function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title, readOnly }) {
   const ref = useRef(null);
   const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
   // 親へは合成イベント({target:{value}})で渡す＝呼び出し側のe.target.value流儀を維持
   const [val, set, flush, ime] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
   useEffect(() => { resize(ref.current); }, [val]);
   return (
-    <textarea ref={ref} {...ime} value={val} placeholder={placeholder} className={className} title={title}
+    <textarea ref={ref} {...ime} value={val} placeholder={placeholder} className={className} title={title} readOnly={readOnly}
       style={{ overflow: "hidden", resize: "none", minHeight }}
       onChange={(e) => { set(e.target.value); resize(e.target); }}
       onBlur={(e) => { flush(e); if (onBlur) onBlur(e); }} />
@@ -3502,6 +3502,9 @@ export default function App() {
   const [assetUp, setAssetUp] = useState(null);              // 素材管理のアップ進捗 {cat, name, pct}
   const [thumbUp, setThumbUp] = useState(null);               // 納品完了タブのサムネ画像アップ進捗 {pct}
   const [thumbDropOver, setThumbDropOver] = useState(false);   // 納品完了タブのサムネ画像D&D中フラグ
+  // 2026-08-28 AK要望：サムネ1枚ごとの「制作意図」は既定で閉じる。開いている枚のkeyだけ持つ {key:true}
+  const [thumbIntentOpen, setThumbIntentOpen] = useState({});
+  const [thumbMoreOpen, setThumbMoreOpen] = useState(false);   // 7枚目以降「続きのサムネ」を開いているか
   // サムネの全画面プレビュー（2026-08-19 AK「サムネ見づらい。クリックで拡大・全画面で」）
   // {items:[{key,label}], idx}。Esc=閉じる / ←→=前後。差し替えは画像クリックから「差替」ボタンへ分離
   const [thumbLightbox, setThumbLightbox] = useState(null);
@@ -4595,7 +4598,9 @@ export default function App() {
     const chapters = project.format === "talk"
       ? (project.talk && project.talk.toc || []).filter((t) => t && t.trim()).map((t, i) => (i + 1) + ". " + t).join("\n")
       : locations.filter((l) => l.scenes.length).map((l) => fmt(tcs[l.id] || 0) + " " + (l.label || "（無題のロケ）")).join("\n");
-    setMeta("deliverChapters", chapters);
+    // 固定(Fix)済みの項目は自動生成でも上書きしない＝固定した内容が黙って書き換わらない
+    const lockedNow = (k) => deliverLockState(k) === "locked";
+    if (!lockedNow("deliverChapters")) setMeta("deliverChapters", chapters);
     setDeliverBusy(true);
     try {
       // 切り抜き生成時のWhisper文字起こし（完成動画の実尺TC付き）があれば目次の根拠に使う
@@ -4615,6 +4620,10 @@ export default function App() {
       // 生成結果を1つのpatchに集約。setMeta（非同期反映）に頼らず、この場で確実にクラウド保存する。
       const patch = { deliverChapters: chapters, deliverTitle: d.title || "", deliverTitle2: d.title2 || "", deliverDescription: d.description || "", deliverHashtags: d.hashtags || "" };
       if (transcript && (d.chapters || "").trim()) { patch.deliverChapters = d.chapters.trim(); patch.deliverChaptersTranscriptAt = transcriptUpdatedAt || Date.now(); }
+      // 固定済みは除外（deliverTitle2はタイトルの固定に含まれる／TranscriptAtは目次に付随）
+      const lockKeyOf = (k) => k === "deliverTitle2" ? "deliverTitle" : k === "deliverChaptersTranscriptAt" ? "deliverChapters" : k;
+      const skipped = Object.keys(patch).filter((k) => lockedNow(lockKeyOf(k)));
+      skipped.forEach((k) => { delete patch[k]; });
       Object.entries(patch).forEach(([k, v]) => setMeta(k, v));
       // デバウンスautosaveを待たず即・明示保存（回線が飛んでも取りこぼさない）。失敗はloud-failでAKに知らせる。
       const merged = { ...project, meta: { ...project.meta, ...patch } };
@@ -4627,7 +4636,8 @@ export default function App() {
             ? "自動生成して保存しました（目次は完成動画の文字起こしから実尺で作成）"
             : transcribing
               ? "自動生成して保存しました。完成動画の文字起こしを開始したので、目次は数分後に実尺版へ自動で差し替わります"
-              : "自動生成して保存しました（タイトル・概要欄・ハッシュタグ・目次）"));
+              : "自動生成して保存しました（タイトル・概要欄・ハッシュタグ・目次）")
+        + (skipped.length ? "。固定済みの項目は上書きしていません" : ""));
     } catch (e) {
       showToast("自動生成に失敗：" + (e.message || e));
     } finally { setDeliverBusy(false); }
@@ -4664,9 +4674,13 @@ export default function App() {
           });
           const d = await res.json();
           if (res.ok && (d.chapters || "").trim()) {
-            setMeta("deliverChapters", d.chapters.trim());
-            setMeta("deliverChaptersTranscriptAt", segsUpdatedAt || Date.now());
-            showToast("目次を完成動画の文字起こしから実尺で作り直しました");
+            if (deliverLockState("deliverChapters") === "locked") {
+              showToast("目次の実尺版ができましたが、目次は固定中なので差し替えていません（固定を解除して自動生成で反映できます）");
+            } else {
+              setMeta("deliverChapters", d.chapters.trim());
+              setMeta("deliverChaptersTranscriptAt", segsUpdatedAt || Date.now());
+              showToast("目次を完成動画の文字起こしから実尺で作り直しました");
+            }
           }
         } catch (e) {}
       };
@@ -5787,10 +5801,42 @@ export default function App() {
      （08-22 AK指示: 納品タブだけでなく全ての共有経路をこのチェックリストに通すため、
      どの共有操作から呼ばれても戻れるようにresumeで汎用化した）。 */
   const structuralReview = (pr) => auditShareProject(pr, dayOf);
+  /* 2026-08-28 復旧：08-24のサイドバー刷新コミット(0b8f705)が、UI改修の巻き添えで
+     ①レギュレーション検査(/api/preflight) ②AI校正(/api/review) ③Studio OSの承認済み規定取得
+     の3本を openPublishPreflight から丸ごと落としていた。concerns は [] のまま誰も埋めず、
+     概要欄・タイトル・サムネがレギュレーション違反でも共有が素通りする状態だった（AK 08-28 指摘）。
+     worker側は3本とも生きているのでクライアントの配線だけ戻す。 */
   const openPublishPreflight = async (resume) => {
     const saved = (project.meta && project.meta.publishHumanChecks) || {};
     const issues = structuralReview(project);
-    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "local-deterministic-audit-1.0", error: "", resume: resume || null, review: { busy: false, issues, aiError: "" } });
+    setPreflight({ checks: saved, concerns: [], acknowledged: {}, summary: "", knowledgeVersion: "obsidian-human-documentary-1.0", error: "", concernsBusy: true, resume: resume || null, review: { busy: true, issues, aiError: "" } });
+    // 台本レビュー（誤字脱字・表記ゆれ・質問と回答の逆転・未記入）は裏で同時に走らせる。失敗しても共有は止めない（構造チェック分は出る）
+    fetch(SHARE_API + "/api/review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project }), signal: AbortSignal.timeout(60000) })
+      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error || "AI校正に失敗"); return Array.isArray(d.issues) ? d.issues : []; })
+      .then((ai) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, issues: [...p.review.issues, ...ai.map((it) => ({ ...it, category: it.category || "校正" }))] } } : p))
+      .catch((e) => setPreflight((p) => p ? { ...p, review: { ...p.review, busy: false, aiError: e.message || String(e) } } : p));
+    // PRD実装順⑥: Studio OSで承認済みのregulation_rulesを取得してチェックリストへ合流させる。
+    // 失敗してもローカルのmanualsベースのチェックリストは動くので、ここは静かに諦める。
+    if (project.studioGateToken) {
+      fetch("https://studio-os-5dm.pages.dev/api/v1/public/regulations?mg_project_id=" + encodeURIComponent(project.id) + "&gate_token=" + encodeURIComponent(project.studioGateToken))
+        .then((r) => r.json()).then((d) => { if (d && d.data) setStudioRegs(d.data); })
+        .catch(() => {});
+    }
+    // 本体：レギュレーション検査。タイトル・概要欄・ハッシュタグ・サムネ名・台本を規定に照らして懸念を返す
+    // 固定(Fix)済みの項目＝全社ルールの「個別承認」の記録そのもの。これを渡さないとAIが
+    // 「個別承認記録がない」で全案件を止めてしまうので、固定中の項目と固定日だけを添える
+    const deliverApproved = {};
+    ["deliverTitle", "deliverThumbImages", "deliverVideoUrl", "deliverDescription", "deliverHashtags", "deliverChapters"]
+      .forEach((k) => { if (deliverLockState(k) === "locked") deliverApproved[k] = deliverLocks()[k].at; });
+    const projectForCheck = { ...project, meta: { ...(project.meta || {}), deliverApproved } };
+    try {
+      const r = await fetch(SHARE_API + "/api/preflight", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: projectForCheck }), signal: AbortSignal.timeout(60000) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "レギュレーション検査に失敗しました");
+      setPreflight((p) => p ? { ...p, concerns: d.concerns || [], summary: d.summary || "", knowledgeVersion: d.knowledgeVersion || p.knowledgeVersion, concernsBusy: false } : p);
+    } catch (e) {
+      setPreflight((p) => p ? { ...p, concernsBusy: false, error: (e && e.name === "TimeoutError") ? "レギュレーション検査に接続できませんでした（電波が弱い等）" : (e.message || String(e)) } : p);
+    }
   };
   /* AIがまとめて直す（2026-08-23 AK「1件ずつ直すのが大変。ボタン1つで自動で直して/消して」）。
      Worker /api/autofix が指摘→修正操作(ops)を返し、ここで安全条件つきで適用。直前の rows を保持して「元に戻す」可能 */
@@ -5859,9 +5905,9 @@ export default function App() {
     // 代わりにモーダルへ“実物”（タイトル・概要欄・サムネ）を出し、見た上でボタン1つで進む形にした。
     if (!preflight) return;
     if ((preflight.concerns || []).some((c) => c.severity === "block")) return showToast("要修正の項目があります。内容を直してもう一度チェックしてください");
-    if (!skipAi && preflight.error) return showToast("AIチェックが完了していません。「AIを待たずに共有」からも進めます");
-    if (!skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが見つけた懸念点を確認してください");
-    if (skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("AIが既に見つけた懸念点だけは確認してください");
+    if (!skipAi && preflight.error) return showToast("レギュレーション検査が完了していません。「検査を待たずに共有する」からも進めます");
+    if (!skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("レギュレーション検査が見つけた懸念点を確認してください");
+    if (skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("既に見つかっている懸念点だけは確認してください");
     setPreflightBusy(true);
     try {
       if (!project.studioGateToken) await ensureStudioGate();
@@ -6142,18 +6188,15 @@ export default function App() {
     setAssets((arr) => arr.filter((x) => x.id !== id));
     if (a && a.key) { try { await fetch(SHARE_API + "/api/file/" + a.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
   };
-  // 納品完了タブ：サムネ画像アップロード（候補は最大6枚・実際に使うのは最大3枚）
-  // 2026-08-26 AK「2枚ずつ、インパクト重視/ノーマル/他要素の3ジャンルに分けて作成するように」
-  // → 候補6枚を「ジャンル×2枚」の枠で管理する。t.genre が無い旧データは「未分類」枠に出して振り分けてもらう
-  const DELIVER_THUMB_MAX = 6;
+  // 納品完了タブ：サムネ画像アップロード（実際に使うのは最大3枚）
+  // 2026-08-28 AK「ジャンル分けはやめて、通常は6枚展開・それ以降は続きのサムネで最小化。枚数の上限は無し」
+  // → 枚数上限(旧DELIVER_THUMB_MAX=6)は撤廃。6枚まではフラットに展開し、7枚目以降は折りたたむ。
+  //   旧データの t.genre は残っていても無視する（ジャンル枠は廃止）
+  const DELIVER_THUMB_OPEN = 6;   // 展開表示する枚数（これを超えた分は「続きのサムネ」へ）
   const DELIVER_THUMB_USE_MAX = 3;
-  const THUMB_GENRES = [["impact", "インパクト重視"], ["normal", "ノーマル"], ["other", "他要素"]];
-  const THUMB_GENRE_MAX = 2;
-  const setThumbGenre = (idx, genre) => {
-    const cur = deliverThumbs();
-    if (cur.filter((x, i) => i !== idx && x.genre === genre).length >= THUMB_GENRE_MAX) { showToast("このジャンルは2枚までです"); return; }
-    setMeta("deliverThumbImages", cur.map((x, i) => (i === idx ? { ...x, genre } : x)));
-  };
+  // 2026-08-28 AK要望：1枚ごとに「制作意図」を持たせる（トグルで普段は閉じる。先方の確認ページにも出す）
+  const setDeliverThumbIntent = (idx, intent) =>
+    setMeta("deliverThumbImages", deliverThumbs().map((x, i) => (i === idx ? { ...x, intent } : x)));
   const deliverThumbs = () => (m.deliverThumbImages && Array.isArray(m.deliverThumbImages)) ? m.deliverThumbImages : (m.deliverThumbImage ? [m.deliverThumbImage] : []);
   // useフィールドが無い（アップ済みの旧データ）は先頭3枚を使用中扱いにする＝移行直後もいきなり全部「未選択」にならない
   const deliverThumbUsed = (t, idx) => (t.use !== undefined ? t.use : idx < DELIVER_THUMB_USE_MAX);
@@ -6167,15 +6210,9 @@ export default function App() {
     }
     setMeta("deliverThumbImages", cur.map((x, i) => (i === idx ? { ...x, use: !nowUsed } : x)));
   };
-  const uploadDeliverThumbs = async (files, genre) => {
-    const list = Array.from(files || []).filter((f) => /^image\//.test(f.type));
-    if (!list.length) { showToast("画像ファイルを選んでね"); return; }
-    const room = genre
-      ? THUMB_GENRE_MAX - deliverThumbs().filter((x) => x.genre === genre).length
-      : DELIVER_THUMB_MAX - deliverThumbs().length;
-    if (room <= 0) { showToast(genre ? "このジャンルは2枚までです" : `サムネ画像は最大${DELIVER_THUMB_MAX}枚まで`); return; }
-    const todo = list.slice(0, room);
-    if (list.length > todo.length) showToast(`最大${DELIVER_THUMB_MAX}枚までのため${todo.length}枚だけアップします`);
+  const uploadDeliverThumbs = async (files) => {
+    const todo = Array.from(files || []).filter((f) => /^image\//.test(f.type));
+    if (!todo.length) { showToast("画像ファイルを選んでね"); return; }
     const sh = await ensureShare();
     if (!sh) { showToast("共有の発行に失敗してアップできなかった"); return; }
     let current = deliverThumbs(); // setMetaは非同期反映のため、進捗はローカル変数で積み上げる（mの読み直しだと前段の追加分が消える）
@@ -6183,7 +6220,7 @@ export default function App() {
       setThumbUp({ i: i + 1, n: todo.length, pct: 0 });
       try {
         const meta = await uploadToR2(todo[i], "", (p) => setThumbUp({ i: i + 1, n: todo.length, pct: p }), sh.id, sh.token);
-        current = [...current, { key: meta.key, name: meta.name, mime: meta.mime || todo[i].type, ...(genre ? { genre } : {}) }];
+        current = [...current, { key: meta.key, name: meta.name, mime: meta.mime || todo[i].type }];
         setMeta("deliverThumbImages", current);
       } catch (e) { showToast(todo[i].name + " のアップロードに失敗：" + (e.message || e)); }
     }
@@ -6203,11 +6240,38 @@ export default function App() {
       const sh = await ensureShare();
       if (!sh) { showToast("共有の発行に失敗してアップできなかった"); return; }
       const meta = await uploadToR2(file, "", (p) => setThumbUp({ i: 1, n: 1, pct: p }), sh.id, sh.token);
-      setMeta("deliverThumbImages", deliverThumbs().map((t, i) => (i === idx ? { key: meta.key, name: meta.name, mime: meta.mime || file.type } : t)));
+      // 差し替えでも use（使用中/候補）と intent（制作意図）は引き継ぐ＝写真だけ入れ替える
+      setMeta("deliverThumbImages", deliverThumbs().map((t, i) => (i === idx ? { ...t, key: meta.key, name: meta.name, mime: meta.mime || file.type } : t)));
       if (old && old.key) { try { await fetch(SHARE_API + "/api/file/" + old.key + "?snap=" + project.shareId + "&token=" + encodeURIComponent(project.shareToken), { method: "DELETE" }); } catch (e) {} }
     } catch (e) { showToast("アップロードに失敗：" + (e.message || e)); }
     finally { setThumbUp(null); }
   };
+  /* 納品物の固定（2026-08-28 AK「納品したものは固定する固定ボタン」）。
+     全社ルール「本編・サムネ・タイトル・概要欄はそれぞれ個別に承認する」「承認後に変更した成果物は
+     変更後の版で再承認する」に合わせ、項目ごとに固定する。控えるのはハッシュではなく“固定した時の中身そのもの”＝
+     同期で比較でき、ハッシュ衝突で「変わっているのに承認済みに見える」事故が起きない。 */
+  const deliverLocks = () => (m.deliverLocks && typeof m.deliverLocks === "object") ? m.deliverLocks : {};
+  const deliverLockSnap = (key) => {
+    if (key === "deliverTitle") return JSON.stringify([m.deliverTitle || "", m.deliverTitle2 || ""]);
+    if (key === "deliverThumbImages") return JSON.stringify(deliverThumbs().map((t, i) => ({ k: t.key || "", use: deliverThumbUsed(t, i), intent: t.intent || "" })));
+    return String(m[key] || "");
+  };
+  // "none"=未固定 / "locked"=固定中 / "stale"=固定後に中身が変わった
+  // staleを黙って外さないのは、勝手に承認が消えるより「変わったので再確認して」と出す方が事故らないため
+  const deliverLockState = (key) => {
+    const L = deliverLocks()[key];
+    if (!L) return "none";
+    return L.snap === deliverLockSnap(key) ? "locked" : "stale";
+  };
+  const lockDeliverItem = (key, label) => {
+    setMeta("deliverLocks", { ...deliverLocks(), [key]: { at: new Date().toISOString(), snap: deliverLockSnap(key) } });
+    showToast((label || "この項目") + "を固定しました。直すときは固定を解除してください");
+  };
+  const unlockDeliverItem = (key) => {
+    const next = { ...deliverLocks() }; delete next[key];
+    setMeta("deliverLocks", next);
+  };
+  const lockDateLabel = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate(); };
   const moveAsset = (id, category) => setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, category } : x)));
   const renameAsset = (id, name) => { const n = (name || "").trim(); if (n) setAssets((arr) => arr.map((x) => (x.id === id ? { ...x, name: n } : x))); };
   const assetUrl = (a) => a.type === "youtube" ? a.url : (a.key ? (SHARE_API + "/api/file/" + a.key) : a.url);
@@ -9914,29 +9978,61 @@ export default function App() {
               {dv.map((row, i) => {
                 const [key, label, placeholder, multiline, auto, kind] = row;
                 const filled = isFilled(row);
+                // 固定(Fix)対象は“先方に出る成果物”だけ。切り抜きショートは自動生成の入れ物なので対象外
+                const lockable = key !== "deliverShorts";
+                const lockState = lockable ? deliverLockState(key) : "none";
+                const locked = lockState === "locked";
                 const thumbs = kind === "image" ? deliverThumbs() : null;
                 // 候補順位（未使用のみ通し番号）とタイル描画。ジャンル枠(2026-08-26)から共通で使う
                 const thumbRanks = (() => { const rks = {}; let r = 0; (thumbs || []).forEach((t, ti) => { if (!deliverThumbUsed(t, ti)) { r++; rks[ti] = r; } }); return rks; })();
-                const renderThumbTile = (t, ti) => {
+                const renderThumbCard = (t, ti) => {
                   const used = deliverThumbUsed(t, ti);
                   const rankLabel = used ? "使用中" : `候補${thumbRanks[ti]}位`;
+                  const intent = t.intent || "";
+                  const intentOpen = !!thumbIntentOpen[t.key];
                   return (
-                    <div key={t.key} className="relative aspect-video group">
-                      <button type="button" className="block w-full h-full cursor-zoom-in" title="クリックで拡大"
-                        onClick={() => { let r = 0; setThumbLightbox({ idx: ti, items: thumbs.map((x, xi) => { const u = deliverThumbUsed(x, xi); if (!u) r++; return { key: x.key, label: u ? "使用中" : `候補${r}位` }; }) }); }}>
-                        <img src={SHARE_API + "/api/file/" + t.key} alt="" className={"w-full h-full object-contain bg-stone-100 rounded-md border-2 " + (used ? "border-emerald-400" : "border-stone-200")} />
+                    <div key={t.key}>
+                      <div className="relative aspect-video group">
+                        <button type="button" className="block w-full h-full cursor-zoom-in" title="クリックで拡大"
+                          onClick={() => { let r = 0; setThumbLightbox({ idx: ti, items: thumbs.map((x, xi) => { const u = deliverThumbUsed(x, xi); if (!u) r++; return { key: x.key, label: u ? "使用中" : `候補${r}位`, intent: x.intent || "" }; }) }); }}>
+                          <img src={SHARE_API + "/api/file/" + t.key} alt="" className={"w-full h-full object-contain bg-stone-100 rounded-md border-2 " + (used ? "border-emerald-400" : "border-stone-200")} />
+                        </button>
+                        {/* 固定中は差替・削除・使用切替をどれも出さない＝固定を解除しないと動かせない */}
+                        {!locked && (
+                          <label onClick={(e) => e.stopPropagation()} title="画像を差し替え"
+                            className="absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
+                            差替<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
+                          </label>
+                        )}
+                        {!locked && (
+                          <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
+                        )}
+                        {locked ? (
+                          <span className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500")}>{rankLabel}</span>
+                        ) : (
+                          <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
+                            title={used ? "候補に戻す" : "この画像を使用する"}
+                            className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
+                            {rankLabel}
+                          </button>
+                        )}
+                      </div>
+                      {/* 2026-08-28 AK要望：1枚ごとの「制作意図」。普段は閉じ、書いてあれば1行だけ覗く。先方の確認ページにも出る */}
+                      <button type="button" onClick={() => setThumbIntentOpen((o) => ({ ...o, [t.key]: !o[t.key] }))}
+                        title="このサムネの制作意図を書く"
+                        className="mt-1 w-full min-w-0 flex items-center gap-1 text-left text-[10px] font-bold text-stone-400 hover:text-stone-600">
+                        <span className={"shrink-0 transition-transform " + (intentOpen ? "rotate-90" : "")}>›</span>
+                        <span className="shrink-0">制作意図</span>
+                        {!intentOpen && (intent.trim()
+                          ? <span className="font-normal text-stone-500 truncate">{intent.trim().replace(/\s+/g, " ")}</span>
+                          : <span className="font-normal text-stone-300">未記入</span>)}
                       </button>
-                      <label onClick={(e) => e.stopPropagation()} title="画像を差し替え"
-                        className="absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
-                        差替<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
-                      </label>
-                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
-                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
-                      <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
-                        title={used ? "候補に戻す" : "この画像を使用する"}
-                        className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
-                        {rankLabel}
-                      </button>
+                      {intentOpen && (
+                        <AutoTextarea value={intent} onChange={(e) => setDeliverThumbIntent(ti, e.target.value)} readOnly={locked}
+                          placeholder="何を伝えたいサムネか／なぜこの絵・この文言にしたか"
+                          className={"mt-1 block w-full text-[12px] leading-relaxed rounded-lg border border-stone-200 px-2 py-1.5 focus:outline-none focus:border-stone-400 placeholder:text-stone-300 " + (locked ? "bg-stone-50 text-stone-500" : "bg-white")} minHeight={48} />
+                      )}
                     </div>
                   );
                 };
@@ -9949,50 +10045,69 @@ export default function App() {
                       <div className="text-[11px] font-bold text-stone-400 mb-0.5 flex items-center gap-1.5">
                         {label}
                         {auto && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">自動</span>}
+                        {lockable && (lockState === "locked" ? (
+                          <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                            <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-stone-800 text-white" title={"固定日 " + lockDateLabel(deliverLocks()[key].at)}>
+                              <Icon name="lock" className="w-2.5 h-2.5" />固定済 {lockDateLabel(deliverLocks()[key].at)}
+                            </span>
+                            <button onClick={() => unlockDeliverItem(key)} title="固定を解除して編集できるようにする"
+                              className="text-[10px] font-bold text-stone-400 hover:text-stone-700 underline">解除</button>
+                          </span>
+                        ) : lockState === "stale" ? (
+                          <span className="ml-auto flex items-center gap-1.5 shrink-0">
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700" title="固定した時の内容から変わっています。中身を確認してもう一度固定してください">固定後に変更あり</span>
+                            <button onClick={() => lockDeliverItem(key, label)} title="いまの内容で固定し直す"
+                              className="text-[10px] font-bold text-amber-700 hover:text-amber-900 underline">再固定</button>
+                          </span>
+                        ) : (
+                          <button onClick={() => lockDeliverItem(key, label)} disabled={!filled}
+                            title={filled ? "この内容で確定して固定する（誰も触れなくなります）" : "中身が入ると固定できます"}
+                            className="ml-auto shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-700 disabled:opacity-40 disabled:hover:border-stone-200 disabled:hover:text-stone-400">
+                            <Icon name="lock" className="w-2.5 h-2.5" />固定
+                          </button>
+                        ))}
                       </div>
                       {kind === "image" ? (
                         <div className="mt-1 rounded-lg transition-all p-1 -m-1" style={thumbDropOver ? { outline: "2px dashed " + theme.main, outlineOffset: "2px" } : {}}
                           onDragOver={(e) => { e.preventDefault(); if (!thumbDropOver) setThumbDropOver(true); }}
                           onDragLeave={() => setThumbDropOver(false)}
-                          onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
-                          {/* 2026-08-19 AK「サムネ見づらい・クリックで拡大」: 2列に拡大、候補の減光(opacity-70)を廃止、
-                              画像クリック=全画面ライトボックス。差し替えはホバーで出る「差替」ボタンへ分離 */}
-                          {THUMB_GENRES.map(([gKey, gLabel]) => {
-                            const gThumbs = thumbs.map((t, ti) => [t, ti]).filter(([t]) => t.genre === gKey);
+                          onDrop={(e) => { e.preventDefault(); setThumbDropOver(false); if (locked) { showToast("サムネは固定中です。直すには固定を解除してください"); return; } const files = Array.from(e.dataTransfer.files || []).filter((f) => /^image\//.test(f.type)); if (files.length) uploadDeliverThumbs(files); }}>
+                          {/* 2026-08-19 AK「サムネ見づらい・クリックで拡大」: 画像クリック=全画面ライトボックス。差し替えはホバーの「差替」へ分離。
+                              2026-08-28 AK指示: ジャンル枠(インパクト重視/ノーマル/他要素)は廃止してフラットな3列に戻し、
+                              枚数上限も撤廃。通常は6枚まで展開し、7枚目以降は「続きのサムネ」として畳んでおく */}
+                          {(() => {
+                            const pairs = thumbs.map((t, ti) => [t, ti]);
+                            const head = pairs.slice(0, DELIVER_THUMB_OPEN);
+                            const rest = pairs.slice(DELIVER_THUMB_OPEN);
                             return (
-                              <div key={gKey} className="mb-3">
-                                <div className="text-[11px] font-bold text-stone-500 mb-1">{gLabel} <span className="text-[9px] font-normal text-stone-400">{gThumbs.length}/{THUMB_GENRE_MAX}枚</span></div>
-                                <div className="grid grid-cols-2 gap-3 max-w-3xl">
-                                  {gThumbs.map(([t, ti]) => renderThumbTile(t, ti))}
-                                  {gThumbs.length < THUMB_GENRE_MAX && thumbs.length < DELIVER_THUMB_MAX && (
-                                    <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-sm">
-                                      ＋ {gLabel}
-                                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files, gKey); e.target.value = ""; }} />
+                              <>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl">
+                                  {head.map(([t, ti]) => renderThumbCard(t, ti))}
+                                  {!locked && (
+                                    <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-[13px] text-center leading-tight">
+                                      ＋ サムネを追加
+                                      <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files); e.target.value = ""; }} />
                                     </label>
                                   )}
                                 </div>
-                              </div>
-                            );
-                          })}
-                          {thumbs.some((t) => !t.genre) && (
-                            <div className="mb-3">
-                              <div className="text-[11px] font-bold text-amber-600 mb-1">未分類（ジャンルを選んでください）</div>
-                              <div className="grid grid-cols-2 gap-3 max-w-3xl">
-                                {thumbs.map((t, ti) => [t, ti]).filter(([t]) => !t.genre).map(([t, ti]) => (
-                                  <div key={t.key}>
-                                    {renderThumbTile(t, ti)}
-                                    <div className="flex gap-1 mt-1">
-                                      {THUMB_GENRES.map(([gk, gl]) => (
-                                        <button key={gk} onClick={() => setThumbGenre(ti, gk)} className="text-[10px] font-bold px-2 py-1 rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200">{gl}</button>
-                                      ))}
-                                    </div>
+                                {rest.length > 0 && (
+                                  <div className="mt-3">
+                                    <button type="button" onClick={() => setThumbMoreOpen((v) => !v)}
+                                      className="flex items-center gap-1.5 text-[11px] font-bold text-stone-500 hover:text-stone-800">
+                                      <span className={"transition-transform " + (thumbMoreOpen ? "rotate-90" : "")}>›</span>
+                                      続きのサムネ {rest.length}枚
+                                    </button>
+                                    {thumbMoreOpen && (
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mt-2">
+                                        {rest.map(([t, ti]) => renderThumbCard(t, ti))}
+                                      </div>
+                                    )}
                                   </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          
-                          <div className="text-[10px] text-stone-400 mt-1">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}/{DELIVER_THUMB_MAX}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
+                                )}
+                              </>
+                            );
+                          })()}
+                          <div className="text-[10px] text-stone-400 mt-2">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
                           {/* 全画面ライトボックス（背景クリック/Esc/×で閉・←→で前後） */}
                           {thumbLightbox && (
                             <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center" onClick={() => setThumbLightbox(null)}>
@@ -10001,6 +10116,12 @@ export default function App() {
                               <div className="absolute top-3 left-1/2 -translate-x-1/2 text-white/90 text-xs font-bold px-3 py-1 rounded-full bg-white/10">
                                 {thumbLightbox.items[thumbLightbox.idx].label}　{thumbLightbox.idx + 1} / {thumbLightbox.items.length}
                               </div>
+                              {/* 拡大中も制作意図が読める（2026-08-28） */}
+                              {(thumbLightbox.items[thumbLightbox.idx].intent || "").trim() && (
+                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 max-w-[80vw] text-white/85 text-[12px] leading-relaxed whitespace-pre-wrap px-4 py-2 rounded-xl bg-black/60" onClick={(e) => e.stopPropagation()}>
+                                  {thumbLightbox.items[thumbLightbox.idx].intent}
+                                </div>
+                              )}
                               {thumbLightbox.items.length > 1 && (
                                 <>
                                   <button className="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl leading-none hover:bg-white/30"
@@ -10023,21 +10144,21 @@ export default function App() {
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1.5">
                             <span className="shrink-0 text-[10px] font-bold text-stone-400 w-10">案1</span>
-                            <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
-                              className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
+                            <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder} readOnly={locked}
+                              className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} />
                           </div>
                           <div className="flex items-center gap-1.5">
                             <span className="shrink-0 text-[10px] font-bold text-stone-400 w-10">案2</span>
-                            <input value={m[key + "2"] || ""} onChange={(e) => setMeta(key + "2", e.target.value)} placeholder="もう1つのタイトル案（任意）"
-                              className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
+                            <input value={m[key + "2"] || ""} onChange={(e) => setMeta(key + "2", e.target.value)} placeholder="もう1つのタイトル案（任意）" readOnly={locked}
+                              className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} />
                           </div>
                         </div>
                       ) : multiline ? (
-                        <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
-                          className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" minHeight={60} />
+                        <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder} readOnly={locked}
+                          className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} minHeight={60} />
                       ) : (
-                        <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder}
-                          className="block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" />
+                        <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder} readOnly={locked}
+                          className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} />
                       )}
                       {/* URL欄はワンクリックで飛べるリンクを添える（入力欄のテキストは編集用に据え置き） */}
                       {key === "deliverVideoUrl" && (() => {
@@ -10967,7 +11088,10 @@ export default function App() {
                         <div className="text-[10px] font-bold text-stone-400 mb-1">サムネ（使用分）</div>
                         <div className="flex gap-2 flex-wrap">
                           {thumbs.slice(0, 3).map((t, i2) => (
-                            <img key={i2} src={SHARE_API + "/api/file/" + t.key} alt="" className="h-24 rounded-lg border border-stone-200 object-cover" />
+                            <div key={i2} className="w-40">
+                              <img src={SHARE_API + "/api/file/" + t.key} alt="" className="h-24 w-full rounded-lg border border-stone-200 object-cover" />
+                              {(t.intent || "").trim() && <div className="text-[10px] text-stone-500 leading-snug mt-1 whitespace-pre-wrap">{t.intent}</div>}
+                            </div>
                           ))}
                         </div>
                       </div>
@@ -10986,7 +11110,7 @@ export default function App() {
                 );
               })()}
               <details className="rounded-xl border border-stone-200 bg-stone-50/50 overflow-hidden">
-                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-600 select-none">レギュレーション {regulationChecklist.length}件（読み物・チェック不要）</summary>
+                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-600 select-none">レギュレーション {regulationChecklist.length}件（この規定に照らして検査しています）</summary>
                 <div className="border-t border-stone-200 bg-white px-3.5 py-1">
                   {regulationChecklist.map((r, i) => (
                     <div key={r.key} className={"flex items-start gap-2.5 py-2.5 " + (i ? "border-t border-stone-100" : "")}>
@@ -11001,10 +11125,24 @@ export default function App() {
                   {regulationChecklist.length === 0 && <p className="text-[11px] text-stone-400 py-3">適用されるレギュレーションはありません。</p>}
                 </div>
               </details>
-              <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5">
-                <div className="text-[12px] font-bold text-emerald-800">コード監査は完了しています</div>
-                <p className="text-[11px] text-emerald-700 mt-1 leading-relaxed">制作中の変更に合わせて端末内で確認済みです。AI通信や定期監査は行っていません。</p>
-              </section>
+              {/* レギュレーション検査の状態（2026-08-28）。検査していないのに「完了しています」と出す表示を廃止。
+                  走っている／終わった／繋がらなかった、を必ずそのまま出す */}
+              {preflight.concernsBusy ? (
+                <section className="rounded-xl border border-stone-200 bg-stone-50 p-3.5">
+                  <div className="text-[12px] font-bold text-stone-700">レギュレーション検査中…</div>
+                  <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">タイトル・概要欄・ハッシュタグ・サムネ・台本を、全社とクライアントの規定に照らして見ています。</p>
+                </section>
+              ) : preflight.error ? (
+                <section className="rounded-xl border border-rose-200 bg-rose-50/60 p-3.5">
+                  <div className="text-[12px] font-bold text-rose-800">レギュレーション検査ができませんでした</div>
+                  <p className="text-[11px] text-rose-700 mt-1 leading-relaxed">{preflight.error}　未チェックのまま出す場合は「検査を待たずに共有する」を押してください。</p>
+                </section>
+              ) : (preflight.concerns || []).length === 0 ? (
+                <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5">
+                  <div className="text-[12px] font-bold text-emerald-800">レギュレーション検査：懸念なし</div>
+                  <p className="text-[11px] text-emerald-700 mt-1 leading-relaxed">{preflight.summary || "タイトル・概要欄・ハッシュタグ・サムネ・台本を規定に照らして確認しました。"}</p>
+                </section>
+              ) : null}
               {/* 台本の自動レビュー（端末内の構造チェック）。修正は任意＝「そのまま共有」もできる */}
               {preflight.review && (() => {
                 const rv = preflight.review;
@@ -11076,7 +11214,7 @@ export default function App() {
               })()}
               {(preflight.concerns || []).length > 0 && (
                 <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5">
-                  <div className="text-[12px] font-bold text-amber-900 mb-2">あなたに確認が必要な懸念だけ</div>
+                  <div className="text-[12px] font-bold text-amber-900 mb-2">レギュレーション検査：あなたの確認が必要な懸念</div>
                   <div className="space-y-2.5">
                     {preflight.concerns.map((c) => (
                       <label key={c.id} className="block rounded-lg border border-amber-200 bg-white p-3 cursor-pointer">
@@ -11092,9 +11230,15 @@ export default function App() {
             <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50 flex-wrap">
               <span className="text-[10px] text-stone-400">内容を変えていなければ次回からこの画面は出ません</span>
               <div className="flex items-center gap-3 ml-auto">
-                <button onClick={() => finishPublishPreflight(false)} disabled={preflightBusy || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block") || (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])}
+                {/* 検査に繋がらない・待てない時の逃げ道（08-24 AK「AI待ちで共有できないのはきつい」）。
+                    ただし既に見つかった懸念だけは finishPublishPreflight 側で必ず止める */}
+                {(preflight.concernsBusy || preflight.error) && (
+                  <button onClick={() => finishPublishPreflight(true)} disabled={preflightBusy}
+                    className="text-[11.5px] underline text-stone-500 hover:text-stone-800 disabled:opacity-40">検査を待たずに共有する</button>
+                )}
+                <button onClick={() => finishPublishPreflight(false)} disabled={preflightBusy || preflight.concernsBusy || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block") || (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])}
                   className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
-                  {preflightBusy ? "URL生成中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "実物を確認した — URL生成"}
+                  {preflightBusy ? "URL生成中…" : preflight.concernsBusy ? "レギュレーション検査中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "実物を確認した — URL生成"}
                 </button>
               </div>
             </div>

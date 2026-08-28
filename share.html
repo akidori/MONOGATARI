@@ -1196,10 +1196,13 @@ function paneDeliver(p, accent, main){
     </div>`:""}
     ${ranked.length>1?`<div class="text-[12px] text-stone-500 mb-2">気に入ったサムネがあれば「これに決める」を押してください。選んだ内容はこちらに届きます。</div>`:""}
     ${ranked.length?`<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 max-w-3xl">${ranked.map((t,i)=>`
-      <div class="relative">
-        <img src="${API}/api/file/${esc(t.key)}" alt="" data-dvlb="${i}" class="dv-thumb w-full aspect-video object-contain bg-stone-100 rounded-lg border-2 ${t._used?"border-emerald-400":"border-stone-200"} cursor-zoom-in" title="クリックで拡大">
-        <span class="absolute bottom-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow ${t._used?"bg-emerald-500 text-white":"bg-white/90 text-stone-500"}">${t._label}</span>
-        ${ranked.length>1?`<button data-dvpick="${i}" data-dvpick-label="${esc(t._label)}" class="dv-pick absolute top-1.5 right-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm" style="background:${accent};color:#fff">これに決める</button>`:""}
+      <div>
+        <div class="relative">
+          <img src="${API}/api/file/${esc(t.key)}" alt="" data-dvlb="${i}" data-dvintent="${esc(t.intent||"")}" class="dv-thumb w-full aspect-video object-contain bg-stone-100 rounded-lg border-2 ${t._used?"border-emerald-400":"border-stone-200"} cursor-zoom-in" title="クリックで拡大">
+          <span class="absolute bottom-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow ${t._used?"bg-emerald-500 text-white":"bg-white/90 text-stone-500"}">${t._label}</span>
+          ${ranked.length>1?`<button data-dvpick="${i}" data-dvpick-label="${esc(t._label)}" class="dv-pick absolute top-1.5 right-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm" style="background:${accent};color:#fff">これに決める</button>`:""}
+        </div>
+        ${(t.intent||"").trim()?`<div class="mt-1.5"><div class="text-[10px] font-bold text-stone-400 mb-0.5">制作意図</div><div class="text-[11.5px] text-stone-600 leading-relaxed whitespace-pre-wrap">${esc(t.intent)}</div></div>`:""}
       </div>`).join("")}</div>`:""}
     ${url?`<div id="dv-player" class="rounded-xl overflow-hidden bg-black mb-5" style="aspect-ratio:16/9"></div>`:""}
     ${(m.deliverDescription||m.deliverHashtags||m.deliverChapters)?`<div class="rounded-xl border border-stone-200 bg-white p-4 mb-5">
@@ -1222,6 +1225,7 @@ function dvLightbox(items, idx){
     ov.innerHTML = `
       <img src="${items[cur].src}" alt="" class="max-w-[96vw] max-h-[90vh] object-contain" id="dv-lb-img">
       <div class="absolute top-3 left-1/2 -translate-x-1/2 text-white/90 text-xs font-bold px-3 py-1 rounded-full bg-white/10">${items[cur].label}　${cur+1} / ${items.length}</div>
+      ${(items[cur].intent||"").trim()?`<div class="absolute bottom-4 left-1/2 -translate-x-1/2 max-w-[80vw] text-white/85 text-[12px] leading-relaxed whitespace-pre-wrap px-4 py-2 rounded-xl bg-black/60">${esc(items[cur].intent)}</div>`:""}
       ${items.length>1?`
         <button id="dv-lb-prev" class="absolute left-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl leading-none">‹</button>
         <button id="dv-lb-next" class="absolute right-3 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/15 text-white text-2xl leading-none">›</button>`:""}
@@ -1248,7 +1252,7 @@ function mountDeliver(p, accent, main){
   _shMain = main; mountShorts();
   const m = p.meta||{};
   // サムネのクリック→全画面（paneDeliverの data-dvlb と対）
-  const lbItems = Array.from(document.querySelectorAll(".dv-thumb")).map((el)=>({ src: el.getAttribute("src"), label: (el.nextElementSibling && el.nextElementSibling.textContent) || "" }));
+  const lbItems = Array.from(document.querySelectorAll(".dv-thumb")).map((el)=>({ src: el.getAttribute("src"), label: (el.nextElementSibling && el.nextElementSibling.textContent) || "", intent: el.getAttribute("data-dvintent") || "" }));
   document.querySelectorAll(".dv-thumb").forEach((el)=>{ el.onclick = ()=> dvLightbox(lbItems, Number(el.getAttribute("data-dvlb")) || 0); });
   // サムネ候補「これに決める」（2026-08-19 AK指示）。既存のコメントAPIにそのまま乗せる＝AK側💬パネルにそのまま届く
   const dvPicked = localStorage.getItem("mg:dvpick:"+ID);
