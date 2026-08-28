@@ -1304,9 +1304,18 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
 });
 
 /* 入力内容に応じて高さが伸びる textarea（全文が常に見える） */
-function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title, readOnly }) {
+function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title, readOnly, autoFocus }) {
   const ref = useRef(null);
   const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
+  /* トグルで開くタイプの入力欄向け。開いてもフォーカスがトグルのボタンに残っていると、
+     日本語入力の変換キー(スペース)がボタンを押してしまい「打てない・勝手に閉じる」になる
+     （2026-08-28 AK「コピペじゃないと日本語変換できない」）。開いた瞬間に文末へカーソルを置く。 */
+  useEffect(() => {
+    if (!autoFocus) return;
+    const el = ref.current; if (!el) return;
+    el.focus();
+    try { const n = el.value.length; el.setSelectionRange(n, n); } catch (e) {}
+  }, []);
   // 親へは合成イベント({target:{value}})で渡す＝呼び出し側のe.target.value流儀を維持
   const [val, set, flush, ime] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
   useEffect(() => { resize(ref.current); }, [val]);
@@ -10029,7 +10038,7 @@ export default function App() {
                           : <span className="font-normal text-stone-300">未記入</span>)}
                       </button>
                       {intentOpen && (
-                        <AutoTextarea value={intent} onChange={(e) => setDeliverThumbIntent(ti, e.target.value)} readOnly={locked}
+                        <AutoTextarea value={intent} onChange={(e) => setDeliverThumbIntent(ti, e.target.value)} readOnly={locked} autoFocus={!locked}
                           placeholder="何を伝えたいサムネか／なぜこの絵・この文言にしたか"
                           className={"mt-1 block w-full text-[12px] leading-relaxed rounded-lg border border-stone-200 px-2 py-1.5 focus:outline-none focus:border-stone-400 placeholder:text-stone-300 " + (locked ? "bg-stone-50 text-stone-500" : "bg-white")} minHeight={48} />
                       )}
@@ -10083,25 +10092,37 @@ export default function App() {
                               <>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl">
                                   {head.map(([t, ti]) => renderThumbCard(t, ti))}
-                                  {!locked && (
+                                  {/* 大きな点線枠は1枚も無い時だけ（＝置き場所を示す空状態）。
+                                      既に何枚かある時は下の小さいボタンにする＝6枚埋まった時に枠だけの空行ができない
+                                      （2026-08-28 AK「6枚アップしてるのでこの追加の枠いらないかも」） */}
+                                  {!locked && thumbs.length === 0 && (
                                     <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-[13px] text-center leading-tight">
                                       ＋ サムネを追加
                                       <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files); e.target.value = ""; }} />
                                     </label>
                                   )}
                                 </div>
-                                {rest.length > 0 && (
-                                  <div className="mt-3">
-                                    <button type="button" onClick={() => setThumbMoreOpen((v) => !v)}
-                                      className="flex items-center gap-1.5 text-[11px] font-bold text-stone-500 hover:text-stone-800">
-                                      <span className={"transition-transform " + (thumbMoreOpen ? "rotate-90" : "")}>›</span>
-                                      続きのサムネ {rest.length}枚
-                                    </button>
-                                    {thumbMoreOpen && (
-                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mt-2">
-                                        {rest.map(([t, ti]) => renderThumbCard(t, ti))}
-                                      </div>
+                                {(rest.length > 0 || (!locked && thumbs.length > 0)) && (
+                                  <div className="mt-2.5 flex items-center gap-3 flex-wrap">
+                                    {rest.length > 0 && (
+                                      <button type="button" onClick={() => setThumbMoreOpen((v) => !v)}
+                                        className="flex items-center gap-1.5 text-[11px] font-bold text-stone-500 hover:text-stone-800">
+                                        <span className={"transition-transform " + (thumbMoreOpen ? "rotate-90" : "")}>›</span>
+                                        続きのサムネ {rest.length}枚
+                                      </button>
                                     )}
+                                    {!locked && thumbs.length > 0 && (
+                                      <label title="ドラッグ＆ドロップでも追加できます"
+                                        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-700 cursor-pointer">
+                                        ＋ サムネを追加
+                                        <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files); e.target.value = ""; }} />
+                                      </label>
+                                    )}
+                                  </div>
+                                )}
+                                {rest.length > 0 && thumbMoreOpen && (
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-3xl mt-2">
+                                    {rest.map(([t, ti]) => renderThumbCard(t, ti))}
                                   </div>
                                 )}
                               </>
