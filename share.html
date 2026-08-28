@@ -870,7 +870,7 @@ function render(){
     ${infoBlock ? "" : `<div class="mb-4">
       ${/* 納品タブは paneDeliver 側で deliverTitle を見出しとして出すので、ここで titles[0] を重ねると同じ動画のタイトルが二段表示される（2026-08-20 AK指摘）→納品タブでは省く */""}
       ${(TAB==="deliver" && m.deliverTitle) ? "" : `<div class="text-[17px] font-black leading-snug text-stone-800">${esc(titles[0]||p.name||"構成台本")}</div>`}
-      ${TAB!=="video" && (m.shootDate||m.place) ? `<div class="mt-1 text-[12px] text-stone-500 flex flex-wrap gap-x-4">
+      ${TAB!=="video" && TAB!=="deliver" && (m.shootDate||m.place) ? `<div class="mt-1 text-[12px] text-stone-500 flex flex-wrap gap-x-4">
         ${m.shootDate?`<span>撮影日 ${esc(m.shootDate)}</span>`:""}
         ${m.place?`<span>場所 ${esc(m.place)}</span>`:""}
       </div>` : ""}
