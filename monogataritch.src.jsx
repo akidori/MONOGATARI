@@ -246,6 +246,29 @@ const CMT_STATUS_COLOR = {
 };
 const CMT_PRIO_COLOR = { "高": { bg: "#DC2645", fg: "#fff" }, "中": { bg: "#E8A33D", fg: "#fff" }, "低": { bg: "#E5E5E5", fg: "#57534E" } };
 const cstat = (c) => c.status || (c.resolved ? "完了" : "未対応");
+/* ===== 切り抜き候補レーン（2026-09-01 AK指示） =====
+   レビュー中に「ここ取れ高」の点を刻む。修正依頼と同じコメント基盤に乗せるが、category で完全に別レーンにする。
+   ⚠️値は share.html の CLIP_CAT / CLIP_REASONS と必ず一致させること（同じコメントプールを共有ページと共用しており、
+   ズレると片側で修正依頼レーンに混ざる）。理由は priority でなく text の先頭に入れる（"喧嘩｜メモ"）＝
+   priority を流用すると優先度バッジが「優先:喧嘩」になって黙って壊れるため。 */
+const CLIP_CAT = "切り抜き";
+const CLIP_REASONS = ["喧嘩", "泣き", "名言", "笑い", "その他"];
+const CLIP_REASON_COLOR = {
+  "喧嘩": { bg: "#FBE5EA", fg: "#DC2645" },
+  "泣き": { bg: "#E3EBFC", fg: "#2563EB" },
+  "名言": { bg: "#FCF0DC", fg: "#B45309" },
+  "笑い": { bg: "#E7F6EC", fg: "#15803D" },
+  "その他": { bg: "#F0F0F2", fg: "#57534E" },
+};
+const isClip = (c) => (c.category || "") === CLIP_CAT;
+/* text="喧嘩｜メモ" を理由とメモに割る。未知の先頭語は「その他」に寄せて本文をメモ扱いにする。 */
+const clipParts = (c) => {
+  const raw = (c.text || "").trim();
+  const i = raw.indexOf("｜");
+  const head = (i >= 0 ? raw.slice(0, i) : raw).trim();
+  const known = CLIP_REASONS.includes(head);
+  return { reason: known ? head : "その他", memo: (i >= 0 ? raw.slice(i + 1) : (known ? "" : raw)).trim() };
+};
 
 /* 素材管理に表示するカテゴリ（確認用動画は動画確認タブ・納品も動画確認OK＝ここは撮影素材とテンプレ素材だけ）。
    ※"確認用動画"はバージョンのミラー等で内部的には使うが、素材管理UIには出さない */
@@ -2439,6 +2462,9 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const onDropVideo = (e) => { e.preventDefault(); setDropOver(false); const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]; if (f && (f.type.startsWith("video/") || /\.(mp4|mov|m4v|webm)$/i.test(f.name || ""))) onUploadVideo(f); };
   const onDragOverVideo = (e) => { e.preventDefault(); if (!dropOver) setDropOver(true); };
   const [filter, setFilter] = React.useState("全部");
+  const [lane, setLane] = React.useState("fix");        // 右カラムのレーン: fix=修正コメント / clip=切り抜き候補
+  const [clipMemo, setClipMemo] = React.useState("");   // 切り抜き登録時の任意ひとこと
+  const [clipCopied, setClipCopied] = React.useState(false);
   const [cat, setCat] = React.useState("編集");
   const [prio, setPrio] = React.useState("中");
   const [text, setText] = React.useState("");
@@ -2467,7 +2493,10 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const vKey = sel ? (sel.uid || sel.key || sel.url || "") : "";
   const fmtTC = (s) => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60), sec = Math.floor(s % 60), cs = Math.floor((s * 100) % 100); return m + ":" + String(sec).padStart(2, "0") + "." + String(cs).padStart(2, "0"); };
   const belongs = (c) => sel && (c.versionId === sel.id || (c.videoKey || "") === vKey || (sel.uid && c.videoKey === sel.uid) || (sel.key && c.videoKey === sel.key));
-  const verComments = comments.filter(belongs);
+  const verAll = comments.filter(belongs);
+  /* 切り抜き候補は修正依頼と混ぜない。ステータス集計・フィルタ・件数は全部「修正レーン」だけを見る。 */
+  const verComments = verAll.filter((c) => !isClip(c));
+  const verClips = verAll.filter(isClip).slice().sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
   const counts = CMT_STATUSES.reduce((o, s) => { o[s] = verComments.filter((c) => cstat(c) === s).length; return o; }, {});
   const seek = (t) => {
     if (sel && sel.type === "youtube") { const p = ytPlayerRef.current; if (p && p.seekTo) { ytSeekGuard.current = Date.now() + 800; p.seekTo(+t || 0, true); if (p.pauseVideo) p.pauseVideo(); setCur(+t || 0); } return; }
@@ -2597,6 +2626,20 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const filtered = verComments.filter((c) => filter === "全部" ? true : filter === "高優先度" ? c.priority === "高" : CMT_STATUSES.includes(filter) ? cstat(c) === filter : CMT_CATEGORIES.includes(filter) ? (c.category || "その他") === filter : true)
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
   const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} };
+  /* 理由チップを押した時点で登録。フォームを埋めさせない＝レビューの手が止まらない（share.html と同じ作法）。 */
+  const postClip = (reason) => {
+    if (!sel) return;
+    const memo = clipMemo.trim();
+    onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(),
+             text: memo ? reason + "｜" + memo : reason, category: CLIP_CAT, priority: "中", status: "未対応" });
+    setClipMemo(""); setLane("clip");
+  };
+  /* たてがた君へ手渡すための書き出し。TSVなのでそのまま貼れる。 */
+  const copyClipTsv = async () => {
+    const rows = verClips.map((c) => { const q = clipParts(c); return [fmtTC(c.timecode || 0), (+(c.timecode || 0)).toFixed(2), q.reason, q.memo].join("\t").replace(/\t+$/, ""); });
+    const txt = ["# 切り抜き候補\ttc\tsec\t理由\tメモ"].concat(rows).join("\n");
+    try { await navigator.clipboard.writeText(txt); setClipCopied(true); setTimeout(() => setClipCopied(false), 1500); } catch (e) {}
+  };
 
 
   if (!versions.length) {
@@ -2642,7 +2685,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           const latestId = versions.length ? versions[versions.length - 1].id : null;
           const shown = showOldVers ? versions : versions.filter((v) => v.id === latestId || v.id === sel.id);
           const hidden = versions.filter((v) => !shown.some((x) => x.id === v.id));
-          const openOf = (vv) => comments.filter((c) => (c.versionId === vv.id || (c.videoKey || "") === (vv.key || vv.url || "")) && cstat(c) !== "完了").length;
+          const openOf = (vv) => comments.filter((c) => !isClip(c) && (c.versionId === vv.id || (c.videoKey || "") === (vv.key || vv.url || "")) && cstat(c) !== "完了").length;
           const hiddenOpen = hidden.reduce((n, vv) => n + openOf(vv), 0);
           return (<React.Fragment>
             {hidden.length > 0 && (
@@ -2772,9 +2815,33 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } }} placeholder="修正内容を入力（⌘+Enterで送信）" className="w-full h-16 text-[12px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
             <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={!text.trim()} className="text-[11px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>修正を追加</button></div>
           </div>
+          {/* 切り抜き候補（取れ高マーク）。区間ではなく「点」だけ取る＝尺の前後はたてがた君側に探させる */}
+          <div className="mt-2 rounded-xl border border-stone-200 bg-white p-3">
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              {!streamPending && <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} を</span>}
+              <span className="text-[11px] text-stone-400">切り抜き候補に。理由を押すと登録されます</span>
+            </div>
+            <input value={clipMemo} onChange={(e) => setClipMemo(e.target.value)} placeholder="ひとこと（任意）"
+              className="w-full text-[12px] border border-stone-200 rounded-lg px-2.5 py-1.5 mb-1.5 focus:outline-none focus:border-stone-400" />
+            <div className="flex gap-1.5 flex-wrap">
+              {CLIP_REASONS.map((r) => (
+                <button key={r} onClick={() => postClip(r)} disabled={!sel}
+                  className="text-[12px] font-bold px-3 py-1.5 rounded-full disabled:opacity-40"
+                  style={{ background: CLIP_REASON_COLOR[r].bg, color: CLIP_REASON_COLOR[r].fg }}>{r}</button>
+              ))}
+            </div>
+          </div>
         </div>
-        {/* 右：修正一覧＋フィルタ */}
+        {/* 右：修正一覧＋フィルタ ／ 切り抜き候補（レーン切替） */}
         <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            {[["fix", "修正", verComments.length], ["clip", "切り抜き", verClips.length]].map(([k, label, n]) => (
+              <button key={k} onClick={() => setLane(k)}
+                className={"text-[11px] font-bold px-2.5 py-1 rounded-full border " + (lane === k ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50")}
+                style={lane === k ? { background: main } : {}}>{label}{n ? " " + n : ""}</button>
+            ))}
+          </div>
+          {lane === "fix" && (<>
           <div className="flex items-center gap-1 mb-2 flex-wrap">
             {["全部", ...CMT_STATUSES, "高優先度"].map((f) => (
               <button key={f} onClick={() => setFilter(f)} className={"text-[10px] font-bold px-2 py-1 rounded-full border " + (filter === f ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-500")} style={filter === f ? { background: main } : {}}>{f}</button>
@@ -2810,6 +2877,36 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               );
             })}
           </div>
+          </>)}
+          {lane === "clip" && (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto mg-scroll pr-1">
+              {verClips.length === 0 && (
+                <p className="text-[11px] text-stone-400 py-4 text-center">まだ切り抜き候補はありません。<br />動画を止めて理由を押すと、その瞬間が記録されます。</p>
+              )}
+              {verClips.map((c) => {
+                const pt = clipParts(c), rc = CLIP_REASON_COLOR[pt.reason] || CLIP_REASON_COLOR["その他"];
+                return (
+                  <div key={c.id} className="rounded-xl border border-stone-200 bg-white p-2.5">
+                    <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                      {typeof c.timecode === "number" && <button onClick={() => seek(c.timecode)} className="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded text-white" style={{ background: main, fontFamily: mono }}>▶ {fmtTC(c.timecode)}</button>}
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: rc.bg, color: rc.fg }}>{pt.reason}</span>
+                      <span className="text-[10px] text-stone-400 ml-auto">{c.author || "ゲスト"}</span>
+                    </div>
+                    {pt.memo && <div className="text-[12px] text-stone-800 leading-snug whitespace-pre-wrap break-words">{pt.memo}</div>}
+                    <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-2">
+                      {c.createdAt && <span>{String(c.createdAt).slice(5, 16).replace("T", " ")}</span>}
+                      <button onClick={() => { if (window.confirm("この切り抜き候補を削除？")) onDelete(c.id); }} className="ml-auto hover:text-rose-500">削除</button>
+                    </div>
+                  </div>
+                );
+              })}
+              {verClips.length > 0 && (
+                <button onClick={copyClipTsv} className="w-full text-[11px] font-bold px-3 py-2 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">
+                  {clipCopied ? "コピーしました" : "一覧をコピー（TSV）"}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
       {busy && <div className="mt-2 text-[12px] text-stone-500">{busy} {prog ? prog + "%" : ""}</div>}
@@ -6889,7 +6986,8 @@ export default function App() {
     else setComments([]);
   }, [activeId, project && project.shareId, (project && project.plans || []).map((p) => p.shareId).join(",")]);
 
-  const openComments = comments.filter((c) => !c.resolved);
+  /* 先方コメントの未対応件数。切り抜き候補は先方への返答が要るものではないので数えない。 */
+  const openComments = comments.filter((c) => !c.resolved && !isClip(c));
 
   const fmt = (sec) => ((project && project.timeFormat === "jp") ? fmtJP(sec) : fmtTC(sec));
 
@@ -11444,10 +11542,10 @@ export default function App() {
               </div>
             </div>
             <div className="flex-1 overflow-y-auto mg-scroll p-3 space-y-2" style={{ background: "#F4F3EF" }}>
-              {comments.length === 0 && (
+              {comments.filter((c) => !isClip(c)).length === 0 && (
                 <p className="text-[12px] text-stone-400 text-center py-10">まだコメントはありません。<br />共有URLを先方に送ると、ここに届きます。</p>
               )}
-              {[...comments].sort((a, b) => (a.resolved === b.resolved ? (a.createdAt < b.createdAt ? 1 : -1) : a.resolved ? 1 : -1)).map((c) => (
+              {[...comments.filter((c) => !isClip(c))].sort((a, b) => (a.resolved === b.resolved ? (a.createdAt < b.createdAt ? 1 : -1) : a.resolved ? 1 : -1)).map((c) => (
                 <div key={c.id} className={"rounded-xl border p-3 " + (c.resolved ? "bg-stone-100 border-stone-200 opacity-70" : "bg-white border-stone-200 shadow-sm")}>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]" style={{ background: theme.main, color: mainText }}>
