@@ -5705,7 +5705,14 @@ export default function App() {
   /* ===== 共有URL：タブ別／案件まるごと ===== */
   /* アプリのタブ → share.html のペイン名 */
   const TAB_SHARE_PANE = { overview: "concept", plan: "plan", hearing: "hearing", script: "script", kouban: "kouban", review: "video", concept: "concept", assets: "files", deliver: "deliver", manual: "manual" };
-  const buildShareUrl = (id, t) => { const pane = t ? TAB_SHARE_PANE[t] : ""; return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (pane ? "&tab=" + pane : ""); };
+  /* 「全タブ共有」(t無し)には &up=（編集者用アップロードトークン）を必ず付ける。
+     2026-08-31 AK指示：閲覧用リンクとアップ用リンクを毎回2本渡すのが手間＝1本で「見る＋上げる」を賄う。
+     「このタブだけ共有」(t有り)は先方・演者へ渡す導線なので従来どおり付けない（大容量アップ権を渡さない）。 */
+  const buildShareUrl = (id, t) => {
+    const pane = t ? TAB_SHARE_PANE[t] : "";
+    const up = t ? "" : (shareUpTokRef.current || project.shareUpToken || "");
+    return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (pane ? "&tab=" + pane : "") + (up ? "&up=" + up : "");
+  };
   const hashGateValue = async (value) => {
     const bytes = new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value || null));
     const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -5948,7 +5955,7 @@ export default function App() {
     if (!id) return;
     const u = buildShareUrl(id, t);
     setShareModal({ id, url: u, updated: had, tab: t || "" });
-    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + (t ? "このタブの" : "案件まるごとの") + "共有URLを発行してコピーしました"); } catch (e) {}
+    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + (t ? "このタブの共有URL" : "案件まるごと（全タブ＋アップ枠つき）の共有URL") + "を発行してコピーしました"); } catch (e) {}
   };
   /* 切り抜きショートだけをまとめて見せる先方用URL（mg-share workerの /shorts/{snap}?r=<rtok> ギャラリー
      ページ、全本を1画面で再生・DLできる）。ShortsPanelの「共有URL」ボタンから呼ばれる。
@@ -8151,7 +8158,7 @@ export default function App() {
                 )}
                 <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
                   <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
-                  全タブ共有<span className="text-[10px] text-stone-400 font-normal ml-auto">閲覧・全タブ</span>
+                  全タブ共有<span className="text-[10px] text-stone-400 font-normal ml-auto">全タブ＋アップ枠</span>
                 </button>
                 {TAB_LABEL[tab] && (
                   <button onClick={() => { setShareMenu(false); publishShareLive(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
