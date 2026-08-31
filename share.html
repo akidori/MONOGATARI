@@ -82,6 +82,18 @@ const textOn = (hex) => {
   } catch { return "#FFFFFF"; }
 };
 const CMT_CATS = ["編集","構成","サムネ","BGM","SE","テロップ","色味","演出","その他"];
+/* ───────── 切り抜き候補（レビューのついでに「ここ取れ高」を点で刻む） ─────────
+   修正依頼と同じコメント基盤に乗せるが、category で完全に別レーンにする。狙いは2つ:
+     1. 本編レビュー中に押すだけで、切り抜きの「正解データ」が案件ごとに貯まる
+     2. たてがた君の自動検出（喧嘩/泣き）の答え合わせに使える
+   区間ではなく「点」だけ取る。in/out を人に引かせると3本目でやらなくなるので、
+   前後の尺はたてがた君側に探させる。
+   理由は priority ではなく text の先頭に入れる（"喧嘩｜メモ"）。priority を流用すると
+   AK側アプリの優先度バッジが「優先:喧嘩」になって黙って壊れるため。 */
+const CLIP_CAT = "切り抜き";
+const CLIP_REASONS = ["喧嘩","泣き","名言","笑い","その他"];
+const CLIP_REASON_COL = {"喧嘩":["#FBE5EA","#DC2645"],"泣き":["#E3EBFC","#2563EB"],"名言":["#FCF0DC","#B45309"],"笑い":["#E7F6EC","#15803D"],"その他":["#F0F0F2","#57534E"]};
+let VC_TAB = "fix";  // 右カラムのタブ: fix=修正コメント / clip=切り抜き候補
 const CMT_STATUS_COL = {"未対応":["#FBE5EA","#DC2645"],"対応中":["#FCF0DC","#D97706"],"確認待ち":["#E3EBFC","#2563EB"],"完了":["#E7F6EC","#15803D"]};
 const CMT_PRIO_COL = {"高":["#DC2645","#fff"],"中":["#E8A33D","#fff"],"低":["#E5E5E5","#57534E"]};
 const cStat = (c) => c.status || (c.resolved ? "完了" : "未対応");
@@ -1325,15 +1337,16 @@ function paneVideo(p, accent, main){
           <div id="vc-tc" class="ml-auto mono text-[13px] font-bold" style="color:${main}">0:00.00</div>
           ${(v.key||v.url)?`<a href="${v.key?(API+'/api/file/'+v.key+'?dl=1'):safeUrl(v.url)}" class="text-[12px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5" title="この動画をダウンロード">${icon("download","w-3 h-3")}動画をDL</a>`:""}
           ${CHMODE?"":`<button id="vc-add" class="text-[12px] font-bold text-white pl-2.5 pr-3 py-1.5 rounded-full shadow-md inline-flex items-center gap-1.5" style="background:${accent}">${icon("plus","w-3 h-3")}ここにコメント</button>`}
+          ${(CHMODE||!CAN_RESOLVE)?"":`<button id="vc-clip" class="text-[12px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5" title="この瞬間を切り抜き候補として記録する">${icon("pin","w-3 h-3")}切り抜き</button>`}
         </div>
         ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>`}
         ${(UP_TOKEN && !CHMODE)?`<div class="mt-3">${videoUploadBox(accent, main, true)}</div>`:""}
         ${CHMODE?"":'<div id="vc-shorts"></div>'}
       </div>
       ${CHMODE?"":`<div class="lg:flex-1 lg:max-w-[440px] lg:border-l lg:border-stone-200 lg:pl-4">
-        <div class="text-[12px] font-bold text-stone-500 mb-2">修正コメント</div>
+        <div id="vc-tabs" class="flex items-center gap-1.5 mb-2"></div>
         <div id="vc-list" class="lg:max-h-[70vh] lg:overflow-y-auto lg:pr-1"></div>
-        <p class="text-[11px] text-stone-400 mt-3 leading-relaxed">動画を止めて「ここにコメント」で、その時間に修正依頼を残せます。コメントのタイムコードで頭出し。送信は ⌘+Enter。</p>
+        <p id="vc-hint" class="text-[11px] text-stone-400 mt-3 leading-relaxed"></p>
       </div>`}
     </div>
     <div id="vc-shorts" class="mt-6"></div>`;
@@ -1511,7 +1524,7 @@ function mountVideo(p, accent, main){
     b.classList.remove("bg-white","text-stone-500","border-stone-200"); b.classList.add("text-white");
     b.style.background=main; b.style.borderColor=main;
   }));
-  if(!CHMODE){ const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main)); renderVideoList(accent, main); }
+  if(!CHMODE){ const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main)); const clp=document.getElementById("vc-clip"); if(clp) clp.addEventListener("click", ()=>openClipForm(accent, main)); renderVideoList(accent, main); }
   if(UP_TOKEN && !CHMODE) wireVideoUpload(p, accent, main);
   mountShorts(p, accent, main);
 }
@@ -1560,11 +1573,73 @@ async function videoUpload(file, p, accent, main){
 function setRate(r){ if(videoEl){ videoEl.playbackRate=r; } else if(ytPlayer&&ytPlayer.setPlaybackRate){ ytPlayer.setPlaybackRate(r); } }
 function curTime(){ if(videoEl) return videoEl.currentTime||0; if(ytPlayer&&ytPlayer.getCurrentTime) return ytPlayer.getCurrentTime()||0; return 0; }
 function seekTo(sec){ sec=+sec||0; if(videoEl){ videoEl.currentTime=sec; } else if(ytPlayer&&ytPlayer.seekTo){ ytPlayer.seekTo(sec,true); } }
-function videoComments(){
+function videoTimed(){
   const multi = videoOptions(SNAP.project).length > 1;
   return COMMENTS.filter(c=> typeof c.timecode==="number" && (!multi || (c.videoKey||"")===(VSEL||""))).sort((a,b)=>a.timecode-b.timecode);
 }
+function videoComments(){ return videoTimed().filter(c=> (c.category||"")!==CLIP_CAT); }
+function clipComments(){ return videoTimed().filter(c=> (c.category||"")===CLIP_CAT); }
+/* text="喧嘩｜メモ" を理由とメモに割る。未知の先頭語は「その他」に寄せて本文をメモ扱いにする。 */
+function clipParts(c){
+  const raw=(c.text||"").trim();
+  const i=raw.indexOf("｜");
+  const head=(i>=0?raw.slice(0,i):raw).trim();
+  const known=CLIP_REASONS.includes(head);
+  return { reason: known?head:"その他", memo: (i>=0?raw.slice(i+1):(known?"":raw)).trim() };
+}
 function renderVideoList(accent, main){
+  renderVcTabs(accent, main);
+  const hint=document.getElementById("vc-hint");
+  if(VC_TAB==="clip"){
+    if(hint) hint.textContent="動画を止めて「切り抜き」を押し、理由を選ぶだけで記録されます。尺の前後はたてがた君側で決めるので、ここでは点だけで大丈夫です。";
+    renderClipList(accent, main);
+  }else{
+    if(hint) hint.textContent="動画を止めて「ここにコメント」で、その時間に修正依頼を残せます。コメントのタイムコードで頭出し。送信は ⌘+Enter。";
+    renderFixList(accent, main);
+  }
+}
+/* 先方（トークン無し）には切り抜きレーンを出さない。修正依頼と同じ列に並ぶと混線するため。 */
+function renderVcTabs(accent, main){
+  const el=document.getElementById("vc-tabs"); if(!el) return;
+  if(!CAN_RESOLVE){ VC_TAB="fix"; el.innerHTML='<div class="text-[12px] font-bold text-stone-500">修正コメント</div>'; return; }
+  const nf=videoComments().length, nc=clipComments().length;
+  const tab=(k,label,n)=>`<button data-vctab="${k}" class="vc-tab text-[11px] font-bold px-2.5 py-1 rounded-full border ${VC_TAB===k?"text-white":"text-stone-500 border-stone-200 hover:bg-stone-50"}" style="${VC_TAB===k?`background:${main};border-color:${main}`:""}">${label}${n?` <span class="mono">${n}</span>`:""}</button>`;
+  el.innerHTML = tab("fix","修正",nf) + tab("clip","切り抜き",nc)
+    + (VC_TAB==="clip"&&nc ? '<button id="vc-clip-copy" class="ml-auto text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">一覧をコピー</button>' : "");
+  el.querySelectorAll(".vc-tab").forEach(b=>b.addEventListener("click", ()=>{ VC_TAB=b.dataset.vctab; renderVideoList(accent, main); }));
+  const cp=document.getElementById("vc-clip-copy"); if(cp) cp.addEventListener("click", ()=>copyClipList(cp));
+}
+function renderClipList(accent, main){
+  const el=document.getElementById("vc-list"); if(!el) return;
+  const list=clipComments();
+  el.innerHTML = list.length ? list.map(c=>{
+    const pt=clipParts(c), rc=CLIP_REASON_COL[pt.reason]||CLIP_REASON_COL["その他"];
+    return `
+    <div class="rounded-xl border border-stone-200 bg-white p-2.5 mb-2">
+      <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+        <button data-seek="${c.timecode}" class="vc-seek mono text-[10px] font-bold px-1.5 py-0.5 rounded text-white" style="background:${main}">▶ ${fmtTC(c.timecode)}</button>
+        <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${rc[0]};color:${rc[1]}">${esc(pt.reason)}</span>
+        <span class="ml-auto text-[10px] text-stone-400">${esc(c.author||"ゲスト")}</span>
+      </div>
+      ${pt.memo?`<div class="text-[12px] text-stone-800 leading-snug whitespace-pre-wrap break-words">${esc(pt.memo)}</div>`:""}
+      <div class="text-[10px] text-stone-400 mt-1 flex items-center gap-2">
+        <span>${fmtTime(c.createdAt)}</span>
+        ${MINE.includes(c.id)?`<button data-del="${c.id}" class="vc-del ml-auto hover:text-rose-500 font-bold" title="自分の記録を削除">削除</button>`:""}
+      </div>
+    </div>`;}).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだ切り抜き候補はありません。<br>動画を止めて「切り抜き」を押すと、その瞬間が記録されます。</div>';
+  el.querySelectorAll(".vc-seek").forEach(b=>b.addEventListener("click", ()=>seekTo(+b.dataset.seek)));
+  el.querySelectorAll(".vc-del").forEach(b=>b.addEventListener("click", ()=>deleteOwn(b.dataset.del, accent, main)));
+}
+/* たてがた君へ手渡すための書き出し。TSVなのでそのまま貼れる。 */
+function copyClipList(btn){
+  const rows=clipComments().map(c=>{ const p=clipParts(c); return [fmtTC(c.timecode), (+c.timecode).toFixed(2), p.reason, p.memo].join("\t").replace(/\t+$/,""); });
+  const txt=["# 切り抜き候補\ttc\tsec\t理由\tメモ"].concat(rows).join("\n");
+  const done=()=>{ const o=btn.textContent; btn.textContent="コピーしました"; setTimeout(()=>{ btn.textContent=o; },1500); };
+  const fallback=()=>{ const ta=document.createElement("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); let ok=false; try{ ok=document.execCommand("copy"); }catch(e){} document.body.removeChild(ta); if(ok) done(); else alert("コピーできませんでした"); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(fallback);
+  else fallback();
+}
+function renderFixList(accent, main){
   const el=document.getElementById("vc-list"); if(!el) return;
   const list=videoComments();
   el.innerHTML = list.length ? list.map(c=>{
@@ -1614,8 +1689,45 @@ async function postReply(cid, accent, main){
     if(d.comment){ const i=COMMENTS.findIndex(x=>x.id===cid); if(i>=0) COMMENTS[i]=Object.assign({},COMMENTS[i],{replies:d.comment.replies}); renderVideoList(accent, main); }
   }catch(e){ alert("返信に失敗しました"); }
 }
+/* 理由チップを押した時点で登録。フォームを埋めさせない＝レビューの手が止まらない。 */
+function openClipForm(accent, main){
+  const sec=curTime();
+  const f=document.getElementById("vc-form"); if(!f) return;
+  VC_TAB="clip"; renderVideoList(accent, main);
+  f.classList.remove("hidden");
+  f.innerHTML = `
+    <div class="rounded-lg border border-stone-200 bg-white p-2">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="mono text-[12px] font-bold px-2 py-0.5 rounded text-white" style="background:${main}">${fmtTC(sec)}</span>
+        <span class="text-[11px] text-stone-400">この瞬間を切り抜き候補に。理由を押すと登録されます</span>
+        <button id="cl-cancel" class="ml-auto text-[11px] text-stone-400 px-2">キャンセル</button>
+      </div>
+      <input id="cl-memo" placeholder="ひとこと（任意）" class="w-full text-[12px] px-2 py-1.5 mb-1.5 bg-stone-50 rounded focus:outline-none">
+      <div class="flex gap-1.5 flex-wrap">${CLIP_REASONS.map(r=>{ const c=CLIP_REASON_COL[r]; return `<button data-clr="${r}" class="cl-r text-[12px] font-bold px-3 py-1.5 rounded-full" style="background:${c[0]};color:${c[1]}">${r}</button>`; }).join("")}</div>
+    </div>`;
+  f.querySelectorAll(".cl-r").forEach(b=>b.addEventListener("click", ()=>postClip(sec, b.dataset.clr, accent, main)));
+  document.getElementById("cl-cancel").addEventListener("click", ()=>{ f.classList.add("hidden"); f.innerHTML=""; });
+}
+async function postClip(sec, reason, accent, main){
+  const memo=((document.getElementById("cl-memo")||{}).value||"").trim();
+  const f=document.getElementById("vc-form");
+  f.querySelectorAll(".cl-r").forEach(b=>{ b.disabled=true; b.classList.add("opacity-50"); });
+  try{
+    const r=await fetch(API+"/api/snap/"+ID+"/comments", { method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({ timecode:sec, videoKey:(VSEL||""), author:(AUTHOR||"").trim()||"編集者", text:(memo?reason+"｜"+memo:reason), category:CLIP_CAT, priority:"中", status:"未対応" }) });
+    const d=await r.json();
+    if(!d.comment) throw new Error(d.error||"送信失敗");
+    markMine(d.comment.id); COMMENTS.push(d.comment);
+    f.classList.add("hidden"); f.innerHTML="";
+    VC_TAB="clip"; renderVideoList(accent, main);
+  }catch(e){
+    f.querySelectorAll(".cl-r").forEach(b=>{ b.disabled=false; b.classList.remove("opacity-50"); });
+    alert("登録に失敗しました："+e.message);
+  }
+}
 function openVideoForm(accent, main){
   const sec=curTime();
+  VC_TAB="fix"; renderVideoList(accent, main);
   const f=document.getElementById("vc-form"); if(!f) return;
   f.classList.remove("hidden");
   f.innerHTML = `
