@@ -24,4 +24,8 @@ assertMatch("app.js", localApp, remoteApp);
 const localSw = await readFile(path.join(dist, "sw.js"));
 const remoteSw = Buffer.from(await (await fetch(`${origin}/sw.js?verify=${Date.now()}`)).arrayBuffer());
 assertMatch("sw.js", localSw, remoteSw);
+// share.html（先方・編集者が開く共有ページ）も本番一致を確認する。2026-09-03 監査で追加。
+const localShare = await readFile(path.join(dist, "share.html"));
+const remoteShare = Buffer.from(await (await fetch(`${origin}/share.html?verify=${Date.now()}`)).arrayBuffer());
+assertMatch("share.html", localShare, remoteShare);
 console.log("production files match dist");
