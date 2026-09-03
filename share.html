@@ -1460,6 +1460,9 @@ function mountVideo(p, accent, main){
   const v = (cur&&cur.video)||{};
   document.querySelectorAll(".vc-sel").forEach(b=>b.addEventListener("click", ()=>selectVideo(b.dataset.vsel)));
   const vmore=document.getElementById("vc-vmore"); if(vmore) vmore.addEventListener("click", ()=>{ VLIST_OPEN=!VLIST_OPEN; CHMODE?renderChannel():render(); });
+  // 動画ゼロ（編集者URLの初回アップ）でも vc-player は無いが vu-input はある。早期returnより前に配線しないと
+  // 「ファイルを選択」してもイベントが無く無反応＝2026-09-03 森川さん案件で編集者が詰まった実例。
+  if(UP_TOKEN && !CHMODE) wireVideoUpload(p, accent, main);
   const stage = document.getElementById("vc-player");
   if(!stage) return;
   if(v.type==="youtube"){
@@ -1525,7 +1528,6 @@ function mountVideo(p, accent, main){
     b.style.background=main; b.style.borderColor=main;
   }));
   if(!CHMODE){ const add=document.getElementById("vc-add"); if(add) add.addEventListener("click", ()=>openVideoForm(accent, main)); const clp=document.getElementById("vc-clip"); if(clp) clp.addEventListener("click", ()=>openClipForm(accent, main)); renderVideoList(accent, main); }
-  if(UP_TOKEN && !CHMODE) wireVideoUpload(p, accent, main);
   mountShorts(p, accent, main);
 }
 /* 完成動画アップ枠の配線（ドロップ＋選択）。role:review で上げ、成功後はその動画を選択して再描画 */
