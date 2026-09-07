@@ -3468,19 +3468,26 @@ export default function App() {
   const [insertEdit, setInsertEdit] = useState(null);       // インサートカードを原稿編集に切り替えているシーンid
   const [insertCollapsed, setInsertCollapsed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem("mg:insertCollapsed") || "[]")); } catch (e) { return new Set(); } });
   const toggleInsertCollapsed = (id) => setInsertCollapsed((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); try { localStorage.setItem("mg:insertCollapsed", JSON.stringify([...nx])); } catch (e) {} return nx; });
-  const [collapsed, setCollapsed] = useState({});           // {channel: true} で折りたたみ
   // サイドバーのセクション(お気に入り/進行中/保留/完了)折りたたみ。08-24 AK提供モックアップ対応
   const [sectionCollapsed, setSectionCollapsed] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:sectionCollapsed") || "{}"); } catch (_) { return {}; } });
   useEffect(() => { try { localStorage.setItem("mg:sectionCollapsed", JSON.stringify(sectionCollapsed)); } catch (_) {} }, [sectionCollapsed]);
   /* ===== サイドバーのツリービュー化（2026-07-31）=====
      案件一覧と工程タブが左右2本のレールに分かれていて、現在地を掴むのに視線を横移動させられていた。
      チャンネル → 案件 → 案件内ページ を1本のツリーに畳んで、本文の幅も広げる。
-     展開状態・選択ページ・サイドバー幅はリロードしても残す（毎回開き直す手間を消す）。 */
-  const [treeOpen, setTreeOpen] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:treeOpen") || "{}") || {}; } catch (_) { return {}; } });
+     案件切替時は選んだ案件だけ展開。選択ページ・サイドバー幅は端末に記憶する。 */
+  const [casePickerOpen, setCasePickerOpen] = useState(false);
+  // 作業ページは端末内だけに保存。案件本文や共有データには含めない。
+  const resumePages = useRef(null);
+  if (resumePages.current === null) {
+    try {
+      const v = JSON.parse(localStorage.getItem("mg:resumePages") || "{}");
+      resumePages.current = v && typeof v === "object" && !Array.isArray(v) ? v : {};
+    } catch (_) { resumePages.current = {}; }
+  }
   const [sidebarW, setSidebarW] = useState(() => { const n = parseInt(localStorage.getItem("mg:sidebarW") || "", 10); return (n >= 220 && n <= 420) ? n : 280; });
   const [caseQuery, setCaseQuery] = useState("");           // 案件名の絞り込み（案件が増えても探せる）
   const resizingRef = useRef(false);
-  useEffect(() => { try { localStorage.setItem("mg:treeOpen", JSON.stringify(treeOpen)); } catch (_) {} }, [treeOpen]);
+  useEffect(() => { setCasePickerOpen(false); }, [activeId]);
   useEffect(() => { try { localStorage.setItem("mg:tab", tab); } catch (_) {} }, [tab]);
   /* 保存した選択ページが今の案件に存在しない場合の正規化。
      例：密着案件で「取材メモ」を開いたままトーク案件を開くと、その案件に取材メモは無い＝
@@ -3497,8 +3504,8 @@ export default function App() {
   const sidebarSearchRef = useRef(null);
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); sidebarSearchRef.current?.focus(); }
-      else if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) { e.preventDefault(); setNewMenu((v) => !v); }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setSidebarOpen(true); setCasePickerOpen(true); }
+      else if ((e.metaKey || e.ctrlKey) && (e.key === "n" || e.key === "N")) { e.preventDefault(); setSidebarOpen(true); setCasePickerOpen(true); setNewMenu((v) => !v); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -3682,7 +3689,11 @@ export default function App() {
   useEffect(() => {
     if (!loaded) return;
     try {
-      if (view === "editor" && activeId) localStorage.setItem("mg:lastView", JSON.stringify({ id: activeId, tab }));
+      if (view === "editor" && activeId) {
+        localStorage.setItem("mg:lastView", JSON.stringify({ id: activeId, tab }));
+        resumePages.current[activeId] = tab;
+        localStorage.setItem("mg:resumePages", JSON.stringify(resumePages.current));
+      }
       else if (view === "home") localStorage.removeItem("mg:lastView");
     } catch (e) {}
   }, [view, activeId, tab, loaded]);
@@ -4455,12 +4466,14 @@ export default function App() {
     return () => window.removeEventListener("message", onMsg);
   });
 
-  const switchProject = async (id) => {
+  const switchProject = async (id, destination = null) => {
     // チャンネル編集モード：storageでなく該当案件のライブセッションを開く
     if (chanLive) { const c = chanLive.cases.find((x) => x.id === id); if (c) { openChanCase(c); return; } }
     setView("editor");
     pushRecent(id);
-    if (id === activeId) return;
+    setCasePickerOpen(false);
+    setCaseQuery("");
+    if (id === activeId) { if (destination) setTab(destination); return; }
     // 現在のを即保存（保留中のautosaveタイマーは止めて二重・古い書き込みを防ぐ）
     clearTimeout(saveTimer.current);
     if (project) await saveProjectData(project);
@@ -4469,13 +4482,13 @@ export default function App() {
       if (entry && entry.collab) {
         const r = await collabGet(id);
         const data = { ...migrateProject(r.project), id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members };
-        setActiveId(id); setProject(data); setTab("script");
+        setActiveId(id); setProject(data); setTab(destination || "script");
       } else {
         const r = await window.storage.get(STORE_PROJ(id));
         const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData("案件");
         // 一覧の名前が正（ユーザーが見て付けた名前）。過去のリネームで本体だけ旧名の案件を開いた時に治す
         if (entry && entry.name && data.name !== entry.name) data.name = entry.name;
-        setActiveId(id); setProject(data); setTab("script");
+        setActiveId(id); setProject(data); setTab(destination || "script");
       }
     } catch (e) {
       if ((e && e.message) === "nf") { setBrokenIds((b) => ({ ...b, [id]: true })); showToast("この案件の本体データが見つかりません。企画一覧の右のゴミ箱から削除してください"); }
@@ -4483,8 +4496,8 @@ export default function App() {
     }
   };
 
-  /* ホームの案件カードから開く＝概要タブに着地（作業の入口） */
-  const openCase = async (id) => { await switchProject(id); setTab("overview"); };
+  /* 最近の案件は前回の作業ページへ。未記録なら概要を開く。 */
+  const openCase = async (id) => { await switchProject(id, resumePages.current[id] || "overview"); };
 
   const createProject = async (template = true, channel = DEFAULT_CHANNEL, format = "documentary") => {
     const n = index.length + 1;
@@ -5467,6 +5480,7 @@ export default function App() {
           <span className="truncate max-w-[140px]">{r.channel}</span>
           {r.deadline && <span className={"shrink-0 font-bold " + (overdue ? "text-rose-600" : soon ? "text-amber-600" : "text-stone-400")}>{overdue ? "期限超過" : r.dl === 0 ? "今日締切" : "あと" + r.dl + "日"}</span>}
         </div>
+        <div className="mt-2 text-[12px] font-semibold" style={{ color: theme.main }}>{({ overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", script: "構成台本", mindmap: "マインドマップ", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "コンセプト", regulations: "レギュレーション" })[resumePages.current[r.id]] || "概要"}を開く →</div>
         {r.nextAction && <div className="mt-1.5 text-[12px] text-stone-700 flex items-start gap-1"><span className="text-stone-400">▶</span><span className="truncate">{r.nextAction}</span></div>}
       </button>
     );
@@ -5673,7 +5687,7 @@ export default function App() {
     } catch (e) { setView("home"); setLoaded(true); showToast("読み込みに失敗しました：" + (e.message || e)); }
   };
   /* chanLive中：案件クリック→該当案件のライブセッションへ（編集ボタンを挟まず全タブ直接編集） */
-  const openChanCase = (c) => { if (!c || !c.edit) return; setChanActiveCase(c.id); startLiveSession(c.edit.liveId, c.edit.editToken); };
+  const openChanCase = (c) => { if (!c || !c.edit) return; setCasePickerOpen(false); setChanActiveCase(c.id); startLiveSession(c.edit.liveId, c.edit.editToken); };
   const startLiveSession = (liveId, token) => {
     setView("editor"); setLoaded(false);
     try { if (liveWS.current) liveWS.current.close(); } catch (e) {}
@@ -7807,23 +7821,6 @@ export default function App() {
   // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
   const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
   const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
-  /* ツリー用：案件（index行）の中のページ一覧。開いている案件は実データの format を使い、
-     まだ開いていない案件は index の format（無ければ密着）で組む＝開く前でも中身が見える。 */
-  const pagesFor = (row) => {
-    if (row && row.id === activeId) return tabItems;
-    const talk = row && row.format === "talk";
-    const list = tabItemsAll.filter(([k]) => !talk || (k !== "hearing" && k !== "kouban"));
-    // 「このタブだけ編集」リンク中は、どの案件の枝でも許可タブ以外を出さない（制限の抜け道を作らない）
-    return LIVE_ONLY_TABS ? list.filter(([k]) => LIVE_ONLY_TABS.includes(k)) : list;
-  };
-  // ツリーからページを選ぶ：別案件なら開いてからそのページへ着地
-  const openPage = async (id, key) => {
-    if (id !== activeId) await switchProject(id);
-    setTab(key);
-    setView("editor");
-  };
-  const toggleCaseOpen = (id) => setTreeOpen((o) => ({ ...o, [id]: !(o[id] !== undefined ? o[id] : id === activeId) }));
-  const isCaseOpen = (id) => (treeOpen[id] !== undefined ? !!treeOpen[id] : id === activeId);
 
   return (
     <div className="min-h-screen" style={{ background: "#E9E8E3", fontFamily: sans, color: "#1C1C1E" }}>
@@ -7853,6 +7850,19 @@ export default function App() {
             <svg className="w-4 h-4 ml-auto text-white/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
+        <div className="px-3 py-3 relative">
+          <button onClick={() => setCasePickerOpen((v) => !v)} aria-expanded={casePickerOpen} aria-controls="mg-case-picker"
+            className="w-full text-left rounded-xl border border-white/20 bg-white/10 px-3 py-3 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+            title="案件を切り替える">
+            <span className="block text-[11px] text-white/60 truncate">{project.channel || DEFAULT_CHANNEL}</span>
+            <span className="flex items-center gap-2 mt-1"><span className="font-bold text-[14px] truncate flex-1">{project.name}</span><span aria-hidden="true">{casePickerOpen ? "▴" : "▾"}</span></span>
+            <span className="block text-[10px] text-white/50 mt-1">案件を切り替える</span>
+          </button>
+        </div>
+        {casePickerOpen && (
+        <div id="mg-case-picker" className="absolute left-0 right-0 bottom-0 top-[172px] z-50 flex flex-col border-t border-white/20 shadow-2xl" style={{ background: theme.main }}
+          onKeyDown={(e) => { if (e.key === "Escape") { setCasePickerOpen(false); e.stopPropagation(); } }}>
+        <div className="flex items-center justify-between px-4 pt-3 pb-1"><span className="text-[12px] font-bold">案件を選ぶ</span><button onClick={() => setCasePickerOpen(false)} className="px-2 py-1 text-[12px] rounded hover:bg-white/10">閉じる</button></div>
         {!chanLive && (<>
         <div className="px-3 pt-2.5 pb-1.5 flex gap-1.5 relative">
           <button onClick={() => setNewMenu((v) => !v)}
@@ -7890,7 +7900,7 @@ export default function App() {
           <div className="px-3 pb-2">
             <div className="relative">
               <Icon name="search" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
-              <input ref={sidebarSearchRef} value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件を検索..."
+              <input autoFocus ref={sidebarSearchRef} value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件名・チャンネル名で検索"
                 className="w-full bg-white/10 border border-white/10 text-[11.5px] placeholder-white/30 rounded-lg pl-8 pr-10 py-1.5 focus:outline-none focus:bg-white/15 focus:border-white/25"
                 style={{ color: mainText }} />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9.5px] font-medium text-white/30 pointer-events-none">⌘K</span>
@@ -7927,26 +7937,14 @@ export default function App() {
             const q = caseQuery.trim().toLowerCase();
             /* チャンネル1件分のツリー（見出し＋案件＋ページ）。ステータス別セクションから使い回す */
             const renderChannelGroup = (channel, allItems) => {
-              const items = q ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
+              const items = q && !channel.toLowerCase().includes(q) ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
               if (q && !items.length && !channel.toLowerCase().includes(q)) return null;
               const hasActive = items.some((x) => x.id === activeId);
-              // 既定はすべて畳む（開いている案件のチャンネルだけ自動展開）。タップで開閉（アコーディオン＝1つだけ開く）
-              // 検索中は畳まない（ヒットしたのに見えない、を防ぐ）
-              const isCollapsed = q ? false : (collapsed[channel] !== undefined ? !!collapsed[channel] : !hasActive);
-              const toggleChannel = () => setCollapsed(() => {
-                const next = {};
-                channelGroups.forEach((g) => { next[g.channel] = true; });
-                if (isCollapsed) next[channel] = false; // 畳んでいたら開く（他は畳む）
-                return next;
-              });
               return (
                 <div key={channel} className="mb-0.5">
                   {/* チャンネル見出し（タップでそのチャンネルの台本一覧を開閉） */}
                   <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer select-none"
-                    onClick={toggleChannel}
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
-                    <button title={isCollapsed ? "案件を表示" : "案件を隠す"} onClick={(e) => { e.stopPropagation(); toggleChannel(); }}
-                      className="w-3.5 shrink-0 text-white/30 text-[10px] transition-transform grid place-items-center hover:text-white/70" style={{ transform: isCollapsed ? "rotate(-90deg)" : "none" }}>▾</button>
                     {channelIconOf(channel) ? (
                       <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }}
                         className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[12px] leading-none hover:scale-125 transition-transform">{channelIconOf(channel)}</button>
@@ -7958,7 +7956,7 @@ export default function App() {
                     <span className={"flex-1 min-w-0 truncate text-[12.5px] cursor-pointer hover:underline " + (hasActive ? "font-bold" : "font-semibold opacity-60")}
                       style={{ color: mainText }}
                       title="このチャンネルの企画・サムネ一覧を開く"
-                      onClick={(e) => { e.stopPropagation(); if (isCollapsed) toggleChannel(); openChannelBoard(channel); }}>
+                      onClick={(e) => { e.stopPropagation(); setCasePickerOpen(false); openChannelBoard(channel); }}>
                       {channel}
                     </span>
                     <span className="text-[10px] text-white/30 group-hover/ch:text-white/60 tabular-nums transition-colors">{items.length}</span>
@@ -7968,11 +7966,13 @@ export default function App() {
                   </div>
 
                   {/* 案件（人物）リスト */}
-                  {!isCollapsed && items.map((p) => {
+                  {items.map((p) => {
                     const active = p.id === activeId;
                     return (
                       <div key={p.id}>
                       <div
+                        role="button" tabIndex={0} aria-label={p.name + "を開く"}
+                        onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); switchProject(p.id); } }}
                         draggable
                         onDragStart={(e) => { e.stopPropagation(); setDragCaseId(p.id); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", p.id); } catch (_) {} }}
                         onDragOver={(e) => { if (dragCaseId && dragCaseId !== p.id) { e.preventDefault(); e.stopPropagation(); setDragOverCaseId(p.id); } }}
@@ -7991,12 +7991,6 @@ export default function App() {
                         title="右クリックで操作（名前変更・複製・移動・削除）">
                         <div className="flex items-center gap-2">
                           <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-white/40 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
-                          {/* 開閉：この案件の中のページ（概要〜納品完了）を出し入れする */}
-                          <button title={isCaseOpen(p.id) ? "ページを隠す" : "ページを表示"}
-                            onClick={(e) => { e.stopPropagation(); toggleCaseOpen(p.id); }}
-                            className="w-3.5 shrink-0 text-white/30 text-[10px] grid place-items-center hover:text-white/70 transition-transform"
-                            style={{ transform: isCaseOpen(p.id) ? "none" : "rotate(-90deg)" }}>▾</button>
-                          <Icon name="user" className={"w-3 h-3 shrink-0 " + (active ? "text-rose-400" : "text-white/30")} />
                           {renamingId === p.id ? (
                             <input
                               autoFocus
@@ -8035,48 +8029,26 @@ export default function App() {
                           {/* 操作(名前変更・複製・移動・削除)は行の右クリック → caseMenu に集約 */}
                         </div>
                       </div>
-                      {/* 案件内ページ（ツリーの葉）。ここが工程タブの新しい住所＝右の縦レールは廃止した */}
-                      {isCaseOpen(p.id) && (
-                        <div className="ml-[26px] mb-1.5 pl-1.5 border-l border-white/10">
-                          {pagesFor(p).map(([k, ic, label]) => {
-                            const on = active && tab === k;
-                            return (
-                              <button key={k} onClick={(e) => { e.stopPropagation(); openPage(p.id, k); }} title={label}
-                                className={"w-full text-left rounded-md px-2 py-1 mb-px flex items-center gap-1.5 text-[11.5px] transition-colors " + (on ? "font-bold" : "text-white/60 hover:bg-white/10 hover:text-white")}
-                                style={on ? { background: "rgba(255,255,255,0.12)", color: mainText } : {}}>
-                                <span className="w-0.5 h-3.5 rounded-full shrink-0" style={{ background: on ? theme.accent : "transparent" }} />
-                                <Icon name={ic} className="w-3.5 h-3.5 shrink-0" style={on ? { color: theme.accent } : { color: "rgba(255,255,255,0.35)" }} />
-                                <span className="truncate">{label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
+
                       </div>
                     );
                   })}
                 </div>
               );
             };
-            /* セクション見出し（お気に入り以外）。折りたたみ可・件数表示 */
-            const renderSectionHeader = (key, label, count) => {
-              const isClosed = !!sectionCollapsed[key];
-              return (
-                <button onClick={() => setSectionCollapsed((s) => ({ ...s, [key]: !s[key] }))}
-                  className="w-full flex items-center gap-1 px-1.5 py-1 mt-3 mb-1 rounded hover:bg-white/10 group/sec">
-                  <span className="w-3 text-white/30 text-[9px] transition-transform" style={{ transform: isClosed ? "rotate(-90deg)" : "none" }}>▾</span>
-                  <span className="text-[11px] font-semibold text-white/45 tracking-wide">{label}</span>
-                  <span className="ml-auto text-[10px] text-white/30 group-hover/sec:text-white/60 tabular-nums">{count}</span>
-                </button>
-              );
-            };
+            const renderSectionHeader = (key, label, count) => (
+              <div className="flex items-center gap-2 px-2 pt-4 pb-2 text-[11px] text-white/60 font-semibold"><span>{label}</span><span className="ml-auto">{count}</span></div>
+            );
             const SECTIONS = [["active", "進行中"], ["hold", "保留"], ["done", "完了"]];
+            if (q && !index.some((p) => ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q))) {
+              return <p className="px-3 py-6 text-[12px] text-white/60">一致する案件がありません。別の名前で検索してください。</p>;
+            }
             return (
               <>
                 {favoriteCases.length > 0 && (
                   <div className="mb-1">
                     {renderSectionHeader("favorites", "お気に入り", favoriteCases.length)}
-                    {!sectionCollapsed.favorites && favoriteCases.map((p) => {
+                    {favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
                       const active = p.id === activeId;
                       return (
                         <button key={p.id} onClick={() => switchProject(p.id)}
@@ -8097,7 +8069,7 @@ export default function App() {
                   return (
                     <div key={key}>
                       {renderSectionHeader(key, label, caseCount)}
-                      {!sectionCollapsed[key] && groups.map((g) => renderChannelGroup(g.channel, g.items))}
+                      {groups.map((g) => renderChannelGroup(g.channel, g.items))}
                     </div>
                   );
                 })}
@@ -8105,6 +8077,18 @@ export default function App() {
             );
           })()}
         </div>
+        </div>
+        )}
+        <nav aria-label="この案件の作業メニュー" className={"mg-scroll flex-1 min-h-0 overflow-y-auto px-3 pb-4 " + (casePickerOpen ? "invisible" : "")}>
+          {tabItems.map(([key, icon, label]) => (
+            <button key={key} aria-current={tab === key ? "page" : undefined}
+              onClick={() => { setTab(key); setView("editor"); if (isNarrow) setSidebarOpen(false); }}
+              className={"w-full flex items-center gap-3 px-3 py-3 mb-1 rounded-lg text-[13px] text-left border-l-2 transition-colors " + (tab === key ? "font-bold bg-white/15" : "text-white/70 hover:bg-white/10")}
+              style={{ borderLeftColor: tab === key ? theme.accent : "transparent" }}>
+              <Icon name={icon} className="w-4 h-4 shrink-0" style={{ color: tab === key ? theme.accent : undefined }} /><span>{label}</span>
+            </button>
+          ))}
+        </nav>
         <div className="px-2 py-1.5 border-t border-white/10">
           <button onClick={() => setSectionCollapsed((s) => ({ ...s, settings: !s.settings }))}
             className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg hover:bg-white/10">
@@ -8171,7 +8155,7 @@ export default function App() {
         <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap">
           {/* Fボード埋め込み・編集リンク（?live=/?ch=）ではハンバーガーを出さない（ゲストに案件ツリーは無い） */}
           {APP_MODE.showProjectNavigation && (
-          <button onClick={() => setSidebarOpen((s) => !s)} title="案件リスト"
+          <button onClick={() => setSidebarOpen((s) => !s)} title="作業メニュー"
             className="w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 shrink-0">
             <Icon name="menu" className="w-[18px] h-[18px]" />
           </button>
@@ -9064,7 +9048,7 @@ export default function App() {
                 if (r.kind === "location") groups.push({ loc: r, idx, scenes: [] });
                 else { if (!groups.length) groups.push({ loc: null, idx: -1, scenes: [] }); groups[groups.length - 1].scenes.push({ r, idx }); }
               });
-              const GRID = "36px 24px 84px minmax(150px,210px) 104px 76px minmax(0,1fr) 52px"; // タイムライン｜つまみ｜開始時刻｜タイトル(#番号)｜種別｜尺｜内容｜操作。列間は gap-x-3 // 台本(内容)列に幅を寄せる（08-23 AK「台本部分の幅を増やして」）
+              const GRID = "24px minmax(0,1fr)"; // タイムライン＋本文。原稿はメタ情報の下で全幅。
               const pad2 = (n) => String(n).padStart(2, "0");
               const renderScene = ({ r, idx }, i, arr) => {
                 const t = sectionOf(r.type);
@@ -9137,8 +9121,8 @@ export default function App() {
                 );
                 const toggleShot = (line) => { const cur = r.insertChecks || {}; const nx = { ...cur }; if (nx[line]) delete nx[line]; else nx[line] = true; updateRow(r.id, { insertChecks: nx }); };
                 const scriptEl = (
-                  <div className="max-w-[980px] -ml-3 -mt-2">
-                    <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={14} lineHeight={1.6} qaGutter shotChecks={r.insertChecks || null} onToggleShot={toggleShot} />
+                  <div className="w-full min-w-0 max-w-[980px]">
+                    <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={t.dot} fontSize={15} lineHeight={1.8} qaGutter shotChecks={r.insertChecks || null} onToggleShot={toggleShot} />
                   </div>
                 );
                 /* インサートだけカード＋チェックリスト（撮り忘れ防止）。原稿の各行＝撮るカット。
@@ -9233,17 +9217,20 @@ export default function App() {
                 }
                 return (
                   <div key={r.id} {...rowProps}>
-                    <div className="grid items-start py-3 pr-2 gap-x-3" style={{ gridTemplateColumns: GRID }}>
+                    <div className="mg-scene-stack grid items-start py-4 pr-4 gap-x-2" style={{ gridTemplateColumns: GRID }}>
                       {timelineEl}
-                      <div className="h-6 grid place-items-center cursor-grab active:cursor-grabbing select-none -ml-1" {...rowDragProps(idx, r.id)} title="ドラッグで移動">
-                        <Icon name="grip" className="w-3.5 h-3.5 text-stone-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-2">
+                          <div className="h-7 w-6 grid place-items-center cursor-grab active:cursor-grabbing select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">
+                            <Icon name="grip" className="w-3.5 h-3.5 text-stone-400" />
+                          </div>
+                          {startTimeWrap}{pillEl}{durEl}
+                          <div className="flex-1" />
+                          {actionsEl}
+                        </div>
+                        <div className="px-3 mb-3">{titleEl}</div>
+                        <div className="mg-scene-content min-w-0 border-t pt-2" style={{ borderColor: BORDER }}>{contentEl}</div>
                       </div>
-                      <div className="pt-[3px]">{startTimeWrap}</div>
-                      <div className="min-w-0">{titleEl}</div>
-                      <div className="pt-[1px]">{pillEl}</div>
-                      <div className="pt-[2px]">{durEl}</div>
-                      <div className="min-w-0 pl-2 border-l" style={{ borderColor: BORDER }}>{contentEl}</div>
-                      {actionsEl}
                     </div>
                   </div>
                 );
@@ -9263,13 +9250,13 @@ export default function App() {
                       {r && (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className="group/loc flex items-center gap-2.5 pt-2.5 pb-1.5 mb-1.5 border-t scroll-mt-24"
+                          className="group/loc flex flex-wrap items-center gap-2.5 pt-2.5 pb-1.5 mb-1.5 border-t scroll-mt-24"
                           style={{ borderColor: BORDER, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span className="w-10 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
                             <Icon name="pin" className="w-4 h-4" style={{ color: "#8C939D" }} />
                           </span>
                           <BufferedInput value={r.label} onChange={(v) => updateRow(r.id, { label: v })} placeholder="場所（例：名古屋｜ご自宅）"
-                            className="min-w-0 flex-1 sm:flex-none sm:w-[360px] bg-transparent text-[15.5px] focus:outline-none placeholder:text-stone-300"
+                            className="min-w-[140px] flex-1 bg-transparent text-[15.5px] focus:outline-none placeholder:text-stone-300"
                             style={{ fontWeight: 650, color: "#171A1F", textDecoration: r.done ? "line-through" : "none" }} />
                           <span className="text-[11px] shrink-0" style={{ color: "#7D848E" }}>{lc ? lc.scenes.length : 0}シーン</span>
                           <span className="text-[12px] font-semibold tabular-nums shrink-0" style={{ fontFamily: mono, color: "#454B54" }}>{fmt(lc ? lc.secSum : 0)}</span>
@@ -10114,7 +10101,7 @@ export default function App() {
                         {/* 固定中は差替・削除・使用切替をどれも出さない＝固定を解除しないと動かせない */}
                         {!locked && (
                           <label onClick={(e) => e.stopPropagation()} title="画像を差し替え"
-                            className="absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
+                            className="absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
                             差替<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
                           </label>
                         )}
@@ -10123,11 +10110,11 @@ export default function App() {
                             className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
                         )}
                         {locked ? (
-                          <span className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500")}>{rankLabel}</span>
+                          <span className={"absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500")}>{rankLabel}</span>
                         ) : (
                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
                             title={used ? "候補に戻す" : "この画像を使用する"}
-                            className={"absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
+                            className={"absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
                             {rankLabel}
                           </button>
                         )}
@@ -10892,7 +10879,7 @@ export default function App() {
               return (
                 <div className="mb-7">
                   <div className="mb-5">
-                    <div className="text-[12px] font-bold mb-2 flex items-center gap-2 text-stone-600">🕒 最近触った<span className="text-stone-300 font-normal">{recent.length}</span></div>
+                    <div className="text-[12px] font-bold mb-2 flex items-center gap-2 text-stone-600">続きから開く<span className="text-stone-300 font-normal">{recent.length}</span></div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{recent.map(renderCaseCard)}</div>
                   </div>
                 </div>

@@ -1211,7 +1211,7 @@ function paneDeliver(p, accent, main){
       <div>
         <div class="relative">
           <img src="${API}/api/file/${esc(t.key)}" alt="" data-dvlb="${i}" data-dvintent="${esc(t.intent||"")}" class="dv-thumb w-full aspect-video object-contain bg-stone-100 rounded-lg border-2 ${t._used?"border-emerald-400":"border-stone-200"} cursor-zoom-in" title="クリックで拡大">
-          <span class="absolute bottom-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow ${t._used?"bg-emerald-500 text-white":"bg-white/90 text-stone-500"}">${t._label}</span>
+          <span class="absolute bottom-1.5 right-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow ${t._used?"bg-emerald-500 text-white":"bg-white/90 text-stone-500"}">${t._label}</span>
           ${ranked.length>1?`<button data-dvpick="${i}" data-dvpick-label="${esc(t._label)}" class="dv-pick absolute top-1.5 right-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm" style="background:${accent};color:#fff">これに決める</button>`:""}
         </div>
         ${(t.intent||"").trim()?`<div class="mt-1.5"><div class="text-[10px] font-bold text-stone-400 mb-0.5">制作意図</div><div class="text-[11.5px] text-stone-600 leading-relaxed whitespace-pre-wrap">${esc(t.intent)}</div></div>`:""}
