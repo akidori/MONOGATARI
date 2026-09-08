@@ -2765,7 +2765,10 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             <textarea value={clipMemo} onChange={(e) => setClipMemo(e.target.value)} rows={2}
               placeholder="切り抜きの指示（例：ここの笑いのくだりを30秒で。前の質問から入れる）"
               className="w-full text-[12px] leading-relaxed border border-stone-200 rounded-lg px-2.5 py-2 mb-1.5 focus:outline-none focus:border-stone-400 resize-y" />
-            <div className="flex gap-1.5 flex-wrap">
+            {/* 2026-09-08: 区間指定を足した時に「理由を押すと登録されます」の一文を消してしまい、
+                AKが「どうすりゃ追加できるんじゃ？」で詰まった。押す先を文章で名指しする。 */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-bold text-stone-500 shrink-0">理由を押すと追加 →</span>
               {CLIP_REASONS.map((r) => (
                 <button key={r} onClick={() => postClip(r)} disabled={!sel}
                   className="text-[12px] font-bold px-3 py-1.5 rounded-full disabled:opacity-40"

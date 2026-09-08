@@ -318,6 +318,132 @@ ${qList}
         } catch (e) { return json({ ok: false, error: "提案生成失敗: " + e.message }, 502); }
       }
 
+      /* ===== テロップ原稿の校正（2026-09-08 AK「TXTから誤字脱字とレギュレーションを確認」） =====
+         編集者がテロップ原稿（TXT/SRT）を上げると、①構成台本の原稿 ②案件の固有名詞
+         ③Obsidian由来の編集ルール と突き合わせて指摘を返す。指摘は「提案」であって自動修正はしない。
+         SRTならタイムコードが取れるので、そのまま動画確認の修正コメントとして刺せる。 */
+
+      // POST /api/proofread/rules { rules:[{id,title,path,body}] } — ルール束の投入（AKのみ）。
+      // 正本はObsidian(birdflip-knowledge)。ここはWorkerが読める場所への写しで、tools/sync-proofread-rules.mjs が押し込む。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "proofread" && parts[2] === "rules") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const b = await request.json();
+        const rules = Array.isArray(b && b.rules) ? b.rules : null;
+        if (!rules) return json({ error: "rulesが必要です" }, 400);
+        const clean = rules.filter((r) => r && r.title && r.body).slice(0, 60).map((r) => ({
+          id: String(r.id || "").slice(0, 80), title: String(r.title).slice(0, 120),
+          path: String(r.path || "").slice(0, 200), body: String(r.body).slice(0, 4000),
+        }));
+        const doc = { rules: clean, updatedAt: new Date().toISOString(), by: u.sub };
+        await env.SNAPS.put("proofread:rules:v1", JSON.stringify(doc));
+        return json({ ok: true, count: clean.length, chars: clean.reduce((n, r) => n + r.body.length, 0) });
+      }
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "proofread" && parts[2] === "rules") {
+        const doc = (await env.SNAPS.get("proofread:rules:v1", "json")) || null;
+        return json({ count: doc ? doc.rules.length : 0, updatedAt: doc ? doc.updatedAt : null,
+                      titles: doc ? doc.rules.map((r) => r.title) : [] });
+      }
+
+      // POST /api/proofread { id, up, text, kind } — 校正の実行。
+      // 課金が乗るので編集者トークン(uptok)必須＝共有URLを知っているだけの人には叩かせない。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "proofread" && !parts[2]) {
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);
+        const b = await request.json();
+        const id = (b && b.id || "").toString();
+        const up = (b && b.up || "").toString();
+        const kind = (b && b.kind) === "srt" ? "srt" : "txt";
+        const text = (b && b.text || "").toString();
+        if (!id || !text.trim()) return json({ error: "idと本文が必要です" }, 400);
+        if (text.length > 40000) return json({ error: "原稿が長すぎます（4万字まで）" }, 413);
+        const uptok = await env.SNAPS.get("uptok:" + id);
+        if (!uptok || uptok !== up) return json({ error: "編集者リンクからのみ実行できます" }, 403);
+        const snap = await env.SNAPS.get("snap:" + id, "json");
+        if (!snap) return json({ error: "not found" }, 404);
+        const p = snap.project || {};
+
+        // ①構成台本の原稿（テロップと食い違っていないかの照合元）
+        const script = (p.rows || []).filter((r) => r && r.kind === "scene" && (r.script || "").trim())
+          .map((r) => "【" + (r.label || "") + "】" + String(r.script).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())
+          .join("\n").slice(0, 12000);
+        // ②固有名詞（誤字と誤判定させないため。ここに無い語を勝手に直させない）
+        const nouns = [...new Set([
+          (p.name || ""), (p.channelInfo && p.channelInfo.name) || "",
+          ...(p.rows || []).filter((r) => r && r.kind === "location").map((r) => r.label || ""),
+          ...(p.hearing || []).flatMap((s) => (s.items || []).map((it) => (it.value || "").replace(/<[^>]+>/g, " ").trim()).filter((v) => v && v.length <= 20)),
+        ].map((x) => String(x).trim()).filter(Boolean))].slice(0, 80);
+        // ③Obsidian由来の編集ルール
+        const rulesDoc = (await env.SNAPS.get("proofread:rules:v1", "json")) || { rules: [] };
+        const rulesText = rulesDoc.rules.map((r) => "## " + r.title + "\n" + r.body).join("\n\n").slice(0, 24000);
+
+        const system = "あなたは映像制作会社Bird Flipの校正担当です。編集者が作ったテロップ原稿を読み、指摘だけを返します。\n" +
+          "\n# 守ること\n" +
+          "- 直すのは人間。あなたは指摘だけを出す。勝手に書き換えた原稿を返さない\n" +
+          "- 固有名詞リストにある語は正しい表記として扱う。読みが珍しくても誤字にしない\n" +
+          "- 構成台本の原稿と数字・固有名詞が食い違っていたら必ず指摘する（発話とテロップの不一致は最頻出の事故）\n" +
+          "- 迷ったら severity を low にして出す。黙って見逃さない\n" +
+          "- 根拠のない言い換え提案（好みの問題）は出さない\n" +
+          "\n# 指摘の種類（kind）\n" +
+          "- typo: 誤字・脱字・変換ミス・送り仮名\n" +
+          "- notation: 表記ゆれ・表記統一ルール違反\n" +
+          "- mismatch: 構成台本の原稿や数字との食い違い\n" +
+          "- rule: 編集ルール・コンプライアンス規定に反する表現\n" +
+          "\n# 編集ルール（Bird Flipの正本。ここに書いていないことをルール違反と言わない）\n" + (rulesText || "（未登録）");
+
+        const user = "# 案件\n" + (p.name || "") + "\n\n# 固有名詞（正しい表記）\n" + (nouns.join(" / ") || "（なし）") +
+          "\n\n# 構成台本の原稿\n" + (script || "（なし）") +
+          "\n\n# 校正対象のテロップ原稿（" + (kind === "srt" ? "SRT。行番号と時刻あり" : "TXT。行番号のみ") + "）\n" +
+          text.split(/\r?\n/).map((l, i) => (i + 1) + ": " + l).join("\n");
+
+        const TOOL = {
+          name: "report_findings",
+          description: "校正の指摘を返す",
+          input_schema: {
+            type: "object",
+            properties: {
+              findings: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    line: { type: "integer", description: "対象の行番号（1始まり）" },
+                    kind: { type: "string", enum: ["typo", "notation", "mismatch", "rule"] },
+                    severity: { type: "string", enum: ["high", "mid", "low"] },
+                    before: { type: "string", description: "問題のある箇所（原文のまま）" },
+                    after: { type: "string", description: "こう直す、の案。判断が要る場合は空でよい" },
+                    why: { type: "string", description: "なぜ直すのか。1〜2文" },
+                    rule: { type: "string", description: "根拠にした編集ルールの見出し。無ければ空" },
+                  },
+                  required: ["line", "kind", "severity", "before", "why"],
+                },
+              },
+            },
+            required: ["findings"],
+          },
+        };
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({
+              model: env.PARSE_MODEL || "claude-sonnet-4-6", max_tokens: 8000, system,
+              tools: [TOOL], tool_choice: { type: "tool", name: "report_findings" },
+              messages: [{ role: "user", content: user }],
+            }),
+          });
+          if (!res.ok) return json({ error: "校正に失敗しました（" + res.status + "）" }, 502);
+          const data = await res.json();
+          const use = (data.content || []).find((c) => c.type === "tool_use");
+          const findings = (use && use.input && Array.isArray(use.input.findings)) ? use.input.findings : [];
+          // SRTなら行番号から時刻を引けるようにして返す（修正コメントにそのまま刺すため）
+          const times = kind === "srt" ? srtLineTimes(text) : null;
+          const out = findings.slice(0, 200).map((f) => ({
+            ...f, timecode: times ? (times[f.line] ?? null) : null,
+          }));
+          return json({ ok: true, findings: out, rules: rulesDoc.rules.length });
+        } catch (e) { return json({ error: "校正に失敗しました: " + e.message }, 502); }
+      }
+
       /* RETIRED 2026-08-21: F-board schedule/report/board proxy routes were removed.
          Studio OS is now the production and delivery source of truth. */
       /* // GET /api/schedule?id=<snapId> → Flip Board(D1正本)から担当案件の日程スライスを中継。
@@ -2629,6 +2755,21 @@ function slimCI(ci) {
   };
 }
 
+
+/* SRTの「行番号 → その行が属する字幕の開始秒」表を作る。
+   校正の指摘に時刻を付けて、動画確認の修正コメントへそのまま刺せるようにするため。 */
+function srtLineTimes(text) {
+  const lines = String(text).split(/\r?\n/);
+  const map = {};
+  let cur = null;
+  const re = /^(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->/;
+  for (let i = 0; i < lines.length; i++) {
+    const m = re.exec(lines[i].trim());
+    if (m) cur = (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) + (+m[4]) / 1000;
+    map[i + 1] = cur;
+  }
+  return map;
+}
 /* ===== 生原稿 → 構成台本(project JSON) を Claude で整形 ===== */
 const PARSE_SYSTEM = `あなたは一日密着ドキュメンタリーの構成作家です。渡された素材（他AIが書いた原稿・取材メモ・文字起こし等、形式は不問）を読み取り、構成台本ツール「ものがたりっち！」のデータに整形して build_project ツールで返してください。
 

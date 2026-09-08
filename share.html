@@ -1183,6 +1183,86 @@ function newestVerId(p){ const vers=(p.review&&Array.isArray(p.review.versions))
 function curVideo(p){ const opts=videoOptions(p); if(!opts.length) return null; if(VSEL){ const f=opts.find(o=>o.id===VSEL); if(f) return f; } const nv=newestVerId(p); return (nv&&opts.find(o=>o.id===nv)) || opts[0]; }
 function selectVideo(id){ if(ytTimer){ clearInterval(ytTimer); ytTimer=null; } ytPlayer=null; videoEl=null; VSEL=id; CHMODE?renderChannel():render(); }
 /* 編集者URL用：完成動画アップ枠（mpuUpload を role:review で叩く） */
+/* テロップ原稿の校正（2026-09-08 AK「TXTから誤字脱字とレギュレーションを確認」）。
+   編集者リンクの時だけ出す。SRTならタイムコードが付くので、指摘をそのまま修正コメントにできる。 */
+function proofreadBox(accent, main){
+  return `<div class="rounded-xl border border-stone-200 bg-white p-3 mt-3">
+    <div class="flex items-center gap-2 flex-wrap mb-1">
+      <span class="text-[13px] font-bold text-stone-700">テロップ原稿をチェック</span>
+      <span class="text-[10px] text-stone-400">誤字脱字・表記ゆれ・編集ルール違反</span>
+      <button id="pr-run" class="ml-auto text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow-sm disabled:opacity-40" style="background:${accent}" disabled>チェックする</button>
+    </div>
+    <div class="text-[11px] text-stone-400 mb-2">.srt を上げると指摘に時刻が付き、そのまま修正コメントにできます。.txt でも行番号で出ます。</div>
+    <input id="pr-file" type="file" accept=".txt,.srt,text/plain" class="text-[12px] block">
+    <div id="pr-out" class="mt-2"></div>
+  </div>`;
+}
+function mountProofread(accent, main){
+  const file=document.getElementById("pr-file"), run=document.getElementById("pr-run"), out=document.getElementById("pr-out");
+  if(!file||!run||run._wired) return; run._wired=true;
+  let text="", kind="txt", name="";
+  file.addEventListener("change", async ()=>{
+    const f=file.files&&file.files[0]; if(!f){ run.disabled=true; return; }
+    name=f.name; kind=/\.srt$/i.test(f.name)?"srt":"txt";
+    text=await f.text();
+    run.disabled=!text.trim();
+    out.innerHTML=`<div class="text-[11px] text-stone-400">${esc(name)}（${text.split(/\r?\n/).length}行）を読み込みました</div>`;
+  });
+  run.addEventListener("click", async ()=>{
+    if(!text.trim()) return;
+    run.disabled=true; const label=run.textContent; run.textContent="チェック中…";
+    out.innerHTML='<div class="text-[11px] text-stone-400">構成台本と編集ルールに突き合わせています（30秒ほど）…</div>';
+    try{
+      const r=await fetch(API+"/api/proofread",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({id:ID,up:UP_TOKEN,text,kind})});
+      const d=await r.json();
+      if(!d.ok) throw new Error(d.error||"チェックに失敗しました");
+      renderProofread(d, accent, main, name);
+    }catch(e){ out.innerHTML=`<div class="text-[11px] text-rose-500">${esc(String(e.message||e))}</div>`; }
+    run.disabled=false; run.textContent=label;
+  });
+}
+const PR_KIND={typo:["誤字","#FBE5EA","#DC2645"],notation:["表記","#FCF0DC","#B45309"],mismatch:["台本と不一致","#E3EBFC","#2563EB"],rule:["ルール","#F0F0F2","#57534E"]};
+function renderProofread(d, accent, main, name){
+  const out=document.getElementById("pr-out"); if(!out) return;
+  const fs=d.findings||[];
+  if(!fs.length){ out.innerHTML=`<div class="text-[12px] text-emerald-600 font-bold">指摘はありませんでした（ルール${d.rules}件と照合）</div>`; return; }
+  const sev={high:0,mid:1,low:2};
+  fs.sort((a,b)=>(sev[a.severity]-sev[b.severity])||(a.line-b.line));
+  out.innerHTML=`<div class="flex items-center gap-2 mb-2 flex-wrap">
+      <span class="text-[12px] font-bold text-stone-700">${fs.length}件の指摘</span>
+      <span class="text-[10px] text-stone-400">ルール${d.rules}件と照合${name?"・"+esc(name):""}</span>
+      ${CAN_RESOLVE?`<button id="pr-post" class="ml-auto text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">まとめて修正コメントにする</button>`:""}
+    </div>` + fs.map((f,i)=>{
+      const k=PR_KIND[f.kind]||PR_KIND.rule;
+      return `<div class="rounded-lg border border-stone-200 bg-white p-2.5 mb-1.5">
+        <div class="flex items-center gap-1.5 mb-1 flex-wrap">
+          <span class="text-[10px] font-bold px-1.5 py-0.5 rounded" style="background:${k[1]};color:${k[2]}">${k[0]}</span>
+          ${f.timecode!=null?`<button data-seek="${f.timecode}" class="pr-seek mono text-[10px] font-bold px-1.5 py-0.5 rounded text-white" style="background:${main}">▶ ${fmtTC(f.timecode)}</button>`:""}
+          <span class="mono text-[10px] text-stone-400">${f.line}行目</span>
+          ${f.severity==="high"?'<span class="text-[10px] font-bold text-rose-500">要対応</span>':""}
+          ${f.rule?`<span class="text-[10px] text-stone-400 ml-auto">${esc(f.rule)}</span>`:""}
+        </div>
+        <div class="text-[12.5px] text-stone-800 leading-snug"><span class="line-through text-stone-400">${esc(f.before||"")}</span>${f.after?` → <b>${esc(f.after)}</b>`:""}</div>
+        <div class="text-[11px] text-stone-500 mt-0.5 leading-relaxed">${esc(f.why||"")}</div>
+      </div>`;
+    }).join("");
+  out.querySelectorAll(".pr-seek").forEach(b=>b.addEventListener("click",()=>seekTo(+b.dataset.seek)));
+  const post=document.getElementById("pr-post");
+  if(post) post.addEventListener("click", async ()=>{
+    post.disabled=true; post.textContent="送信中…";
+    let n=0;
+    for(const f of fs){
+      const body={ author:(AUTHOR||"").trim()||"校正", videoKey:(VSEL||""),
+        text:"【"+(PR_KIND[f.kind]||PR_KIND.rule)[0]+"】"+(f.before||"")+(f.after?" → "+f.after:"")+"\n"+(f.why||"")+(f.rule?"\n根拠: "+f.rule:""),
+        timecode:(f.timecode!=null)?f.timecode:null, category:"テロップ", priority:f.severity==="high"?"高":"中", status:"未対応" };
+      try{ const r=await fetch(API+"/api/snap/"+ID+"/comments",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+        const d=await r.json(); if(d&&d.comment){ markMine(d.comment.id); COMMENTS.push(d.comment); n++; } }catch(e){}
+    }
+    post.textContent=n+"件を修正コメントにしました";
+    VC_TAB="fix"; try{ renderVideoList(accent, main); }catch(e){}
+  });
+}
 function videoUploadBox(accent, main, compact){
   return `<div id="vu-drop" class="rounded-xl border border-dashed border-stone-300 bg-stone-50 ${compact?'p-3':'p-5'} transition-colors text-center">
       <div class="text-[13px] font-bold text-stone-600 mb-1">${compact?'別バージョンを上げる':'完成動画をアップロード'}</div>
@@ -1346,7 +1426,7 @@ function paneVideo(p, accent, main){
           ${(CHMODE||!CAN_RESOLVE)?"":`<button id="vc-clip" class="text-[12px] font-bold pl-2.5 pr-3 py-1.5 rounded-full shadow-sm bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5" title="この瞬間を切り抜き候補として記録する">${icon("pin","w-3 h-3")}切り抜き</button>`}
         </div>
         ${CHMODE?"":`<div id="vc-form" class="hidden mb-3"></div>`}
-        ${(UP_TOKEN && !CHMODE)?`<div class="mt-3">${videoUploadBox(accent, main, true)}</div>`:""}
+        ${(UP_TOKEN && !CHMODE)?`<div class="mt-3">${videoUploadBox(accent, main, true)}</div>${proofreadBox(accent, main)}`:""}
         ${CHMODE?"":'<div id="vc-shorts"></div>'}
       </div>
       ${CHMODE?"":`<div class="lg:flex-1 lg:max-w-[440px] lg:border-l lg:border-stone-200 lg:pl-4">
@@ -1469,6 +1549,8 @@ function mountVideo(p, accent, main){
   // 動画ゼロ（編集者URLの初回アップ）でも vc-player は無いが vu-input はある。早期returnより前に配線しないと
   // 「ファイルを選択」してもイベントが無く無反応＝2026-09-03 森川さん案件で編集者が詰まった実例。
   if(UP_TOKEN && !CHMODE) wireVideoUpload(p, accent, main);
+  // 校正ボックスも同じ理由でここで配線する（早期returnより前）。動画が無い状態でも原稿だけ先に見られる。
+  if(UP_TOKEN && !CHMODE) mountProofread(accent, main);
   const stage = document.getElementById("vc-player");
   if(!stage) return;
   if(v.type==="youtube"){
@@ -1663,7 +1745,7 @@ function renderClipList(accent, main){
         <span>${fmtTime(c.createdAt)}</span>
         ${MINE.includes(c.id)?`<button data-del="${c.id}" class="vc-del ml-auto hover:text-rose-500 font-bold" title="自分の記録を削除">削除</button>`:""}
       </div>
-    </div>`;}).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだ切り抜き候補はありません。<br>動画を止めて「切り抜き」を押すと、その瞬間が記録されます。</div>';
+    </div>`;}).join("") : '<div class="text-[11px] text-stone-400 text-center py-4">まだ切り抜き候補はありません。<br>動画を止めて「切り抜き」を押し、理由を選ぶと記録されます。</div>';
   el.querySelectorAll(".vc-seek").forEach(b=>b.addEventListener("click", ()=>seekTo(+b.dataset.seek)));
   el.querySelectorAll(".vc-del").forEach(b=>b.addEventListener("click", ()=>deleteOwn(b.dataset.del, accent, main)));
 }
