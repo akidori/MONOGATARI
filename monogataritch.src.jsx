@@ -2343,7 +2343,11 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const onDragOverVideo = (e) => { e.preventDefault(); if (!dropOver) setDropOver(true); };
   const [filter, setFilter] = React.useState("全部");
   const [lane, setLane] = React.useState("fix");        // 右カラムのレーン: fix=修正コメント / clip=切り抜き候補
-  const [clipMemo, setClipMemo] = React.useState("");   // 切り抜き登録時の任意ひとこと
+  const [clipMemo, setClipMemo] = React.useState("");   // 切り抜きの指示文
+  // 切り抜きの区間（2026-09-08 AK「何分から何分を指定してそこ切り抜き」）。
+  // null のままなら従来どおり「点」1つで登録する＝過去の候補と混在しても壊れない。
+  const [clipIn, setClipIn] = React.useState(null);
+  const [clipOut, setClipOut] = React.useState(null);
   const [clipCopied, setClipCopied] = React.useState(false);
   const [cat, setCat] = React.useState("編集");
   const [prio, setPrio] = React.useState("中");
@@ -2510,14 +2514,23 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const postClip = (reason) => {
     if (!sel) return;
     const memo = clipMemo.trim();
-    onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(),
+    // 区間が指定してあればそれを使う。開始だけ／終了だけの時も拾う（片方は現在位置）。
+    const now = streamPending ? null : getTime();
+    let start = clipIn != null ? clipIn : now;
+    let end = clipOut != null ? clipOut : null;
+    if (start != null && end != null && end < start) { const t = start; start = end; end = t; }
+    onPost({ versionId: sel.id, videoKey: vKey, timecode: start, endTimecode: end,
              text: memo ? reason + "｜" + memo : reason, category: CLIP_CAT, priority: "中", status: "未対応" });
-    setClipMemo(""); setLane("clip");
+    setClipMemo(""); setClipIn(null); setClipOut(null); setLane("clip");
   };
   /* たてがた君へ手渡すための書き出し。TSVなのでそのまま貼れる。 */
   const copyClipTsv = async () => {
-    const rows = verClips.map((c) => { const q = clipParts(c); return [fmtTC(c.timecode || 0), (+(c.timecode || 0)).toFixed(2), q.reason, q.memo].join("\t").replace(/\t+$/, ""); });
-    const txt = ["# 切り抜き候補\ttc\tsec\t理由\tメモ"].concat(rows).join("\n");
+    const rows = verClips.map((c) => {
+      const q = clipParts(c), st = +(c.timecode || 0), en = (typeof c.endTimecode === "number") ? c.endTimecode : null;
+      return [fmtTC(st), st.toFixed(2), en != null ? fmtTC(en) : "", en != null ? en.toFixed(2) : "",
+              en != null ? (en - st).toFixed(2) : "", q.reason, q.memo].join("\t").replace(/\t+$/, "");
+    });
+    const txt = ["# 切り抜き候補\t開始tc\t開始sec\t終了tc\t終了sec\t尺sec\t理由\t指示"].concat(rows).join("\n");
     try { await navigator.clipboard.writeText(txt); setClipCopied(true); setTimeout(() => setClipCopied(false), 1500); } catch (e) {}
   };
 
@@ -2659,6 +2672,31 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 <input type="range" min={0} max={dur} step="0.1" value={cur}
                   onChange={(e) => { const t = +e.target.value; setCur(t); if (isYT) { const p = ytPlayerRef.current; if (p && p.seekTo) p.seekTo(t, true); } else if (vref.current) vref.current.currentTime = t; }}
                   className="w-full h-2 cursor-pointer accent-current" style={{ color: accent }} />
+                {/* 再生バーの下に、付けた印を出す（2026-09-08 AK「修正のレビューも切り抜きの箇所も
+                    追加したら再生バーに表示されるようにして」）。上=修正コメント（点）、下=切り抜き
+                    （区間があれば帯、無ければ点）。押すとその位置へ飛ぶ。 */}
+                {dur > 0 && (verComments.length > 0 || verClips.length > 0) && (
+                  <div className="relative h-4 mt-0.5 select-none">
+                    {verComments.filter((c) => typeof c.timecode === "number").map((c) => (
+                      <button key={"m" + c.id} onClick={() => seek(c.timecode)}
+                        title={fmtTC(c.timecode) + "　" + (c.text || "").slice(0, 40)}
+                        className="absolute top-0 w-[3px] h-[7px] rounded-sm -translate-x-1/2 hover:h-[9px]"
+                        style={{ left: Math.min(100, c.timecode / dur * 100) + "%", background: cstat(c) === "完了" ? "#A8A29E" : main }} />
+                    ))}
+                    {verClips.filter((c) => typeof c.timecode === "number").map((c) => {
+                      const rc = CLIP_REASON_COLOR[clipParts(c).reason] || CLIP_REASON_COLOR["その他"];
+                      const l = Math.min(100, c.timecode / dur * 100);
+                      const w = (typeof c.endTimecode === "number" && c.endTimecode > c.timecode)
+                        ? Math.max(0.6, (c.endTimecode - c.timecode) / dur * 100) : null;
+                      return (
+                        <button key={"c" + c.id} onClick={() => seek(c.timecode)}
+                          title={fmtTC(c.timecode) + (typeof c.endTimecode === "number" ? "〜" + fmtTC(c.endTimecode) : "") + "　" + clipParts(c).reason + (clipParts(c).memo ? "：" + clipParts(c).memo.slice(0, 40) : "")}
+                          className={"absolute bottom-0 h-[7px] rounded-sm hover:h-[9px] " + (w == null ? "w-[3px] -translate-x-1/2" : "")}
+                          style={{ left: l + "%", width: w != null ? w + "%" : undefined, background: rc.fg, opacity: .85 }} />
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <span className="text-[10px] tabular-nums text-stone-400 shrink-0" style={{ fontFamily: mono }}>{fmtTC(cur)} / {fmtTC(dur)}</span>
               {pvNeedsVideo && <video ref={pvVidRef} src={rawSrc} preload="metadata" muted playsInline className="hidden" onSeeked={pvDraw} />}
@@ -2701,12 +2739,32 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           {/* 切り抜き候補（取れ高マーク）。区間ではなく「点」だけ取る＝尺の前後はたてがた君側に探させる */}
           {lane === "clip" && (
           <div className="mt-2 rounded-xl border border-stone-200 bg-white p-3">
-            <div className="flex items-center gap-2 mb-2 flex-wrap">
-              {!streamPending && <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} を</span>}
-              <span className="text-[11px] text-stone-400">切り抜き候補に。理由を押すと登録されます</span>
+            {/* 区間で指示する（2026-09-08 AK「何分から何分を指定してそこ切り抜き＆コメントに文言」）。
+                再生しながら「ここから」「ここまで」を押すだけ。終了を押さなければ従来どおり点1つで登録する。 */}
+            <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+              <button onClick={() => setClipIn(getTime())} disabled={streamPending}
+                className="text-[11px] font-bold px-2.5 py-1 rounded-lg border disabled:opacity-40"
+                style={clipIn != null ? { background: accent, color: accentText, borderColor: "transparent" } : { borderColor: "#e7e5e4", color: "#78716c" }}>
+                ここから{clipIn != null ? " " + fmtTC(clipIn) : ""}
+              </button>
+              <span className="text-[11px] text-stone-300">〜</span>
+              <button onClick={() => setClipOut(getTime())} disabled={streamPending}
+                className="text-[11px] font-bold px-2.5 py-1 rounded-lg border disabled:opacity-40"
+                style={clipOut != null ? { background: accent, color: accentText, borderColor: "transparent" } : { borderColor: "#e7e5e4", color: "#78716c" }}>
+                ここまで{clipOut != null ? " " + fmtTC(clipOut) : ""}
+              </button>
+              {(clipIn != null || clipOut != null) && (
+                <button onClick={() => { setClipIn(null); setClipOut(null); }} className="text-[10px] text-stone-400 underline hover:text-stone-600">区間をクリア</button>
+              )}
+              <span className="text-[10px] text-stone-400 ml-auto">
+                {clipIn != null && clipOut != null
+                  ? "この " + Math.abs(clipOut - clipIn).toFixed(1) + "秒 を切り抜き"
+                  : (!streamPending ? fmtTC(cur) + " の一点を切り抜き" : "")}
+              </span>
             </div>
-            <input value={clipMemo} onChange={(e) => setClipMemo(e.target.value)} placeholder="ひとこと（任意）"
-              className="w-full text-[12px] border border-stone-200 rounded-lg px-2.5 py-1.5 mb-1.5 focus:outline-none focus:border-stone-400" />
+            <textarea value={clipMemo} onChange={(e) => setClipMemo(e.target.value)} rows={2}
+              placeholder="切り抜きの指示（例：ここの笑いのくだりを30秒で。前の質問から入れる）"
+              className="w-full text-[12px] leading-relaxed border border-stone-200 rounded-lg px-2.5 py-2 mb-1.5 focus:outline-none focus:border-stone-400 resize-y" />
             <div className="flex gap-1.5 flex-wrap">
               {CLIP_REASONS.map((r) => (
                 <button key={r} onClick={() => postClip(r)} disabled={!sel}
@@ -2766,7 +2824,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           {lane === "clip" && (
             <div className="space-y-2 max-h-[60vh] overflow-y-auto mg-scroll pr-1">
               {verClips.length === 0 && (
-                <p className="text-[11px] text-stone-400 py-4 text-center">まだ切り抜き候補はありません。<br />動画を止めて理由を押すと、その瞬間が記録されます。</p>
+                <p className="text-[11px] text-stone-400 py-4 text-center">まだ切り抜き候補はありません。<br />「ここから」「ここまで」で区間を取り、指示を書いて理由を押すと登録されます。</p>
               )}
               {verClips.map((c) => {
                 const pt = clipParts(c), rc = CLIP_REASON_COLOR[pt.reason] || CLIP_REASON_COLOR["その他"];
@@ -2774,6 +2832,12 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                   <div key={c.id} className="rounded-xl border border-stone-200 bg-white p-2.5">
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
                       {typeof c.timecode === "number" && <button onClick={() => seek(c.timecode)} className="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded text-white" style={{ background: main, fontFamily: mono }}>▶ {fmtTC(c.timecode)}</button>}
+                      {typeof c.endTimecode === "number" && (
+                        <span className="text-[10px] font-bold tabular-nums text-stone-500" style={{ fontFamily: mono }}>
+                          〜 <button onClick={() => seek(c.endTimecode)} className="underline hover:text-stone-700">{fmtTC(c.endTimecode)}</button>
+                          <span className="text-stone-400 ml-1">({Math.max(0, c.endTimecode - (c.timecode || 0)).toFixed(1)}秒)</span>
+                        </span>
+                      )}
                       <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: rc.bg, color: rc.fg }}>{pt.reason}</span>
                       <span className="text-[10px] text-stone-400 ml-auto">{c.author || "ゲスト"}</span>
                     </div>

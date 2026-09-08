@@ -925,6 +925,10 @@ ${qList}
           author: (b.author || "ゲスト").toString().slice(0, 60),
           text,
           timecode: (typeof b.timecode === "number" && isFinite(b.timecode)) ? Math.max(0, b.timecode) : null,
+          // 切り抜きの終了時刻（2026-09-08 AK「何分から何分を指定してそこ切り抜き」）。
+          // 修正コメントは点のままなので null。切り抜きだけが区間を持つ。
+          // ここに足さないと、フロントが送っても黙って捨てられる（このハンドラはホワイトリスト方式）。
+          endTimecode: (typeof b.endTimecode === "number" && isFinite(b.endTimecode)) ? Math.max(0, b.endTimecode) : null,
           videoKey: (b.videoKey || "").toString().slice(0, 80) || null,
           // ===== 修正管理（Frame.io型）=====
           category: (b.category || "その他").toString().slice(0, 20),
