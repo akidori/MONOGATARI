@@ -11079,12 +11079,23 @@ export default function App() {
       )}
 
       {/* ===== 納品完了：公開前チェック（MONOGATARI内で完結） ===== */}
-      {preflight && (
-        <div className="fixed inset-0 z-[210] bg-black/45 flex items-center justify-center p-3 sm:p-5" onClick={() => !preflightBusy && setPreflight(null)}>
+      {/* 直しに行く時は検査結果を捨てず畳むだけにする（2026-09-08 AK「修正するボタンを押したら
+          全部最初からになってしまう」）。レギュレーション検査は数十秒かかるので、捨てると毎回やり直しになる。 */}
+      {preflight && preflight.minimized && (
+        <div className="fixed bottom-4 right-4 z-[210] flex items-center gap-2 rounded-full shadow-lg pl-4 pr-2 py-2" style={{ background: theme.main, color: mainText }}>
+          <span className="text-[12px] font-bold">直したら戻ってください</span>
+          <button onClick={() => setPreflight((p) => ({ ...p, minimized: false }))}
+            className="text-[12px] font-bold px-3 py-1.5 rounded-full" style={{ background: theme.accent, color: accentText }}>チェックに戻る</button>
+          <button onClick={() => setPreflight(null)} title="チェックを閉じる（結果は破棄されます）"
+            className="w-7 h-7 rounded-full grid place-items-center hover:bg-white/15"><Icon name="close" className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
+      {preflight && !preflight.minimized && (
+        <div className="fixed inset-0 z-[210] bg-black/45 flex items-center justify-center p-3 sm:p-5" onClick={() => !preflightBusy && setPreflight((p) => ({ ...p, minimized: true }))}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3.5 flex items-center gap-3 border-b border-stone-200" style={{ background: theme.main, color: mainText }}>
               <div className="flex-1"><h3 className="text-sm font-bold">確認用URLを生成する前のチェック</h3><p className="text-[10px] opacity-70 mt-0.5">{project.name} ・ Obsidianナレッジ {preflight.knowledgeVersion}</p></div>
-              <button onClick={() => setPreflight(null)} disabled={preflightBusy} className="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/15 disabled:opacity-40"><Icon name="close" className="w-4 h-4" /></button>
+              <button onClick={() => setPreflight((p) => ({ ...p, minimized: true }))} disabled={preflightBusy} title="畳む（検査結果は残ります）" className="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/15 disabled:opacity-40"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
               {/* 実物プレビュー（2026-08-26 AK「チェックだけだと確認せず押す。毎回チェックすべき概要欄とかを出して」）。
@@ -11196,28 +11207,60 @@ export default function App() {
                     {rv.fixError && <div className="mt-2 text-[11px] text-rose-700">{rv.fixError}</div>}
                     {hard.length > 0 && (
                       <div className="mt-3">
-                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                          <div className="text-[12px] font-bold text-rose-700">共有前に修正が必要な項目があります（{hard.length}件）</div>
-                          <button onClick={runAutofix} disabled={rv.fixing}
-                            className="ml-auto h-7 px-3 rounded-lg text-[11.5px] font-bold text-white shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
-                            <Icon name="sparkle" className="w-3.5 h-3.5" />{rv.fixing ? "AIが直しています…" : "AIがまとめて直す" + (rv.busy ? "（校正の結果は後から追加）" : "")}
-                          </button>
+                        {/* 同じ指摘が10件以上並ぶと「で、どうすればいいの」になる（2026-09-08 AK指摘）。
+                            種類でまとめ、AIが直せるものは1回押せば終わることを先に言う。
+                            まとめて直すボタンはスクロールしても隠れないよう上に貼り付ける。 */}
+                        <div className="sticky top-0 z-10 -mx-1 px-1 pt-1 pb-2 bg-white">
+                          <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                            <div className="text-[12px] font-bold text-rose-700">共有前に直すこと（{hard.length}件）</div>
+                            <button onClick={runAutofix} disabled={rv.fixing}
+                              className="ml-auto h-8 px-3.5 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
+                              <Icon name="sparkle" className="w-3.5 h-3.5" />{rv.fixing ? "AIが直しています…" : "AIがまとめて直す"}
+                            </button>
+                          </div>
+                          <p className="text-[10.5px] text-stone-400">下の「AIが直せる」ぶんはこのボタン1回で終わります。中身のある原稿は書き換えません。直した後に「元に戻す」できます。</p>
                         </div>
-                        <p className="text-[10.5px] text-stone-400 mb-1.5">誤字の置換・空の見出し付け・空のシーン削除・インサートのカット案・時刻の整合だけを自動で行い、中身のある原稿は書き換えません。直した後に「元に戻す」できます。</p>
-                        <ul className="space-y-1.5">
-                          {hard.map((it, i) => (
-                            <li key={i} onClick={() => { if (it.rowId) { setPreflight(null); jumpToRow(it.rowId); } }}
-                              className={"rounded-lg border border-stone-200 px-3 py-2 " + (it.rowId ? "cursor-pointer hover:bg-stone-50" : "")}>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: catCol(it.category) }}>{it.category}</span>
-                                {it.sceneLabel && <span className="text-[11.5px] font-bold text-stone-700 truncate">{it.sceneLabel}</span>}
-                                {it.rowId && <span className="text-[10px] text-stone-400 ml-auto shrink-0">修正する ↗</span>}
-                              </div>
-                              <div className="text-[12px] text-stone-700 mt-0.5 leading-relaxed">{it.detail}</div>
-                              {it.suggestion && <div className="text-[11.5px] text-emerald-800 mt-0.5">→ {it.suggestion}</div>}
-                            </li>
-                          ))}
-                        </ul>
+                        {(() => {
+                          // AIのまとめて直すが面倒を見る種類。ここに無いものは人が書くしかない＝そう明記する。
+                          const AUTO = ["シーン漏れ", "ロケ漏れ", "インサート不足", "撮影順", "誤字脱字", "重複"];
+                          const groups = [];
+                          for (const it of hard) {
+                            const key = it.category + "｜" + it.detail;
+                            let g = groups.find((x) => x.key === key);
+                            if (!g) { g = { key, category: it.category, detail: it.detail, items: [] }; groups.push(g); }
+                            g.items.push(it);
+                          }
+                          groups.sort((a, b) => b.items.length - a.items.length);
+                          return (
+                            <div className="space-y-2">
+                              {groups.map((g) => {
+                                const auto = AUTO.includes(g.category);
+                                return (
+                                  <div key={g.key} className="rounded-xl border border-stone-200 overflow-hidden">
+                                    <div className="px-3 py-2 flex items-center gap-2 flex-wrap bg-stone-50">
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: catCol(g.category) }}>{g.category}</span>
+                                      <span className="text-[12px] font-bold text-stone-700">{g.detail}</span>
+                                      <span className="text-[11px] text-stone-400">{g.items.length}件</span>
+                                      <span className={"ml-auto text-[10.5px] font-bold px-2 py-0.5 rounded-full " + (auto ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50")}>
+                                        {auto ? "AIが直せる" : "自分で書く"}
+                                      </span>
+                                    </div>
+                                    <div className="px-3 py-1.5 flex flex-wrap gap-1.5">
+                                      {g.items.map((it, i) => (
+                                        <button key={i} type="button" disabled={!it.rowId}
+                                          onClick={() => { if (it.rowId) { setPreflight((p) => ({ ...p, minimized: true })); jumpToRow(it.rowId); } }}
+                                          title={it.suggestion ? "→ " + it.suggestion : "この箇所へ飛ぶ"}
+                                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-40 max-w-[220px] truncate">
+                                          {it.sceneLabel || "（無題）"}{it.rowId ? " ↗" : ""}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                     {soft.length > 0 && (
@@ -11225,7 +11268,7 @@ export default function App() {
                         <summary className="text-[11px] text-stone-500 cursor-pointer">参考：{soft.length}件（回答が空の質問など・撮影前なら通常）</summary>
                         <ul className="mt-1.5 space-y-1">
                           {soft.map((it, i) => (
-                            <li key={i} onClick={() => { if (it.rowId) { setPreflight(null); jumpToRow(it.rowId); } }} className="text-[11.5px] text-stone-600 px-2 py-1 rounded hover:bg-stone-50 cursor-pointer">
+                            <li key={i} onClick={() => { if (it.rowId) { setPreflight((p) => ({ ...p, minimized: true })); jumpToRow(it.rowId); } }} className="text-[11.5px] text-stone-600 px-2 py-1 rounded hover:bg-stone-50 cursor-pointer">
                               <span className="font-bold">{it.sceneLabel}</span>：{it.detail}
                             </li>
                           ))}
