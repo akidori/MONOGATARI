@@ -6,6 +6,7 @@ import { buildStyledRuns, toggleInlineMarker } from "./src/inline-format.js";
 import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
+import { snapshotSignature } from "./src/snap-signature.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -2202,7 +2203,6 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
       .catch(() => setShortsTemplates([]));
   }, []);
   // ダウンロードしないと中身が見えないのは非効率との指摘（2026-08-17）：クリックでその場再生できるプレビューを追加
-  const [previewIdx, setPreviewIdx] = React.useState(null);
   // 先方に切り抜きショートをまとめて送るための共有URL（2026-08-20：個別URLでなく全部まとめて1本欲しい、との指摘で
   // 個別リンクから統合ギャラリーページ（/shorts/{snap}?r=<rtok>、全本を再生・DLできる）へ変更）。
   const [galleryCopied, setGalleryCopied] = React.useState(false);
@@ -2280,18 +2280,6 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
           {busy || running ? "生成中…" : "ショート生成"}
         </button>
       </div>
-      <div className="flex items-center gap-1.5 flex-wrap mt-2">
-        <span className="text-[10px] font-bold text-stone-400 shrink-0">見た目テンプレ</span>
-        {shortsTemplates === null ? (
-          <span className="text-[11px] text-stone-400">読み込み中…</span>
-        ) : (
-          <select value={templateId || ""} onChange={(e) => onTemplateChange && onTemplateChange(e.target.value)}
-            className="text-[11px] border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-600 max-w-full">
-            <option value="">既定（自動）</option>
-            {shortsTemplates.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-          </select>
-        )}
-      </div>
       {!videoKey && <div className="text-[11px] text-stone-400 mt-1.5">動画確認タブで完成版動画をアップすると、ここからショートを生成できます。</div>}
       {(busy || jobs.length > 0 || items.length > 0) && (
         <div className="mt-2">
@@ -2305,152 +2293,44 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
             return latest && latest.status === "error"
               ? <div className="text-[11px] text-rose-500">⚠️ {latest.error || "生成に失敗しました"}</div> : null;
           })()}
-          {items.length > 0 && (
-            <ul className="flex flex-wrap gap-2 mt-1.5">
-              {items.map((f, i) => (
-                <li key={f.key}>
-                  <button onClick={() => setPreviewIdx(i)}
-                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
-                    🎬 {f.name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      {previewIdx != null && items[previewIdx] && (
-        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setPreviewIdx(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            <div className="px-4 py-2.5 flex items-center justify-between border-b border-stone-100">
-              <span className="text-[12px] font-bold text-stone-700 truncate">{items[previewIdx].name}</span>
-              <button onClick={() => setPreviewIdx(null)} className="shrink-0 w-6 h-6 rounded-lg grid place-items-center text-stone-400 hover:bg-stone-100"><Icon name="close" className="w-4 h-4" /></button>
-            </div>
-            <video key={items[previewIdx].key} controls autoPlay className="w-full max-h-[70vh] bg-black" src={SHARE_API + "/api/file/" + items[previewIdx].key} />
-            <div className="px-4 py-2.5 flex items-center justify-between gap-2 border-t border-stone-100">
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => setPreviewIdx((i) => Math.max(0, i - 1))} disabled={previewIdx === 0}
-                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 disabled:opacity-30">← 前</button>
-                <button onClick={() => setPreviewIdx((i) => Math.min(items.length - 1, i + 1))} disabled={previewIdx === items.length - 1}
-                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 disabled:opacity-30">次 →</button>
-              </div>
-              <a href={SHARE_API + "/api/file/" + items[previewIdx].key + "?dl=1"} target="_blank" rel="noreferrer"
-                className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white inline-flex items-center gap-1" style={{ background: accent }}>
-                <Icon name="download" className="w-3.5 h-3.5" />ダウンロード
-              </a>
-            </div>
-          </div>
+          {items.length > 0 && <div className="text-[11px] text-stone-400">生成済み {items.length}本。「共有URL」で全部まとめて見られます</div>}
         </div>
       )}
     </div>
   );
 }
 
-/* Q&A分解機能（Q7改定 Phase A・2026-08-15）: 動画確認の完了済みコメントを証跡として記録するUI。
-   AIによる要約・パターン抽出はまだ無い（AK確認: 今回は証跡層のみ）。手動ボタン起点、resolved済みのみ対象。 */
-function QaEvidencePanel({ projId, accent, accentText }) {
-  const [open, setOpen] = React.useState(false);
-  const [loading, setLoading] = React.useState(false);
-  const [candidates, setCandidates] = React.useState(null); // null=未取得
-  const [checked, setChecked] = React.useState({});
-  const [savedCount, setSavedCount] = React.useState(null);
-  const [msg, setMsg] = React.useState("");
+/* Q&A証跡（Q7改定 Phase A・2026-08-15／2026-09-08に自動化）。
+   動画確認で「完了」にしたコメントを、そのままQ&A証跡として記録する。
 
-  const loadSavedCount = async () => {
-    try { const r = await authFetch("/api/qa-evidence/list", { projId }); setSavedCount((r.evidence || []).length); }
-    catch (e) {}
-  };
-  React.useEffect(() => { if (projId) loadSavedCount(); }, [projId]);
-
-  const openPanel = async () => {
-    setOpen(true); setLoading(true); setMsg("");
-    try {
-      const r = await authFetch("/api/qa-evidence/candidates", { projId });
-      const cs = r.candidates || [];
-      setCandidates(cs);
-      // 2026-08-15 QA中に発見: 全件デフォルト選択＋一覧がスクロール式だと、見えていない項目まで
-      // まとめて確定してしまう事故が起きた（実案件で47件を誤確定）。「人間が確認してから記録する」
-      // というPhase Aの設計意図にも反するため、初期状態は何も選択しない（明示的な選択を必須にする）。
-      setChecked({});
-    } catch (e) { setMsg("取得できませんでした：" + e.message); }
-    finally { setLoading(false); }
-  };
-
-  const selectedCount = (candidates || []).filter((c) => checked[c.commentId]).length;
-  const selectAll = () => setChecked(Object.fromEntries((candidates || []).map((c) => [c.commentId, true])));
-  const selectNone = () => setChecked({});
-
-  const confirm = async () => {
-    const items = (candidates || []).filter((c) => checked[c.commentId]);
-    if (!items.length) { setMsg("選択されていません"); return; }
-    setLoading(true); setMsg("");
-    try {
-      await authFetch("/api/qa-evidence/confirm", { projId, items });
-      setMsg(items.length + "件を証跡として確定しました");
-      setCandidates((cs) => (cs || []).filter((c) => !checked[c.commentId]));
-      await loadSavedCount();
-    } catch (e) { setMsg("保存できませんでした：" + e.message); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div className="mt-4 rounded-2xl border border-stone-200 p-3">
-      <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div>
-          <div className="text-[12px] font-bold text-stone-700">ナレッジ化（Q&A証跡）</div>
-          <p className="text-[11px] text-stone-400 mt-0.5">
-            対応完了のコメントをQ&A証跡として記録します（AI要約は無く、コメント本文と返信をそのまま記録）。
-            {savedCount != null && <span> 確定済み {savedCount}件</span>}
-          </p>
-        </div>
-        <button onClick={openPanel} disabled={loading}
-          className="h-8 px-3 rounded-lg text-[11px] font-bold text-white shadow disabled:opacity-50"
-          style={{ background: accent, color: accentText }}>
-          このレビューをナレッジ化
-        </button>
-      </div>
-      {open && (
-        <div className="mt-2.5 border-t border-stone-100 pt-2.5">
-          {loading && candidates == null ? (
-            <p className="text-[11px] text-stone-400">読み込み中…</p>
-          ) : (candidates && candidates.length) ? (
-            <>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] text-stone-400">対応完了・未確定 {candidates.length}件（記録するものだけ選んでください）</span>
-                <span className="flex items-center gap-2">
-                  <button onClick={selectAll} className="text-[10px] font-bold text-stone-500 underline">全選択</button>
-                  <button onClick={selectNone} className="text-[10px] font-bold text-stone-500 underline">全解除</button>
-                </span>
-              </div>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                {candidates.map((c) => (
-                  <label key={c.commentId} className="flex items-start gap-2 text-[11px] p-1.5 rounded-lg hover:bg-stone-50 cursor-pointer">
-                    <input type="checkbox" className="mt-0.5" checked={!!checked[c.commentId]}
-                      onChange={(e) => setChecked((m) => ({ ...m, [c.commentId]: e.target.checked }))} />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 inline-block mb-0.5">{c.category}</div>
-                      <div className="text-stone-700">Q: {c.question}</div>
-                      <div className="text-stone-400">A: {c.answer}</div>
-                    </div>
-                  </label>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 mt-2">
-                <button onClick={confirm} disabled={loading || !selectedCount}
-                  className="h-7 px-3 rounded-lg text-[11px] font-bold text-white disabled:opacity-50" style={{ background: accent, color: accentText }}>
-                  {loading ? "保存中…" : `選択した${selectedCount}件を証跡として確定`}
-                </button>
-                <button onClick={() => setOpen(false)} className="h-7 px-3 rounded-lg text-[11px] font-bold text-stone-500 border border-stone-200">閉じる</button>
-              </div>
-            </>
-          ) : candidates && !candidates.length ? (
-            <p className="text-[11px] text-stone-400">対応完了かつ未確定のコメントはありません</p>
-          ) : null}
-          {msg && <p className="text-[11px] text-stone-500 mt-1.5">{msg}</p>}
-        </div>
-      )}
-    </div>
-  );
+   2026-08-15の初版は手動ボタン＋チェックボックスだった。理由は、全件デフォルト選択の一覧で
+   見えていない項目まで確定してしまう事故（実案件で47件を誤確定）を防ぐため。
+   2026-09-08 AK「これもいらない！自動でナレッジかして欲しい」で自動へ切り替えた。
+   誤確定の再発防止は残っている: 対象は「人がコメントを1件ずつ完了にしたもの」だけで、
+   完了にする操作そのものが人の確認である。まとめて確定する画面は無くなったので、
+   見ていない項目が混ざる経路自体が消えた。保存はcomment_id単位のUPSERTで冪等。 */
+function QaEvidenceAutoSync({ projId, resolvedSig }) {
+  const lastRef = React.useRef("");
+  React.useEffect(() => {
+    if (!projId) return;
+    let dead = false;
+    const sync = async () => {
+      try {
+        const r = await authFetch("/api/qa-evidence/candidates", { projId });
+        const items = (r && r.candidates) || [];
+        if (dead || !items.length) return;
+        const sig = items.map((c) => c.commentId).sort().join(",");
+        if (sig === lastRef.current) return;   // 同じ顔ぶれを何度も送らない
+        lastRef.current = sig;
+        await authFetch("/api/qa-evidence/confirm", { projId, items });
+      } catch (e) { /* 証跡は本流の作業を止めない。失敗しても次に開いた時にまた拾う */ }
+    };
+    sync();
+    return () => { dead = true; };
+    // resolvedSig＝完了済みコメントの顔ぶれ。開いた時だけでなく、その場で「完了」にした
+    // 瞬間にも記録する（画面を開き直さないと残らない、を作らない）
+  }, [projId, resolvedSig]);
+  return null;
 }
 
 function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
@@ -2795,7 +2675,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                   className={"text-[11px] px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")} style={rate === r ? { background: main, borderColor: main, fontFamily: mono } : { fontFamily: mono }}>{r}x</button>
               ))}
               {isYT && <span className="text-[10px] text-stone-400">（YouTubeは2倍まで）</span>}
-              <span className="text-[10px] text-stone-400 ml-2">Enter/Space=再生停止　←→=5秒（Shiftで1秒）</span>
               {sel.key && (
                 <a href={SHARE_API + "/api/file/" + sel.key + "?dl=1"} target="_blank" rel="noreferrer"
                   title="この版のオリジナルmp4（アップした元データそのまま）をダウンロード"
@@ -2805,7 +2684,10 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               )}
             </div>
           )}
-          {/* 新規修正コメント */}
+          {/* 新規修正コメント。右のレーン切替（修正／切り抜き）と連動させる＝AK 2026-09-08
+              「切り抜きのコメントが常時出てるの邪魔！切り替えた時のみ表示して」。
+              両方を常時出すと、いま何を書く欄なのかが分からなくなる。 */}
+          {lane === "fix" && (
           <div className="mt-3 rounded-xl border border-stone-200 bg-white p-3">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               {!streamPending && <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} に</span>}
@@ -2815,7 +2697,9 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } }} placeholder="修正内容を入力（⌘+Enterで送信）" className="w-full h-16 text-[12px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
             <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={!text.trim()} className="text-[11px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>修正を追加</button></div>
           </div>
+          )}
           {/* 切り抜き候補（取れ高マーク）。区間ではなく「点」だけ取る＝尺の前後はたてがた君側に探させる */}
+          {lane === "clip" && (
           <div className="mt-2 rounded-xl border border-stone-200 bg-white p-3">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               {!streamPending && <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} を</span>}
@@ -2831,6 +2715,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               ))}
             </div>
           </div>
+          )}
         </div>
         {/* 右：修正一覧＋フィルタ ／ 切り抜き候補（レーン切替） */}
         <div>
@@ -3024,16 +2909,13 @@ function WizardPane({ project, setProject, theme, setTab }) {
   const ans = wiz.answers || {};
   const [questions, setQuestions] = useState(MIGRATED_WIZARD_QUESTIONS);
   const [qErr, setQErr] = useState("");
-  const [qIdx, setQIdx] = useState(0);
   const [busy, setBusy] = useState(false);
   const [genErr, setGenErr] = useState("");
   const [sugBusy, setSugBusy] = useState(false);
   const [view, setView] = useState("form"); // AI生成は廃止（コピペでClaudeへ）。常にフォーム
   const [copied, setCopied] = useState(false);
-  const taRef = useRef(null);
 
   // 質問テンプレはFlip-LABからObsidianへ移行済み。実行時に旧Workerへ問い合わせない。
-  useEffect(() => { if (view === "form" && taRef.current) taRef.current.focus(); }, [qIdx, questions, view]);
 
   const setMetaF = (k, v) => setProject((p) => { const w = p.wizard || newWizard(); return { ...p, wizard: { ...w, meta: { ...(w.meta || {}), [k]: v } } }; });
   const setAns = (num, v) => setProject((p) => { const w = p.wizard || newWizard(); const a = { ...(w.answers || {}) }; if (v && v.trim()) a[num] = v; else delete a[num]; return { ...p, wizard: { ...w, answers: a } }; });
@@ -3063,7 +2945,6 @@ function WizardPane({ project, setProject, theme, setTab }) {
 
   const total = questions ? questions.length : 13;
   const answered = questions ? questions.filter((qq) => (ans[qq.num] || "").trim()).length : 0;
-  const q = questions ? questions[Math.min(qIdx, questions.length - 1)] : null;
 
   const generate = async () => {
     if (busy || !questions) return;
@@ -3171,54 +3052,44 @@ function WizardPane({ project, setProject, theme, setTab }) {
               <span className="inline-block w-4 h-4 border-2 border-stone-300 border-t-transparent rounded-full animate-spin align-middle mr-2" />質問を読み込み中…
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-[230px_1fr] gap-4 items-start">
-              {/* 左：質問ナビ */}
-              <div className="flex md:flex-col gap-1.5 overflow-x-auto md:overflow-visible pb-1 md:pb-0">
-                {questions.map((qq, i) => {
-                  const done = !!(ans[qq.num] || "").trim(); const cur = i === qIdx;
-                  return (
-                    <button key={qq.num} onClick={() => setQIdx(i)}
-                      className={"shrink-0 md:w-full text-left rounded-lg px-2.5 py-1.5 text-[11px] font-bold border transition-colors " + (cur ? "bg-white shadow-sm" : "border-transparent hover:bg-white " + (done ? "text-stone-500" : "text-stone-400"))}
-                      style={cur ? { borderColor: theme.accent, color: theme.accent } : {}}>
-                      <span className="inline-flex items-center gap-1.5 max-w-full">
-                        <span className="shrink-0 inline-block w-1.5 h-1.5 rounded-full" style={{ background: done ? theme.accent : "#d6d3d1" }} />
-                        <span className="shrink-0">{qq.num}</span>
-                        <span className="hidden md:inline font-normal text-stone-400 truncate">{qq.text.slice(0, 12)}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {/* 右：現在の質問 */}
-              <div className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6">
-                <div className="h-1 rounded-full bg-stone-100 mb-5 overflow-hidden"><div className="h-full rounded-full transition-all duration-300" style={{ width: (answered / total * 100) + "%", background: theme.accent }} /></div>
-                <div className="text-[11px] font-bold tracking-widest" style={{ color: theme.accent }}>{q.num}<span className="text-stone-300 font-normal"> / {total}</span></div>
-                <div className="text-[17px] font-bold text-stone-800 mt-1.5 leading-relaxed">{q.text}</div>
-                {q.hint && <div className="mt-2.5 text-[11px] text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-3 py-2">狙い：{q.hint}</div>}
-                {(() => { const sug = (wiz.suggestions || {})[q.num]; if (!sug) return null; return (
-                  <div className="mt-2.5 rounded-xl border px-3.5 py-3" style={{ borderColor: "#F3C2CB", background: "#FBE5EA55" }}>
-                    <div className="text-[10px] font-bold mb-1" style={{ color: theme.accent }}>ヒアリングからの提案 — こういうのじゃない？</div>
-                    <div className="text-[12px] text-stone-700 leading-relaxed whitespace-pre-wrap">{sug}</div>
-                    <div className="flex gap-2 mt-2.5">
-                      <button onClick={() => { const cur = (ans[q.num] || "").trim(); setAns(q.num, cur ? cur + "\n" + sug : sug); dropSug(q.num); }}
-                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.accent }}>これで埋める</button>
-                      <button onClick={() => dropSug(q.num)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 bg-white">却下</button>
-                    </div>
-                  </div>
-                ); })()}
-                <textarea ref={taRef} value={ans[q.num] || ""} onChange={(e) => setAns(q.num, e.target.value)}
-                  onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); if (qIdx < total - 1) setQIdx(qIdx + 1); } }}
-                  placeholder="思いつくまま書けばOK。空欄のままなら【未回収】として骨に載り、現場で埋める質問リストになります"
-                  className="mt-4 w-full min-h-[130px] text-[13px] leading-relaxed border border-stone-200 rounded-xl px-3.5 py-3 focus:outline-none focus:border-stone-400 resize-y" />
-                <div className="flex items-center justify-between gap-2 mt-4">
-                  <button onClick={() => setQIdx(Math.max(0, qIdx - 1))} disabled={qIdx === 0}
-                    className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 disabled:opacity-40">← 前へ</button>
-                  <span className="text-[10px] text-stone-300 hidden sm:inline">⌘+Enter で次へ</span>
-                  {qIdx < total - 1
-                    ? <button onClick={() => setQIdx(qIdx + 1)} className="text-[12px] font-bold px-5 py-2 rounded-lg text-white shadow-sm" style={{ background: theme.accent }}>次へ →</button>
-                    : <button onClick={copyForClaude} className="text-[12px] font-bold px-5 py-2 rounded-lg text-white shadow-sm inline-flex items-center gap-1.5" style={{ background: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />{copied ? "コピーした！" : "Claudeにコピー"}</button>}
+            <div className="space-y-3">
+              {/* 13問を1枚に並べる（AK 2026-09-08「取材メモはもっと1枚のページにして」）。
+                  1問ずつのウィザードは、全体像が見えないまま進むので書ける順に埋められなかった。
+                  進捗バーだけ上に固定して、あとは上から書ける所を書く。 */}
+              <div className="sticky top-14 z-10 rounded-xl border border-stone-200 bg-white/95 backdrop-blur px-4 py-2.5">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <span className="text-[11px] font-bold text-stone-500"><span className="text-stone-800">{answered}</span> / {total} 問</span>
+                  <span className="text-[10px] text-stone-400">空欄は現場で埋める質問リストになります</span>
                 </div>
+                <div className="h-1 rounded-full bg-stone-100 overflow-hidden"><div className="h-full rounded-full transition-all duration-300" style={{ width: (answered / total * 100) + "%", background: theme.accent }} /></div>
               </div>
+              {questions.map((qq) => {
+                const sug = (wiz.suggestions || {})[qq.num];
+                const done = !!(ans[qq.num] || "").trim();
+                return (
+                  <div key={qq.num} className="rounded-2xl border bg-white p-4 sm:p-5" style={{ borderColor: done ? theme.accent + "55" : "#e7e5e4" }}>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[11px] font-bold tracking-widest shrink-0" style={{ color: done ? theme.accent : "#a8a29e" }}>{qq.num}</span>
+                      <span className="text-[15px] font-bold text-stone-800 leading-relaxed">{qq.text}</span>
+                    </div>
+                    {qq.hint && <div className="mt-2 text-[11px] text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-3 py-2">狙い：{qq.hint}</div>}
+                    {sug && (
+                      <div className="mt-2.5 rounded-xl border px-3.5 py-3" style={{ borderColor: "#F3C2CB", background: "#FBE5EA55" }}>
+                        <div className="text-[10px] font-bold mb-1" style={{ color: theme.accent }}>ヒアリングからの提案 — こういうのじゃない？</div>
+                        <div className="text-[12px] text-stone-700 leading-relaxed whitespace-pre-wrap">{sug}</div>
+                        <div className="flex gap-2 mt-2.5">
+                          <button onClick={() => { const cur = (ans[qq.num] || "").trim(); setAns(qq.num, cur ? cur + "\n" + sug : sug); dropSug(qq.num); }}
+                            className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.accent }}>これで埋める</button>
+                          <button onClick={() => dropSug(qq.num)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 bg-white">却下</button>
+                        </div>
+                      </div>
+                    )}
+                    <textarea value={ans[qq.num] || ""} onChange={(e) => setAns(qq.num, e.target.value)}
+                      placeholder="思いつくまま書けばOK。空欄のままなら【未回収】として骨に載り、現場で埋める質問リストになります"
+                      className="mt-3 w-full min-h-[110px] text-[13px] leading-relaxed border border-stone-200 rounded-xl px-3.5 py-3 focus:outline-none focus:border-stone-400 resize-y" />
+                  </div>
+                );
+              })}
             </div>
           )}
 
@@ -3312,7 +3183,6 @@ export default function App() {
   // 移植する。データは既存のdeliverableSpineBeats/phaseSeq/STORY_FRAMEWORKSをそのまま使い、
   // マインドマップ専用のコピーは持たない（表示専用、Business LogicはReact側に新規実装しない）。
   const [mmOpen, setMmOpen] = useState(() => { try { return localStorage.getItem("mg:mmOpen") === "1"; } catch (e) { return false; } });
-  const [prepView, setPrepView] = useState("hearing"); // 取材メモタブ内の切替：聞き取りシート / 質問ウィザード
   const [hearingTocActive, setHearingTocActive] = useState(null);
   const [collapsedFolders, setCollapsedFolders] = useState({}); // 素材管理：フォルダ(シーン)ごとの開閉
   const toggleSpine = () => setSpineOpen((v) => { const nv = !v; try { localStorage.setItem("mg:spineOpen", nv ? "1" : "0"); } catch (e) {} return nv; });
@@ -3495,7 +3365,7 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     const talk = project.format === "talk";
-    const valid = ["overview", "regulations", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["mindmap"]), ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
+    const valid = ["overview", "regulations", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
       .filter((k) => !LIVE_ONLY_TABS || LIVE_ONLY_TABS.includes(k));
     if (!valid.includes(tab)) setTab(valid[0] || "overview");
   }, [project && project.format, project && project.id, tab]);
@@ -3811,7 +3681,7 @@ export default function App() {
             // 不正値は下の「保存した選択ページの正規化」useEffectがoverviewへ補正するので、
             // ここでは軽くホワイトリスト検証するのみ
             const wantTab = new URLSearchParams(location.search).get("tab");
-            if (wantTab && ["overview", "plan", "hearing", "script", "mindmap", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
+            if (wantTab && ["overview", "plan", "hearing", "script", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
               setTab(wantTab);
             }
             setLoaded(true); return;
@@ -4119,8 +3989,11 @@ export default function App() {
     if (!project.shareId || !project.shareToken || project.collab) return; // 未共有/権限なしは対象外
     // 共有に出る"中身"だけを指紋化（共有/ライブ系フィールドは除外＝再発行で自分が再発火するループを防ぐ）。
     // 台本テキストの編集も含めて常に最新を反映する。4秒デバウンスでKVレート(1書込/秒)も安全。
-    const { shareId, shareToken, shareUpToken, live, liveId, liveToken, collab, collabRole, members, ownerEmail, ...contentSig } = project;
-    const sig = JSON.stringify(contentSig);
+    // 指紋の範囲は src/snap-signature.js が正本（tools/test-snap-signature.mjs で守る）。
+    // publishShare がスナップに同梱するのは project だけではない＝チャンネル情報と
+    // 全体の決め事も載る。project しか見ていなかったため、チャンネルURL・競合チャンネル・
+    // コンセプトを書き換えても共有ページが一生古いままだった（2026-09-08 スタジアムで発覚）。
+    const sig = snapshotSignature(project, curChannelInfo, globalManuals);
     if (lastPubSig.current === null) { lastPubSig.current = sig; return; } // 初回ロード/リンク発行直後は送らない
     if (sig === lastPubSig.current) return;
     lastPubSig.current = sig;
@@ -4132,7 +4005,7 @@ export default function App() {
       publishShare(true).catch(() => {});
     }, 60000); // サイレント＝AKは意識しない
     return () => clearTimeout(republishTimer.current);
-  }, [project, loaded]);
+  }, [project, loaded, channelInfo, globalManuals]);
 
   /* チャンネルコンセプトの自動保存 */
   const chSaveTimer = useRef(null);
@@ -5480,7 +5353,7 @@ export default function App() {
           <span className="truncate max-w-[140px]">{r.channel}</span>
           {r.deadline && <span className={"shrink-0 font-bold " + (overdue ? "text-rose-600" : soon ? "text-amber-600" : "text-stone-400")}>{overdue ? "期限超過" : r.dl === 0 ? "今日締切" : "あと" + r.dl + "日"}</span>}
         </div>
-        <div className="mt-2 text-[12px] font-semibold" style={{ color: theme.main }}>{({ overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", script: "構成台本", mindmap: "マインドマップ", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "コンセプト", regulations: "レギュレーション" })[resumePages.current[r.id]] || "概要"}を開く →</div>
+        <div className="mt-2 text-[12px] font-semibold" style={{ color: theme.main }}>{({ overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "コンセプト", regulations: "レギュレーション" })[resumePages.current[r.id]] || "概要"}を開く →</div>
         {r.nextAction && <div className="mt-1.5 text-[12px] text-stone-700 flex items-start gap-1"><span className="text-stone-400">▶</span><span className="truncate">{r.nextAction}</span></div>}
       </button>
     );
@@ -7288,7 +7161,7 @@ export default function App() {
     };
     const t = setTimeout(scan, 150);
     return () => clearTimeout(t);
-  }, [tab, prepView, project, isNarrow]);
+  }, [tab, project, isNarrow]);
   useEffect(() => {
     if (!tocItems.length) { setTocActive(null); return; }
     let raf = 0;
@@ -7817,7 +7690,7 @@ export default function App() {
   );
 
   // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
-  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["mindmap", "share", "マインドマップ", "MM"]]), ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
   // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
   const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
   const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
@@ -9331,24 +9204,6 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= マインドマップタブ（構成台本と同じデータをフルページで） ================= */}
-        {tab === "mindmap" && project.format !== "talk" && (
-          <div className="max-w-[1700px] mx-auto px-1 sm:px-0 py-1">
-            {(() => {
-              const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
-              const posPrefix = spineFw + ":";
-              const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
-              const widthMap = {}; Object.keys(project.mindmapWidth || {}).forEach((k) => { if (k.startsWith(posPrefix)) widthMap[k.slice(posPrefix.length)] = project.mindmapWidth[k]; });
-              return (
-                <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
-                  <p className="text-[11px] text-stone-400 mb-2">構成台本と同じデータを見ています。ここでの編集は台本にもそのまま反映されます。各ステップのカードに、そこで話す内容のラフなセリフ・要点を書き込めます。「＋シーン追加」でそのメモを元に構成台本へシーンを作れます。</p>
-                  <MindmapView height="calc(100vh - 200px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} onEditAnswer={patchAnswer} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />
-                </section>
-              );
-            })()}
-          </div>
-        )}
-
         {/* ================= 香盤表タブ ================= */}
         {tab === "kouban" && (
           <>
@@ -9707,20 +9562,6 @@ export default function App() {
         {/* ================= ヒアリングタブ（演者の事前聞き取り→構成のネタ元） ================= */}
         {(tab === "hearing" || tab === "wizard") && (
           <div className="max-w-[1120px] mx-auto px-1 sm:px-0 py-1">
-            {/* 取材メモ＝ヒアリング＋質問ウィザードを統合（どちらも構成前のメモ）。中で切替 */}
-            <div className="inline-flex gap-1 mb-4 p-1 rounded-xl bg-stone-100">
-              {[["hearing", "聞き取りシート"], ["wizard", "質問ウィザード"]].map(([k, lab]) => (
-                <button key={k} onClick={() => setPrepView(k)}
-                  className={"text-[12px] font-bold px-3.5 py-1.5 rounded-lg transition-colors " + (prepView === k ? "bg-white shadow-sm text-stone-800" : "text-stone-500 hover:text-stone-700")}>{lab}</button>
-              ))}
-            </div>
-            {/* マインドマップは独立タブへ移設（2026-08-17）。ここには入口だけ残す */}
-            <button onClick={() => setTab("mindmap")}
-              className="mb-4 w-full text-left rounded-2xl border border-dashed border-stone-300 hover:border-stone-400 hover:bg-stone-50 transition-colors px-4 py-3 flex items-center gap-2">
-              <Icon name="share" className="w-4 h-4 text-stone-400 shrink-0" />
-              <span className="text-[12px] font-bold text-stone-600">マインドマップで構造を見る・編集する</span>
-              <span className="ml-auto text-[11px] text-stone-400">開く →</span>
-            </button>
             {/* 文字起こし→骨組み→Q&A原稿の2段階生成（2026-08-17）。①でロケ・時刻・型だけの骨組みをマインドマップに作り、②で同じ文字起こしからQ&A原稿を書き込む。ここまでで8割、仕上げは構成台本タブで */}
             <div className="mb-4 rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
               <div className="flex items-center gap-1.5 mb-1">
@@ -9728,7 +9569,7 @@ export default function App() {
                 <span className="text-[13px] font-bold text-stone-800">文字起こしから構成を作る</span>
               </div>
               <p className="text-[11.5px] text-stone-500 mb-2 leading-relaxed">
-                ①でロケ・時刻・シーンの型だけの骨組みを作ります（原稿はまだ空）。マインドマップで並び順・スパインを確認・手直ししたら、②で同じ文字起こしからQ&A原稿を書き込みます。ここまでで8割、仕上げは構成台本タブで。
+                ①でロケ・時刻・シーンの型だけの骨組みを作ります（原稿はまだ空）。構成台本タブで並び順を確認・手直ししたら、②で同じ文字起こしからQ&A原稿を書き込みます。ここまでで8割、仕上げは構成台本タブで。
               </p>
               <BufferedTextarea value={project.transcriptRaw || ""} onChange={setTranscriptRaw}
                 placeholder="ここに文字起こし・取材メモを貼り付け…" rows={6}
@@ -9747,9 +9588,6 @@ export default function App() {
                 {transcriptBusy && <span className="text-[11px] text-stone-400">少し時間がかかります…</span>}
               </div>
             </div>
-            {prepView === "wizard" ? (
-              <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
-            ) : (
           <div className="space-y-5">
             {/* 取材メモ リーディング／カード型（2026-08-23）。データ構造・ハンドラは従来のまま、表示だけ
                「質問(Q)＋回答」のカードに分解し、本文幅を760pxに制限・文字を大きく・行間1.7に。
@@ -9864,7 +9702,12 @@ export default function App() {
               </aside>
             </div>
           </div>
-            )}
+          <div className="mt-8 pt-6 border-t border-stone-200">
+            {/* 1枚のページにする（AK 2026-09-08）。聞き取りシートと13の質問はどちらも構成前のメモで、
+                切替タブに分けると「もう片方に何を書いたか」を思い出しながら書くことになる。上から続けて書く。 */}
+            <h2 className="text-[13px] font-bold text-stone-700 mb-1">認識OSの13の質問</h2>
+            <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
+          </div>
           </div>
         )}
 
@@ -10023,7 +9866,7 @@ export default function App() {
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
               onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)} onRestoreVersion={(id) => restoreVersion(id)}
               onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />
-            <QaEvidencePanel projId={project.id} accent={theme.accent} accentText={accentText} />
+            <QaEvidenceAutoSync projId={project.id} resolvedSig={comments.filter((c) => c && c.status === "完了").map((c) => c.id).sort().join(",")} />
           </div>
           );
         })()}
