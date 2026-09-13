@@ -2140,7 +2140,15 @@ Bird Flip / ものがたりっち！`;
         }
         if (dup) return json({ ok: true, jobId: dup.id, status: dup.status, dedup: true });
         const jobId = rid(12);
-        const job = { id: jobId, snap, kind, videoKey: ("" + b.videoKey).slice(0, 200), sheetUrl: ("" + (b.sheetUrl || "")).slice(0, 300), notes: ("" + (b.notes || "")).slice(0, 1000), nMax: Math.max(1, Math.min(12, parseInt(b.nMax, 10) || 8)), templateId: ("" + (b.templateId || "")).slice(0, 64), status: "pending", createdAt: now(), updatedAt: now(), shorts: [], error: "" };
+        // 切り抜き生成には「案件の文脈」と「レビューで人が打った切り抜き印」を同梱する（2026-09-14）。
+        // 以前は動画キーしか渡しておらず、たてがた君は文字起こしだけで選んでいた＝人の判断が生成に一切届いていなかった。
+        // フロントに組ませずここで組むのは、どの呼び出し元から積んでも必ず同じ材料が届くようにするため。
+        let shortsExtra = {};
+        if (kind === "shorts") {
+          try { shortsExtra = await buildShortsJobExtra(env, snap, ("" + b.videoKey)); }
+          catch (e) { shortsExtra = { contextError: String((e && e.message) || e).slice(0, 200) }; }
+        }
+        const job = { ...shortsExtra, id: jobId, snap, kind, videoKey: ("" + b.videoKey).slice(0, 200), sheetUrl: ("" + (b.sheetUrl || "")).slice(0, 300), notes: ("" + (b.notes || "")).slice(0, 1000), nMax: Math.max(1, Math.min(12, parseInt(b.nMax, 10) || 8)), templateId: ("" + (b.templateId || "")).slice(0, 64), status: "pending", createdAt: now(), updatedAt: now(), shorts: [], error: "" };
         await env.SNAPS.put("sjob:" + jobId, JSON.stringify(job));
         // ジョブ索引 sjobs:idx に積む。poll/list/staleはKV list()禁止（無料枠1000回/日を10秒ポーリングが食い潰す）
         const idx = idx0;
@@ -2632,6 +2640,67 @@ function slimManuals(arr) {
   return Array.isArray(arr) ? arr.slice(0, 100).map((m) => ({
     id: m.id, cat: (m.cat || "").slice(0, 40), title: (m.title || "").slice(0, 200), body: (m.body || "").slice(0, 5000),
   })) : [];
+}
+
+/* ===== 切り抜きジョブの材料（案件文脈＋人の切り抜き印） ===== */
+const SHORTS_CLIP_CAT = "切り抜き";
+const SHORTS_CLIP_REASONS = ["喧嘩", "泣き", "名言", "笑い", "その他"];
+function shortsClipParts(text) {
+  // share.html / アプリの clipParts と同じ規則。「理由｜メモ」形式、理由が未知なら全文メモ。
+  const raw = (text || "").toString().trim();
+  const i = raw.indexOf("｜");
+  const head = (i >= 0 ? raw.slice(0, i) : raw).trim();
+  const known = SHORTS_CLIP_REASONS.includes(head);
+  return { reason: known ? head : "その他", memo: (i >= 0 ? raw.slice(i + 1) : (known ? "" : raw)).trim() };
+}
+function shortsContextText(p) {
+  const out = [];
+  const add = (label, v, max) => { const t = (v == null ? "" : String(v)).replace(/\s+\n/g, "\n").trim(); if (t) out.push(label + ": " + t.slice(0, max || 300)); };
+  const m = p.meta || {};
+  add("案件名", p.name, 120);
+  add("チャンネル", p.channel, 120);
+  add("クライアント", m.client, 120);
+  add("形式", p.format === "talk" ? "トーク" : "ドキュメンタリー", 20);
+  add("撮影場所", m.place, 120);
+  add("見どころ", m.highlight, 600);
+  add("メモ", m.note, 600);
+  const titles = (Array.isArray(m.titles) ? m.titles : []).filter((x) => x && String(x).trim());
+  if (titles.length) add("タイトル案", titles.join(" ／ "), 300);
+  add("納品タイトル", m.deliverTitle, 200);
+  add("概要欄", m.deliverDescription, 600);
+  if (p.talk) add("トークの見どころ", p.talk.highlight, 400);
+  const plans = (p.plans || []).filter((pl) => pl && (pl.title || pl.note)).slice(0, 5);
+  if (plans.length) add("企画", plans.map((pl) => [pl.title, pl.note].filter(Boolean).join("：")).join(" ／ "), 600);
+  const hearing = [];
+  (p.hearing || []).forEach((sec) => (sec.items || []).forEach((it) => { if (it.value && String(it.value).trim()) hearing.push((it.label || "") + "＝" + String(it.value).trim().slice(0, 200)); }));
+  if (hearing.length) out.push("事前ヒアリング:\n- " + hearing.slice(0, 25).join("\n- "));
+  const scenes = (p.rows || []).filter((r) => r && r.kind !== "location" && (r.label || r.script))
+    .map((r) => [(r.label || "").trim(), (r.script || "").replace(/\s+/g, " ").trim().slice(0, 80)].filter(Boolean).join("：")).slice(0, 40);
+  if (scenes.length) out.push("構成台本（シーン順）:\n- " + scenes.join("\n- "));
+  (p.talk && Array.isArray(p.talk.body) ? p.talk.body : []).slice(0, 20).forEach((b) => { if (b.heading) out.push("トーク章: " + String(b.heading).slice(0, 80)); });
+  return out.join("\n").slice(0, 6000);
+}
+async function buildShortsJobExtra(env, snap, videoKey) {
+  const rec = await env.SNAPS.get("snap:" + snap, "json");
+  const p = (rec && rec.project) || {};
+  // コメント側の videoKey は画面によって uid / key / url のどれかで記録される（share.html は uid||key||url、
+  // アプリも同じ）。ジョブの videoKey（R2のkey）から同じ版を引き、その版の識別子すべてで照合する。
+  const vers = (p.review && Array.isArray(p.review.versions)) ? p.review.versions : [];
+  const ver = vers.find((v) => v && v.key === videoKey) || null;
+  const ids = new Set([videoKey]);
+  if (ver) [ver.uid, ver.key, ver.url, ver.id].forEach((x) => { if (x) { ids.add(String(x)); ids.add(String(x).slice(0, 80)); } });
+  const cmts = (await env.SNAPS.get("cmt:" + snap, "json")) || [];
+  const clips = cmts.filter((c) => c && (c.category || "") === SHORTS_CLIP_CAT && typeof c.timecode === "number" && !c.deleted);
+  const mine = clips.filter((c) => (c.videoKey && ids.has(String(c.videoKey))) || (ver && c.versionId && c.versionId === ver.id));
+  const clipMarks = mine
+    .sort((a, b) => a.timecode - b.timecode)
+    .slice(0, 30)
+    .map((c) => {
+      const q = shortsClipParts(c.text);
+      const end = (typeof c.endTimecode === "number" && c.endTimecode > c.timecode) ? c.endTimecode : null;
+      return { start: c.timecode, end, reason: q.reason, memo: q.memo.slice(0, 300) };
+    });
+  return { context: shortsContextText(p), clipMarks, clipMarksOtherVersions: clips.length - mine.length };
 }
 
 function slim(p) {
