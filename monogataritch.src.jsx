@@ -1323,6 +1323,8 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
     case "gear": return (<svg {...c}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01A1.7 1.7 0 0 0 10 4.09V4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01A1.7 1.7 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" /></svg>);
     case "mic": return (<svg {...c}><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></svg>);
     case "book": return (<svg {...c}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>);
+    case "eye": return (<svg {...c}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><circle cx="12" cy="12" r="3" /></svg>);
+    case "eyeOff": return (<svg {...c}><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><path d="M3 3l18 18" /></svg>);
     default: return null;
   }
 });
@@ -2190,7 +2192,7 @@ function VersionTrashPanel({ items, onRestore }) {
   );
 }
 /* 縦ショート自動生成（たてがた君）＝納品段階で使う自己完結パネル。納品完了タブに置く。 */
-function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalleryUrl, accent, templateId, onTemplateChange }) {
+function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalleryUrl, onShortsChange, accent, templateId, onTemplateChange }) {
   const [busy, setBusy] = React.useState(false);
   const [jobs, setJobs] = React.useState([]);
   const [items, setItems] = React.useState([]);
@@ -2249,6 +2251,25 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
     return () => { pollGenRef.current += 1; };
   }, [shareId, shareToken, pollList]);
   const running = jobs.some((j) => j.status === "pending" || j.status === "processing");
+  // 先方に見せたくないショートを1本ずつ隠す（2026-09-14 AK要望）。隠したものは共有ページ・まとめURLに出ない。
+  // 押した瞬間に見た目を切り替え、保存に失敗したら元に戻す。
+  const [visBusy, setVisBusy] = React.useState("");
+  const toggleHidden = async (s) => {
+    if (!shareId || visBusy) return;
+    const hidden = !s.hidden;
+    const apply = (h) => setItems((xs) => { const next = xs.map((x) => (x.key === s.key ? { ...x, hidden: h } : x)); if (onShortsChange) onShortsChange(next); return next; });
+    setVisBusy(s.key); apply(hidden);
+    try {
+      const r = await fetch(SHARE_API + "/api/shorts/visibility", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ snap: shareId, token: shareToken, key: s.key, hidden }) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d.ok) throw new Error(d.error || "保存に失敗しました");
+    } catch (e) {
+      apply(!hidden);
+      setJobs((js) => [{ id: "err_" + Date.now(), status: "error", createdAt: new Date().toISOString(), error: "非表示の切り替えに失敗しました（" + String((e && e.message) || e) + "）" }, ...js]);
+    }
+    setVisBusy("");
+  };
+  const shownCount = items.filter((s) => !s.hidden).length;
   const enqueue = async () => {
     if (!videoKey || busy || running) return;
     setBusy(true);
@@ -2267,7 +2288,7 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
       <div className="flex items-center gap-2 flex-wrap">
         <div className="text-[12px] font-bold text-stone-600">🎬 たてがた君（縦ショート自動生成）</div>
         <div className="flex-1" />
-        {items.length > 0 && (
+        {shownCount > 0 && (
           <button onClick={copyGalleryUrl}
             title="生成した全ショートをまとめて見せる先方用URLをコピー（開くだけで再生・DLできます）"
             className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
@@ -2293,7 +2314,28 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
             return latest && latest.status === "error"
               ? <div className="text-[11px] text-rose-500">⚠️ {latest.error || "生成に失敗しました"}</div> : null;
           })()}
-          {items.length > 0 && <div className="text-[11px] text-stone-400">生成済み {items.length}本。「共有URL」で全部まとめて見られます</div>}
+          {items.length > 0 && (
+            <>
+              <div className="text-[11px] text-stone-400">
+                生成済み {items.length}本{shownCount < items.length ? `（先方に見せる ${shownCount}本・非表示 ${items.length - shownCount}本）` : ""}。「共有URL」で表示中のものをまとめて見られます
+              </div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {items.map((s) => (
+                  <div key={s.key} className="w-[92px]">
+                    <div className={"rounded-lg overflow-hidden bg-stone-900 " + (s.hidden ? "opacity-35" : "")}>
+                      <video src={SHARE_API + "/api/file/" + encodeURIComponent(s.key).replace(/%2F/g, "/")} preload="metadata" muted playsInline controls
+                        className="w-full block bg-stone-900" style={{ aspectRatio: "9/16", objectFit: "cover" }} />
+                    </div>
+                    <button onClick={() => toggleHidden(s)} disabled={visBusy === s.key}
+                      title={s.hidden ? "先方に見せる（共有ページ・共有URLに出す）" : "先方に見せない（共有ページ・共有URLから隠す）"}
+                      className={"mt-1 w-full text-[11px] font-bold py-1 rounded-md border inline-flex items-center justify-center gap-1 disabled:opacity-50 " + (s.hidden ? "border-stone-300 bg-stone-100 text-stone-500 hover:bg-stone-200" : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50")}>
+                      <Icon name={s.hidden ? "eyeOff" : "eye"} className="w-3.5 h-3.5" />{s.hidden ? "非表示" : "表示中"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -4753,6 +4795,17 @@ export default function App() {
      手入力（Drive/YouTubeのURL等）は一切触らない。自動で入れたURL（/api/file/…）は
      新しい版がアップされたら最新に追従して差し替える（古い版のURLを納品し続ける事故防止）。 */
   const isAutoFileUrl = (s) => (s || "").trim().startsWith(SHARE_API + "/api/file/");
+  // 納品項目「切り抜きショート」の自動入力。非表示にしたショートは載せない（ShortsPanelで切り替えた時もここを通す）。
+  const fillDeliverShorts = (list) => {
+    const next = (list || []).filter((f) => !f.hidden).map((f) => SHARE_API + "/api/file/" + f.key).join("\n");
+    // fetch中に手入力された可能性があるので反映直前にもう一度自動判定してから差し替え
+    setProject((p) => {
+      if (!p) return p;
+      const cs = (((p.meta || {}).deliverShorts) || "").trim();
+      const stillAuto = !cs || cs.split("\n").every((l) => !l.trim() || isAutoFileUrl(l));
+      return stillAuto && cs !== next ? { ...p, meta: { ...p.meta, deliverShorts: next } } : p;
+    });
+  };
   useEffect(() => {
     if (tab !== "deliver" || !project) return;
     const m0 = project.meta || {};
@@ -4766,16 +4819,9 @@ export default function App() {
       fetch(SHARE_API + "/api/shorts/list/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || ""))
         .then((r) => r.json())
         .then((d) => {
-          const urls = ((d && d.shorts) || []).map((f) => SHARE_API + "/api/file/" + f.key);
-          if (!urls.length) return;
-          const next = urls.join("\n");
-          // fetch中に手入力された可能性があるので反映直前にもう一度自動判定してから差し替え
-          setProject((p) => {
-            if (!p) return p;
-            const cs = (((p.meta || {}).deliverShorts) || "").trim();
-            const stillAuto = !cs || cs.split("\n").every((l) => !l.trim() || isAutoFileUrl(l));
-            return stillAuto && cs !== next ? { ...p, meta: { ...p.meta, deliverShorts: next } } : p;
-          });
+          const list = (d && d.shorts) || [];
+          if (!list.length) return;
+          fillDeliverShorts(list);
         }).catch(() => {});
     }
   }, [tab, activeId, project && project.review && (project.review.versions || []).length]);
@@ -10159,7 +10205,7 @@ export default function App() {
                           )}
                         </div>
                       ) : key === "deliverShorts" ? (
-                        <ShortsPanel key={project.id} videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} onCopyGalleryUrl={copyShortsGalleryUrl} accent={theme.accent}
+                        <ShortsPanel key={project.id} videoKey={shortsKey} shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare} onCopyGalleryUrl={copyShortsGalleryUrl} onShortsChange={fillDeliverShorts} accent={theme.accent}
                           templateId={m.deliverShortsTemplateId || ""} onTemplateChange={(v) => setMeta("deliverShortsTemplateId", v)} />
                       ) : kind === "title2" ? (
                         // タイトル案を2つまで持てるように（2026-08-20 AK要望）。案1は構成台本のタイトルと連動、

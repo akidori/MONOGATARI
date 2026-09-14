@@ -2209,16 +2209,37 @@ Bird Flip / ものがたりっち！`;
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "list" && parts[3]) {
         const snap = parts[3];
         const rtok = await env.SNAPS.get("rtok:" + snap);
+        const t = url.searchParams.get("token") || "";
+        const adminTok = t ? await env.SNAPS.get("tok:" + snap) : null;
+        const isAdmin = !!adminTok && t === adminTok;
         if (rtok) {
-          const r = url.searchParams.get("r") || "", t = url.searchParams.get("token") || "";
-          const admin = t ? await env.SNAPS.get("tok:" + snap) : null;
-          if (r !== rtok && !(admin && t === admin)) return json({ error: "unauthorized", auth_required: true }, 401);
+          const r = url.searchParams.get("r") || "";
+          if (r !== rtok && !isAdmin) return json({ error: "unauthorized", auth_required: true }, 401);
         }
         const res = await env.SNAPS.get("shorts:" + snap, "json");
+        // 非表示にしたショート（2026-09-14 AK要望「共有したくないショートは非表示に」）は先方には返さない。
+        // オーナー（token一致＝アプリ）だけが全件＋hidden印を受け取り、表示/非表示を切り替えられる。
+        const all = (res && res.items) || [];
+        const shorts = isAdmin ? all : all.filter((s) => !s.hidden);
         const idx = (await env.SNAPS.get("sjobs:idx", "json")) || [];
         // transcribeジョブは切り抜きUIのジョブ状況に混ぜない（ショート生成中と誤表示されるのを防ぐ）
         const jobs = idx.filter((j) => j.snap === snap && (j.kind || "shorts") !== "transcribe").map((j) => ({ id: j.id, status: j.status, createdAt: j.createdAt, error: j.error || "" }));
-        return json({ shorts: (res && res.items) || [], jobs });
+        return json({ shorts, jobs });
+      }
+      // POST /api/shorts/visibility { snap, token, key, hidden } → ショート1本を先方に見せる/隠す（snap所有者のみ）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "visibility") {
+        const b = await request.json().catch(() => ({}));
+        const snap = (b.snap || "").toString().slice(0, 16);
+        if (!snap || !b.key) return json({ error: "snap/key必須" }, 400);
+        const tok = await env.SNAPS.get("tok:" + snap);
+        if (!tok || tok !== (b.token || "")) return json({ error: "forbidden" }, 403);
+        const res = await env.SNAPS.get("shorts:" + snap, "json");
+        const items = (res && res.items) || [];
+        const it = items.find((s) => s.key === b.key);
+        if (!it) return json({ error: "not found" }, 404);
+        if (b.hidden) it.hidden = true; else delete it.hidden;
+        await env.SNAPS.put("shorts:" + snap, JSON.stringify({ ...res, items, updatedAt: now() }));
+        return json({ ok: true, key: it.key, hidden: !!it.hidden });
       }
       // PUT /api/shorts/upload?key=<MG_LIST_KEY>&snap=&name= → Macが生成ショートmp4をR2に上げる。keyを返す
       if (request.method === "PUT" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "upload") {
