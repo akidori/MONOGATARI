@@ -31,8 +31,12 @@ export function auditShareProject(project, dayOf) {
     const label = (row.label || "").trim();
     const lines = (row.script || "").split("\n").map((line) => line.trim()).filter(Boolean);
     if (!label) issues.push({ category: "シーン漏れ", detail: "シーンタイトルが空のままです", rowId: row.id, sceneLabel: "（無題のシーン）" });
-    if (row.type === "インサート" && !lines.some((line) => !/^[※★◼■>＞]/.test(line))) {
+    if (row.type === "インサート" && !lines.some((line) => !/^[※★◼■⚠>＞]/.test(line))) {
       issues.push({ category: "インサート不足", detail: "撮るカットが1つも書かれていません（1行＝1カット）", rowId: row.id, sceneLabel: label || "（無題）" });
+    }
+    const unresolvedWarns = lines.filter((line) => /^⚠/.test(line));
+    if (unresolvedWarns.length) {
+      issues.push({ category: "要確認", detail: "先方確定待ちなどの要確認行が " + unresolvedWarns.length + " 件残っています", rowId: row.id, sceneLabel: label || "（無題）" });
     }
     let openQuestion = null;
     let emptyQuestions = 0;

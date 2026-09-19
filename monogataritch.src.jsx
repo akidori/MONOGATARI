@@ -1678,6 +1678,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     let pendingA = false;
     return lines.map((l) => {
       if (/^\s*◼/.test(l)) { pendingA = true; return "q"; }
+      if (/^\s*⚠/.test(l)) return "warn";
       if (/^\s*★/.test(l)) return "star";
       if (/^\s*・/.test(l)) return "shot"; // 箇条書き＝撮る/拾うものリスト（チェック対象）。回答の頭判定は消費しない
       if (pendingA && l.trim()) { pendingA = false; return "a"; }
@@ -1691,10 +1692,12 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     const st = {};
     if (r.red) st.color = "#DC2645";
     else if (flag === "q") st.color = "#171A1F";
+    else if (flag === "warn") st.color = "#B45309";
     else if (flag === "star") st.color = "#5F5138";
     else if (flag === "shot" && shotChecks && shotChecks[(lineTextAt(li) || "").trim()]) { st.color = "#A3A9B1"; st.textDecoration = "line-through"; }
     if (!focused && r.bold) st.fontWeight = 800;
     else if (!focused && flag === "q") st.fontWeight = 600;
+    else if (!focused && flag === "warn") st.fontWeight = 700;
     else if (!focused && flag === "star") st.fontWeight = 500;
     return st;
   };
@@ -1753,6 +1756,12 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
           nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: qaGutter ? "#C6CBD1" : accent }}>{m[1]}</span>);
           if (m[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{m[2]}</span>);
         }
+      } else if (flag === "warn" && !r.marker) {
+        const wm = /^(\s*⚠)([\s\S]*)$/.exec(p);
+        if (wm) {
+          nodes.push(<span key={key++} style={{ ...styleFor(r, flag), color: "#D97706" }}>{wm[1]}</span>);
+          if (wm[2]) nodes.push(<span key={key++} style={styleFor(r, flag)}>{wm[2]}</span>);
+        } else nodes.push(<span key={key++} style={styleFor(r, flag)}>{p}</span>);
       } else if (flag === "star" && !r.marker) {
         const sm = /^(\s*★)([\s\S]*)$/.exec(p);
         if (sm) {
@@ -5991,7 +6000,8 @@ export default function App() {
   };
   const runAutofix = async () => {
     if (!preflight || !preflight.review) return;
-    const targets = preflight.review.issues.filter((it) => !it.soft);
+    // 「要確認」は先方確定などAIが代わりに判断できない事実確認のため、自動修正の対象から外す
+    const targets = preflight.review.issues.filter((it) => !it.soft && it.category !== "要確認");
     if (!targets.length) return;
     setPreflight((p) => ({ ...p, review: { ...p.review, fixing: true, fixError: "" } }));
     try {
@@ -6009,7 +6019,7 @@ export default function App() {
       showToast("AIが " + applied.length + " 箇所を直しました");
     } catch (e) { setPreflight((p) => ({ ...p, review: { ...p.review, fixing: false, fixError: e.message || String(e) } })); }
   };
-  const structuralCategory = (c) => ["ロケ漏れ", "シーン漏れ", "インサート不足", "回答なし", "撮影順"].includes(c);
+  const structuralCategory = (c) => ["ロケ漏れ", "シーン漏れ", "インサート不足", "回答なし", "撮影順", "要確認"].includes(c);
   const undoAutofix = () => {
     if (!autofixUndoRef.current) return;
     const rows = autofixUndoRef.current; autofixUndoRef.current = null;
@@ -9128,7 +9138,7 @@ export default function App() {
                    編集は鉛筆で原稿編集に切り替え（原稿データはそのまま＝共有/マインドマップ/AIとの互換維持） */
                 const isInsert = r.type === "インサート";
                 const insertLines = isInsert ? (r.script || "").split("\n").map((l) => l.trim()).filter(Boolean) : [];
-                const isNoteLine = (l) => /^[※★◼■>＞]/.test(l);
+                const isNoteLine = (l) => /^[※★◼■⚠>＞]/.test(l);
                 const insertItems = insertLines.filter((l) => !isNoteLine(l));
                 const insertNotes = insertLines.filter(isNoteLine);
                 const checks = r.insertChecks || {};
@@ -9323,7 +9333,7 @@ export default function App() {
             </div>
 
             <p className="mt-3 text-[10.5px] leading-relaxed" style={{ color: "#8C939D" }}>
-              原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」で ◼︎ 質問行（Q.）　／　行頭の⋮⋮をドラッグで並べ替え（場所は📍をドラッグで配下ごと移動）・右クリックでメニュー　／　尺（動画内の想定）はクリックで秒編集、目安の1.5倍を超えた時だけ実測を赤表示（{project.rate}字/秒換算）　／　インサートは1行＝1カット、チェックで撮影済み　／　場所の時刻＝香盤表と連動、各シーンは到着時刻＋尺の積み上げ　／　自動保存
+              原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」で ◼︎ 質問行（Q.）／行頭に ⚠ で要確認行（先方確定待ちなど・共有前チェックに出ます）　／　行頭の⋮⋮をドラッグで並べ替え（場所は📍をドラッグで配下ごと移動）・右クリックでメニュー　／　尺（動画内の想定）はクリックで秒編集、目安の1.5倍を超えた時だけ実測を赤表示（{project.rate}字/秒換算）　／　インサートは1行＝1カット、チェックで撮影済み　／　場所の時刻＝香盤表と連動、各シーンは到着時刻＋尺の積み上げ　／　自動保存
             </p>
             </>)}
           </div>
