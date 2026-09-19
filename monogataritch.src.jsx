@@ -7803,6 +7803,7 @@ export default function App() {
   };
 
   const m = project.meta;
+  const scriptDensity = m.scriptDensity || "standard"; // 標準 | コンパクト | 詳細。案件に保存＝共有相手にも同じ見え方
   const theme = project.theme;
   const mainText = textOn(theme.main);
   const accentText = textOn(theme.accent);
@@ -8834,6 +8835,14 @@ export default function App() {
                   {scriptLayout === "stack" ? "表示：上下積み（原稿全幅）" : "表示：横並びの表"}
                 </button>
               )}
+              {stacked && scriptView !== "mindmap" && (
+                <button
+                  onClick={() => setMeta("scriptDensity", scriptDensity === "standard" ? "compact" : scriptDensity === "compact" ? "detail" : "standard")}
+                  title="原稿の情報量を切替（撮影前はコンパクトで見渡す・執筆時は詳細）。案件に保存されるので共有相手にも同じ見え方になります"
+                  className="text-[11px] text-stone-400 hover:text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors">
+                  密度：{scriptDensity === "compact" ? "コンパクト" : scriptDensity === "detail" ? "詳細" : "標準"}
+                </button>
+              )}
             </div>
             {scriptView === "mindmap" ? (
               <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
@@ -9111,19 +9120,29 @@ export default function App() {
                       <button onClick={() => setSecEdit(r.id)} title={"動画内の想定尺 " + target + "秒（クリックで秒編集）"}
                         className="text-[12px] font-semibold tabular-nums rounded px-1 -ml-1 hover:bg-stone-50 whitespace-nowrap" style={{ color: "#3F4650" }}>{fmtDurJP(target)}</button>
                     )}
-                    {/* 撮影画面では文字数を出さない。実測は目安の1.5倍を超えた時だけ赤で知らせる */}
+                    {/* 撮影画面では文字数を出さない。実測は目安の1.5倍を超えた時だけ赤で知らせる。詳細モードだけ常時字数も出す */}
                     {over && (
                       <span className="text-[10.5px] px-1 -ml-1 rounded whitespace-nowrap font-semibold" style={{ color: "#E04C4C", background: "#FFF0F0" }} title={"原稿量から実測 " + fmtDurJP(dur) + "（" + chars + "字）。目安の1.5倍超"}>
                         実測 {fmtDurJP(dur)}
                       </span>
                     )}
+                    {!over && scriptDensity === "detail" && chars > 0 && (
+                      <span className="text-[10.5px] px-1 -ml-1 whitespace-nowrap" style={{ color: "#A3A9B1" }}>{chars}字</span>
+                    )}
                   </div>
                 );
+                /* ⚠要確認：密度モードに関わらず常に出す（コンパクトで原稿本文を畳んでも見落とさないための唯一の例外） */
+                const warnCount = (r.script || "").split("\n").filter((l) => /^\s*⚠/.test(l.trim())).length;
                 const titleEl = (
                   <div className="flex items-start gap-2 min-w-0">
                     <BufferedTextarea value={r.label} onChange={(v) => updateRow(r.id, { label: v })} rows={1} placeholder="シーンタイトル"
                       className="block flex-1 min-w-0 resize-none bg-transparent text-[15px] focus:outline-none placeholder:text-stone-300 placeholder:font-normal"
                       style={{ fontWeight: 650, color: "#171A1F", lineHeight: 1.35, textDecoration: sceneDone ? "line-through" : "none" }} />
+                    {warnCount > 0 && (
+                      <span className="shrink-0 inline-flex items-center gap-0.5 text-[10.5px] font-bold px-1.5 h-[19px] rounded-full mt-[1px]" style={{ background: "#FEF3E2", color: "#B45309" }} title={warnCount + "件の要確認行（先方確定待ちなど）"}>
+                        ⚠{warnCount}
+                      </span>
+                    )}
                     <span className="shrink-0 text-[11px] tabular-nums pt-[3px]" style={{ fontFamily: mono, color: "#A3A9B1" }}>#{pad2(sceneNos[r.id])}</span>
                   </div>
                 );
@@ -9143,9 +9162,20 @@ export default function App() {
                 const insertNotes = insertLines.filter(isNoteLine);
                 const checks = r.insertChecks || {};
                 const doneN = insertItems.filter((l) => checks[l]).length;
-                const collapsed = insertCollapsed.has(r.id);
+                /* 密度モード：コンパクト＝インサートは強制的に畳む／詳細＝強制的に開く。標準は個別記憶（insertCollapsed）のまま＝挙動不変 */
+                const collapsed = scriptDensity === "detail" ? false : scriptDensity === "compact" ? true : insertCollapsed.has(r.id);
                 const stripParen = (l) => l.replace(/^[（(]\s*/, "").replace(/\s*[)）]$/, "");
-                const contentEl = (!isInsert || insertEdit === r.id || insertItems.length === 0) ? (
+                /* コンパクト時（インサート以外）：原稿全文の代わりに1行目だけの要約を出す。
+                   ⚠要確認は密度に関わらずタイトル横のバッジ（warnCount）で必ず見えるので、ここで畳んでも見落とさない */
+                const scriptLinesForPreview = (r.script || "").split("\n").map((l) => l.trim()).filter(Boolean);
+                const compactPreviewEl = (
+                  <div className="text-[13.5px] leading-[1.6] truncate" style={{ color: scriptLinesForPreview[0] ? "#4A515B" : "#C6CBD1" }}>
+                    {scriptLinesForPreview[0] || "（原稿未入力）"}
+                    {scriptLinesForPreview.length > 1 && <span style={{ color: "#B8BDC4" }}> ほか{scriptLinesForPreview.length - 1}行</span>}
+                  </div>
+                );
+                const contentEl = (scriptDensity === "compact" && !isInsert && insertEdit !== r.id) ? compactPreviewEl
+                  : (!isInsert || insertEdit === r.id || insertItems.length === 0) ? (
                   <div>
                     {scriptEl}
                     {isInsert && insertEdit === r.id && (
@@ -9325,6 +9355,8 @@ export default function App() {
               </button>
             </div>
 
+            {/* 凡例・操作ヒントはコンパクト時は隠す（撮影前に構成全体を見渡す用途なので、常時出す情報を減らす） */}
+            {scriptDensity !== "compact" && (<>
             {/* 凡例：5種別の意味（初見でも分かる） */}
             <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 px-1 text-[10.5px]" style={{ color: "#656C76" }}>
               {[["インサート", "情景・印象を伝えるカット"], ["VLOG", "日常の動き・行動の記録"], ["ブリッジ", "場や流れをつなぐ"], ["解説系", "インタビュー・説明・対話"], ["訴求", "メッセージ・結論・想い"]].map(([k, d]) => (
@@ -9335,6 +9367,7 @@ export default function App() {
             <p className="mt-3 text-[10.5px] leading-relaxed" style={{ color: "#8C939D" }}>
               原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」で ◼︎ 質問行（Q.）／行頭に ⚠ で要確認行（先方確定待ちなど・共有前チェックに出ます）　／　行頭の⋮⋮をドラッグで並べ替え（場所は📍をドラッグで配下ごと移動）・右クリックでメニュー　／　尺（動画内の想定）はクリックで秒編集、目安の1.5倍を超えた時だけ実測を赤表示（{project.rate}字/秒換算）　／　インサートは1行＝1カット、チェックで撮影済み　／　場所の時刻＝香盤表と連動、各シーンは到着時刻＋尺の積み上げ　／　自動保存
             </p>
+            </>)}
             </>)}
           </div>
         )}
