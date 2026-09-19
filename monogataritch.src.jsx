@@ -2402,6 +2402,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const [dur, setDur] = React.useState(0);
   /* シーク/バッファ待ち中の表示。生mp4（軽量版なし）は移動に数秒かかるので「移動中」を出して固まって見えるのを防ぐ */
   const [seeking, setSeeking] = React.useState(false);
+  /* Stream(HLS)の実体が消えている/読めない時、元mp4(rawSrc)へ切り替えるための印。版idを持つ＝版を変えたら自動で解除 */
+  const [hlsDeadId, setHlsDeadId] = React.useState(null);
   /* シークバーのホバープレビュー（YouTube風）。pv={x,t}、pvImgは読み込み完了済みサムネURL（src直差し替えのチラつき防止） */
   const [pv, setPv] = React.useState(null);
   const [pvImg, setPvImg] = React.useState("");
@@ -2431,12 +2433,13 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const isMp4 = sel && sel.type !== "youtube";
   // 再生方針：keyかurl(生データ)があれば常に観られる。HLS(軽量版)はreadyになったら昇格。
   const rawSrc = sel ? (sel.key ? (SHARE_API + "/api/file/" + sel.key) : (sel.url || "")) : "";
-  const streamReadyHls = !!(sel && sel.type === "stream" && sel.ready && sel.hls);
+  const hlsDead = !!(sel && hlsDeadId === sel.id && (sel.key || sel.url));   // 元mp4が無いなら切り替えても意味がないので従来動作
+  const streamReadyHls = !!(sel && sel.type === "stream" && sel.ready && sel.hls && !hlsDead);
   const streamBusy = !!(sel && sel.type === "stream" && !sel.ready);   // 変換中 or 変換失敗
   // 「本当に何も再生できない」＝HLS未完 かつ 生データも無い時だけ
   const streamPending = streamBusy && !rawSrc;
   // ホバープレビューの絵の出どころ：Stream変換済みは公式サムネAPI（?time=Ns）、生mp4は隠しvideoからフレーム描画、YouTubeはタイムコードのみ
-  const pvThumbBase = (sel && sel.type === "stream" && sel.ready && sel.hls) ? sel.hls.replace(/manifest\/video\.m3u8.*$/, "thumbnails/thumbnail.jpg") : "";
+  const pvThumbBase = (sel && sel.type === "stream" && sel.ready && sel.hls && !hlsDead) ? sel.hls.replace(/manifest\/video\.m3u8.*$/, "thumbnails/thumbnail.jpg") : "";
   const pvThumbUrl = (pvThumbBase && pv) ? pvThumbBase + "?time=" + Math.max(0, Math.floor(pv.t)) + "s&height=90" : "";
   React.useEffect(() => { if (!pvThumbUrl) return; const im = new Image(); im.onload = () => setPvImg(pvThumbUrl); im.src = pvThumbUrl; }, [pvThumbUrl]);
   React.useEffect(() => { setPv(null); setPvImg(""); setSeeking(false); }, [sel && sel.id]);
@@ -2469,8 +2472,17 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
     if (!sel || sel.type !== "stream" || !sel.ready || !sel.hls || !vref.current) return;
     const video = vref.current; let hls;
     // hls.js優先。Chrome 149+はcanPlayTypeが"maybe"を返すのに実際はHLSを再生できないため、ネイティブはhls.js不可環境(iOS Safari)のみ
-    loadHls().then((Hls) => { if (Hls && Hls.isSupported()) { hls = new Hls(HLS_TUNING); hls.loadSource(sel.hls); hls.attachMedia(video); } else { video.src = sel.hls; } });
-    return () => { if (hls) hls.destroy(); };
+    // Streamの実体が消えている(404等)と、そのままでは「移動中…」で永久に固まる。致命的に失敗したら元mp4へ切り替える
+    const sid = sel.id, dead = () => { setSeeking(false); setHlsDeadId(sid); };
+    const onNativeErr = () => dead();
+    loadHls().then((Hls) => {
+      if (Hls && Hls.isSupported()) {
+        hls = new Hls(HLS_TUNING);
+        hls.on(Hls.Events.ERROR, (_e, data) => { if (data && data.fatal && data.type !== Hls.ErrorTypes.MEDIA_ERROR) dead(); });
+        hls.loadSource(sel.hls); hls.attachMedia(video);
+      } else { video.addEventListener("error", onNativeErr); video.src = sel.hls; }
+    });
+    return () => { if (hls) hls.destroy(); video.removeEventListener("error", onNativeErr); };
   }, [sel && sel.id, sel && sel.ready, sel && sel.hls]);
   const isYT = sel && sel.type === "youtube";
   // YouTubeは IFrame API で制御（再生/停止・速度・タイムコード）。※YouTubeは仕様上2倍速まで
@@ -2676,8 +2688,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
-                  : <video ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
+                  ? <video key="hls" ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
+                  : <video key="raw" ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
             {/* 左右ダブルタップの±5秒インジケータ */}
             {skipFlash && (
               <div className={"absolute inset-y-0 grid place-items-center pointer-events-none " + (skipFlash.side === "l" ? "left-0 w-1/3" : "right-0 w-1/3")}>
