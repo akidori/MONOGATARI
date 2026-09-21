@@ -8896,7 +8896,7 @@ export default function App() {
 
             {/* ハイライト（独立カード） */}
             {/* 章ヘッダーと同じ見た目（濃い背景・明るい文字）のヘッダー ＋ 本文カード */}
-            <div className="relative flex items-center gap-4 pl-5 pr-3 py-3 mb-4 min-h-[66px] rounded-xl border overflow-hidden" style={{ background: theme.main, borderColor: hexA(mainText, 0.1) }}>
+            <div className="relative flex items-center gap-4 pl-5 pr-3 py-3 min-h-[66px] rounded-t-xl border border-b-0 overflow-hidden" style={{ background: theme.main, borderColor: hexA(mainText, 0.1) }}>
               <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px]" style={{ background: hexA(mainText, 0.25) }} />
               <span className="shrink-0 flex items-center gap-4 select-none">
                 <Icon name="star" className="w-6 h-6" style={{ color: theme.accent }} />
@@ -8907,7 +8907,7 @@ export default function App() {
                 <div className="text-[12px] leading-snug" style={{ color: hexA(mainText, 0.6) }}>冒頭フック</div>
               </div>
             </div>
-            <section className={cardCls + " mb-4"}>
+            <section className={cardCls + " mb-4 !rounded-t-none border-t-0"}>
               <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（行頭に「・」で ◼︎ 質問行）" />
             </section>
             </>)}
@@ -9388,7 +9388,7 @@ export default function App() {
                         return (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-4 rounded-xl border transition-[filter] duration-150 hover:brightness-[1.12] overflow-hidden scroll-mt-24"
+                          className={"group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 border transition-[filter] duration-150 hover:brightness-[1.12] overflow-hidden scroll-mt-24 " + (visibleScenes.length > 0 ? "rounded-t-xl border-b-0" : "mb-4 rounded-xl")}
                           style={{ background: theme.main, borderColor: hexA(mainText, 0.1), "--ac": theme.accent, "--ln": hexA(mainText, 0.25), "--hv": hexA(mainText, 0.12), ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px] bg-[var(--ln)] group-focus-within/loc:bg-[var(--ac)] transition-colors duration-150" />
                           <span className="shrink-0 flex items-center gap-4 select-none cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
@@ -9426,7 +9426,7 @@ export default function App() {
                         );
                       })()}
                       {visibleScenes.length > 0 && (
-                        <div className="rounded-lg border bg-white" style={{ borderColor: BORDER }}>
+                        <div className={"border bg-white " + (r ? "rounded-b-xl rounded-t-none border-t-0" : "rounded-lg")} style={{ borderColor: BORDER }}>
                           {visibleScenes.map(renderScene)}
                         </div>
                       )}
