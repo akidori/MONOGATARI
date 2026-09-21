@@ -6,7 +6,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const dist = path.join(root, "dist");
 const publicFiles = [
   "index.html", "app.js", "app.css", "tailwind.css", "sw.js", "manifest.json",
-  "settings.html", "cases.html", "share.html", "lp.html", "_headers", ".nojekyll",
+  "settings.html", "cases.html", "share.html", "lp.html", "mcp-login.html", "_headers", ".nojekyll",
   "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-64.png",
   "logo-header.png", "logo-source.png",
 ];

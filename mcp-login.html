@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Claude と接続 | ものがたりっち</title>
+<style>
+  body { font-family: -apple-system, "Hiragino Sans", sans-serif; background: #faf7f2; color: #1f2430; margin: 0; }
+  main { max-width: 26em; margin: 12vh auto 0; padding: 0 16px; line-height: 1.8; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  p { font-size: 14px; margin: 0 0 20px; }
+  #msg { color: #b3261e; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Claude と ものがたりっち を接続</h1>
+  <p>Claude（claude.ai）に、ものがたりっちの台本の読み取りと書き換えを許可します。許可する場合は Google でログインしてください。</p>
+  <div id="btn"></div>
+  <p id="msg"></p>
+</main>
+<!-- claude.ai のコネクタ接続専用。mg-mcp Worker の /authorize から s=（署名付きの認可要求）付きで飛んでくる。 -->
+<script>
+  const CLIENT_ID = "177151250196-ta2k23m2fe1ac9bras75ajk6ia79h88k.apps.googleusercontent.com";
+  const CALLBACK = "https://mg-mcp.aki-surf89315.workers.dev/callback";
+  const state = new URLSearchParams(location.search).get("s") || "";
+  const msg = (t) => { document.getElementById("msg").textContent = t; };
+
+  async function start() {
+    if (!state) return msg("このページは claude.ai のコネクタ接続から開いてください。");
+    // nonce は state から決まる（Worker側で同じ計算をして照合する）
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(state));
+    const nonce = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+    google.accounts.id.initialize({
+      client_id: CLIENT_ID,
+      nonce,
+      callback: (res) => {
+        const f = document.createElement("form");
+        f.method = "POST"; f.action = CALLBACK;
+        for (const [k, v] of [["credential", res.credential], ["state", state]]) {
+          const i = document.createElement("input"); i.type = "hidden"; i.name = k; i.value = v; f.appendChild(i);
+        }
+        document.body.appendChild(f); f.submit();
+      },
+    });
+    google.accounts.id.renderButton(document.getElementById("btn"), { theme: "outline", size: "large", text: "continue_with", locale: "ja" });
+  }
+</script>
+<script src="https://accounts.google.com/gsi/client" onload="start()" async defer></script>
+</body>
+</html>

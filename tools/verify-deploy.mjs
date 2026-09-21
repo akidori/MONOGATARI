@@ -32,4 +32,10 @@ assertMatch("share.html", localShare, remoteShare);
 // functions/ を含まないデプロイ（リポ直下以外から pages deploy した等）だとSPAフォールバックで200/405になる。2026-09-21 追加。
 const mcp = await fetch(`${origin}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
 if (mcp.status !== 401) throw new Error(`/mcp is not serving (expected 401 without key, got ${mcp.status})`);
+// claude.ai 用のOAuth入口（mcp-oauth/ = mg-mcp Worker）とログインページ。どちらかが欠けると claude.ai から繋がらない。
+const oauth = await fetch("https://mg-mcp.aki-surf89315.workers.dev/mcp", { method: "POST", body: "{}" });
+if (oauth.status !== 401 || !(oauth.headers.get("WWW-Authenticate") || "").includes("resource_metadata"))
+  throw new Error(`mg-mcp OAuth endpoint is not serving (got ${oauth.status})`);
+const login = await fetch(`${origin}/mcp-login?verify=${Date.now()}`);
+if (!login.ok || !(await login.text()).includes("mg-mcp.aki-surf89315.workers.dev/callback")) throw new Error("/mcp-login is missing");
 console.log("production files match dist");

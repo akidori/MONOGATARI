@@ -1,0 +1,24 @@
+name = "mg-mcp"
+main = "src/index.js"
+compatibility_date = "2025-06-01"
+# CIMD（クライアントIDがURLの方式）の取得をSSRFから守るためにライブラリが要求するフラグ
+compatibility_flags = ["global_fetch_strictly_public"]
+workers_dev = true
+
+# secrets（wrangler secret put）:
+#   MCP_WRITE_KEY … mg-share の /mcp に渡す書き込みキー（~/.config/monogataritch/mcp_keys と同値）
+#   STATE_SECRET  … ログイン画面へ渡す state の署名鍵（ランダム）
+[vars]
+GOOGLE_CLIENT_ID = "177151250196-ta2k23m2fe1ac9bras75ajk6ia79h88k.apps.googleusercontent.com"
+ALLOWED_EMAILS = "aki.surf89315@gmail.com"
+LOGIN_PAGE = "https://monogataritch.pages.dev/mcp-login"
+
+# OAuthのクライアント・認可・トークン（ハッシュ）置き場。案件データは持たない。
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "290de67f6eeb44d69e73aaac6b2dacac"
+
+# 台本の読み書きは mg-share Worker の /mcp が行う（workers.dev 同士の fetch は通らないのでService Binding）
+[[services]]
+binding = "MG_SHARE"
+service = "mg-share"
