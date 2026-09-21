@@ -6121,6 +6121,21 @@ export default function App() {
     setShareModal({ id, url: u, updated: had, ai: true });
     try { await navigator.clipboard.writeText(u); showToast("AI用リンク（JSON）を更新してコピーしたよ"); } catch (e) {}
   };
+  /* AI共有（2026-09-21）：Claude が MCP「monogataritch」(get_script/update_script) でこの案件を直接読み書きするための
+     指示文をコピーする。渡すのは案件IDだけ＝共有リンクは発行しない（MCP側の認証で守られているので外に漏れても読めない）。
+     MCPはクラウド保存(D1)を読むので要ログイン。コピー前に保存を流して、Claudeが古い版を読まないようにする。 */
+  const copyAiMcp = async () => {
+    if (!MG_SESSION) { showToast("AI共有はログインが必要です（Claudeはクラウド保存を読みます）"); return; }
+    const ok = await saveProjectData(project);
+    if (ok === false) { showToast("保存できなかったのでコピーを中止しました。少し待ってからやり直してください"); return; }
+    const text = [
+      "ものがたりっちの台本「" + (project.name || "") + "」を、MCP「monogataritch」で開いてください。",
+      "id: " + project.id,
+      "get_script で読み、直すときは update_script を使ってください（baseUpdatedAt に get_script の updatedAt を付ける）。",
+    ].join("\n");
+    try { await navigator.clipboard.writeText(text); showToast("AI共有の文面をコピーしました。Claudeに貼ってください"); }
+    catch (e) { window.prompt("この文面をコピーしてください", text); }
+  };
 
   /* ---- 動画確認＋ファイル転送（R2） ---- */
   /* 共有済みスナップショットへ video/files を静かに反映（共有モーダルは出さない） */
@@ -8282,6 +8297,10 @@ export default function App() {
                   <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5"><Icon name="file" className="w-4 h-4 shrink-0 text-stone-500" />台本コピー<span className="text-[10px] text-stone-400 font-normal ml-auto">CSV</span></button>
                   <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 py-3 hover:bg-stone-50 text-[12px] font-bold text-stone-500 border-l border-stone-100">txt</button>
                 </div>
+                <button onClick={() => { setShareMenu(false); copyAiMcp(); }} title="ClaudeがMCPでこの台本を直接読み書きするための文面をコピー" className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-b border-stone-100">
+                  <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-500" />
+                  AI共有<span className="text-[10px] text-stone-400 font-normal ml-auto">Claudeで読み書き</span>
+                </button>
                 {/* ===== その他（折りたたみ）：先方/演者・AI・動画確認・カスタマイズ ===== */}
                 <button onClick={() => setShareMore((v) => !v)} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2">
                   <span className="text-[10px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他のリンク・書き出し
