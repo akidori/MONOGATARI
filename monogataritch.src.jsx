@@ -147,7 +147,7 @@ const histSnapshot = (p) => {
   });
   return o;
 };
-const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], icon: "", clientNotes: "", manuals: [], promanUrl: "", manualUrl: "", checklistUrl: "" });
+const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], competitorVideos: [], icon: "", clientNotes: "", manuals: [], promanUrl: "", manualUrl: "", checklistUrl: "" });
 /* チャンネルアイコンに選べる絵文字 */
 const CHANNEL_ICONS = ["📁","🎬","🎥","🎙️","🎤","📺","🎮","📷","🎨","💡","🔥","⭐","🚀","💼","🏆","⚽","🏀","🍳","💪","🐦","🐱","🐶","🌸","🌙","🎯","💰","📚","🧠","❤️","✨","🎸","🍜","🧳","👑","🛠️","🌍"];
 const emptyCompetitor = () => ({ url: "", vid: "", name: "", subs: 0, note: "" });
@@ -4221,6 +4221,41 @@ export default function App() {
   const addCompetitor = () => setCompetitors((cs) => [...(cs || []), emptyCompetitor()]);
   const removeCompetitor = (i) => setCompetitors((cs) => (cs || []).filter((_, k) => k !== i));
   const updateCompetitor = (i, patch) => setCompetitors((cs) => (cs || []).map((c, k) => (k === i ? { ...c, ...patch } : c)));
+  /* 競合動画（チャンネル単位で共有）。ID指定で更新し、非同期の取得中に並びが変わっても取りこぼさない */
+  const mapCompVideos = (fn) => setChannelInfo((ci) => {
+    const cur = { ...emptyChannelInfo(), name: curChannel, ...(ci[curChannel] || {}) };
+    return { ...ci, [curChannel]: { ...cur, competitorVideos: fn(cur.competitorVideos || []) } };
+  });
+  const patchCompVideo = (id, patch) => mapCompVideos((vs) => vs.map((v) => (v.id === id ? { ...v, ...patch } : v)));
+  const removeCompVideo = (id) => mapCompVideos((vs) => vs.filter((v) => v.id !== id));
+  const [compVidBusy, setCompVidBusy] = useState({});
+  const fetchCompVideo = async (id, url) => {
+    const vid = ytIdFromUrl(url);
+    if (!vid) { showToast("YouTubeのURLを入力してね"); return; }
+    setCompVidBusy((b) => ({ ...b, [id]: true }));
+    try {
+      const res = await fetch(SHARE_API + "/api/yt?v=" + encodeURIComponent(vid));
+      const d = await res.json();
+      if (d.needKey) { showToast("YouTube APIキーが未設定（AKに設定を頼んで）"); patchCompVideo(id, { url, vid }); return; }
+      if (!res.ok || d.error) throw new Error(d.error || "取得失敗");
+      patchCompVideo(id, { url, vid, title: d.title, channel: d.channel, views: d.views, subs: d.subs, likes: d.likes, uploadDate: d.uploadDate, duration: parseDur(d.duration) });
+    } catch (e) {
+      showToast("動画取得に失敗：" + (e.message || e));
+      patchCompVideo(id, { url, vid });
+    } finally {
+      setCompVidBusy((b) => { const n = { ...b }; delete n[id]; return n; });
+    }
+  };
+  /* URLを貼って追加。複数URL（改行・スペース区切り）もまとめて追加できる */
+  const addCompVideos = (text) => {
+    const urls = String(text || "").split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
+    if (!urls.length) return;
+    const ok = urls.filter((u) => ytIdFromUrl(u));
+    if (!ok.length) { showToast("YouTubeのURLを入力してね"); return; }
+    const items = ok.map((u) => ({ ...emptyRef(), id: uid(), url: u, note: "" }));
+    mapCompVideos((vs) => [...vs, ...items]);
+    items.forEach((it) => fetchCompVideo(it.id, it.url));
+  };
   const [compBusy, setCompBusy] = useState({});
   const fetchCompetitor = async (i, urlOrName) => {
     const v = (urlOrName || "").trim(); if (!v) return;
@@ -8791,6 +8826,68 @@ export default function App() {
                     <span className="inline-flex flex-col items-center gap-1 text-[12px] font-bold"><Icon name="plus" className="w-5 h-5" />競合を追加</span>
                   </button>
                 </div>
+              </div>
+            </section>
+
+            <section className={cardCls + " mb-4"}>
+              <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-stone-100">
+                <span className="text-[13px] font-bold tracking-wide text-stone-600">競合動画</span>
+                <span className="text-[11px] text-stone-500">YouTubeのURLを貼ると、サムネ・再生数・バズ倍率を自動取得（複数URLもまとめて貼れます）</span>
+              </div>
+              <div className="p-4">
+                <input
+                  placeholder="競合動画のYouTube URLを貼って Enter"
+                  onKeyDown={(e) => { if (e.key === "Enter") { addCompVideos(e.target.value); e.target.value = ""; } }}
+                  onPaste={(e) => { const t = (e.clipboardData && e.clipboardData.getData("text")) || ""; if (/\s/.test(t.trim())) { e.preventDefault(); addCompVideos(t); } }}
+                  className="w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2.5 mb-3 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                {(curChannelInfo.competitorVideos || []).length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-center text-[12.5px] text-stone-400 leading-relaxed">
+                    まだ競合動画がありません。<br />上の欄にURLを貼ると、サムネと再生数・バズ倍率（S/A/B/C）が並びます。
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {(curChannelInfo.competitorVideos || []).map((v) => {
+                      const busy = compVidBusy[v.id];
+                      const sc = v.uploadDate ? scoreVideo(v, Date.now()) : null;
+                      return (
+                        <div key={v.id} className="group/cv border border-stone-200 rounded-2xl overflow-hidden flex flex-col bg-white relative">
+                          {busy ? (
+                            <div className="aspect-video bg-stone-200 animate-pulse" />
+                          ) : v.vid ? (
+                            <a href={"https://www.youtube.com/watch?v=" + v.vid} target="_blank" rel="noreferrer" className="block relative">
+                              <img src={"https://img.youtube.com/vi/" + v.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover" />
+                              {v.duration && <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold text-white bg-black/75 px-1.5 rounded" style={{ fontFamily: mono }}>{v.duration}</span>}
+                              {sc && <span className="absolute top-1.5 left-1.5 text-[12px] font-bold text-white px-2 py-0.5 rounded-md" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
+                            </a>
+                          ) : (
+                            <div className="aspect-video grid place-items-center bg-stone-50 text-[12px] text-stone-300">URLを確認してください</div>
+                          )}
+                          <button onClick={() => removeCompVideo(v.id)} title="削除"
+                            className="absolute top-1.5 right-1.5 w-7 h-7 rounded-lg grid place-items-center bg-white/90 text-stone-500 hover:text-red-500 shadow-sm opacity-0 group-hover/cv:opacity-100 transition-opacity"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                          <div className="px-3 pt-2.5 pb-3 flex flex-col gap-1.5 flex-1">
+                            {v.title ? (
+                              <div className="text-[13.5px] font-bold text-stone-800 leading-snug line-clamp-2" title={v.title}>{v.title}</div>
+                            ) : (
+                              <div className="text-[12px] text-stone-300">{busy ? "取得中…" : "タイトル未取得"}</div>
+                            )}
+                            {v.channel && <div className="text-[12px] text-stone-500 truncate" title={v.channel}>{v.channel}</div>}
+                            {(v.views > 0 || v.subs > 0) && (
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-stone-600" style={{ fontFamily: mono }}>
+                                <span title="再生数">▶ {fmtNum(v.views)}</span>
+                                <span title="登録者数">👤 {fmtNum(v.subs)}</span>
+                                {sc && <span className="font-bold" style={{ color: GRADE_COLOR[sc.grade] }} title="再生数÷登録者数（バズ倍率）">{sc.ratioStr}</span>}
+                                {v.uploadDate && <span className="text-stone-400" title="投稿日">{String(v.uploadDate).slice(0, 10)}</span>}
+                              </div>
+                            )}
+                            <textarea value={v.note || ""} onChange={(e) => patchCompVideo(v.id, { note: e.target.value })} rows={2}
+                              placeholder="メモ（この動画のどこを参考にする？）"
+                              className="w-full mt-auto text-[12.5px] leading-relaxed border border-stone-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-stone-400 resize-y" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </section>
 
