@@ -523,6 +523,21 @@ ${qList}
 
       */
 
+      // GET /api/studio-done → Studio OS（台帳ミラー cases）で「納品済み」の案件の、ものがたりっち案件ID一覧（読み取りのみ）。
+      // 案件一覧の「進行中の案件だけ表示」用。cases.mg_project_id は共有snap id なので、mg_kv の shareId 経由で案件IDへ引き直す。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "studio-done") {
+        const sdu = await requireUser(request, env);
+        if (!sdu || !env.DB) return json({ done: [] });
+        try {
+          const { results } = await env.DB.prepare(
+            "SELECT DISTINCT k.proj_id AS id FROM mg_kv k JOIN cases c ON c.mg_project_id = json_extract(k.value,'$.shareId') WHERE c.status IN ('delivered','posted') AND k.proj_id IS NOT NULL"
+          ).all();
+          return json({ done: (results || []).map((r) => r.id) });
+        } catch (e) {
+          return json({ done: [], error: String((e && e.message) || e).slice(0, 120) });
+        }
+      }
+
       // POST /api/parse  { raw }  → 生原稿をClaudeで構成台本(project JSON)に整形して返す
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "parse") {
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定（wrangler secret put が必要）" }, 500);

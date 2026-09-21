@@ -3497,6 +3497,8 @@ export default function App() {
   const [insertCollapsed, setInsertCollapsed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem("mg:insertCollapsed") || "[]")); } catch (e) { return new Set(); } });
   /* 案件一覧を「進行中（完了以外）」だけに絞る設定。端末ごとに覚える */
   const [onlyActive, setOnlyActive] = useState(() => { try { return localStorage.getItem("mg:onlyActive") === "1"; } catch (e) { return false; } });
+  /* Studio OSで「納品済み」の案件ID（ものがたりっち案件ID）。「進行中だけ表示」がオンで一覧を開いた時に取得（ログイン時のみ） */
+  const [studioDone, setStudioDone] = useState(() => new Set());
   const toggleOnlyActive = () => setOnlyActive((v) => { const nx = !v; try { localStorage.setItem("mg:onlyActive", nx ? "1" : "0"); } catch (e) {} return nx; });
   const toggleInsertCollapsed = (id) => setInsertCollapsed((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); try { localStorage.setItem("mg:insertCollapsed", JSON.stringify([...nx])); } catch (e) {} return nx; });
   // サイドバーのセクション(お気に入り/進行中/保留/完了)折りたたみ。08-24 AK提供モックアップ対応
@@ -3507,6 +3509,15 @@ export default function App() {
      チャンネル → 案件 → 案件内ページ を1本のツリーに畳んで、本文の幅も広げる。
      案件切替時は選んだ案件だけ展開。選択ページ・サイドバー幅は端末に記憶する。 */
   const [casePickerOpen, setCasePickerOpen] = useState(false);
+  useEffect(() => {
+    if (!onlyActive || !casePickerOpen || !MG_SESSION) return;
+    let live = true;
+    fetch(SHARE_API + "/api/studio-done", { headers: { Authorization: "Bearer " + MG_SESSION } })
+      .then((r) => r.json())
+      .then((d) => { if (live && d && Array.isArray(d.done)) setStudioDone(new Set(d.done)); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [onlyActive, casePickerOpen, user]);
   // 作業ページは端末内だけに保存。案件本文や共有データには含めない。
   const resumePages = useRef(null);
   if (resumePages.current === null) {
@@ -5236,7 +5247,7 @@ export default function App() {
      レギュレーション一覧のクライアント／チャンネル別グルーピング表示（caseData経由でmanuals件数
      を出す）が全案件のboardCacheを必要とするため。 */
   useEffect(() => {
-    if (!loaded || (view !== "home" && tab !== "regulations" && !(onlyActive && casePickerOpen))) return;
+    if (!loaded || (view !== "home" && tab !== "regulations")) return;
     let cancelled = false;
     (async () => {
       for (const x of index) {
@@ -5250,7 +5261,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [view, tab, index, loaded, onlyActive, casePickerOpen]);
+  }, [view, tab, index, loaded]);
   /* アクティブ案件にplans[0]が無ければ1枠だけ用意（ボード編集の土台） */
   useEffect(() => {
     if (tab !== "plan" || !project) return;
@@ -7976,7 +7987,7 @@ export default function App() {
                 style={{ color: mainText }} />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-white/30 pointer-events-none">⌘K</span>
             </div>
-            <label className="mt-2 flex items-center gap-2 px-0.5 text-[12px] text-white/70 cursor-pointer select-none" title="完了した案件と、保留・完了のチャンネルを一覧から隠します（開いている案件と、検索中の結果は隠しません）">
+            <label className="mt-2 flex items-center gap-2 px-0.5 text-[12px] text-white/70 cursor-pointer select-none" title="Studio OSで納品済みの案件と、保留・完了のチャンネルを一覧から隠します（開いている案件と、検索中の結果は隠しません）">
               <input type="checkbox" checked={onlyActive} onChange={toggleOnlyActive} className="w-3.5 h-3.5 cursor-pointer" style={{ accentColor: theme.accent }} />
               進行中の案件だけ表示
             </label>
@@ -8010,8 +8021,8 @@ export default function App() {
             </div>
           ) : (() => {
             const q = caseQuery.trim().toLowerCase();
-            /* 「進行中だけ表示」：完了の案件を隠す。開いている案件・検索中は隠さない。ステータス未取得の案件は隠さない */
-            const isLive = (x) => { if (!onlyActive || q || x.id === activeId) return true; const d = caseData(x.id); return !(d && d.status === "完了"); };
+            /* 「進行中だけ表示」：Studio OSで納品済みの案件を隠す。開いている案件・検索中は隠さない。Studio OSと紐付いていない案件は隠さない */
+            const isLive = (x) => !onlyActive || !!q || x.id === activeId || !studioDone.has(x.id);
             /* チャンネル1件分のツリー（見出し＋案件＋ページ）。ステータス別セクションから使い回す */
             const renderChannelGroup = (channel, allItemsRaw) => {
               const allItems = allItemsRaw.filter(isLive);
