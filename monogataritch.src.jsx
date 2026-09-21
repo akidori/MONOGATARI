@@ -7449,6 +7449,20 @@ export default function App() {
     return { tcs, clocks, totalEst: acc, totalTarget: tt, totalChars: tc, totalTravel, locations, sceneNos, sceneLocDone, dayStarts, maxDay };
   }, [project]);
 
+  /* 種別ごとの分数（構成台本の上部に出す）。シーン尺＝各シーンの秒数の合計、文字数換算＝原稿の字数÷字/秒。 */
+  const typeStats = useMemo(() => {
+    const rate = (project && project.rate) ? project.rate : 5;
+    const acc = {};
+    for (const r of ((project && project.rows) || [])) {
+      if (r.kind === "location") continue;
+      const k = SECTION_TYPES[r.type] ? r.type : "解説系";
+      const o = acc[k] || (acc[k] = { n: 0, target: 0, chars: 0 });
+      o.n += 1; o.target += targetOf(r); o.chars += countChars(r.script);
+    }
+    Object.values(acc).forEach((o) => { o.charSec = o.chars / rate; });
+    return acc;
+  }, [project]);
+
   /* ロケ見出しの撮影日セレクタ（1日目/2日目…）。dark=濃色ヘッダー上に置く時 */
   const dayPickerEl = (r, dark) => (
     <select
@@ -8486,6 +8500,28 @@ export default function App() {
               className="ml-auto h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-stone-200 hover:bg-stone-50 text-stone-600">
               <Icon name="download" className="w-3.5 h-3.5" />取り込み
             </button>
+            {/* 全体と「訴求」の分数：シーン尺（設定した秒数の合計）と文字数換算（原稿の字数÷字/秒）を並べる */}
+            {project.format !== "talk" && Object.keys(typeStats).length > 0 && (() => {
+              const ap = typeStats["訴求"];
+              const allChars = Object.values(typeStats).reduce((a, o) => a + o.charSec, 0);
+              const detail = TYPE_KEYS.filter((k) => typeStats[k]).map((k) => k + "：シーン尺 " + fmtDurJP(typeStats[k].target) + "／文字数換算 " + fmtDurJP(typeStats[k].charSec) + "（" + typeStats[k].n + "シーン）").join("\n");
+              return (
+                <div className="basis-full flex flex-wrap items-center gap-x-6 gap-y-1 pt-2 mt-0.5 border-t border-stone-100 text-[12px] tabular-nums" title={detail}>
+                  <span className="inline-flex items-baseline gap-2">
+                    <span className="text-[10px] font-bold text-stone-400">全体</span>
+                    <span className="text-stone-500">シーン尺 <b className="text-stone-800">{fmtDurJP(totalTarget)}</b></span>
+                    <span className="text-stone-500">文字数換算 <b className="text-stone-800">{fmtDurJP(allChars)}</b></span>
+                  </span>
+                  <span className="inline-flex items-baseline gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[10px] font-bold" style={{ color: SECTION_TYPES["訴求"].dot }}>
+                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: SECTION_TYPES["訴求"].dot }} />訴求{ap ? "（" + ap.n + "シーン）" : ""}
+                    </span>
+                    <span className="text-stone-500">シーン尺 <b className="text-stone-800">{fmtDurJP(ap ? ap.target : 0)}</b></span>
+                    <span className="text-stone-500">文字数換算 <b className="text-stone-800">{fmtDurJP(ap ? ap.charSec : 0)}</b></span>
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         )}
 
