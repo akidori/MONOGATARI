@@ -28,4 +28,8 @@ assertMatch("sw.js", localSw, remoteSw);
 const localShare = await readFile(path.join(dist, "share.html"));
 const remoteShare = Buffer.from(await (await fetch(`${origin}/share.html?verify=${Date.now()}`)).arrayBuffer());
 assertMatch("share.html", localShare, remoteShare);
+// /mcp（Claude用MCP）は functions/mcp.js → mg-share Worker の転送。キー無しで401が返れば両方生きている。
+// functions/ を含まないデプロイ（リポ直下以外から pages deploy した等）だとSPAフォールバックで200/405になる。2026-09-21 追加。
+const mcp = await fetch(`${origin}/mcp`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+if (mcp.status !== 401) throw new Error(`/mcp is not serving (expected 401 without key, got ${mcp.status})`);
 console.log("production files match dist");
