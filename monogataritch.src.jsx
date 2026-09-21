@@ -9342,15 +9342,15 @@ export default function App() {
                       {r && (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className="group/loc flex flex-wrap items-center gap-2.5 pt-2.5 pb-1.5 mb-1.5 border-t scroll-mt-24"
-                          style={{ borderColor: BORDER, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
+                          className="group/loc flex flex-wrap items-center gap-2.5 py-2.5 mb-2 rounded-lg scroll-mt-24"
+                          style={{ background: hexA(theme.main, 0.14), borderLeft: "6px solid " + theme.accent, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span className="w-10 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
                             <Icon name="pin" className="w-4 h-4" style={{ color: "#8C939D" }} />
                           </span>
                           <BufferedInput value={r.label} onChange={(v) => updateRow(r.id, { label: v })} placeholder="場所（例：名古屋｜ご自宅）"
                             className="min-w-[140px] flex-1 bg-transparent text-[15.5px] focus:outline-none placeholder:text-stone-300"
-                            style={{ fontWeight: 650, color: "#171A1F", textDecoration: r.done ? "line-through" : "none" }} />
-                          <span className="text-[11px] shrink-0" style={{ color: "#7D848E" }}>{lc ? lc.scenes.length : 0}シーン</span>
+                            style={{ fontWeight: 700, color: "#171A1F", textDecoration: r.done ? "line-through" : "none" }} />
+                          <span className="text-[11px] shrink-0" style={{ color: "#5F6670" }}>{lc ? lc.scenes.length : 0}シーン</span>
                           <span className="text-[12px] font-semibold tabular-nums shrink-0" style={{ fontFamily: mono, color: "#454B54" }}>{fmt(lc ? lc.secSum : 0)}</span>
                           <div className="flex-1" />
                           <div className={"flex items-center gap-1.5 transition-opacity " + (isNarrow || r.time || r.done || maxDay > 1 ? "" : "opacity-0 group-hover/loc:opacity-100 focus-within:opacity-100")}>
