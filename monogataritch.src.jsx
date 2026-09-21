@@ -770,6 +770,29 @@ const fmtDurJP = (sec) => { const s = Math.round(sec || 0); const m = Math.floor
 const fmtTC = (sec) => { const s = Math.round(sec); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
 const sectionOf = (type) => SECTION_TYPES[type] || SECTION_TYPES["解説系"];
 /* #RRGGBB に透明度を付ける（分類色を「薄く」使う用） */
+/* 章ヘッダー：ラベル「01｜舞台と人物（約5分）」を 番号／タイトル／末尾メモ に分解する（データは変えず、表示だけ分ける）。
+   編集時は prefix + タイトル + suffix で元の形式のまま書き戻す。番号が無いラベルは並び順の番号を表示用に振る。 */
+const secParts = (label, idx) => {
+  const t = String(label || "");
+  const m = /^(\s*(\d{1,2})\s*[｜|:：]\s*)([\s\S]*)$/.exec(t);
+  const prefix = m ? m[1] : "";
+  let rest = m ? m[3] : t;
+  let suffix = "";
+  const sm = /^([\s\S]*?)(\s*[（(]\s*約?\s*\d+\s*分\s*[）)]\s*)$/.exec(rest);
+  if (sm) { rest = sm[1]; suffix = sm[2]; }
+  return { num: String(m ? m[2] : idx).padStart(2, "0"), prefix, title: rest, suffix };
+};
+/* タイトルの言葉から、章の役割を示す小さなアイコンを選ぶ（当てはまらなければカメラ） */
+const secIconFor = (title) => {
+  const t = String(title || "");
+  if (/結末|エンディング|ラスト|未来|これから|メッセージ|終わり|エピローグ/.test(t)) return "flag";
+  if (/結果|成果|成功|実現|達成|変わった|変化の先/.test(t)) return "checkCircle";
+  if (/転換|転機|きっかけ|気づき|出会い|ターニング/.test(t)) return "turn";
+  if (/問題|葛藤|課題|危機|暴かれる|壁|苦悩|不安|失敗|どん底/.test(t)) return "warn";
+  if (/挑戦|決意|行動|挑む|始まり|一歩|覚悟/.test(t)) return "target";
+  if (/舞台|人物|紹介|登場|プロローグ|オープニング|導入|プロフィール/.test(t)) return "user";
+  return "camera";
+};
 const hexA = (hex, a) => { const h = (hex || "#888888").replace("#", ""); const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16); return "rgba(" + ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255) + "," + a + ")"; };
 const targetOf = (r) => (r.sec != null && r.sec !== "" ? Number(r.sec) : sectionOf(r.type).target);
 
@@ -1289,6 +1312,11 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
   const c = { className, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth, strokeLinecap: "round", strokeLinejoin: "round", style, "aria-hidden": true };
   switch (name) {
     case "pin": return (<svg {...c}><path d="M12 21s6-5.3 6-10A6 6 0 1 0 6 11c0 4.7 6 10 6 10z" /><circle cx="12" cy="11" r="2.2" /></svg>);
+    case "clock": return (<svg {...c}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>);
+    case "flag": return (<svg {...c}><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></svg>);
+    case "target": return (<svg {...c}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" /></svg>);
+    case "turn": return (<svg {...c}><path d="M4 8h11a4 4 0 0 1 0 8H8" /><path d="m11 13-3 3 3 3" /></svg>);
+    case "camera": return (<svg {...c}><rect x="3" y="7" width="13" height="10" rx="2" /><path d="m16 10 5-3v10l-5-3" /></svg>);
     case "note": return (<svg {...c}><path d="M12 20H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h9l5 5v3" /><path d="M14 4v5h5" /><path d="M8 13h5M8 16h3" /></svg>);
     case "map": return (<svg {...c}><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2z" /><path d="M9 4v14M15 6v14" /></svg>);
     case "download": return (<svg {...c}><path d="M12 4v10m0 0 4-4m-4 4-4-4" /><path d="M5 18h14" /></svg>);
@@ -9339,21 +9367,38 @@ export default function App() {
                       {r && maxDay > 1 && dayStarts[r.id] != null && (
                         <div className="mb-2">{dayBannerEl(dayStarts[r.id])}</div>
                       )}
-                      {r && (
+                      {r && (() => {
+                        const secIdx = Math.max(0, locations.findIndex((l) => l.id === r.id)) + 1;
+                        const sp = secParts(r.label, secIdx);
+                        const secIcon = secIconFor(sp.title);
+                        const sub = g.scenes.length ? String((g.scenes[0].r && g.scenes[0].r.label) || "").replace(/^[\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF0-9０-９.．、)）]+/, "").trim() : "";
+                        return (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className="group/loc flex flex-wrap items-center gap-2.5 py-2.5 mb-2 rounded-lg scroll-mt-24"
-                          style={{ background: hexA(theme.accent, 0.11), ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
-                          <span className="w-10 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
-                            <Icon name="pin" className="w-4 h-4" style={{ color: "#8C939D" }} />
+                          className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-2 rounded-xl border bg-white hover:bg-[#FCFBF9] transition-colors duration-150 overflow-hidden scroll-mt-24"
+                          style={{ borderColor: "#E4E1DA", "--ac": theme.accent, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
+                          <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px] bg-stone-300 group-focus-within/loc:bg-[var(--ac)] transition-colors duration-150" />
+                          <span className="shrink-0 flex items-center gap-4 select-none cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
+                            <span className="text-[24px] leading-none font-semibold tabular-nums" style={{ fontFamily: mono, color: "#3A404A" }}>{sp.num}</span>
+                            <span className="w-px h-8 bg-stone-200" />
                           </span>
-                          <BufferedInput value={r.label} onChange={(v) => updateRow(r.id, { label: v })} placeholder="場所（例：名古屋｜ご自宅）"
-                            className="min-w-[140px] flex-1 bg-transparent text-[15.5px] focus:outline-none placeholder:text-stone-300"
-                            style={{ fontWeight: 700, color: "#171A1F", textDecoration: r.done ? "line-through" : "none" }} />
-                          <span className="text-[11px] shrink-0" style={{ color: "#5F6670" }}>{lc ? lc.scenes.length : 0}シーン</span>
-                          <span className="text-[12px] font-semibold tabular-nums shrink-0" style={{ fontFamily: mono, color: "#454B54" }}>{fmt(lc ? lc.secSum : 0)}</span>
-                          <div className="flex-1" />
-                          <div className={"flex items-center gap-1.5 transition-opacity " + (isNarrow || r.time || r.done || maxDay > 1 ? "" : "opacity-0 group-hover/loc:opacity-100 focus-within:opacity-100")}>
+                          <div className="min-w-0 flex-1 flex items-center gap-2.5">
+                            <span className="shrink-0 grid place-items-center w-7 h-7 rounded-lg" style={{ background: hexA(theme.accent, 0.1), color: theme.accent }}>
+                              <Icon name={secIcon} className="w-4 h-4" />
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <BufferedInput value={sp.title} onChange={(v) => updateRow(r.id, { label: sp.prefix + v + sp.suffix })} placeholder="場所（例：名古屋｜ご自宅）"
+                                className="w-full bg-transparent text-[17px] leading-snug focus:outline-none placeholder:text-stone-300"
+                                style={{ fontWeight: 700, color: "#171A1F", textDecoration: r.done ? "line-through" : "none" }} />
+                              {sub && <div className="hidden sm:block text-[11.5px] leading-snug truncate" style={{ color: "#8C939D" }}>{sub}</div>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0 ml-auto">
+                            <span className="hidden lg:inline text-[11.5px]" style={{ color: "#8C939D" }}>{lc ? lc.scenes.length : 0}シーン</span>
+                            <span className="inline-flex items-center gap-1 text-[12.5px] font-medium tabular-nums" style={{ fontFamily: mono, color: "#5F6670" }} title={"この章のシーン尺の合計" + (sp.suffix.trim() ? "　目標 " + sp.suffix.trim() : "")}>
+                              <Icon name="clock" className="w-3.5 h-3.5" />{fmt(lc ? lc.secSum : 0)}
+                            </span>
+                            <div className={"flex items-center gap-1.5 transition-opacity " + (isNarrow || r.time || r.done || maxDay > 1 ? "" : "opacity-0 group-hover/loc:opacity-100 focus-within:opacity-100")}>
                             {dayPickerEl(r, false)}
                             <input type="time" value={r.time || ""} onChange={(e) => updateRow(r.id, { time: e.target.value })} title="到着・開始予定時刻（香盤表と連動）"
                               className="shrink-0 w-[66px] h-6 bg-transparent text-[11.5px] font-medium tabular-nums text-center rounded focus:outline-none focus:bg-stone-50 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
@@ -9363,8 +9408,10 @@ export default function App() {
                               <Icon name={r.done ? "checkCircle" : "check"} className="w-3 h-3" />{r.done ? "撮影済" : "完了"}
                             </button>
                           </div>
+                          </div>
                         </div>
-                      )}
+                        );
+                      })()}
                       {visibleScenes.length > 0 && (
                         <div className="rounded-lg border bg-white" style={{ borderColor: BORDER }}>
                           {visibleScenes.map(renderScene)}
