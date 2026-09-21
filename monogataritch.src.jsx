@@ -960,8 +960,8 @@ const mmFmtSec = (sec) => { const s = Math.round(sec || 0); return String(Math.f
 function MmProjectNode({ data }) {
   return (
     <div className="rounded-2xl px-4 py-3 min-w-[150px]" style={{ background: "#13233a", color: "#fff", boxShadow: "0 4px 16px rgba(0,0,0,.10)" }}>
-      <div className="text-[13px] font-bold">{data.title || "（無題）"}</div>
-      <div className="text-[9.5px] mt-1" style={{ color: "rgba(255,255,255,.7)" }}>総尺 {mmFmtSec(data.totalEstSec)} ・ シーン数 {data.totalScenes}</div>
+      <div className="text-[14px] font-bold">{data.title || "（無題）"}</div>
+      <div className="text-[11px] mt-1" style={{ color: "rgba(255,255,255,.7)" }}>総尺 {mmFmtSec(data.totalEstSec)} ・ シーン数 {data.totalScenes}</div>
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
@@ -971,14 +971,14 @@ function MmSectionNode({ data }) {
     <div className="w-full cursor-default transition-opacity" style={{ opacity: data.dimmed ? 0.38 : 1 }}>
       <Handle type="target" position={Position.Left} style={{ top: 36, opacity: 0 }} />
       <div className="pb-2" style={{ borderBottom: "3px solid " + data.accent }}>
-        <div className="text-[13px] font-bold text-stone-700">{data.label || "未分類"}</div>
-        <div className="text-[9.5px] text-stone-400 mt-0.5">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
+        <div className="text-[14px] font-bold text-stone-700">{data.label || "未分類"}</div>
+        <div className="text-[11px] text-stone-500 mt-0.5">{data.rows.length}シーン ・ {mmFmtSec(data.rows.reduce((a, r) => a + r.durSec, 0))}</div>
       </div>
       <BufferedTextarea value={data.note || ""} onChange={(v) => data.onNoteChange && data.onNoteChange(data.id, v)}
         placeholder="ここで何を話すか…" rows={2}
-        className="nodrag nowheel mt-1.5 w-full text-[10.5px] leading-snug text-stone-600 bg-transparent border-0 border-b border-stone-200 rounded-none px-0 py-1 resize-y focus:outline-none focus:border-stone-400 placeholder:text-stone-300" />
+        className="nodrag nowheel mt-1.5 w-full text-[11.5px] leading-snug text-stone-600 bg-transparent border-0 border-b border-stone-200 rounded-none px-0 py-1 resize-y focus:outline-none focus:border-stone-400 placeholder:text-stone-400" />
       <button onClick={() => data.onAddScene && data.onAddScene(data.id)} title="このメモを元に構成台本へシーンを作る"
-        className="nodrag mt-1.5 text-[10px] font-bold text-stone-400 hover:text-stone-700 border-b border-dashed border-stone-300 hover:border-stone-400 transition-colors">
+        className="nodrag mt-1.5 text-[11px] font-bold text-stone-500 hover:text-stone-700 border-b border-dashed border-stone-300 hover:border-stone-400 transition-colors">
         ＋シーン追加
       </button>
       <Handle type="source" position={Position.Right} style={{ top: 36, opacity: 0 }} />
@@ -998,22 +998,22 @@ function MmQaRow({ pair, qi, rowId, selId, editId, editVal, onSelect, onStartEdi
       onClick={(e) => { e.stopPropagation(); onSelect && onSelect(qaId); }}
       onDoubleClick={(e) => { e.stopPropagation(); onStartEdit && onStartEdit(qaId); }}>
       <div className="flex items-start gap-1">
-        <span className="text-[10px] font-bold shrink-0" style={{ color: "#B8860B" }}>◼︎</span>
+        <span className="text-[11px] font-bold shrink-0" style={{ color: "#B8860B" }}>◼︎</span>
         {editing ? (
-          <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[10.5px] font-bold focus:outline-none bg-transparent"
+          <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[11.5px] font-bold focus:outline-none bg-transparent"
             style={{ color: "#B8860B" }} value={editVal} onChange={(e) => onEditChange && onEditChange(e.target.value)}
             onBlur={() => onCommitEdit && onCommitEdit()}
             onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
         ) : (
-          <span className={"text-[10.5px] font-bold flex-1 min-w-0" + (selected ? "" : " line-clamp-1")} style={{ color: "#B8860B" }}>{pair.q || "（無題の質問）"}</span>
+          <span className={"text-[11.5px] font-bold flex-1 min-w-0" + (selected ? "" : " line-clamp-1")} style={{ color: "#B8860B" }}>{pair.q || "（無題の質問）"}</span>
         )}
         <button onClick={(e) => { e.stopPropagation(); onNodeClick && onNodeClick(rowId); }} title="台本のこの質問へ"
-          className="nodrag shrink-0 text-stone-300 opacity-0 group-hover/qa:opacity-100 hover:text-stone-600 text-[10px] leading-none px-0.5 transition-opacity">→</button>
+          className="nodrag shrink-0 text-stone-300 opacity-0 group-hover/qa:opacity-100 hover:text-stone-600 text-[11px] leading-none px-0.5 transition-opacity">→</button>
       </div>
       {selected && (
         <BufferedTextarea value={pair.a || ""} onChange={(v) => onEditAnswer && onEditAnswer(rowId, qi, v)}
           placeholder="回答（セリフ）を入力…" rows={3}
-          className="nodrag nowheel w-full mt-1 text-[10px] leading-snug text-stone-500 bg-transparent border-0 focus:outline-none resize-none placeholder:text-stone-300"
+          className="nodrag nowheel w-full mt-1 text-[11px] leading-snug text-stone-600 bg-transparent border-0 focus:outline-none resize-none placeholder:text-stone-400"
           onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
       )}
     </div>
@@ -1034,26 +1034,26 @@ function MmSceneNode({ data }) {
       <Handle type="target" position={Position.Left} style={{ top: 38, opacity: 0 }} />
       <div className="pb-2 transition-colors" style={{ borderBottom: (selected ? "3px solid " : "1.5px solid ") + data.accent }}>
         <div className="flex items-center gap-1">
-          {data.sceneNo != null && <span className="text-[9px] font-bold text-stone-400 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
+          {data.sceneNo != null && <span className="text-[10.5px] font-bold text-stone-500 tabular-nums shrink-0">{String(data.sceneNo).padStart(2, "0")}</span>}
           {editing ? (
-            <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[12.5px] font-bold text-stone-700 focus:outline-none bg-transparent"
+            <input ref={inputRef} className="nodrag flex-1 min-w-0 text-[13.5px] font-bold text-stone-700 focus:outline-none bg-transparent"
               value={data.editVal} onChange={(e) => data.onEditChange && data.onEditChange(e.target.value)}
               onBlur={() => data.onCommitEdit && data.onCommitEdit()}
               onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} />
           ) : (
-            <span className="text-[12.5px] font-bold" style={{ color: selected ? data.accent : "#44403c" }}>{data.label || "（無題）"}</span>
+            <span className="text-[13.5px] font-bold" style={{ color: selected ? data.accent : "#44403c" }}>{data.label || "（無題）"}</span>
           )}
           {data.qaCount > 0 && (
             <button onClick={(e) => { e.stopPropagation(); data.onToggleFold && data.onToggleFold(data.id); }}
               title={data.folded ? "Q&Aを開く" : "Q&Aを畳む"}
-              className="nodrag shrink-0 text-stone-300 hover:text-stone-600 text-[9.5px] font-bold px-1 rounded transition-colors">
+              className="nodrag shrink-0 text-stone-300 hover:text-stone-600 text-[11px] font-bold px-1 rounded transition-colors">
               {data.folded ? "▸" + data.qaCount : "▾"}
             </button>
           )}
           <button onClick={(e) => { e.stopPropagation(); data.onNodeClick && data.onNodeClick(data.id); }} title="台本のこのシーンへ"
-            className="nodrag ml-auto shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 text-[11px] leading-none px-0.5 transition-opacity">→</button>
+            className="nodrag ml-auto shrink-0 text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 text-[12px] leading-none px-0.5 transition-opacity">→</button>
         </div>
-        <div className="text-[9.5px] text-stone-400 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
+        <div className="text-[11px] text-stone-500 mt-1">{data.sceneType} ・ {mmFmtSec(data.durSec)}</div>
       </div>
       {!data.folded && (data.qa || []).length > 0 && (
         <div className="mt-1">
@@ -1067,7 +1067,7 @@ function MmSceneNode({ data }) {
       )}
       {!data.folded && (
         <button onClick={(e) => { e.stopPropagation(); data.onAddQuestionHere && data.onAddQuestionHere(data.id); }}
-          className="nodrag mt-1.5 text-[9.5px] font-bold text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 transition-opacity">
+          className="nodrag mt-1.5 text-[11px] font-bold text-stone-300 opacity-0 group-hover:opacity-100 hover:text-stone-600 transition-opacity">
           ＋質問追加
         </button>
       )}
@@ -1273,14 +1273,14 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
       <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#D8D5CB" style={{ opacity: 0.35 }} />
       <Panel position="top-left">
         <button onClick={handleAddNode} disabled={!selId || isQA(selId)} title={selId && !isQA(selId) ? "選択中のシーンに質問ノードを追加" : "先にシーンを選んでください"}
-          className="nodrag bg-white border border-stone-200 rounded-lg shadow-sm text-[10.5px] font-bold text-stone-500 hover:text-stone-800 hover:border-stone-400 disabled:opacity-40 disabled:hover:text-stone-500 disabled:hover:border-stone-200 px-2 py-1.5 transition-colors">
+          className="nodrag bg-white border border-stone-200 rounded-lg shadow-sm text-[11.5px] font-bold text-stone-600 hover:text-stone-800 hover:border-stone-400 disabled:opacity-40 disabled:hover:text-stone-600 disabled:hover:border-stone-200 px-2 py-1.5 transition-colors">
           ＋ノード
         </button>
       </Panel>
       <Controls showInteractive={false} position="top-left" style={{ marginTop: 44 }} />
       <Panel position="top-left" style={{ marginTop: 176 }}>
         <button onClick={handleAlign} title="ドラッグで動かした位置・幅をリセットして自動整列に戻す"
-          className="nodrag bg-white border border-stone-200 rounded-lg shadow-sm text-[10.5px] font-bold text-stone-500 hover:text-stone-800 hover:border-stone-400 px-2 py-1.5 transition-colors">
+          className="nodrag bg-white border border-stone-200 rounded-lg shadow-sm text-[11.5px] font-bold text-stone-600 hover:text-stone-800 hover:border-stone-400 px-2 py-1.5 transition-colors">
           整列
         </button>
       </Panel>
@@ -1289,7 +1289,7 @@ function MmCanvas({ deliverableTitle, totalEstSec, totalScenes, sections, onNode
   );
 }
 function MindmapView({ height, ...props }) {
-  if (!(props.sections || []).length) return <div className="text-[12px] text-stone-400 py-2">物語の背骨でフレームワークを選ぶと表示されます</div>;
+  if (!(props.sections || []).length) return <div className="text-[13px] text-stone-500 py-2">物語の背骨でフレームワークを選ぶと表示されます</div>;
   return (
     <div style={{ height: height || 480 }}>
       <ReactFlowProvider><MmCanvas {...props} /></ReactFlowProvider>
@@ -1596,26 +1596,26 @@ function AddressField({ loc, onChange }) {
         onChange={(e) => { onChange({ address: e.target.value, placeId: "", lat: null, lng: null }); kick(e.target.value); }}
         onBlur={() => setTimeout(() => setCands(null), 200)}
         placeholder="住所・施設名で検索（例：東京タワー）"
-        className="block w-full min-w-0 bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
+        className="block w-full min-w-0 bg-transparent text-[13px] px-1 py-2 focus:outline-none placeholder:text-stone-400"
       />
-      {busy && <span className="shrink-0 mr-1 text-[10px] text-stone-300">検索中…</span>}
+      {busy && <span className="shrink-0 mr-1 text-[11px] text-stone-300">検索中…</span>}
       {q && (
         <a href={mapHref} target="_blank" rel="noreferrer" title={linked ? "連携済みの場所をGoogleマップで開く" : "Googleマップで開く"}
-           className={"shrink-0 mr-2 text-[11px] font-bold px-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1 border active:scale-95 transition " + (linked ? "border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
+           className={"shrink-0 mr-2 text-[12px] font-bold px-2 py-1 rounded-md whitespace-nowrap inline-flex items-center gap-1 border active:scale-95 transition " + (linked ? "border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100" : "border-stone-200 text-stone-600 hover:bg-stone-50")}>
           <Icon name={linked ? "pin" : "map"} className="w-3.5 h-3.5 shrink-0" /> <span className="hidden sm:inline">{linked ? "連携済" : "地図"}</span>
         </a>
       )}
       {cands != null && (
         <div className="absolute left-0 right-0 top-full mt-1 z-30 rounded-lg border border-stone-200 bg-white shadow-lg overflow-hidden">
-          {cands.length === 0 && <div className="px-3 py-2 text-[11px] text-stone-400">候補が見つかりません（そのまま手入力でOK）</div>}
+          {cands.length === 0 && <div className="px-3 py-2 text-[12px] text-stone-500">候補が見つかりません（そのまま手入力でOK）</div>}
           {cands.map((c, i) => (
             <button key={i} type="button"
               onMouseDown={(e) => { e.preventDefault(); pick(c); }}
               className="w-full text-left px-3 py-2 hover:bg-stone-50 flex items-start gap-2 border-b border-stone-100 last:border-b-0">
-              <Icon name="pin" className="w-3.5 h-3.5 shrink-0 mt-0.5 text-stone-400" />
+              <Icon name="pin" className="w-3.5 h-3.5 shrink-0 mt-0.5 text-stone-500" />
               <span className="min-w-0">
-                <span className="block text-[12px] font-bold text-stone-700 truncate">{c.title}</span>
-                {c.sub && <span className="block text-[10px] text-stone-400 truncate">{c.sub}</span>}
+                <span className="block text-[13px] font-bold text-stone-700 truncate">{c.title}</span>
+                {c.sub && <span className="block text-[11px] text-stone-500 truncate">{c.sub}</span>}
               </span>
             </button>
           ))}
@@ -1803,7 +1803,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
   });
   const padLeft = qaGutter ? 36 : undefined;
 
-  const fmtBtn = "w-6 h-6 grid place-items-center rounded-md bg-white border border-stone-200 shadow-sm hover:bg-stone-50 text-[12px] leading-none";
+  const fmtBtn = "w-6 h-6 grid place-items-center rounded-md bg-white border border-stone-200 shadow-sm hover:bg-stone-50 text-[13px] leading-none";
 
   return (
     <div className="relative">
@@ -1814,7 +1814,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
         </div>
       )}
       <div aria-hidden className="px-3 py-2" style={{ ...textStyle, minHeight: 38, color: "#2A2E34", paddingLeft: padLeft }}>
-        {val ? nodes : <span className="text-stone-300">{placeholder || "クリックして原稿を入力（行頭に「・」で ◼︎ 質問行）"}</span>}
+        {val ? nodes : <span className="text-stone-400">{placeholder || "クリックして原稿を入力（行頭に「・」で ◼︎ 質問行）"}</span>}
         {"\u200b"}
       </div>
       <textarea
@@ -1876,7 +1876,7 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
       if (p) nodes.push(<span key={key++} style={st}>{p}</span>);
     });
   });
-  const fmtBtn = "w-6 h-6 grid place-items-center rounded-md bg-white border border-stone-200 shadow-sm hover:bg-stone-50 text-[12px] leading-none";
+  const fmtBtn = "w-6 h-6 grid place-items-center rounded-md bg-white border border-stone-200 shadow-sm hover:bg-stone-50 text-[13px] leading-none";
   return (
     <div className={"relative " + className}>
       {focused && (
@@ -1920,10 +1920,10 @@ function VideoView({ video, main }) {
         <video ref={vref} src={video.key ? (SHARE_API + "/api/file/" + video.key) : video.url} controls playsInline className="w-full h-full bg-black" />
       </div>
       <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-        <span className="text-[10px] text-stone-400 mr-1">速度</span>
+        <span className="text-[11px] text-stone-500 mr-1">速度</span>
         {rates.map((r) => (
           <button key={r} onClick={() => { if (vref.current) vref.current.playbackRate = r; setRate(r); }}
-            className={"text-[10px] mono px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")}
+            className={"text-[11px] mono px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-600")}
             style={rate === r ? { background: main, borderColor: main } : {}}>{r}x</button>
         ))}
       </div>
@@ -1954,10 +1954,10 @@ function PlanVideoReview({ video, comments, canComment, onPost, onResolve, main,
             <video ref={vref} src={video.key ? (SHARE_API + "/api/file/" + video.key) : video.url} controls playsInline className="w-full h-full bg-black" onTimeUpdate={(e) => setCur(e.target.currentTime)} />
           </div>
           <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-            <span className="text-[10px] text-stone-400 mr-1">速度</span>
-            {rates.map((r) => (<button key={r} onClick={() => { if (vref.current) vref.current.playbackRate = r; setRate(r); }} className={"text-[10px] mono px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")} style={rate === r ? { background: main, borderColor: main } : {}}>{r}x</button>))}
-            <span className="ml-auto mono text-[11px] font-bold" style={{ color: main }}>{fmtTC(cur)}</span>
-            {canComment && <button onClick={startComment} className="text-[10px] font-bold text-white px-2 py-1 rounded shrink-0" style={{ background: accent }}>＋ここにコメント</button>}
+            <span className="text-[11px] text-stone-500 mr-1">速度</span>
+            {rates.map((r) => (<button key={r} onClick={() => { if (vref.current) vref.current.playbackRate = r; setRate(r); }} className={"text-[11px] mono px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-600")} style={rate === r ? { background: main, borderColor: main } : {}}>{r}x</button>))}
+            <span className="ml-auto mono text-[12px] font-bold" style={{ color: main }}>{fmtTC(cur)}</span>
+            {canComment && <button onClick={startComment} className="text-[11px] font-bold text-white px-2 py-1 rounded shrink-0" style={{ background: accent }}>＋ここにコメント</button>}
           </div>
         </div>
       ) : (
@@ -1965,14 +1965,14 @@ function PlanVideoReview({ video, comments, canComment, onPost, onResolve, main,
           <div className="rounded-lg overflow-hidden bg-black" style={{ aspectRatio: "16/9" }}>
             <iframe src={"https://www.youtube.com/embed/" + (ytIdFromUrl(video.url) || "")} className="w-full h-full" style={{ border: 0 }} allow="autoplay; encrypted-media; picture-in-picture" allowFullScreen />
           </div>
-          {canComment && <div className="mt-1.5 text-right"><button onClick={() => { setAtSec(0); setText(""); setOpen(true); }} className="text-[10px] font-bold text-white px-2 py-1 rounded" style={{ background: accent }}>＋コメント</button></div>}
+          {canComment && <div className="mt-1.5 text-right"><button onClick={() => { setAtSec(0); setText(""); setOpen(true); }} className="text-[11px] font-bold text-white px-2 py-1 rounded" style={{ background: accent }}>＋コメント</button></div>}
         </div>
       )}
       {open && (
         <div className="mt-2 rounded-lg border border-stone-200 bg-white p-2">
-          {isMp4 && <div className="text-[10px] font-bold mb-1" style={{ color: accent }}>{fmtTC(atSec)} にコメント</div>}
-          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="修正依頼・気になる点…" className="w-full text-[12px] border border-stone-200 rounded px-2 py-1.5 focus:outline-none resize-y" />
-          <div className="flex justify-end gap-2 mt-1"><button onClick={() => setOpen(false)} className="text-[10px] text-stone-400 px-2 py-1">やめる</button><button onClick={submit} className="text-[10px] font-bold text-white px-3 py-1 rounded" style={{ background: main }}>送信</button></div>
+          {isMp4 && <div className="text-[11px] font-bold mb-1" style={{ color: accent }}>{fmtTC(atSec)} にコメント</div>}
+          <textarea value={text} onChange={(e) => setText(e.target.value)} rows={2} placeholder="修正依頼・気になる点…" className="w-full text-[13px] border border-stone-200 rounded px-2 py-1.5 focus:outline-none resize-y" />
+          <div className="flex justify-end gap-2 mt-1"><button onClick={() => setOpen(false)} className="text-[11px] text-stone-500 px-2 py-1">やめる</button><button onClick={submit} className="text-[11px] font-bold text-white px-3 py-1 rounded" style={{ background: main }}>送信</button></div>
         </div>
       )}
       {list.length > 0 && (
@@ -1980,11 +1980,11 @@ function PlanVideoReview({ video, comments, canComment, onPost, onResolve, main,
           {list.map((c) => (
             <div key={c.id} className={"rounded-lg border px-2.5 py-1.5 " + (c.resolved ? "bg-emerald-50 border-emerald-200" : "bg-stone-50 border-stone-200")}>
               <div className="flex items-center gap-2">
-                {typeof c.timecode === "number" ? <button onClick={() => seek(c.timecode)} className="mono text-[10px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: accent }}>▶ {fmtTC(c.timecode)}</button> : <span className="text-[10px] text-stone-400">全体</span>}
-                <span className="text-[10px] font-bold text-stone-600">{c.author || "ゲスト"}</span>
-                <button onClick={() => onResolve(c.id, !c.resolved)} className={"ml-auto text-[10px] font-bold " + (c.resolved ? "text-emerald-600" : "text-stone-400")}>{c.resolved ? "✓対応済" : "未対応"}</button>
+                {typeof c.timecode === "number" ? <button onClick={() => seek(c.timecode)} className="mono text-[11px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: accent }}>▶ {fmtTC(c.timecode)}</button> : <span className="text-[11px] text-stone-500">全体</span>}
+                <span className="text-[11px] font-bold text-stone-600">{c.author || "ゲスト"}</span>
+                <button onClick={() => onResolve(c.id, !c.resolved)} className={"ml-auto text-[11px] font-bold " + (c.resolved ? "text-emerald-600" : "text-stone-500")}>{c.resolved ? "✓対応済" : "未対応"}</button>
               </div>
-              <div className="text-[12px] text-stone-800 whitespace-pre-wrap break-words mt-0.5">{c.text}</div>
+              <div className="text-[13px] text-stone-800 whitespace-pre-wrap break-words mt-0.5">{c.text}</div>
             </div>
           ))}
         </div>
@@ -2004,7 +2004,7 @@ function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onR
   return (
     <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50/40 p-3 space-y-4">
       <div>
-        <span className="text-[11px] font-bold text-stone-500">🎬 確認用の動画（その場で再生）</span>
+        <span className="text-[12px] font-bold text-stone-600">🎬 確認用の動画（その場で再生）</span>
         <div className="mt-2">
           {v ? (
             <div>
@@ -2013,53 +2013,53 @@ function PlanMedia({ plan, canUpload, main, accent, comments, onPostComment, onR
                 onPost={(tc, txt) => onPostComment(v.key || v.url || "", tc, txt, plan.shareId, plan.shareToken)}
                 onResolve={onResolveComment} />
               <div className="flex items-center gap-2 mt-1.5">
-                <span className="text-[10px] text-stone-400 truncate flex-1">{v.title || v.name || v.url}</span>
-                <button onClick={onRemoveVideo} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+                <span className="text-[11px] text-stone-500 truncate flex-1">{v.title || v.name || v.url}</span>
+                <button onClick={onRemoveVideo} className="text-[12px] text-rose-500 font-bold shrink-0">削除</button>
               </div>
             </div>
           ) : (
             <div className="space-y-2">
               {canUpload ? (
-                <label className="block rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2.5 text-[11px] text-stone-500 cursor-pointer hover:bg-stone-50 text-center">
+                <label className="block rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2.5 text-[12px] text-stone-600 cursor-pointer hover:bg-stone-50 text-center">
                   <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) { setVprog(0); Promise.resolve(onUploadVideo(f, setVprog)).finally(() => setVprog(-1)); } e.target.value = ""; }} />
                   ⬆ mp4をアップロード（0.5〜4倍速で確認）
                 </label>
-              ) : <div className="text-[10px] text-amber-600">mp4を上げるには先に右上「共有 → 閲覧用リンクを発行」してね（YouTubeはそのまま貼れます）</div>}
+              ) : <div className="text-[11px] text-amber-600">mp4を上げるには先に右上「共有 → 閲覧用リンクを発行」してね（YouTubeはそのまま貼れます）</div>}
               {vprog >= 0 && <div className="h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full" style={{ width: vprog + "%", background: accent }} /></div>}
               <div className="flex items-center gap-2">
-                <input value={yt} onChange={(e) => setYt(e.target.value)} placeholder="または YouTube URL を貼る" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-1.5 text-[12px] focus:outline-none" />
-                <button onClick={() => { if (yt.trim()) { onYouTube(yt.trim()); setYt(""); } }} className="text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0 text-white" style={{ background: main }}>登録</button>
+                <input value={yt} onChange={(e) => setYt(e.target.value)} placeholder="または YouTube URL を貼る" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-1.5 text-[13px] focus:outline-none" />
+                <button onClick={() => { if (yt.trim()) { onYouTube(yt.trim()); setYt(""); } }} className="text-[12px] font-bold px-3 py-1.5 rounded-lg shrink-0 text-white" style={{ background: main }}>登録</button>
               </div>
             </div>
           )}
         </div>
       </div>
       <div>
-        <span className="text-[11px] font-bold text-stone-500">📁 素材ファイル（元の名前のまま渡せる）</span>
+        <span className="text-[12px] font-bold text-stone-600">📁 素材ファイル（元の名前のまま渡せる）</span>
         <div className="mt-2 space-y-1.5">
           {files.map((f) => (
             <div key={f.key} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2">
-              <div className="flex-1 min-w-0"><div className="text-[12px] font-semibold text-stone-800 truncate">{f.name}</div><div className="text-[10px] text-stone-400 mono">{fmtB(f.size)}</div></div>
-              <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0 text-white" style={{ background: main }}>⬇</a>
-              <button onClick={() => onDeleteFile(f.key)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+              <div className="flex-1 min-w-0"><div className="text-[13px] font-semibold text-stone-800 truncate">{f.name}</div><div className="text-[11px] text-stone-500 mono">{fmtB(f.size)}</div></div>
+              <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[12px] font-bold px-2.5 py-1 rounded-lg shrink-0 text-white" style={{ background: main }}>⬇</a>
+              <button onClick={() => onDeleteFile(f.key)} className="text-[12px] text-rose-500 font-bold shrink-0">削除</button>
             </div>
           ))}
         </div>
         {canUpload ? (
-          <label className="block mt-2 rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2.5 text-[11px] text-stone-500 cursor-pointer hover:bg-stone-50 text-center">
+          <label className="block mt-2 rounded-lg border border-dashed border-stone-300 bg-white px-3 py-2.5 text-[12px] text-stone-600 cursor-pointer hover:bg-stone-50 text-center">
             <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) { setFprog(0); Promise.resolve(onUploadFile(f, setFprog)).finally(() => setFprog(-1)); } e.target.value = ""; }} />
             ⬆ ファイルを追加（最大500GB・GB級もそのまま）
           </label>
-        ) : <div className="text-[10px] text-amber-600 mt-2">ファイルを上げるには先に右上「共有 → 閲覧用リンクを発行」してね</div>}
+        ) : <div className="text-[11px] text-amber-600 mt-2">ファイルを上げるには先に右上「共有 → 閲覧用リンクを発行」してね</div>}
         {fprog >= 0 && <div className="h-1.5 bg-stone-200 rounded overflow-hidden mt-1"><div className="h-full" style={{ width: fprog + "%", background: accent }} /></div>}
       </div>
       <div className="pt-1 border-t border-stone-200">
-        <span className="text-[11px] font-bold text-stone-500">🔗 この企画の試写リンク</span>
+        <span className="text-[12px] font-bold text-stone-600">🔗 この企画の試写リンク</span>
         <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-          <button onClick={onShare} disabled={sharing} className="text-[11px] font-bold text-white px-3 py-1.5 rounded-lg disabled:opacity-50" style={{ background: main }}>{sharing ? "発行中…" : (plan.shareId ? "試写リンクを更新" : "試写リンクを発行")}</button>
-          {plan.shareId && <a href={shareUrl(plan.shareId, plan.shareReadToken)} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: main }}>リンクを開く ↗</a>}
+          <button onClick={onShare} disabled={sharing} className="text-[12px] font-bold text-white px-3 py-1.5 rounded-lg disabled:opacity-50" style={{ background: main }}>{sharing ? "発行中…" : (plan.shareId ? "試写リンクを更新" : "試写リンクを発行")}</button>
+          {plan.shareId && <a href={shareUrl(plan.shareId, plan.shareReadToken)} target="_blank" rel="noreferrer" className="text-[12px] font-bold underline" style={{ color: main }}>リンクを開く ↗</a>}
         </div>
-        <p className="text-[10px] text-stone-400 mt-1">この企画の動画・素材・コメントだけを先方に見せる専用リンク（案件丸ごとは右上「共有」）。</p>
+        <p className="text-[11px] text-stone-500 mt-1">この企画の動画・素材・コメントだけを先方に見せる専用リンク（案件丸ごとは右上「共有」）。</p>
       </div>
     </div>
   );
@@ -2106,23 +2106,23 @@ function ManualPanel({ entries, onChange, main, accent, readOnly }) {
   const del = (id) => onChange(list.filter((m) => m.id !== id));
   return (
     <div>
-      {list.length === 0 && <p className="text-[12px] text-stone-400 py-2">まだありません。{readOnly ? "" : "下の分類ボタンから決め事を追加できます。"}</p>}
+      {list.length === 0 && <p className="text-[13px] text-stone-500 py-2">まだありません。{readOnly ? "" : "下の分類ボタンから決め事を追加できます。"}</p>}
       <div className="space-y-2">
         {list.map((m) => (
           <div key={m.id} className="rounded-xl border border-stone-200 bg-white p-3">
             {readOnly ? (
               <div>
-                <div className="flex items-center gap-2 mb-1"><span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#F0F0F2", color: "#57534E" }}>{m.cat}</span><span className="text-[13px] font-bold text-stone-800">{m.title}</span></div>
-                <div className="text-[12.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">{m.body}</div>
+                <div className="flex items-center gap-2 mb-1"><span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#F0F0F2", color: "#57534E" }}>{m.cat}</span><span className="text-[14px] font-bold text-stone-800">{m.title}</span></div>
+                <div className="text-[13.5px] text-stone-700 whitespace-pre-wrap leading-relaxed">{m.body}</div>
               </div>
             ) : (
               <div>
                 <div className="flex items-center gap-2 mb-1.5">
-                  <select value={m.cat} onChange={(e) => upd(m.id, { cat: e.target.value })} className="text-[11px] font-bold border border-stone-200 rounded px-1.5 py-1">{MANUAL_CATS.map((c) => <option key={c}>{c}</option>)}</select>
-                  <input value={m.title} onChange={(e) => upd(m.id, { title: e.target.value })} placeholder="タイトル（例：テロップのフォント）" className="flex-1 min-w-0 text-[13px] font-bold border-0 border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1" />
+                  <select value={m.cat} onChange={(e) => upd(m.id, { cat: e.target.value })} className="text-[12px] font-bold border border-stone-200 rounded px-1.5 py-1">{MANUAL_CATS.map((c) => <option key={c}>{c}</option>)}</select>
+                  <input value={m.title} onChange={(e) => upd(m.id, { title: e.target.value })} placeholder="タイトル（例：テロップのフォント）" className="flex-1 min-w-0 text-[14px] font-bold border-0 border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1" />
                   <button onClick={() => { if (window.confirm("この決め事を削除しますか？")) del(m.id); }} className="shrink-0 text-stone-300 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
                 </div>
-                <textarea value={m.body} onChange={(e) => upd(m.id, { body: e.target.value })} placeholder="内容・ルール（例：MORISAWA 新ゴ / 縁取り2px / 1行20字まで）" className="w-full h-20 text-[12.5px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y leading-relaxed" />
+                <textarea value={m.body} onChange={(e) => upd(m.id, { body: e.target.value })} placeholder="内容・ルール（例：MORISAWA 新ゴ / 縁取り2px / 1行20字まで）" className="w-full h-20 text-[13.5px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y leading-relaxed" />
               </div>
             )}
           </div>
@@ -2130,8 +2130,8 @@ function ManualPanel({ entries, onChange, main, accent, readOnly }) {
       </div>
       {!readOnly && (
         <div className="mt-3 flex items-center gap-1.5 flex-wrap">
-          <span className="text-[11px] font-bold text-stone-400">分類を選んで追加</span>
-          {MANUAL_CATS.map((c) => (<button key={c} onClick={() => add(c)} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600">＋{c}</button>))}
+          <span className="text-[12px] font-bold text-stone-500">分類を選んで追加</span>
+          {MANUAL_CATS.map((c) => (<button key={c} onClick={() => add(c)} className="text-[12px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600">＋{c}</button>))}
         </div>
       )}
     </div>
@@ -2167,16 +2167,16 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
       .catch(() => { if (on) setData({ fixed: "", distilled: "", updated: null }); });
     return () => { on = false; };
   }, [channel, snapId, token, upToken, liveId, liveToken]);
-  if (data === null) return <div className="text-[12px] text-stone-400 py-2">🧪 Flip-LABの編集ルールを読み込み中…</div>;
+  if (data === null) return <div className="text-[13px] text-stone-500 py-2">🧪 Flip-LABの編集ルールを読み込み中…</div>;
   // 共通も客別も“読み物”として整形表示（1行ずつ採用ボタンにすると読めない＝マニュアルとして使えない）。
   const isCommon = (channel || "").trim() === "編集マニュアル";
   if (!data.fixed && !data.distilled) return null;
   return (
     <div className="rounded-xl border mb-3 overflow-hidden" style={{ borderColor: main + "55", background: main + "0c" }}>
       <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
-        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: main }}>🧪 Flip-LAB</span>
-        <span className="text-[12.5px] font-bold text-stone-800">{isCommon ? "編集マニュアル" : channel + " 編集ルール"}</span>
-        <span className="ml-auto text-[10px] text-stone-400 shrink-0">{data.updated ? data.updated.slice(0, 10) : ""} {open ? "▲" : "▼"}</span>
+        <span className="text-[12px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: main }}>🧪 Flip-LAB</span>
+        <span className="text-[13.5px] font-bold text-stone-800">{isCommon ? "編集マニュアル" : channel + " 編集ルール"}</span>
+        <span className="ml-auto text-[11px] text-stone-500 shrink-0">{data.updated ? data.updated.slice(0, 10) : ""} {open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div className="px-3 pb-3 border-t border-stone-200/60 pt-2 max-h-[56vh] overflow-y-auto mg-scroll">
@@ -2196,8 +2196,8 @@ function LabChannelRules({ channel, main, snapId, token, upToken, liveId, liveTo
               .lab-md .wiz-tbl td{border-top:1px solid #f0efee;padding:6px 9px;vertical-align:top;line-height:1.6;color:#44403c}
               .lab-md .wiz-tbl tr:nth-child(even) td{background:#fafaf9}
             `}</style>
-            {data.fixed && <div className="mb-3"><div className="text-[10.5px] font-bold text-stone-500 mb-1 tracking-wide">確定ルール（人が設定・厳守）</div><div dangerouslySetInnerHTML={{ __html: wizMdHtml(data.fixed) }} /></div>}
-            {data.distilled && <div>{!isCommon && <div className="text-[10.5px] font-bold text-stone-500 mb-1.5 tracking-wide">学習した傾向（確認コメントから自動蒸留）</div>}<div dangerouslySetInnerHTML={{ __html: wizMdHtml(data.distilled) }} /></div>}
+            {data.fixed && <div className="mb-3"><div className="text-[11.5px] font-bold text-stone-600 mb-1 tracking-wide">確定ルール（人が設定・厳守）</div><div dangerouslySetInnerHTML={{ __html: wizMdHtml(data.fixed) }} /></div>}
+            {data.distilled && <div>{!isCommon && <div className="text-[11.5px] font-bold text-stone-600 mb-1.5 tracking-wide">学習した傾向（確認コメントから自動蒸留）</div>}<div dangerouslySetInnerHTML={{ __html: wizMdHtml(data.distilled) }} /></div>}
           </div>
         </div>
       )}
@@ -2212,14 +2212,14 @@ function VersionTrashPanel({ items, onRestore }) {
   const daysLeft = (v) => Math.max(0, 7 - Math.floor((Date.now() - v.trashedAt) / 86400000));
   return (
     <div className="mb-3">
-      <button onClick={() => setOpen((o) => !o)} className="text-[11px] font-bold text-stone-400 hover:text-stone-600">🗑 ゴミ箱（{items.length}）{open ? " ▴" : " ▾"}</button>
+      <button onClick={() => setOpen((o) => !o)} className="text-[12px] font-bold text-stone-500 hover:text-stone-600">🗑 ゴミ箱（{items.length}）{open ? " ▴" : " ▾"}</button>
       {open && (
         <div className="mt-1.5 rounded-xl border border-dashed border-stone-300 bg-white p-2.5 space-y-1.5">
           {items.map((v) => (
-            <div key={v.id} className="flex items-center gap-2 text-[11px]">
-              <span className="font-bold text-stone-500">{v.label}</span>
-              <span className="text-stone-400 truncate flex-1">{v.name && v.name !== v.label ? v.name : ""}</span>
-              <span className="text-stone-400">残り{daysLeft(v)}日で完全削除</span>
+            <div key={v.id} className="flex items-center gap-2 text-[12px]">
+              <span className="font-bold text-stone-600">{v.label}</span>
+              <span className="text-stone-500 truncate flex-1">{v.name && v.name !== v.label ? v.name : ""}</span>
+              <span className="text-stone-500">残り{daysLeft(v)}日で完全削除</span>
               <button onClick={() => onRestore(v.id)} className="font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 shrink-0">復元</button>
             </div>
           ))}
@@ -2323,37 +2323,37 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-3 mb-3">
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="text-[12px] font-bold text-stone-600">🎬 たてがた君（縦ショート自動生成）</div>
+        <div className="text-[13px] font-bold text-stone-600">🎬 たてがた君（縦ショート自動生成）</div>
         <div className="flex-1" />
         {shownCount > 0 && (
           <button onClick={copyGalleryUrl}
             title="生成した全ショートをまとめて見せる先方用URLをコピー（開くだけで再生・DLできます）"
-            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
+            className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1">
             <Icon name="copy" className="w-3.5 h-3.5" />{galleryCopied ? "コピーしました" : "共有URL"}
           </button>
         )}
         <button onClick={enqueue} disabled={!videoKey || busy || running}
           title={!videoKey ? "先に動画確認で完成版をアップしてください" : running ? "既に生成中です" : "納品動画から縦型ショートを自動生成"}
-          className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
+          className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
           {busy || running ? "生成中…" : "ショート生成"}
         </button>
       </div>
-      {!videoKey && <div className="text-[11px] text-stone-400 mt-1.5">動画確認タブで完成版動画をアップすると、ここからショートを生成できます。</div>}
+      {!videoKey && <div className="text-[12px] text-stone-500 mt-1.5">動画確認タブで完成版動画をアップすると、ここからショートを生成できます。</div>}
       {(busy || jobs.length > 0 || items.length > 0) && (
         <div className="mt-2">
-          {busy && <div className="text-[11px] text-stone-500">📤 リクエストを送信中…</div>}
-          {running && <div className="text-[11px] text-stone-500">⏳ 生成中…（Macでの処理待ち／実行中。数分かかることがあります）</div>}
+          {busy && <div className="text-[12px] text-stone-600">📤 リクエストを送信中…</div>}
+          {running && <div className="text-[12px] text-stone-600">⏳ 生成中…（Macでの処理待ち／実行中。数分かかることがあります）</div>}
           {(() => {
             // 過去に失敗したジョブが履歴に残っていても、その後成功していれば古いエラーは消す
             // （2026-08-20：再デプロイに巻き込まれて一度失敗→再実行で成功、というケースでUIにエラーが残り続けた）。
             // 直近のジョブがerrorの時だけ表示する。
             const latest = [...jobs].sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))[0];
             return latest && latest.status === "error"
-              ? <div className="text-[11px] text-rose-500">⚠️ {latest.error || "生成に失敗しました"}</div> : null;
+              ? <div className="text-[12px] text-rose-500">⚠️ {latest.error || "生成に失敗しました"}</div> : null;
           })()}
           {items.length > 0 && (
             <>
-              <div className="text-[11px] text-stone-400">
+              <div className="text-[12px] text-stone-500">
                 生成済み {items.length}本{shownCount < items.length ? `（先方に見せる ${shownCount}本・非表示 ${items.length - shownCount}本）` : ""}。「共有URL」で表示中のものをまとめて見られます
               </div>
               <div className="flex flex-wrap gap-2 mt-2">
@@ -2365,7 +2365,7 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
                     </div>
                     <button onClick={() => toggleHidden(s)} disabled={visBusy === s.key}
                       title={s.hidden ? "先方に見せる（共有ページ・共有URLに出す）" : "先方に見せない（共有ページ・共有URLから隠す）"}
-                      className={"mt-1 w-full text-[11px] font-bold py-1 rounded-md border inline-flex items-center justify-center gap-1 disabled:opacity-50 " + (s.hidden ? "border-stone-300 bg-stone-100 text-stone-500 hover:bg-stone-200" : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50")}>
+                      className={"mt-1 w-full text-[12px] font-bold py-1 rounded-md border inline-flex items-center justify-center gap-1 disabled:opacity-50 " + (s.hidden ? "border-stone-300 bg-stone-100 text-stone-600 hover:bg-stone-200" : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50")}>
                       <Icon name={s.hidden ? "eyeOff" : "eye"} className="w-3.5 h-3.5" />{s.hidden ? "非表示" : "表示中"}
                     </button>
                   </div>
@@ -2632,19 +2632,19 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
         <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
         <div className="rounded-2xl border border-dashed border-stone-300 bg-white p-6 text-center transition-all" style={dropOver ? { outline: "2px dashed " + main, outlineOffset: "2px" } : {}}
           onDragOver={onDragOverVideo} onDragLeave={() => setDropOver(false)} onDrop={onDropVideo}>
-          <div className="text-[13px] font-bold text-stone-600 mb-1">確認用の動画を追加</div>
-          <p className="text-[11px] text-stone-400 mb-4">mp4をここにドラッグ&ドロップ、または下のボタンから。0.5〜4倍速で試写しながら修正コメントを管理できます。</p>
+          <div className="text-[14px] font-bold text-stone-600 mb-1">確認用の動画を追加</div>
+          <p className="text-[12px] text-stone-500 mb-4">mp4をここにドラッグ&ドロップ、または下のボタンから。0.5〜4倍速で試写しながら修正コメントを管理できます。</p>
           <div className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
-            <label className="flex-1 text-[12px] font-bold px-4 py-2.5 rounded-lg shadow cursor-pointer text-white" style={{ background: main }}>
+            <label className="flex-1 text-[13px] font-bold px-4 py-2.5 rounded-lg shadow cursor-pointer text-white" style={{ background: main }}>
               ⬆ mp4をアップロード
               <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
             </label>
           </div>
           <div className="flex items-center gap-2 max-w-md mx-auto mt-2">
-            <input value={yt} onChange={(e) => setYt(e.target.value)} placeholder="または YouTube限定公開URL" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-2 text-[12px] focus:outline-none" />
-            <button onClick={() => { onAddYouTube(yt); setYt(""); }} className="text-[11px] font-bold px-3 py-2 rounded-lg shrink-0 text-white" style={{ background: main }}>登録</button>
+            <input value={yt} onChange={(e) => setYt(e.target.value)} placeholder="または YouTube限定公開URL" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-2 text-[13px] focus:outline-none" />
+            <button onClick={() => { onAddYouTube(yt); setYt(""); }} className="text-[12px] font-bold px-3 py-2 rounded-lg shrink-0 text-white" style={{ background: main }}>登録</button>
           </div>
-          {busy && <div className="mt-3 text-[12px] text-stone-500">{busy} {prog ? prog + "%" : ""}</div>}
+          {busy && <div className="mt-3 text-[13px] text-stone-600">{busy} {prog ? prog + "%" : ""}</div>}
         </div>
       </div>
     );
@@ -2656,9 +2656,9 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
       {isNarrowRB && (
         <button onClick={() => setHistOpen((v) => !v)}
           className="w-full flex items-center gap-2 mb-2 px-3 h-9 rounded-lg border border-stone-200 bg-white text-left">
-          <span className="text-[12px] font-bold text-stone-700 truncate">{sel ? sel.label : ""}<span className="font-normal text-stone-400 ml-1">{sel && sel.name && sel.name !== sel.label ? sel.name : ""}</span></span>
-          {counts["未対応"] > 0 && <span className="text-[10px] font-bold px-1.5 rounded-full text-white shrink-0" style={{ background: accent }}>{counts["未対応"]}</span>}
-          <span className="ml-auto text-[11px] text-stone-400 shrink-0">{histOpen ? "閉じる ▴" : "履歴・追加 ▾"}</span>
+          <span className="text-[13px] font-bold text-stone-700 truncate">{sel ? sel.label : ""}<span className="font-normal text-stone-500 ml-1">{sel && sel.name && sel.name !== sel.label ? sel.name : ""}</span></span>
+          {counts["未対応"] > 0 && <span className="text-[11px] font-bold px-1.5 rounded-full text-white shrink-0" style={{ background: accent }}>{counts["未対応"]}</span>}
+          <span className="ml-auto text-[12px] text-stone-500 shrink-0">{histOpen ? "閉じる ▴" : "履歴・追加 ▾"}</span>
         </button>
       )}
       {(!isNarrowRB || histOpen) && (<>
@@ -2674,42 +2674,42 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           return (<React.Fragment>
             {hidden.length > 0 && (
               <button onClick={() => setShowOldVers(true)}
-                className="shrink-0 px-2.5 py-1.5 rounded-lg text-[12px] font-bold border bg-white text-stone-500 border-stone-200 hover:bg-stone-50"
+                className="shrink-0 px-2.5 py-1.5 rounded-lg text-[13px] font-bold border bg-white text-stone-600 border-stone-200 hover:bg-stone-50"
                 title="過去のバージョンを表示">
                 旧版 {hidden.length} ▸
-                {hiddenOpen > 0 && <span className="ml-1 text-[10px] px-1.5 rounded-full text-white" style={{ background: accent }}>{hiddenOpen}</span>}
+                {hiddenOpen > 0 && <span className="ml-1 text-[11px] px-1.5 rounded-full text-white" style={{ background: accent }}>{hiddenOpen}</span>}
               </button>
             )}
             {showOldVers && versions.length > 1 && (
               <button onClick={() => setShowOldVers(false)}
-                className="shrink-0 px-2 py-1.5 rounded-lg text-[12px] font-bold text-stone-400 hover:text-stone-600" title="旧版を隠す">◂ 隠す</button>
+                className="shrink-0 px-2 py-1.5 rounded-lg text-[13px] font-bold text-stone-500 hover:text-stone-600" title="旧版を隠す">◂ 隠す</button>
             )}
             {shown.map((v) => {
               const on = v.id === sel.id;
               const open = openOf(v);
               return (
                 <button key={v.id} onClick={() => setSelId(v.id)}
-                  className={"shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-bold border " + (on ? "text-white" : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50")}
+                  className={"shrink-0 px-3 py-1.5 rounded-lg text-[13px] font-bold border " + (on ? "text-white" : "bg-white text-stone-600 border-stone-200 hover:bg-stone-50")}
                   style={on ? { background: main, borderColor: main } : {}}>
                   {v.label}<span className="font-normal opacity-80 ml-1">{v.name && v.name !== v.label ? v.name : ""}</span>
-                  {open > 0 && <span className="ml-1.5 text-[10px] px-1.5 rounded-full" style={{ background: on ? "rgba(255,255,255,.25)" : accent, color: "#fff" }}>{open}</span>}
+                  {open > 0 && <span className="ml-1.5 text-[11px] px-1.5 rounded-full" style={{ background: on ? "rgba(255,255,255,.25)" : accent, color: "#fff" }}>{open}</span>}
                 </button>
               );
             })}
           </React.Fragment>);
         })()}
-        <label className="shrink-0 px-3.5 py-1.5 rounded-lg text-[12px] font-bold text-white cursor-pointer flex items-center gap-1 shadow-sm hover:opacity-90" style={{ background: main }} title="動画をアップ（ここにドラッグ&ドロップでも追加できます）">
-          <span className="text-[13px] leading-none">⬆</span>動画を追加
+        <label className="shrink-0 px-3.5 py-1.5 rounded-lg text-[13px] font-bold text-white cursor-pointer flex items-center gap-1 shadow-sm hover:opacity-90" style={{ background: main }} title="動画をアップ（ここにドラッグ&ドロップでも追加できます）">
+          <span className="text-[14px] leading-none">⬆</span>動画を追加
           <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
         </label>
       </div>
       {/* 修正サマリー */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         {CMT_STATUSES.map((s) => (
-          <span key={s} className="text-[11px] font-bold px-2.5 py-1 rounded-full" style={{ background: CMT_STATUS_COLOR[s].bg, color: CMT_STATUS_COLOR[s].fg }}>{s} {counts[s]}</span>
+          <span key={s} className="text-[12px] font-bold px-2.5 py-1 rounded-full" style={{ background: CMT_STATUS_COLOR[s].bg, color: CMT_STATUS_COLOR[s].fg }}>{s} {counts[s]}</span>
         ))}
         <div className="flex-1" />
-        <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（7日間はゴミ箱から復元できます。コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[11px] text-stone-400 hover:text-rose-500 font-bold">この版を削除</button>
+        <button onClick={() => { if (window.confirm(sel.label + " を削除しますか？（7日間はゴミ箱から復元できます。コメントは残ります）")) onRemoveVersion(sel.id); }} className="text-[12px] text-stone-500 hover:text-rose-500 font-bold">この版を削除</button>
       </div>
       <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
       </>)}
@@ -2722,30 +2722,30 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                   {/* 透明レイヤーでYouTubeのhover検知を遮断＝タイトル/関連動画などの情報を非表示に。クリックで再生/停止 */}
                   <div className="absolute inset-0 cursor-pointer" onClick={onVideoTap} style={{ touchAction: "manipulation" }} title="クリックで再生/停止・左右ダブルタップで±5秒" /></>
               : streamPending
-                ? <div className="text-center text-white/80 px-4"><div className="text-[13px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[11px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
-                    {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[11px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
+                ? <div className="text-center text-white/80 px-4"><div className="text-[14px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[12px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
+                    {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[12px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
                   ? <video key="hls" ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
                   : <video key="raw" ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
             {/* 左右ダブルタップの±5秒インジケータ */}
             {skipFlash && (
               <div className={"absolute inset-y-0 grid place-items-center pointer-events-none " + (skipFlash.side === "l" ? "left-0 w-1/3" : "right-0 w-1/3")}>
-                <span className="text-[13px] font-bold px-3 py-2 rounded-full bg-black/60 text-white">{skipFlash.side === "l" ? "◀◀ -" + skipFlash.n + "秒" : "+" + skipFlash.n + "秒 ▶▶"}</span>
+                <span className="text-[14px] font-bold px-3 py-2 rounded-full bg-black/60 text-white">{skipFlash.side === "l" ? "◀◀ -" + skipFlash.n + "秒" : "+" + skipFlash.n + "秒 ▶▶"}</span>
               </div>
             )}
             {/* シーク/バッファ待ちの間の「移動中」表示（生mp4は数秒かかる＝固まったと誤解されるのを防ぐ） */}
             {!isYT && !streamPending && seeking && (
               <div className="absolute inset-0 grid place-items-center pointer-events-none">
-                <span className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-black/60 text-white/90">⏳ 移動中…{!streamReadyHls ? "（軽量版ができるとサクサクになります）" : ""}</span>
+                <span className="text-[12px] font-bold px-3 py-1.5 rounded-lg bg-black/60 text-white/90">⏳ 移動中…{!streamReadyHls ? "（軽量版ができるとサクサクになります）" : ""}</span>
               </div>
             )}
             {/* 変換中/失敗でも生データで再生できている時の非ブロッキング・バッジ */}
             {!isYT && streamBusy && rawSrc && (
               <div className="absolute top-2 left-2 right-2 flex items-center gap-2 pointer-events-none">
-                <span className="text-[10px] font-bold px-2 py-1 rounded bg-black/55 text-white/90 pointer-events-none">
+                <span className="text-[11px] font-bold px-2 py-1 rounded bg-black/55 text-white/90 pointer-events-none">
                   {sel.streamFailed ? "⚠️ 軽量化できず元データで再生中" : "⚙️ 軽量版を準備中…" + (sel.pct ? Math.round(sel.pct) + "%" : "") + "（できたら自動で軽くなります）"}
                 </span>
-                {onRefreshStream && !sel.streamFailed && <button onClick={onRefreshStream} className="text-[10px] font-bold px-2 py-1 rounded bg-black/55 text-white/90 hover:bg-black/75 pointer-events-auto">🔄</button>}
+                {onRefreshStream && !sel.streamFailed && <button onClick={onRefreshStream} className="text-[11px] font-bold px-2 py-1 rounded bg-black/55 text-white/90 hover:bg-black/75 pointer-events-auto">🔄</button>}
               </div>
             )}
           </div>
@@ -2757,7 +2757,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                   <div className="absolute bottom-4 z-30 pointer-events-none -translate-x-1/2 rounded-lg overflow-hidden shadow-lg border border-black/20 bg-black" style={{ left: pv.x }}>
                     {pvThumbUrl ? <img src={pvImg || pvThumbUrl} alt="" draggable={false} className="block w-40 h-[90px] object-cover" />
                       : pvNeedsVideo ? <canvas ref={pvCanvasRef} width={160} height={90} className="block w-40 h-[90px]" /> : null}
-                    <div className="text-center text-[10px] font-bold text-white/90 py-0.5 bg-black/80" style={{ fontFamily: mono }}>{fmtTC(pv.t)}</div>
+                    <div className="text-center text-[11px] font-bold text-white/90 py-0.5 bg-black/80" style={{ fontFamily: mono }}>{fmtTC(pv.t)}</div>
                   </div>
                 )}
                 <input type="range" min={0} max={dur} step="0.1" value={cur}
@@ -2789,25 +2789,25 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                   </div>
                 )}
               </div>
-              <span className="text-[10px] tabular-nums text-stone-400 shrink-0" style={{ fontFamily: mono }}>{fmtTC(cur)} / {fmtTC(dur)}</span>
+              <span className="text-[11px] tabular-nums text-stone-500 shrink-0" style={{ fontFamily: mono }}>{fmtTC(cur)} / {fmtTC(dur)}</span>
               {pvNeedsVideo && <video ref={pvVidRef} src={rawSrc} preload="metadata" muted playsInline className="hidden" onSeeked={pvDraw} />}
             </div>
           )}
           {!streamPending && (
             <div className="flex items-center gap-1 mt-2 flex-wrap">
-              <span className="text-[11px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}{isYT && dur ? " / " + fmtTC(dur) : ""}</span>
-              <button onClick={togglePlay} title="再生/停止（Enter）" className="text-[11px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⏯</button>
-              <button onClick={() => { const el = isYT ? (ytDivRef.current && ytDivRef.current.querySelector("iframe")) || ytDivRef.current : vref.current; if (el && el.requestFullscreen) el.requestFullscreen(); }} title="全画面" className="text-[11px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⛶</button>
-              <span className="text-[10px] text-stone-400 ml-1 mr-0.5">速度</span>
+              <span className="text-[12px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}{isYT && dur ? " / " + fmtTC(dur) : ""}</span>
+              <button onClick={togglePlay} title="再生/停止（Enter）" className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⏯</button>
+              <button onClick={() => { const el = isYT ? (ytDivRef.current && ytDivRef.current.querySelector("iframe")) || ytDivRef.current : vref.current; if (el && el.requestFullscreen) el.requestFullscreen(); }} title="全画面" className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⛶</button>
+              <span className="text-[11px] text-stone-500 ml-1 mr-0.5">速度</span>
               {rates.map((r) => (
                 <button key={r} onClick={() => applyRate(r)}
-                  className={"text-[11px] px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-500")} style={rate === r ? { background: main, borderColor: main, fontFamily: mono } : { fontFamily: mono }}>{r}x</button>
+                  className={"text-[12px] px-1.5 py-0.5 rounded border " + (rate === r ? "text-white" : "border-stone-200 text-stone-600")} style={rate === r ? { background: main, borderColor: main, fontFamily: mono } : { fontFamily: mono }}>{r}x</button>
               ))}
-              {isYT && <span className="text-[10px] text-stone-400">（YouTubeは2倍まで）</span>}
+              {isYT && <span className="text-[11px] text-stone-500">（YouTubeは2倍まで）</span>}
               {sel.key && (
                 <a href={SHARE_API + "/api/file/" + sel.key + "?dl=1"} target="_blank" rel="noreferrer"
                   title="この版のオリジナルmp4（アップした元データそのまま）をダウンロード"
-                  className="ml-auto text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1 shrink-0">
+                  className="ml-auto text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1 shrink-0">
                   ⬇ 元mp4をDL
                 </a>
               )}
@@ -2819,12 +2819,12 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           {lane === "fix" && (
           <div className="mt-3 rounded-xl border border-stone-200 bg-white p-3">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              {!streamPending && <span className="text-[11px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} に</span>}
-              <select value={cat} onChange={(e) => setCat(e.target.value)} className="text-[11px] border border-stone-200 rounded px-1.5 py-1">{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
-              <select value={prio} onChange={(e) => setPrio(e.target.value)} className="text-[11px] border border-stone-200 rounded px-1.5 py-1">{CMT_PRIORITIES.map((p) => <option key={p}>優先:{p}</option>)}</select>
+              {!streamPending && <span className="text-[12px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} に</span>}
+              <select value={cat} onChange={(e) => setCat(e.target.value)} className="text-[12px] border border-stone-200 rounded px-1.5 py-1">{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
+              <select value={prio} onChange={(e) => setPrio(e.target.value)} className="text-[12px] border border-stone-200 rounded px-1.5 py-1">{CMT_PRIORITIES.map((p) => <option key={p}>優先:{p}</option>)}</select>
             </div>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } }} placeholder="修正内容を入力（⌘+Enterで送信）" className="w-full h-16 text-[12px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
-            <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={!text.trim()} className="text-[11px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>修正を追加</button></div>
+            <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } }} placeholder="修正内容を入力（⌘+Enterで送信）" className="w-full h-16 text-[13px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
+            <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={!text.trim()} className="text-[12px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>修正を追加</button></div>
           </div>
           )}
           {/* 切り抜き候補（取れ高マーク）。区間ではなく「点」だけ取る＝尺の前後はたてがた君側に探させる */}
@@ -2834,20 +2834,20 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 再生しながら「ここから」「ここまで」を押すだけ。終了を押さなければ従来どおり点1つで登録する。 */}
             <div className="flex items-center gap-1.5 mb-2 flex-wrap">
               <button onClick={() => setClipIn(getTime())} disabled={streamPending}
-                className="text-[11px] font-bold px-2.5 py-1 rounded-lg border disabled:opacity-40"
+                className="text-[12px] font-bold px-2.5 py-1 rounded-lg border disabled:opacity-40"
                 style={clipIn != null ? { background: accent, color: accentText, borderColor: "transparent" } : { borderColor: "#e7e5e4", color: "#78716c" }}>
                 ここから{clipIn != null ? " " + fmtTC(clipIn) : ""}
               </button>
-              <span className="text-[11px] text-stone-300">〜</span>
+              <span className="text-[12px] text-stone-300">〜</span>
               <button onClick={() => setClipOut(getTime())} disabled={streamPending}
-                className="text-[11px] font-bold px-2.5 py-1 rounded-lg border disabled:opacity-40"
+                className="text-[12px] font-bold px-2.5 py-1 rounded-lg border disabled:opacity-40"
                 style={clipOut != null ? { background: accent, color: accentText, borderColor: "transparent" } : { borderColor: "#e7e5e4", color: "#78716c" }}>
                 ここまで{clipOut != null ? " " + fmtTC(clipOut) : ""}
               </button>
               {(clipIn != null || clipOut != null) && (
-                <button onClick={() => { setClipIn(null); setClipOut(null); }} className="text-[10px] text-stone-400 underline hover:text-stone-600">区間をクリア</button>
+                <button onClick={() => { setClipIn(null); setClipOut(null); }} className="text-[11px] text-stone-500 underline hover:text-stone-600">区間をクリア</button>
               )}
-              <span className="text-[10px] text-stone-400 ml-auto">
+              <span className="text-[11px] text-stone-500 ml-auto">
                 {clipIn != null && clipOut != null
                   ? "この " + Math.abs(clipOut - clipIn).toFixed(1) + "秒 を切り抜き"
                   : (!streamPending ? fmtTC(cur) + " の一点を切り抜き" : "")}
@@ -2855,14 +2855,14 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             </div>
             <textarea value={clipMemo} onChange={(e) => setClipMemo(e.target.value)} rows={2}
               placeholder="切り抜きの指示（例：ここの笑いのくだりを30秒で。前の質問から入れる）"
-              className="w-full text-[12px] leading-relaxed border border-stone-200 rounded-lg px-2.5 py-2 mb-1.5 focus:outline-none focus:border-stone-400 resize-y" />
+              className="w-full text-[13px] leading-relaxed border border-stone-200 rounded-lg px-2.5 py-2 mb-1.5 focus:outline-none focus:border-stone-400 resize-y" />
             {/* 2026-09-08: 区間指定を足した時に「理由を押すと登録されます」の一文を消してしまい、
                 AKが「どうすりゃ追加できるんじゃ？」で詰まった。押す先を文章で名指しする。 */}
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-bold text-stone-500 shrink-0">理由を押すと追加 →</span>
+              <span className="text-[12px] font-bold text-stone-600 shrink-0">理由を押すと追加 →</span>
               {CLIP_REASONS.map((r) => (
                 <button key={r} onClick={() => postClip(r)} disabled={!sel}
-                  className="text-[12px] font-bold px-3 py-1.5 rounded-full disabled:opacity-40"
+                  className="text-[13px] font-bold px-3 py-1.5 rounded-full disabled:opacity-40"
                   style={{ background: CLIP_REASON_COLOR[r].bg, color: CLIP_REASON_COLOR[r].fg }}>{r}</button>
               ))}
             </div>
@@ -2874,41 +2874,41 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           <div className="flex items-center gap-1.5 mb-2">
             {[["fix", "修正", verComments.length], ["clip", "切り抜き", verClips.length]].map(([k, label, n]) => (
               <button key={k} onClick={() => setLane(k)}
-                className={"text-[11px] font-bold px-2.5 py-1 rounded-full border " + (lane === k ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-500 hover:bg-stone-50")}
+                className={"text-[12px] font-bold px-2.5 py-1 rounded-full border " + (lane === k ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-600 hover:bg-stone-50")}
                 style={lane === k ? { background: main } : {}}>{label}{n ? " " + n : ""}</button>
             ))}
           </div>
           {lane === "fix" && (<>
           <div className="flex items-center gap-1 mb-2 flex-wrap">
             {["全部", ...CMT_STATUSES, "高優先度"].map((f) => (
-              <button key={f} onClick={() => setFilter(f)} className={"text-[10px] font-bold px-2 py-1 rounded-full border " + (filter === f ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-500")} style={filter === f ? { background: main } : {}}>{f}</button>
+              <button key={f} onClick={() => setFilter(f)} className={"text-[11px] font-bold px-2 py-1 rounded-full border " + (filter === f ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-600")} style={filter === f ? { background: main } : {}}>{f}</button>
             ))}
-            <select value={CMT_CATEGORIES.includes(filter) ? filter : ""} onChange={(e) => e.target.value && setFilter(e.target.value)} className="text-[10px] border border-stone-200 rounded-full px-2 py-1 text-stone-500"><option value="">カテゴリ</option>{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
+            <select value={CMT_CATEGORIES.includes(filter) ? filter : ""} onChange={(e) => e.target.value && setFilter(e.target.value)} className="text-[11px] border border-stone-200 rounded-full px-2 py-1 text-stone-600"><option value="">カテゴリ</option>{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
           </div>
           <div className="space-y-2 max-h-[60vh] overflow-y-auto mg-scroll pr-1">
-            {filtered.length === 0 && <p className="text-[11px] text-stone-400 py-4 text-center">修正はありません</p>}
+            {filtered.length === 0 && <p className="text-[12px] text-stone-500 py-4 text-center">修正はありません</p>}
             {filtered.map((c) => {
               const st = cstat(c);
               return (
                 <div key={c.id} className="rounded-xl border border-stone-200 bg-white p-2.5">
                   <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                    <button onClick={() => onUpdate(c.id, { status: st === "完了" ? "未対応" : "完了" })} title={st === "完了" ? "対応済みを解除" : "対応済みにする"} className={"w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 text-[11px] font-bold leading-none " + (st === "完了" ? "text-white" : "border-stone-300 text-transparent hover:border-emerald-400 hover:text-emerald-400")} style={st === "完了" ? { background: "#16A34A", borderColor: "#16A34A" } : {}}>✓</button>
-                    {typeof c.timecode === "number" && <button onClick={() => seek(c.timecode)} className="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded text-white" style={{ background: main, fontFamily: mono }}>▶ {fmtTC(c.timecode)}</button>}
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: "#F0F0F2", color: "#57534E" }}>{c.category || "その他"}</span>
-                    {c.priority && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: (CMT_PRIO_COLOR[c.priority] || {}).bg, color: (CMT_PRIO_COLOR[c.priority] || {}).fg }}>{c.priority}</span>}
-                    <select value={st} onChange={(e) => onUpdate(c.id, { status: e.target.value })} className="text-[10px] font-bold border-0 rounded px-1.5 py-0.5 ml-auto" style={{ background: CMT_STATUS_COLOR[st].bg, color: CMT_STATUS_COLOR[st].fg }}>{CMT_STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
+                    <button onClick={() => onUpdate(c.id, { status: st === "完了" ? "未対応" : "完了" })} title={st === "完了" ? "対応済みを解除" : "対応済みにする"} className={"w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 text-[12px] font-bold leading-none " + (st === "完了" ? "text-white" : "border-stone-300 text-transparent hover:border-emerald-400 hover:text-emerald-400")} style={st === "完了" ? { background: "#16A34A", borderColor: "#16A34A" } : {}}>✓</button>
+                    {typeof c.timecode === "number" && <button onClick={() => seek(c.timecode)} className="text-[11px] font-bold tabular-nums px-1.5 py-0.5 rounded text-white" style={{ background: main, fontFamily: mono }}>▶ {fmtTC(c.timecode)}</button>}
+                    <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ background: "#F0F0F2", color: "#57534E" }}>{c.category || "その他"}</span>
+                    {c.priority && <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ background: (CMT_PRIO_COLOR[c.priority] || {}).bg, color: (CMT_PRIO_COLOR[c.priority] || {}).fg }}>{c.priority}</span>}
+                    <select value={st} onChange={(e) => onUpdate(c.id, { status: e.target.value })} className="text-[11px] font-bold border-0 rounded px-1.5 py-0.5 ml-auto" style={{ background: CMT_STATUS_COLOR[st].bg, color: CMT_STATUS_COLOR[st].fg }}>{CMT_STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
                   </div>
-                  <div className="text-[12px] text-stone-800 leading-snug whitespace-pre-wrap">{c.text}</div>
-                  <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-2"><span>{c.author || "ゲスト"}</span>{c.createdAt && <span>{String(c.createdAt).slice(5, 16).replace("T", " ")}</span>}<button onClick={() => { if (window.confirm("この修正を削除？")) onDelete(c.id); }} className="ml-auto hover:text-rose-500">削除</button></div>
+                  <div className="text-[13px] text-stone-800 leading-snug whitespace-pre-wrap">{c.text}</div>
+                  <div className="text-[11px] text-stone-500 mt-1 flex items-center gap-2"><span>{c.author || "ゲスト"}</span>{c.createdAt && <span>{String(c.createdAt).slice(5, 16).replace("T", " ")}</span>}<button onClick={() => { if (window.confirm("この修正を削除？")) onDelete(c.id); }} className="ml-auto hover:text-rose-500">削除</button></div>
                   {/* 返信スレッド */}
                   {(c.replies || []).length > 0 && (
                     <div className="mt-2 pl-2 border-l-2 border-stone-100 space-y-1">
-                      {c.replies.map((r, ri) => (<div key={ri} className="text-[11px]"><span className="font-bold text-stone-600">{r.author}</span> <span className="text-stone-700">{r.text}</span></div>))}
+                      {c.replies.map((r, ri) => (<div key={ri} className="text-[12px]"><span className="font-bold text-stone-600">{r.author}</span> <span className="text-stone-700">{r.text}</span></div>))}
                     </div>
                   )}
                   <div className="flex items-center gap-1.5 mt-1.5">
-                    <input value={replyText[c.id] || ""} onChange={(e) => setReplyText((m) => ({ ...m, [c.id]: e.target.value }))} onKeyDown={(e) => { if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return; e.preventDefault(); if (!(replyText[c.id] || "").trim()) return; onReply(c.id, replyText[c.id]); setReplyText((m) => ({ ...m, [c.id]: "" })); }} placeholder="返信…" className="flex-1 min-w-0 text-[11px] border border-stone-200 rounded-lg px-2 py-1 focus:outline-none" />
-                    <button onClick={() => { onReply(c.id, replyText[c.id]); setReplyText((m) => ({ ...m, [c.id]: "" })); }} className="text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 shrink-0">返信</button>
+                    <input value={replyText[c.id] || ""} onChange={(e) => setReplyText((m) => ({ ...m, [c.id]: e.target.value }))} onKeyDown={(e) => { if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing || e.keyCode === 229) return; e.preventDefault(); if (!(replyText[c.id] || "").trim()) return; onReply(c.id, replyText[c.id]); setReplyText((m) => ({ ...m, [c.id]: "" })); }} placeholder="返信…" className="flex-1 min-w-0 text-[12px] border border-stone-200 rounded-lg px-2 py-1 focus:outline-none" />
+                    <button onClick={() => { onReply(c.id, replyText[c.id]); setReplyText((m) => ({ ...m, [c.id]: "" })); }} className="text-[11px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 shrink-0">返信</button>
                   </div>
                 </div>
               );
@@ -2918,25 +2918,25 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           {lane === "clip" && (
             <div className="space-y-2 max-h-[60vh] overflow-y-auto mg-scroll pr-1">
               {verClips.length === 0 && (
-                <p className="text-[11px] text-stone-400 py-4 text-center">まだ切り抜き候補はありません。<br />「ここから」「ここまで」で区間を取り、指示を書いて理由を押すと登録されます。</p>
+                <p className="text-[12px] text-stone-500 py-4 text-center">まだ切り抜き候補はありません。<br />「ここから」「ここまで」で区間を取り、指示を書いて理由を押すと登録されます。</p>
               )}
               {verClips.map((c) => {
                 const pt = clipParts(c), rc = CLIP_REASON_COLOR[pt.reason] || CLIP_REASON_COLOR["その他"];
                 return (
                   <div key={c.id} className="rounded-xl border border-stone-200 bg-white p-2.5">
                     <div className="flex items-center gap-1.5 mb-1 flex-wrap">
-                      {typeof c.timecode === "number" && <button onClick={() => seek(c.timecode)} className="text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded text-white" style={{ background: main, fontFamily: mono }}>▶ {fmtTC(c.timecode)}</button>}
+                      {typeof c.timecode === "number" && <button onClick={() => seek(c.timecode)} className="text-[11px] font-bold tabular-nums px-1.5 py-0.5 rounded text-white" style={{ background: main, fontFamily: mono }}>▶ {fmtTC(c.timecode)}</button>}
                       {typeof c.endTimecode === "number" && (
-                        <span className="text-[10px] font-bold tabular-nums text-stone-500" style={{ fontFamily: mono }}>
+                        <span className="text-[11px] font-bold tabular-nums text-stone-600" style={{ fontFamily: mono }}>
                           〜 <button onClick={() => seek(c.endTimecode)} className="underline hover:text-stone-700">{fmtTC(c.endTimecode)}</button>
-                          <span className="text-stone-400 ml-1">({Math.max(0, c.endTimecode - (c.timecode || 0)).toFixed(1)}秒)</span>
+                          <span className="text-stone-500 ml-1">({Math.max(0, c.endTimecode - (c.timecode || 0)).toFixed(1)}秒)</span>
                         </span>
                       )}
-                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: rc.bg, color: rc.fg }}>{pt.reason}</span>
-                      <span className="text-[10px] text-stone-400 ml-auto">{c.author || "ゲスト"}</span>
+                      <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ background: rc.bg, color: rc.fg }}>{pt.reason}</span>
+                      <span className="text-[11px] text-stone-500 ml-auto">{c.author || "ゲスト"}</span>
                     </div>
-                    {pt.memo && <div className="text-[12px] text-stone-800 leading-snug whitespace-pre-wrap break-words">{pt.memo}</div>}
-                    <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-2">
+                    {pt.memo && <div className="text-[13px] text-stone-800 leading-snug whitespace-pre-wrap break-words">{pt.memo}</div>}
+                    <div className="text-[11px] text-stone-500 mt-1 flex items-center gap-2">
                       {c.createdAt && <span>{String(c.createdAt).slice(5, 16).replace("T", " ")}</span>}
                       <button onClick={() => { if (window.confirm("この切り抜き候補を削除？")) onDelete(c.id); }} className="ml-auto hover:text-rose-500">削除</button>
                     </div>
@@ -2944,7 +2944,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 );
               })}
               {verClips.length > 0 && (
-                <button onClick={copyClipTsv} className="w-full text-[11px] font-bold px-3 py-2 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50">
+                <button onClick={copyClipTsv} className="w-full text-[12px] font-bold px-3 py-2 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50">
                   {clipCopied ? "コピーしました" : "一覧をコピー（TSV）"}
                 </button>
               )}
@@ -2952,7 +2952,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           )}
         </div>
       </div>
-      {busy && <div className="mt-2 text-[12px] text-stone-500">{busy} {prog ? prog + "%" : ""}</div>}
+      {busy && <div className="mt-2 text-[13px] text-stone-600">{busy} {prog ? prog + "%" : ""}</div>}
     </div>
   );
 }
@@ -3155,7 +3155,7 @@ function WizardPane({ project, setProject, theme, setTab }) {
 
   const genBtn = (label) => (
     <button onClick={generate} disabled={busy || !questions}
-      className="text-[12px] font-bold px-5 py-2.5 rounded-lg text-white shadow-sm disabled:opacity-60 inline-flex items-center gap-2"
+      className="text-[13px] font-bold px-5 py-2.5 rounded-lg text-white shadow-sm disabled:opacity-60 inline-flex items-center gap-2"
       style={{ background: theme.accent }}>
       {busy && <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
       {busy ? "生成中…（1〜2分そのまま）" : label}
@@ -3183,7 +3183,7 @@ function WizardPane({ project, setProject, theme, setTab }) {
 
       {/* リード文 */}
       <div className="flex items-start justify-between gap-2 flex-wrap">
-        <p className="text-[12px] text-stone-500">認識OSの<span className="font-bold">13の質問</span>。思いつく範囲で埋めたら<span className="font-bold" style={{ color: theme.accent }}>「Claudeにコピー」</span>で丸ごとコピー → Claudeに貼れば、密着台本の骨（シーン割り・現場で投げる質問・訴求の置き場所）を作れます。空欄は現場で埋める質問リストに。</p>
+        <p className="text-[13px] text-stone-600">認識OSの<span className="font-bold">13の質問</span>。思いつく範囲で埋めたら<span className="font-bold" style={{ color: theme.accent }}>「Claudeにコピー」</span>で丸ごとコピー → Claudeに貼れば、密着台本の骨（シーン割り・現場で投げる質問・訴求の置き場所）を作れます。空欄は現場で埋める質問リストに。</p>
       </div>
 
       {view === "form" && (
@@ -3191,22 +3191,22 @@ function WizardPane({ project, setProject, theme, setTab }) {
           {/* 案件の前提 */}
           <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-              <h2 className="text-[13px] font-bold text-stone-800">案件の前提<span className="ml-2 text-[10px] font-normal text-stone-400">埋めるほどコピー内容が濃くなります（空欄でもOK）</span></h2>
+              <h2 className="text-[14px] font-bold text-stone-800">案件の前提<span className="ml-2 text-[11px] font-normal text-stone-500">埋めるほどコピー内容が濃くなります（空欄でもOK）</span></h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[["performer", "演者・対象", "例: 在宅緩和ケア医（終末期の患者を自宅で看取る医師）"], ["genre", "ジャンル・業種", "例: 終末医療ドキュメンタリー"], ["shoot", "撮影想定", "例: 往診に1日密着（出発→患者宅→カンファ→帰宅）"], ["length", "想定尺", "例: 23分前後"]].map(([k, label, ph]) => (
-                <label key={k} className="block"><span className="text-[11px] font-bold text-stone-500">{label}</span>
+                <label key={k} className="block"><span className="text-[12px] font-bold text-stone-600">{label}</span>
                   <input value={m[k] || ""} onChange={(e) => setMetaF(k, e.target.value)} placeholder={ph}
-                    className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" /></label>
+                    className="mt-1 w-full text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" /></label>
               ))}
             </div>
           </div>
 
           {/* 質問エリア */}
           {qErr ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] px-4 py-4">{qErr}<button onClick={() => { setQErr(""); setQuestions(null); location.reload(); }} className="ml-3 underline font-bold">再読み込み</button></div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 text-rose-700 text-[13px] px-4 py-4">{qErr}<button onClick={() => { setQErr(""); setQuestions(null); location.reload(); }} className="ml-3 underline font-bold">再読み込み</button></div>
           ) : !questions ? (
-            <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center text-[12px] text-stone-400">
+            <div className="rounded-2xl border border-stone-200 bg-white p-8 text-center text-[13px] text-stone-500">
               <span className="inline-block w-4 h-4 border-2 border-stone-300 border-t-transparent rounded-full animate-spin align-middle mr-2" />質問を読み込み中…
             </div>
           ) : (
@@ -3216,8 +3216,8 @@ function WizardPane({ project, setProject, theme, setTab }) {
                   進捗バーだけ上に固定して、あとは上から書ける所を書く。 */}
               <div className="sticky top-14 z-10 rounded-xl border border-stone-200 bg-white/95 backdrop-blur px-4 py-2.5">
                 <div className="flex items-center justify-between gap-2 mb-1.5">
-                  <span className="text-[11px] font-bold text-stone-500"><span className="text-stone-800">{answered}</span> / {total} 問</span>
-                  <span className="text-[10px] text-stone-400">空欄は現場で埋める質問リストになります</span>
+                  <span className="text-[12px] font-bold text-stone-600"><span className="text-stone-800">{answered}</span> / {total} 問</span>
+                  <span className="text-[11px] text-stone-500">空欄は現場で埋める質問リストになります</span>
                 </div>
                 <div className="h-1 rounded-full bg-stone-100 overflow-hidden"><div className="h-full rounded-full transition-all duration-300" style={{ width: (answered / total * 100) + "%", background: theme.accent }} /></div>
               </div>
@@ -3227,24 +3227,24 @@ function WizardPane({ project, setProject, theme, setTab }) {
                 return (
                   <div key={qq.num} className="rounded-2xl border bg-white p-4 sm:p-5" style={{ borderColor: done ? theme.accent + "55" : "#e7e5e4" }}>
                     <div className="flex items-baseline gap-2">
-                      <span className="text-[11px] font-bold tracking-widest shrink-0" style={{ color: done ? theme.accent : "#a8a29e" }}>{qq.num}</span>
+                      <span className="text-[12px] font-bold tracking-widest shrink-0" style={{ color: done ? theme.accent : "#a8a29e" }}>{qq.num}</span>
                       <span className="text-[15px] font-bold text-stone-800 leading-relaxed">{qq.text}</span>
                     </div>
-                    {qq.hint && <div className="mt-2 text-[11px] text-stone-500 bg-stone-50 border border-stone-100 rounded-lg px-3 py-2">狙い：{qq.hint}</div>}
+                    {qq.hint && <div className="mt-2 text-[12px] text-stone-600 bg-stone-50 border border-stone-100 rounded-lg px-3 py-2">狙い：{qq.hint}</div>}
                     {sug && (
                       <div className="mt-2.5 rounded-xl border px-3.5 py-3" style={{ borderColor: "#F3C2CB", background: "#FBE5EA55" }}>
-                        <div className="text-[10px] font-bold mb-1" style={{ color: theme.accent }}>ヒアリングからの提案 — こういうのじゃない？</div>
-                        <div className="text-[12px] text-stone-700 leading-relaxed whitespace-pre-wrap">{sug}</div>
+                        <div className="text-[11px] font-bold mb-1" style={{ color: theme.accent }}>ヒアリングからの提案 — こういうのじゃない？</div>
+                        <div className="text-[13px] text-stone-700 leading-relaxed whitespace-pre-wrap">{sug}</div>
                         <div className="flex gap-2 mt-2.5">
                           <button onClick={() => { const cur = (ans[qq.num] || "").trim(); setAns(qq.num, cur ? cur + "\n" + sug : sug); dropSug(qq.num); }}
-                            className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.accent }}>これで埋める</button>
-                          <button onClick={() => dropSug(qq.num)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-500 bg-white">却下</button>
+                            className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.accent }}>これで埋める</button>
+                          <button onClick={() => dropSug(qq.num)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600 bg-white">却下</button>
                         </div>
                       </div>
                     )}
                     <textarea value={ans[qq.num] || ""} onChange={(e) => setAns(qq.num, e.target.value)}
                       placeholder="思いつくまま書けばOK。空欄のままなら【未回収】として骨に載り、現場で埋める質問リストになります"
-                      className="mt-3 w-full min-h-[110px] text-[13px] leading-relaxed border border-stone-200 rounded-xl px-3.5 py-3 focus:outline-none focus:border-stone-400 resize-y" />
+                      className="mt-3 w-full min-h-[110px] text-[14px] leading-relaxed border border-stone-200 rounded-xl px-3.5 py-3 focus:outline-none focus:border-stone-400 resize-y" />
                   </div>
                 );
               })}
@@ -3254,8 +3254,8 @@ function WizardPane({ project, setProject, theme, setTab }) {
           {/* コピーバー：質問＋回答をClaudeに持っていく */}
           {questions && (
             <div className="rounded-2xl border border-stone-200 bg-white p-4 sm:p-5 flex items-center justify-between gap-3 flex-wrap sticky bottom-2 shadow-sm">
-              <div className="text-[12px] text-stone-500"><span className="font-bold text-stone-700">{answered}</span> / {total} 問 回答済み{answered < total && <span className="text-stone-400">　空欄は現場で埋める質問リストになります</span>}</div>
-              <button onClick={copyForClaude} className="text-[13px] font-bold px-5 py-2.5 rounded-lg text-white shadow-sm inline-flex items-center gap-2" style={{ background: theme.accent }}>
+              <div className="text-[13px] text-stone-600"><span className="font-bold text-stone-700">{answered}</span> / {total} 問 回答済み{answered < total && <span className="text-stone-500">　空欄は現場で埋める質問リストになります</span>}</div>
+              <button onClick={copyForClaude} className="text-[14px] font-bold px-5 py-2.5 rounded-lg text-white shadow-sm inline-flex items-center gap-2" style={{ background: theme.accent }}>
                 <Icon name="sparkle" className="w-4 h-4" />{copied ? "コピーした！Claudeに貼ってね" : "質問＋回答をClaudeにコピー"}
               </button>
             </div>
@@ -3268,19 +3268,19 @@ function WizardPane({ project, setProject, theme, setTab }) {
           <div className="flex items-center justify-between gap-2 flex-wrap mb-5">
             <div>
               <div className="text-[15px] font-bold text-stone-800">密着台本の骨</div>
-              {wiz.scaffoldAt && <div className="text-[10px] text-stone-400 mt-0.5">{new Date(wiz.scaffoldAt).toLocaleString("ja-JP")} 生成・回答を直して再生成できます</div>}
+              {wiz.scaffoldAt && <div className="text-[11px] text-stone-500 mt-0.5">{new Date(wiz.scaffoldAt).toLocaleString("ja-JP")} 生成・回答を直して再生成できます</div>}
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               {pourRows.length > 0 && (
-                <button onClick={() => setPourOpen(true)} className="text-[12px] font-bold px-4 py-2 rounded-lg text-white shadow-sm" style={{ background: theme.accent }}>構成台本に流し込む</button>
+                <button onClick={() => setPourOpen(true)} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white shadow-sm" style={{ background: theme.accent }}>構成台本に流し込む</button>
               )}
-              <button onClick={copyMd} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">{copied ? "コピーした" : "コピー"}</button>
-              <button onClick={dlMd} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5"><Icon name="download" className="w-3.5 h-3.5" />.md</button>
-              <button onClick={() => setView("form")} className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">回答を編集</button>
+              <button onClick={copyMd} className="text-[13px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">{copied ? "コピーした" : "コピー"}</button>
+              <button onClick={dlMd} className="text-[13px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1.5"><Icon name="download" className="w-3.5 h-3.5" />.md</button>
+              <button onClick={() => setView("form")} className="text-[13px] font-bold px-3.5 py-2 rounded-lg border border-stone-200 bg-white text-stone-600 hover:bg-stone-50">回答を編集</button>
               {genBtn("再生成")}
             </div>
           </div>
-          {genErr && <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-[12px] px-4 py-3 mb-4">{genErr}</div>}
+          {genErr && <div className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-[13px] px-4 py-3 mb-4">{genErr}</div>}
           <div className="wiz-md" dangerouslySetInnerHTML={{ __html: wizMdHtml(wiz.scaffold) }} />
         </div>
       )}
@@ -3291,13 +3291,13 @@ function WizardPane({ project, setProject, theme, setTab }) {
           <div className="fixed z-[71] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(560px,92vw)] bg-white rounded-2xl shadow-2xl overflow-hidden">
             <div className="px-5 pt-5">
               <div className="text-[15px] font-bold text-stone-800">構成台本に流し込む</div>
-              <div className="text-[11.5px] text-stone-500 mt-1">骨のシーン割り {pourRows.length}行 を構成台本のシーン行に変換します。流し込んだ後も1行ずつ普通に編集できます。</div>
+              <div className="text-[12.5px] text-stone-600 mt-1">骨のシーン割り {pourRows.length}行 を構成台本のシーン行に変換します。流し込んだ後も1行ずつ普通に編集できます。</div>
             </div>
             <div className="px-5 py-4">
-              <div className="rounded-xl border border-stone-200 overflow-hidden text-[11.5px]">
+              <div className="rounded-xl border border-stone-200 overflow-hidden text-[12.5px]">
                 {[["時間帯", "ロケ地行（時間の区切り）"], ["シーン＋尺", "シーンラベル＋秒数＋タイプ自動判定"], ["演者に投げる質問", "原稿（◼︎ 質問行として）"], ["使う脳・狙い・訴求", "原稿末尾の ※演出メモ行"]].map(([f, to], i) => (
                   <div key={i} className={"flex items-center gap-2 px-3 py-2 " + (i ? "border-t border-stone-100" : "")}>
-                    <span className="text-stone-500">{f}</span><span className="text-stone-300">→</span><span className="font-bold text-stone-700">{to}</span>
+                    <span className="text-stone-600">{f}</span><span className="text-stone-300">→</span><span className="font-bold text-stone-700">{to}</span>
                   </div>
                 ))}
               </div>
@@ -3307,16 +3307,16 @@ function WizardPane({ project, setProject, theme, setTab }) {
                     <button key={k} onClick={() => setPourMode(k)}
                       className={"flex-1 text-left rounded-xl border px-3.5 py-2.5 " + (pourMode === k ? "" : "border-stone-200")}
                       style={pourMode === k ? { borderColor: theme.accent, background: "#FBE5EA44" } : {}}>
-                      <div className="text-[12px] font-bold text-stone-800">{l}</div>
-                      <div className="text-[10px] text-stone-400 mt-0.5">{s}</div>
+                      <div className="text-[13px] font-bold text-stone-800">{l}</div>
+                      <div className="text-[11px] text-stone-500 mt-0.5">{s}</div>
                     </button>
                   ))}
                 </div>
               )}
             </div>
             <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-stone-100">
-              <button onClick={() => setPourOpen(false)} className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-500 bg-white">やめる</button>
-              <button onClick={doPour} className="text-[12px] font-bold px-5 py-2 rounded-lg text-white" style={{ background: theme.accent }}>{pourRows.length}行を流し込む</button>
+              <button onClick={() => setPourOpen(false)} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-600 bg-white">やめる</button>
+              <button onClick={doPour} className="text-[13px] font-bold px-5 py-2 rounded-lg text-white" style={{ background: theme.accent }}>{pourRows.length}行を流し込む</button>
             </div>
           </div>
         </>
@@ -3671,7 +3671,7 @@ export default function App() {
   useEffect(() => {
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = "https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600;700&display=swap";
+    link.href = "https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=IBM+Plex+Mono:wght@400;600;700&display=swap";
     document.head.appendChild(link);
   }, []);
 
@@ -5500,7 +5500,7 @@ export default function App() {
     return { rows, review, due, todo, recent };
   }, [index, boardCache, project, recentIds, activeId]);
 
-  const StatusBadge = ({ s }) => { const c = STATUS_COLOR[s] || STATUS_COLOR["未着手"]; return <span className="text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: c.bg, color: c.fg }}>{s}</span>; };
+  const StatusBadge = ({ s }) => { const c = STATUS_COLOR[s] || STATUS_COLOR["未着手"]; return <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: c.bg, color: c.fg }}>{s}</span>; };
   const renderCaseCard = (r) => {
     const overdue = r.dl != null && r.dl < 0, soon = r.dl != null && r.dl >= 0 && r.dl <= 3;
     return (
@@ -5508,15 +5508,15 @@ export default function App() {
         className="w-full text-left bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm hover:shadow-md hover:border-stone-300 transition-all">
         <div className="flex items-center gap-2 mb-1">
           <StatusBadge s={r.status} />
-          <span className="text-[13px] font-bold text-stone-800 truncate flex-1 min-w-0">{r.name}</span>
-          {r.collab && <Icon name="user" className="w-3 h-3 shrink-0 text-stone-400" />}
+          <span className="text-[14px] font-bold text-stone-800 truncate flex-1 min-w-0">{r.name}</span>
+          {r.collab && <Icon name="user" className="w-3 h-3 shrink-0 text-stone-500" />}
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-stone-500">
+        <div className="flex items-center gap-2 text-[12px] text-stone-600">
           <span className="truncate max-w-[140px]">{r.channel}</span>
-          {r.deadline && <span className={"shrink-0 font-bold " + (overdue ? "text-rose-600" : soon ? "text-amber-600" : "text-stone-400")}>{overdue ? "期限超過" : r.dl === 0 ? "今日締切" : "あと" + r.dl + "日"}</span>}
+          {r.deadline && <span className={"shrink-0 font-bold " + (overdue ? "text-rose-600" : soon ? "text-amber-600" : "text-stone-500")}>{overdue ? "期限超過" : r.dl === 0 ? "今日締切" : "あと" + r.dl + "日"}</span>}
         </div>
-        <div className="mt-2 text-[12px] font-semibold" style={{ color: theme.main }}>{({ overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "コンセプト", regulations: "レギュレーション" })[resumePages.current[r.id]] || "概要"}を開く →</div>
-        {r.nextAction && <div className="mt-1.5 text-[12px] text-stone-700 flex items-start gap-1"><span className="text-stone-400">▶</span><span className="truncate">{r.nextAction}</span></div>}
+        <div className="mt-2 text-[13px] font-semibold" style={{ color: theme.main }}>{({ overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "コンセプト", regulations: "レギュレーション" })[resumePages.current[r.id]] || "概要"}を開く →</div>
+        {r.nextAction && <div className="mt-1.5 text-[13px] text-stone-700 flex items-start gap-1"><span className="text-stone-500">▶</span><span className="truncate">{r.nextAction}</span></div>}
       </button>
     );
   };
@@ -6632,53 +6632,53 @@ export default function App() {
   const renderMediaBody = (inModal = false) => {
     if (!project.shareId) {
       return (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-[12px] text-amber-800">
+        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-[13px] text-amber-800">
           先に<span className="font-bold">共有リンクを発行</span>してね。発行すると、ここに動画やファイルを載せて先方に確認してもらえるよ。
-          <div className="mt-3"><button onClick={() => { if (inModal) setShowMediaModal(false); publishShare(); }} className="text-[11px] font-bold px-4 py-2 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>共有リンクを発行</button></div>
+          <div className="mt-3"><button onClick={() => { if (inModal) setShowMediaModal(false); publishShare(); }} className="text-[12px] font-bold px-4 py-2 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>共有リンクを発行</button></div>
         </div>
       );
     }
     return (
       <>
         {/* 対象（案件全体 / 企画ごと）＋保存期限 */}
-        <div className="flex items-center gap-2 text-[12px] flex-wrap">
+        <div className="flex items-center gap-2 text-[13px] flex-wrap">
           <span className="font-bold text-stone-600">対象</span>
-          <select value={mediaTarget} onChange={(e) => setMediaTarget(e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[12px] max-w-[200px]">
+          <select value={mediaTarget} onChange={(e) => setMediaTarget(e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[13px] max-w-[200px]">
             <option value="project">案件全体</option>
             {(project.plans || []).map((pl, i) => (
               <option key={pl.id} value={pl.id}>{"企画" + (i + 1) + (pl.title ? "：" + pl.title.slice(0, 16) : "")}</option>
             ))}
           </select>
           <span className="font-bold text-stone-600 ml-2">保存期限</span>
-          <select value={retention} onChange={(e) => setRetention(+e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[12px]">
+          <select value={retention} onChange={(e) => setRetention(+e.target.value)} className="border border-stone-200 rounded-lg px-2 py-1 text-[13px]">
             <option value={30}>30日</option>
             <option value={90}>90日</option>
             <option value={0}>無期限</option>
           </select>
         </div>
-        <p className="text-[10px] text-stone-400 -mt-3">企画ごとに動画・ファイルを1セット設定できるよ（本編／ショート等を分けて試写）。</p>
+        <p className="text-[11px] text-stone-500 -mt-3">企画ごとに動画・ファイルを1セット設定できるよ（本編／ショート等を分けて試写）。</p>
 
         {/* 動画確認 */}
         <div>
-          <div className="text-[12px] font-bold text-stone-700 mb-2">🎬 確認用の動画</div>
+          <div className="text-[13px] font-bold text-stone-700 mb-2">🎬 確認用の動画</div>
           {getTargetVideo(mediaTarget) ? (
             <div>
               <VideoView video={getTargetVideo(mediaTarget)} main={theme.main} />
               <div className="flex items-center gap-2 mt-1.5">
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ background: theme.main, color: mainText }}>{getTargetVideo(mediaTarget).type === "youtube" ? "YouTube" : "mp4"}</span>
-                <span className="flex-1 min-w-0 truncate text-[12px]">{getTargetVideo(mediaTarget).title || getTargetVideo(mediaTarget).name || getTargetVideo(mediaTarget).url}</span>
-                <button onClick={() => removeVideo(mediaTarget)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+                <span className="text-[12px] font-bold px-2 py-0.5 rounded-full" style={{ background: theme.main, color: mainText }}>{getTargetVideo(mediaTarget).type === "youtube" ? "YouTube" : "mp4"}</span>
+                <span className="flex-1 min-w-0 truncate text-[13px]">{getTargetVideo(mediaTarget).title || getTargetVideo(mediaTarget).name || getTargetVideo(mediaTarget).url}</span>
+                <button onClick={() => removeVideo(mediaTarget)} className="text-[12px] text-rose-500 font-bold shrink-0">削除</button>
               </div>
             </div>
           ) : (
             <div className="space-y-2">
-              <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
+              <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[13px] text-stone-600 cursor-pointer hover:bg-stone-100">
                 <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadVideo(f, mediaTarget); e.target.value = ""; }} />
                 ⬆ mp4をアップロード（0.5〜4倍速で確認できる）
               </label>
               <div className="flex items-center gap-2">
-                <input value={ytInput} onChange={(e) => setYtInput(e.target.value)} placeholder="または YouTube限定公開URL を貼る" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-1.5 text-[12px] focus:outline-none" />
-                <button onClick={() => registerYouTube(mediaTarget)} className="text-[11px] font-bold px-3 py-1.5 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>登録</button>
+                <input value={ytInput} onChange={(e) => setYtInput(e.target.value)} placeholder="または YouTube限定公開URL を貼る" className="flex-1 min-w-0 border border-stone-200 rounded-lg px-2 py-1.5 text-[13px] focus:outline-none" />
+                <button onClick={() => registerYouTube(mediaTarget)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>登録</button>
               </div>
             </div>
           )}
@@ -6686,31 +6686,31 @@ export default function App() {
 
         {/* ファイル転送 */}
         <div>
-          <div className="text-[12px] font-bold text-stone-700 mb-2">📁 ファイル転送（元のファイル名のまま渡せる）</div>
+          <div className="text-[13px] font-bold text-stone-700 mb-2">📁 ファイル転送（元のファイル名のまま渡せる）</div>
           {getTargetFiles(mediaTarget).length > 0 && (
             <div className="space-y-1.5 mb-2">
               {getTargetFiles(mediaTarget).map((f) => (
                 <div key={f.key} className="flex items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 py-2">
                   <div className="flex-1 min-w-0">
-                    <div className="text-[12px] font-semibold text-stone-800 truncate">{f.name}</div>
-                    <div className="text-[10px] text-stone-400" style={{ fontFamily: mono }}>{f.size >= 1073741824 ? (f.size / 1073741824).toFixed(2) + " GB" : f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(f.size / 1024)) + " KB"}{f.expiresAt ? " ・" + (f.expiresAt || "").slice(0, 10) + "まで" : " ・無期限"}</div>
+                    <div className="text-[13px] font-semibold text-stone-800 truncate">{f.name}</div>
+                    <div className="text-[11px] text-stone-500" style={{ fontFamily: mono }}>{f.size >= 1073741824 ? (f.size / 1073741824).toFixed(2) + " GB" : f.size >= 1048576 ? (f.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(f.size / 1024)) + " KB"}{f.expiresAt ? " ・" + (f.expiresAt || "").slice(0, 10) + "まで" : " ・無期限"}</div>
                   </div>
-                  <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[11px] font-bold px-2.5 py-1 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>⬇</a>
-                  <button onClick={() => deleteFile(mediaTarget, f.key)} className="text-[11px] text-rose-500 font-bold shrink-0">削除</button>
+                  <a href={SHARE_API + "/api/file/" + f.key + "?dl=1"} target="_blank" rel="noreferrer" className="text-[12px] font-bold px-2.5 py-1 rounded-lg shrink-0" style={{ background: theme.main, color: mainText }}>⬇</a>
+                  <button onClick={() => deleteFile(mediaTarget, f.key)} className="text-[12px] text-rose-500 font-bold shrink-0">削除</button>
                 </div>
               ))}
             </div>
           )}
-          <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[12px] text-stone-500 cursor-pointer hover:bg-stone-100">
+          <label className="block rounded-lg border border-dashed border-stone-300 bg-stone-50 px-3 py-3 text-[13px] text-stone-600 cursor-pointer hover:bg-stone-100">
             <input type="file" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) uploadFile(f, mediaTarget); e.target.value = ""; }} />
             ⬆ ファイルを追加（最大500GB）
           </label>
-          <p className="text-[10px] text-stone-400 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。<span className="font-bold">「編集へ」リンクで渡した編集者は大容量＆「動画」タブから完成動画を直接アップ</span>できる。</p>
+          <p className="text-[11px] text-stone-500 mt-1.5">先方も共有ページの「ファイル」タブから素材をアップできるよ（2GBまで）。<span className="font-bold">「編集へ」リンクで渡した編集者は大容量＆「動画」タブから完成動画を直接アップ</span>できる。</p>
         </div>
 
         {mediaBusy && (
           <div className="rounded-lg bg-stone-50 border border-stone-200 p-3">
-            <div className="text-[11px] text-stone-500 mb-1">{mediaBusy} {mediaProg}%</div>
+            <div className="text-[12px] text-stone-600 mb-1">{mediaBusy} {mediaProg}%</div>
             <div className="h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full" style={{ width: mediaProg + "%", background: theme.accent }} /></div>
           </div>
         )}
@@ -7498,7 +7498,7 @@ export default function App() {
       onChange={(e) => updateRow(r.id, { day: Number(e.target.value) })}
       onClick={(e) => e.stopPropagation()}
       title="このロケの撮影日。日を分けると構成台本・香盤表が1日目/2日目で区切られる（時刻の積み上げ・移動も日ごとにリセット）"
-      className={"shrink-0 self-center rounded-md text-[10px] font-bold px-1.5 py-1 appearance-none cursor-pointer focus:outline-none text-center " + (dark ? "bg-white/10 hover:bg-white/20" : "bg-stone-100 hover:bg-stone-200 text-stone-600")}
+      className={"shrink-0 self-center rounded-md text-[11px] font-bold px-1.5 py-1 appearance-none cursor-pointer focus:outline-none text-center " + (dark ? "bg-white/10 hover:bg-white/20" : "bg-stone-100 hover:bg-stone-200 text-stone-600")}
       style={dark ? { color: mainText, fontFamily: mono, opacity: dayOf(r) > 1 || maxDay > 1 ? 1 : 0.55 } : { fontFamily: mono }}>
       {Array.from({ length: Math.min(9, Math.max(2, maxDay + 1)) }, (_, i) => i + 1).map((d) => (
         <option key={d} value={d} style={{ color: "#1A1A1A" }}>{d}日目</option>
@@ -7516,8 +7516,8 @@ export default function App() {
       <div data-toc={"撮影 " + d + "日目"} data-toc-group="1"
         className="rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-md" style={{ background: first ? theme.main : theme.accent, color: first ? mainText : accentText }}>
         <Icon name="video" className="w-4 h-4 shrink-0" />
-        <span className="text-[15px] font-black tracking-[0.2em] whitespace-nowrap">撮影 {d}日目</span>
-        <span className="text-[11px] font-bold opacity-75 whitespace-nowrap">{dayLocs.length}ロケ・{fmtJP(secs)}</span>
+        <span className="text-[15px] font-black tracking-wider whitespace-nowrap">撮影 {d}日目</span>
+        <span className="text-[12px] font-bold opacity-75 whitespace-nowrap">{dayLocs.length}ロケ・{fmtJP(secs)}</span>
         <div className="flex-1 h-0.5 rounded-full" style={{ background: "currentColor", opacity: 0.25 }} />
       </div>
     );
@@ -7690,7 +7690,7 @@ export default function App() {
     if (!(chanLive || (project && project.live))) return null;
     if (!helpOpen) return (
       <button onClick={() => setHelpOpen(true)} title="使い方・ご意見"
-        className="fixed bottom-4 right-4 z-[60] inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full shadow-lg text-[12px] font-bold text-white hover:opacity-90"
+        className="fixed bottom-4 right-4 z-[60] inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full shadow-lg text-[13px] font-bold text-white hover:opacity-90"
         style={{ background: DEFAULT_THEME.main }}>
         <span>💬</span> 使い方・ご意見
       </button>
@@ -7698,33 +7698,33 @@ export default function App() {
     return (
       <div className="fixed bottom-4 right-4 z-[60] flex flex-col rounded-2xl bg-white shadow-2xl border border-stone-200 overflow-hidden" style={{ width: "min(92vw, 360px)", height: "min(72vh, 540px)" }}>
         <div className="flex items-center gap-2 px-3 py-2.5 shrink-0" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
-          <span className="text-[13px] font-bold">💬 ヘルプ・ご意見</span>
+          <span className="text-[14px] font-bold">💬 ヘルプ・ご意見</span>
           <button onClick={() => setHelpOpen(false)} className="ml-auto w-7 h-7 grid place-items-center rounded-lg hover:bg-white/15 text-white/80">✕</button>
         </div>
         <div className="flex-1 overflow-y-auto mg-scroll px-3 py-3 space-y-2 bg-stone-50">
           {helpMsgs.length === 0 && (
-            <div className="text-[12px] text-stone-500 leading-relaxed bg-white border border-stone-200 rounded-xl px-3 py-2.5">
+            <div className="text-[13px] text-stone-600 leading-relaxed bg-white border border-stone-200 rounded-xl px-3 py-2.5">
               使い方で迷ったら聞いてください（例：「完成動画はどこから上げる？」）。<br />「ここ使いにくい」「こうしてほしい」もそのまま書いてOK。運営に届きます。
             </div>
           )}
           {helpMsgs.map((m, i) => (
             <div key={i} className={"flex " + (m.role === "user" ? "justify-end" : "justify-start")}>
-              <div className={"max-w-[85%] text-[12.5px] leading-relaxed px-3 py-2 rounded-2xl whitespace-pre-wrap break-words " + (m.role === "user" ? "text-white rounded-br-sm" : "bg-white border border-stone-200 text-stone-800 rounded-bl-sm")}
+              <div className={"max-w-[85%] text-[13.5px] leading-relaxed px-3 py-2 rounded-2xl whitespace-pre-wrap break-words " + (m.role === "user" ? "text-white rounded-br-sm" : "bg-white border border-stone-200 text-stone-800 rounded-bl-sm")}
                 style={m.role === "user" ? { background: DEFAULT_THEME.accent } : {}}>
                 {m.content}
-                {m.logged && <span className="block mt-1 text-[10px] font-bold" style={{ color: DEFAULT_THEME.accent }}>✓ 運営に届けました</span>}
+                {m.logged && <span className="block mt-1 text-[11px] font-bold" style={{ color: DEFAULT_THEME.accent }}>✓ 運営に届けました</span>}
               </div>
             </div>
           ))}
-          {helpBusy && <div className="text-[11px] text-stone-400 px-1">考え中…</div>}
+          {helpBusy && <div className="text-[12px] text-stone-500 px-1">考え中…</div>}
         </div>
         <div className="shrink-0 p-2 border-t border-stone-200 flex items-end gap-2">
           <textarea value={helpInput} onChange={(e) => setHelpInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendHelp(); } }}
             rows={1} placeholder="質問やご意見を入力（⌘+Enterで送信）"
-            className="flex-1 min-w-0 text-[12.5px] border border-stone-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:border-stone-400" style={{ maxHeight: 96 }} />
+            className="flex-1 min-w-0 text-[13.5px] border border-stone-200 rounded-xl px-3 py-2 resize-none focus:outline-none focus:border-stone-400" style={{ maxHeight: 96 }} />
           <button onClick={sendHelp} disabled={helpBusy || !helpInput.trim()}
-            className="shrink-0 px-3 py-2 rounded-xl text-[12px] font-bold text-white disabled:opacity-40" style={{ background: DEFAULT_THEME.main }}>送信</button>
+            className="shrink-0 px-3 py-2 rounded-xl text-[13px] font-bold text-white disabled:opacity-40" style={{ background: DEFAULT_THEME.main }}>送信</button>
         </div>
       </div>
     );
@@ -7739,36 +7739,36 @@ export default function App() {
         </div>
       </header>
       <main className="max-w-[1200px] mx-auto px-5 py-7">
-        <div className="text-[11px] font-bold text-stone-400 tracking-widest mb-1">CHANNEL</div>
+        <div className="text-[12px] font-bold text-stone-500 tracking-widest mb-1">CHANNEL</div>
         <div className="rounded-2xl px-5 py-4 mb-4" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
           <div className="text-[20px] font-black">{chanLive.name}</div>
         </div>
-        <div className="mb-5 text-[12px] text-stone-700 bg-white border-l-4 rounded-xl px-4 py-3" style={{ borderColor: DEFAULT_THEME.accent }}>
+        <div className="mb-5 text-[13px] text-stone-700 bg-white border-l-4 rounded-xl px-4 py-3" style={{ borderColor: DEFAULT_THEME.accent }}>
           ✏️ <span className="font-bold">編集できる共有です。</span>案件をクリックすると、企画・サムネ／構成台本／香盤表／素材／動画まで全タブをそのまま編集できます（ログイン不要・直したらすぐ反映）。
         </div>
         <div className="flex items-center justify-between mb-2">
-          <div className="text-[12px] font-bold text-stone-500">案件一覧（{chanLive.cases.length}）</div>
-          <div className="text-[10px] text-stone-400">クリックで開く</div>
+          <div className="text-[13px] font-bold text-stone-600">案件一覧（{chanLive.cases.length}）</div>
+          <div className="text-[11px] text-stone-500">クリックで開く</div>
         </div>
         {chanLive.cases.length === 0 ? (
-          <div className="text-[12px] text-stone-400 bg-white border border-stone-200 rounded-xl px-4 py-6 text-center">編集できる案件がまだありません。</div>
+          <div className="text-[13px] text-stone-500 bg-white border border-stone-200 rounded-xl px-4 py-6 text-center">編集できる案件がまだありません。</div>
         ) : chanLive.cases.map((c, i) => (
           <button key={c.id} onClick={() => openChanCase(c)}
             className="w-full text-left rounded-xl border border-stone-200 bg-white px-4 py-3 mb-2 hover:shadow-md hover:border-stone-300 transition-all flex items-center gap-3">
-            <span className="text-[11px] font-bold text-stone-400 tabular-nums shrink-0">#{i + 1}</span>
+            <span className="text-[12px] font-bold text-stone-500 tabular-nums shrink-0">#{i + 1}</span>
             <span className="flex-1 min-w-0">
               <span className="block text-[14px] font-bold text-stone-800 truncate">{c.name}</span>
-              <span className="block text-[10px] text-stone-400">{c.format === "talk" ? "トーク系" : "一日密着"}</span>
+              <span className="block text-[11px] text-stone-500">{c.format === "talk" ? "トーク系" : "一日密着"}</span>
             </span>
-            <span className="text-[12px] font-bold shrink-0" style={{ color: DEFAULT_THEME.accent }}>開く →</span>
+            <span className="text-[13px] font-bold shrink-0" style={{ color: DEFAULT_THEME.accent }}>開く →</span>
           </button>
         ))}
-        <div className="text-center text-[10px] text-stone-300 mt-8">制作：ものがたりっち！</div>
+        <div className="text-center text-[11px] text-stone-300 mt-8">制作：ものがたりっち！</div>
       </main>
       {renderHelpChat()}
     </div>
   );
-  if (!loaded || !project) return <div className="min-h-screen flex items-center justify-center text-stone-400 text-sm">読み込み中…</div>;
+  if (!loaded || !project) return <div className="min-h-screen flex items-center justify-center text-stone-500 text-sm">読み込み中…</div>;
 
   /* ---------- Claude連携 ---------- */
   const buildClaudePrompt = () => {
@@ -7864,12 +7864,14 @@ export default function App() {
   const theme = project.theme;
   const mainText = textOn(theme.main);
   const accentText = textOn(theme.accent);
-  const sans = '"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif';
+  /* 和文フォント（2026-09-21）：Macは表計算ソフトと同じヒラギノ（OS標準＝ヒンティングが効き小サイズでも潰れない・約物が全角で括弧が詰まらない）。
+     Mac以外はUD書体（誤読されにくい字形・小サイズの判別性が実験で確認済み）へ。 */
+  const sans = '"Hiragino Sans","Hiragino Kaku Gothic ProN","BIZ UDPGothic","Yu Gothic UI",Meiryo,system-ui,sans-serif';
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const stripe = "repeating-linear-gradient(135deg," + theme.main + " 0 10px,#FFFFFF 10px 14px)";
 
-  const metaInput = "block w-full bg-transparent text-[13px] px-3 py-2 focus:outline-none placeholder:text-stone-300";
-  const opBtn = "w-6 h-6 grid place-items-center rounded-md text-stone-400 hover:bg-stone-200 hover:text-stone-700 text-[11px] leading-none transition-colors";
+  const metaInput = "block w-full bg-transparent text-[14px] px-3 py-2 focus:outline-none placeholder:text-stone-400";
+  const opBtn = "w-6 h-6 grid place-items-center rounded-md text-stone-500 hover:bg-stone-200 hover:text-stone-700 text-[12px] leading-none transition-colors";
   const cardCls = "bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden";
   /* data-toc＝右端の目次レールが拾う目印。カード見出しは全タブ共通なので、ここに付ければ
      どのタブでも自動で目次が生える（個別タブに目次を作り込まない＝増改築でズレない） */
@@ -7877,7 +7879,7 @@ export default function App() {
     <div onClick={onClick} data-toc={typeof label === "string" ? label : undefined}
       className={"px-4 py-2 flex items-center gap-2 border-b border-stone-100 " + (onClick ? "cursor-pointer select-none hover:bg-stone-50 transition-colors" : "")}>
       <span className="w-1.5 h-4 rounded-full" style={{ background: theme.accent }} />
-      <h2 className="text-[12px] font-bold tracking-wider text-stone-600 flex-1">{label}</h2>
+      <h2 className="text-[15px] font-bold text-stone-900 flex-1">{label}</h2>
       {right}
     </div>
   );
@@ -7920,40 +7922,40 @@ export default function App() {
           <button onClick={() => setCasePickerOpen((v) => !v)} aria-expanded={casePickerOpen} aria-controls="mg-case-picker"
             className="w-full text-left rounded-xl border border-white/20 bg-white/10 px-3 py-3 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
             title="案件を切り替える">
-            <span className="block text-[11px] text-white/60 truncate">{project.channel || DEFAULT_CHANNEL}</span>
+            <span className="block text-[12px] text-white/60 truncate">{project.channel || DEFAULT_CHANNEL}</span>
             <span className="flex items-center gap-2 mt-1"><span className="font-bold text-[14px] truncate flex-1">{project.name}</span><span aria-hidden="true">{casePickerOpen ? "▴" : "▾"}</span></span>
-            <span className="block text-[10px] text-white/50 mt-1">案件を切り替える</span>
+            <span className="block text-[11px] text-white/50 mt-1">案件を切り替える</span>
           </button>
         </div>
         {casePickerOpen && (
         <div id="mg-case-picker" className="absolute left-0 right-0 bottom-0 top-[172px] z-50 flex flex-col border-t border-white/20 shadow-2xl" style={{ background: theme.main }}
           onKeyDown={(e) => { if (e.key === "Escape") { setCasePickerOpen(false); e.stopPropagation(); } }}>
-        <div className="flex items-center justify-between px-4 pt-3 pb-1"><span className="text-[12px] font-bold">案件を選ぶ</span><button onClick={() => setCasePickerOpen(false)} className="px-2 py-1 text-[12px] rounded hover:bg-white/10">閉じる</button></div>
+        <div className="flex items-center justify-between px-4 pt-3 pb-1"><span className="text-[13px] font-bold">案件を選ぶ</span><button onClick={() => setCasePickerOpen(false)} className="px-2 py-1 text-[13px] rounded hover:bg-white/10">閉じる</button></div>
         {!chanLive && (<>
         <div className="px-3 pt-2.5 pb-1.5 flex gap-1.5 relative">
           <button onClick={() => setNewMenu((v) => !v)}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 text-[12px] font-bold py-2.5 rounded-lg shadow-sm"
+            className="flex-1 inline-flex items-center justify-center gap-1.5 text-[13px] font-bold py-2.5 rounded-lg shadow-sm"
             style={{ background: theme.accent, color: accentText }}>
             <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
-            <span className="ml-auto text-[9.5px] font-normal opacity-70 tracking-wide">⌘N</span>
+            <span className="ml-auto text-[11px] font-normal opacity-70 tracking-wide">⌘N</span>
           </button>
           <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
             title="新しいチャンネル（フォルダ）を作成"
-            className="inline-flex items-center gap-0.5 text-[11px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20" style={{ color: mainText }}>
+            className="inline-flex items-center gap-0.5 text-[12px] font-bold py-2 px-2.5 rounded-lg bg-white/10 hover:bg-white/20" style={{ color: mainText }}>
             <Icon name="plus" className="w-3.5 h-3.5" />ch
           </button>
           {newMenu && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setNewMenu(false)} />
               <div className="mg-pop absolute left-3 right-3 top-full mt-1 z-50 bg-white border border-stone-200 rounded-xl shadow-2xl overflow-hidden" style={{ transformOrigin: "top left" }}>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-stone-400">どのタイプの台本？</div>
+                <div className="px-3 pt-2 pb-1 text-[11px] font-bold text-stone-500">どのタイプの台本？</div>
                 <button onClick={() => createProject(true, DEFAULT_CHANNEL, "documentary")} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2">
-                  <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
-                  <span><span className="block text-[12px] font-bold text-stone-800">一日密着</span><span className="block text-[10px] text-stone-400">ロケ・シーン構成のドキュメンタリー</span></span>
+                  <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
+                  <span><span className="block text-[13px] font-bold text-stone-800">一日密着</span><span className="block text-[11px] text-stone-500">ロケ・シーン構成のドキュメンタリー</span></span>
                 </button>
                 <button onClick={() => createProject(true, DEFAULT_CHANNEL, "talk")} className="w-full text-left px-3 py-2.5 hover:bg-stone-50 flex items-start gap-2 border-t border-stone-100">
-                  <Icon name="mic" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
-                  <span><span className="block text-[12px] font-bold text-stone-800">トーク系</span><span className="block text-[10px] text-stone-400">ハイライト/冒頭/目次/本編/CTA構成</span></span>
+                  <Icon name="mic" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
+                  <span><span className="block text-[13px] font-bold text-stone-800">トーク系</span><span className="block text-[11px] text-stone-500">ハイライト/冒頭/目次/本編/CTA構成</span></span>
                 </button>
               </div>
             </>
@@ -7967,9 +7969,9 @@ export default function App() {
             <div className="relative">
               <Icon name="search" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
               <input autoFocus ref={sidebarSearchRef} value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件名・チャンネル名で検索"
-                className="w-full bg-white/10 border border-white/10 text-[11.5px] placeholder-white/30 rounded-lg pl-8 pr-10 py-1.5 focus:outline-none focus:bg-white/15 focus:border-white/25"
+                className="w-full bg-white/10 border border-white/10 text-[12.5px] placeholder-white/30 rounded-lg pl-8 pr-10 py-1.5 focus:outline-none focus:bg-white/15 focus:border-white/25"
                 style={{ color: mainText }} />
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[9.5px] font-medium text-white/30 pointer-events-none">⌘K</span>
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-white/30 pointer-events-none">⌘K</span>
             </div>
           </div>
         )}
@@ -7983,10 +7985,10 @@ export default function App() {
         <div className="mg-scroll flex-1 overflow-y-auto px-2 pb-3">
           {chanLive ? (
             <div className="pt-1">
-              <div className="px-2 py-1.5 text-[11px] font-bold text-white/45 truncate flex items-center gap-1.5">
+              <div className="px-2 py-1.5 text-[12px] font-bold text-white/45 truncate flex items-center gap-1.5">
                 {channelIconOf(chanLive.name) || <Icon name="folder" className="w-3.5 h-3.5 text-white/30 shrink-0" />}
                 <span className="truncate">{chanLive.name}</span>
-                <span className="ml-auto text-[10px] text-white/30 tabular-nums">{chanLive.cases.length}</span>
+                <span className="ml-auto text-[11px] text-white/30 tabular-nums">{chanLive.cases.length}</span>
               </div>
               {chanLive.cases.map((c) => {
                 const active = chanActiveCase === c.id;
@@ -7994,7 +7996,7 @@ export default function App() {
                   <button key={c.id} onClick={() => openChanCase(c)}
                     className={"w-full text-left rounded-lg mb-0.5 px-3 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
                     style={{ borderLeftColor: active ? theme.accent : "transparent", color: mainText, ...(active ? { background: "rgba(255,255,255,0.12)" } : {}) }}>
-                    <span className={"flex-1 min-w-0 truncate text-[12.5px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{c.name}</span>
+                    <span className={"flex-1 min-w-0 truncate text-[13.5px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{c.name}</span>
                   </button>
                 );
               })}
@@ -8013,21 +8015,21 @@ export default function App() {
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
                     {channelIconOf(channel) ? (
                       <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }}
-                        className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[12px] leading-none hover:scale-125 transition-transform">{channelIconOf(channel)}</button>
+                        className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[13px] leading-none hover:scale-125 transition-transform">{channelIconOf(channel)}</button>
                     ) : (
                       <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }} className="w-3.5 h-3.5 shrink-0 grid place-items-center hover:text-white/70">
                         <Icon name="folder" className="w-3.5 h-3.5 text-white/30" />
                       </button>
                     )}
-                    <span className={"flex-1 min-w-0 truncate text-[12.5px] cursor-pointer hover:underline " + (hasActive ? "font-bold" : "font-semibold opacity-60")}
+                    <span className={"flex-1 min-w-0 truncate text-[13.5px] cursor-pointer hover:underline " + (hasActive ? "font-bold" : "font-semibold opacity-60")}
                       style={{ color: mainText }}
                       title="このチャンネルの企画・サムネ一覧を開く"
                       onClick={(e) => { e.stopPropagation(); setCasePickerOpen(false); openChannelBoard(channel); }}>
                       {channel}
                     </span>
-                    <span className="text-[10px] text-white/30 group-hover/ch:text-white/60 tabular-nums transition-colors">{items.length}</span>
+                    <span className="text-[11px] text-white/30 group-hover/ch:text-white/60 tabular-nums transition-colors">{items.length}</span>
                     <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
-                      <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[10px] text-white/60">✎</button>
+                      <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[11px] text-white/60">✎</button>
                     </div>
                   </div>
 
@@ -8064,7 +8066,7 @@ export default function App() {
                               onClick={(e) => e.stopPropagation()}
                               onBlur={(e) => { renameProject(p.id, e.target.value || p.name); setRenamingId(null); }}
                               onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                              className="flex-1 min-w-0 bg-white/10 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                              className="flex-1 min-w-0 bg-white/10 text-[13px] px-1.5 py-1 rounded focus:outline-none"
                               style={{ color: mainText }}
                             />
                           ) : channelEditId === p.id ? (
@@ -8076,11 +8078,11 @@ export default function App() {
                               onClick={(e) => e.stopPropagation()}
                               onBlur={(e) => { setProjectChannel(p.id, e.target.value); setChannelEditId(null); }}
                               onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") { e.preventDefault(); setChannelEditId(null); } }}
-                              className="flex-1 min-w-0 bg-white/10 text-[12px] px-1.5 py-1 rounded focus:outline-none"
+                              className="flex-1 min-w-0 bg-white/10 text-[13px] px-1.5 py-1 rounded focus:outline-none"
                               style={{ color: mainText }}
                             />
                           ) : (
-                            <span className={"flex-1 min-w-0 truncate text-[13px] inline-flex items-center gap-1 " + (active ? "font-semibold" : "font-medium opacity-80")}
+                            <span className={"flex-1 min-w-0 truncate text-[14px] inline-flex items-center gap-1 " + (active ? "font-semibold" : "font-medium opacity-80")}
                               onDoubleClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }}>
                               {p.collab && <span title={p.role === "owner" ? "共同編集（あなたがオーナー）" : "共有された案件（" + (p.ownerEmail || "") + "）"} className="shrink-0 text-white/40"><Icon name="user" className="w-3 h-3" /></span>}
                               <span className="truncate">{p.name}</span>
@@ -8107,14 +8109,14 @@ export default function App() {
             const renderSectionHeader = (key, label, count) => (
               <button type="button" aria-expanded={!isCollapsed(key)} title={isCollapsed(key) ? label + "を表示" : label + "を隠す"}
                 onClick={() => setSectionCollapsed((v) => ({ ...v, [key]: !isCollapsed(key) }))}
-                className="w-full flex items-center gap-2 px-2 pt-4 pb-2 text-[11px] text-white/60 font-semibold hover:text-white/80 text-left">
-                <span className="text-[9px] transition-transform" style={{ transform: isCollapsed(key) ? "rotate(-90deg)" : "none" }}>▾</span>
+                className="w-full flex items-center gap-2 px-2 pt-4 pb-2 text-[12px] text-white/60 font-semibold hover:text-white/80 text-left">
+                <span className="text-[10.5px] transition-transform" style={{ transform: isCollapsed(key) ? "rotate(-90deg)" : "none" }}>▾</span>
                 <span>{label}</span><span className="ml-auto">{count}</span>
               </button>
             );
             const SECTIONS = [["active", "進行中"], ["hold", "保留"], ["done", "完了"]];
             if (q && !index.some((p) => ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q))) {
-              return <p className="px-3 py-6 text-[12px] text-white/60">一致する案件がありません。別の名前で検索してください。</p>;
+              return <p className="px-3 py-6 text-[13px] text-white/60">一致する案件がありません。別の名前で検索してください。</p>;
             }
             return (
               <>
@@ -8128,8 +8130,8 @@ export default function App() {
                           className={"w-full text-left rounded-lg mb-0.5 pl-2.5 pr-2 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
                           style={{ borderLeftColor: active ? theme.accent : "transparent", color: mainText, ...(active ? { background: "rgba(255,255,255,0.12)" } : {}) }}>
                           <Icon name="star" className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
-                          <span className={"flex-1 min-w-0 truncate text-[13px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{p.name}</span>
-                          <span className="text-[10px] text-white/30 truncate max-w-[64px]">{p.channel || DEFAULT_CHANNEL}</span>
+                          <span className={"flex-1 min-w-0 truncate text-[14px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{p.name}</span>
+                          <span className="text-[11px] text-white/30 truncate max-w-[64px]">{p.channel || DEFAULT_CHANNEL}</span>
                         </button>
                       );
                     })}
@@ -8156,7 +8158,7 @@ export default function App() {
           {tabItems.map(([key, icon, label]) => (
             <button key={key} aria-current={tab === key ? "page" : undefined}
               onClick={() => { setTab(key); setView("editor"); if (isNarrow) setSidebarOpen(false); }}
-              className={"w-full flex items-center gap-3 px-3 py-3 mb-1 rounded-lg text-[13px] text-left border-l-2 transition-colors " + (tab === key ? "font-bold bg-white/15" : "text-white/70 hover:bg-white/10")}
+              className={"w-full flex items-center gap-3 px-3 py-3 mb-1 rounded-lg text-[14px] text-left border-l-2 transition-colors " + (tab === key ? "font-bold bg-white/15" : "text-white/70 hover:bg-white/10")}
               style={{ borderLeftColor: tab === key ? theme.accent : "transparent" }}>
               <Icon name={icon} className="w-4 h-4 shrink-0" style={{ color: tab === key ? theme.accent : undefined }} /><span>{label}</span>
             </button>
@@ -8168,25 +8170,25 @@ export default function App() {
             <svg className="w-3.5 h-3.5 shrink-0 text-white/45" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" />
             </svg>
-            <span className="text-[11px] font-semibold text-white/60 tracking-wide">設定</span>
-            <span className="ml-auto text-white/30 text-[9px] transition-transform" style={{ transform: sectionCollapsed.settings ? "rotate(-90deg)" : "none" }}>▾</span>
+            <span className="text-[12px] font-semibold text-white/60 tracking-wide">設定</span>
+            <span className="ml-auto text-white/30 text-[10.5px] transition-transform" style={{ transform: sectionCollapsed.settings ? "rotate(-90deg)" : "none" }}>▾</span>
           </button>
           {!sectionCollapsed.settings && (
             <div className="flex flex-col gap-0.5 pb-1">
               <button onClick={() => { setView("editor"); setTab("regulations"); setSidebarOpen(false); }}
-                className={"flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-left w-full transition-colors " + (tab === "regulations" ? "bg-white/15 font-bold" : "text-white/70 hover:bg-white/10")}
+                className={"flex items-center gap-2 text-[13px] font-medium px-2.5 py-2 rounded-lg text-left w-full transition-colors " + (tab === "regulations" ? "bg-white/15 font-bold" : "text-white/70 hover:bg-white/10")}
                 style={tab === "regulations" ? { color: mainText } : {}}
                 title="全社・クライアント・案件例外のレギュレーションをまとめて確認">
                 <Icon name="book" className="w-4 h-4 shrink-0 text-white/45" />
                 <span>レギュレーション一覧</span>
               </button>
               <a href="settings.html"
-                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/70 hover:bg-white/10">
+                className="flex items-center gap-2 text-[13px] font-medium px-2.5 py-2 rounded-lg text-white/70 hover:bg-white/10">
                 <svg className="w-4 h-4 shrink-0 text-white/45" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                 共有・連携設定
               </a>
               <button onClick={() => setShowAccount(true)}
-                className="flex items-center gap-2 text-[12px] font-medium px-2.5 py-2 rounded-lg text-white/70 hover:bg-white/10 text-left w-full">
+                className="flex items-center gap-2 text-[13px] font-medium px-2.5 py-2 rounded-lg text-white/70 hover:bg-white/10 text-left w-full">
                 {user && user.picture
                   ? <img src={user.picture} alt="" className="w-4 h-4 rounded-full shrink-0" referrerPolicy="no-referrer" />
                   : <Icon name="user" className="w-4 h-4 shrink-0 text-white/45" />}
@@ -8197,7 +8199,7 @@ export default function App() {
         </div>
         {/* 保存できていない事実を正直に出す。旧実装はKV書込上限で落ちていても「電波待ち」と表示していて、
             回線のせいだと誤認したまま編集を続け、その日の作業が丸ごと消えた（2026-07-27 矢内さん案件）。 */}
-        <div className={"px-3 py-2 border-t border-white/10 text-[10px] " + (saveState === "quota" ? "text-rose-400 font-bold" : saveState === "error" ? "text-amber-400" : "text-white/30")}>
+        <div className={"px-3 py-2 border-t border-white/10 text-[11px] " + (saveState === "quota" ? "text-rose-400 font-bold" : saveState === "error" ? "text-amber-400" : "text-white/30")}>
           {saveState === "quota"
             ? "保存できません（本日の書き込み上限）。朝9時まで回復しません。編集を続けても消えます — 台本コピーで退避を"
             : saveState === "error"
@@ -8260,7 +8262,7 @@ export default function App() {
           </span>
           <div className="flex-1" />
           <button onClick={() => setTab("regulations")} title="全社・クライアント別のレギュレーション一覧"
-            className={"h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 " + (tab === "regulations" ? "bg-white/15" : "")} style={{ color: mainText }}>
+            className={"h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10 " + (tab === "regulations" ? "bg-white/15" : "")} style={{ color: mainText }}>
             <Icon name="book" className="w-4 h-4 shrink-0" /><span>規定一覧</span>
           </button>
           {/* 先方コメント */}
@@ -8271,33 +8273,33 @@ export default function App() {
                 <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
               </svg>
               {openComments.length > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full text-[9px] font-bold tabular-nums"
+                <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] px-1 grid place-items-center rounded-full text-[10.5px] font-bold tabular-nums"
                   style={{ background: theme.accent, color: accentText }}>{openComments.length}</span>
               )}
             </button>
           )}
           {/* マニュアル／決め事 */}
           <button onClick={() => setShowManual(true)} title="マニュアル・決め事（全体／チャンネル／案件）"
-            className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
+            className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
             <Icon name="book" className="w-4 h-4 shrink-0" /><span className="hidden sm:inline">マニュアル</span>
           </button>
           {/* 共有メニュー（共有リンク発行 / 台本コピー） */}
           <div className="relative">
             <button onClick={() => setShareMenu((v) => !v)} disabled={sharing} title="共有・書き出し"
-              className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border shadow-sm hover:brightness-110 disabled:opacity-50" style={{ color: "#FFFFFF", background: "#DC2645", borderColor: "#EF4763" }}>
+              className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-bold border shadow-sm hover:brightness-110 disabled:opacity-50" style={{ color: "#FFFFFF", background: "#DC2645", borderColor: "#EF4763" }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
               {sharing ? "発行中…" : "共有"}
-              {!sharing && <span className={"text-[9px] px-1.5 py-0.5 rounded-full " + (shareAudit.status === "checking" ? "bg-white/10" : shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-400/25 text-amber-100" : "bg-emerald-400/25 text-emerald-100")}>
+              {!sharing && <span className={"text-[10.5px] px-1.5 py-0.5 rounded-full " + (shareAudit.status === "checking" ? "bg-white/10" : shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-400/25 text-amber-100" : "bg-emerald-400/25 text-emerald-100")}>
                 {shareAudit.status === "checking" ? "確認中" : shareAudit.issues.some((issue) => !issue.soft) ? "要確認" + shareAudit.issues.filter((issue) => !issue.soft).length : "準備OK"}
               </span>}
-              <span className="opacity-50 text-[9px]">▾</span>
+              <span className="opacity-50 text-[10.5px]">▾</span>
             </button>
             {shareMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
               <div className="mg-pop mg-scroll absolute right-0 top-full mt-1 z-50 w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 max-h-[80vh] overflow-y-auto">
-                <div className={"px-3 py-2.5 border-b text-[11px] " + (shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-50 text-amber-800 border-amber-100" : "bg-emerald-50 text-emerald-800 border-emerald-100")}>
+                <div className={"px-3 py-2.5 border-b text-[12px] " + (shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-50 text-amber-800 border-amber-100" : "bg-emerald-50 text-emerald-800 border-emerald-100")}>
                   <div className="font-bold">{shareAudit.status === "checking" ? "変更内容を確認中…" : shareAudit.issues.some((issue) => !issue.soft) ? "共有前の要確認が " + shareAudit.issues.filter((issue) => !issue.soft).length + "件あります" : "共有準備OK"}</div>
-                  <div className="text-[10px] opacity-75 mt-0.5">端末内で自動確認済み・AI待ちはありません</div>
+                  <div className="text-[11px] opacity-75 mt-0.5">端末内で自動確認済み・AI待ちはありません</div>
                   {shareAudit.issues.filter((issue) => !issue.soft).slice(0, 3).map((issue, index) => (
                     <button key={issue.rowId + ":" + index} onClick={() => { setShareMenu(false); if (issue.rowId) jumpToRow(issue.rowId); }} className="block w-full text-left mt-1.5 hover:underline">
                       ・{issue.sceneLabel || issue.category}：{issue.detail}
@@ -8306,73 +8308,73 @@ export default function App() {
                 </div>
                 {/* ===== 2択だけ（2026-07-17 AK指示：このタブだけ／全体、それだけでいい） ===== */}
                 {TAB_SHARE_PANE[tab] && (
-                  <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                    <Icon name="folder" className="w-4 h-4 shrink-0 text-stone-500" />
-                    このタブだけ共有<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
+                  <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
+                    <Icon name="folder" className="w-4 h-4 shrink-0 text-stone-600" />
+                    このタブだけ共有<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
                   </button>
                 )}
-                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                  <Icon name="share" className="w-4 h-4 shrink-0 text-stone-500" />
-                  全タブ共有<span className="text-[10px] text-stone-400 font-normal ml-auto">全タブ＋アップ枠</span>
+                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
+                  <Icon name="share" className="w-4 h-4 shrink-0 text-stone-600" />
+                  全タブ共有<span className="text-[11px] text-stone-500 font-normal ml-auto">全タブ＋アップ枠</span>
                 </button>
                 {TAB_LABEL[tab] && (
-                  <button onClick={() => { setShareMenu(false); publishShareLive(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                    <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-500" />
-                    このタブだけ編集共有<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
+                  <button onClick={() => { setShareMenu(false); publishShareLive(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
+                    <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-600" />
+                    このタブだけ編集共有<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
                   </button>
                 )}
-                <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                  <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-500" />
-                  全タブ編集共有<span className="text-[10px] text-stone-400 font-normal ml-auto">{project.liveId ? "更新・同時編集" : "同時編集"}</span>
+                <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
+                  <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-600" />
+                  全タブ編集共有<span className="text-[11px] text-stone-500 font-normal ml-auto">{project.liveId ? "更新・同時編集" : "同時編集"}</span>
                 </button>
                 {handoffs.find((h) => h.upload || h.id === "upload") && (
-                  <button onClick={() => { setShareMenu(false); doHandoff(handoffs.find((h) => h.upload || h.id === "upload")); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5">
-                    <Icon name="upload" className="w-4 h-4 shrink-0 text-stone-500" />
-                    アップだけ<span className="text-[10px] text-stone-400 font-normal ml-auto">編集者が上げる用</span>
+                  <button onClick={() => { setShareMenu(false); doHandoff(handoffs.find((h) => h.upload || h.id === "upload")); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
+                    <Icon name="upload" className="w-4 h-4 shrink-0 text-stone-600" />
+                    アップだけ<span className="text-[11px] text-stone-500 font-normal ml-auto">編集者が上げる用</span>
                   </button>
                 )}
-                <button onClick={() => { setShareMenu(false); copyKouseiText(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-t border-stone-100">
-                  <Icon name="copy" className="w-4 h-4 shrink-0 text-stone-500" />
-                  構成をコピー<span className="text-[10px] text-stone-400 font-normal ml-auto">テキスト・貼り付け用</span>
+                <button onClick={() => { setShareMenu(false); copyKouseiText(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5 border-t border-stone-100">
+                  <Icon name="copy" className="w-4 h-4 shrink-0 text-stone-600" />
+                  構成をコピー<span className="text-[11px] text-stone-500 font-normal ml-auto">テキスト・貼り付け用</span>
                 </button>
                 <div className="flex items-stretch border-t border-b border-stone-100">
-                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5"><Icon name="file" className="w-4 h-4 shrink-0 text-stone-500" />台本コピー<span className="text-[10px] text-stone-400 font-normal ml-auto">CSV</span></button>
-                  <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 py-3 hover:bg-stone-50 text-[12px] font-bold text-stone-500 border-l border-stone-100">txt</button>
+                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5"><Icon name="file" className="w-4 h-4 shrink-0 text-stone-600" />台本コピー<span className="text-[11px] text-stone-500 font-normal ml-auto">CSV</span></button>
+                  <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 py-3 hover:bg-stone-50 text-[13px] font-bold text-stone-600 border-l border-stone-100">txt</button>
                 </div>
-                <button onClick={() => { setShareMenu(false); copyAiMcp(); }} title="ClaudeがMCPでこの台本を直接読み書きするための文面をコピー" className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2.5 border-b border-stone-100">
-                  <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-500" />
-                  AI共有<span className="text-[10px] text-stone-400 font-normal ml-auto">Claudeで読み書き</span>
+                <button onClick={() => { setShareMenu(false); copyAiMcp(); }} title="ClaudeがMCPでこの台本を直接読み書きするための文面をコピー" className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5 border-b border-stone-100">
+                  <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />
+                  AI共有<span className="text-[11px] text-stone-500 font-normal ml-auto">Claudeで読み書き</span>
                 </button>
                 {/* ===== その他（折りたたみ）：先方/演者・AI・動画確認・カスタマイズ ===== */}
-                <button onClick={() => setShareMore((v) => !v)} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2">
-                  <span className="text-[10px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他のリンク・書き出し
+                <button onClick={() => setShareMore((v) => !v)} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] text-stone-600 flex items-center gap-2">
+                  <span className="text-[11px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他のリンク・書き出し
                 </button>
                 {shareMore && (<>
                   {handoffs.filter((h) => !(h.upload || h.id === "upload")).map((h) => (
-                    <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                      <span className="text-[13px] leading-none">{h.emoji || "📨"}</span>
-                      {h.label}<span className="text-[10px] text-stone-400 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
+                    <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                      <span className="text-[14px] leading-none">{h.emoji || "📨"}</span>
+                      {h.label}<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
                     </button>
                   ))}
-                  <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left pl-7 pr-3 py-2 hover:bg-stone-50 text-[11px] text-stone-500 flex items-center gap-2 border-b border-stone-100">
+                  <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left pl-7 pr-3 py-2 hover:bg-stone-50 text-[12px] text-stone-600 flex items-center gap-2 border-b border-stone-100">
                     <Icon name="gear" className="w-3.5 h-3.5 shrink-0" /> 受け渡しをカスタマイズ
                   </button>
-                  <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                    <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-500" />
-                    AIに読ませる用<span className="text-[10px] text-stone-400 font-normal ml-auto">Claude/GPT</span>
+                  <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                    <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />
+                    AIに読ませる用<span className="text-[11px] text-stone-500 font-normal ml-auto">Claude/GPT</span>
                   </button>
-                  <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-                    <Icon name="video" className="w-4 h-4 shrink-0 text-stone-500" /> 動画確認・ファイル転送
+                  <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                    <Icon name="video" className="w-4 h-4 shrink-0 text-stone-600" /> 動画確認・ファイル転送
                   </button>
                 </>)}
               </div>
             </>)}
           </div>
           <button onClick={() => setShowInvite(true)} title="チームメンバーを招待して共同編集（要ログイン）"
-            className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10 relative" style={{ color: mainText }}>
+            className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10 relative" style={{ color: mainText }}>
             <Icon name="user" className="w-4 h-4" />
             <span className="hidden sm:inline">{project.collab ? "共同編集中" : "招待"}</span>
-            {project.collab && (project.members || []).length > 1 && <span className="text-[10px] tabular-nums opacity-70">{(project.members || []).length}</span>}
+            {project.collab && (project.members || []).length > 1 && <span className="text-[11px] tabular-nums opacity-70">{(project.members || []).length}</span>}
           </button>
           {/* 右上のAIボタンは撤去（2026-08-23 AK「AIは裏側で自動実行、見せない」）。校正は共有前に自動で走り、AI校正/AIで反映は右クリック・⋮メニューから */}
           <button onClick={() => setShowTheme((s) => !s)} title="テーマカラー変更"
@@ -8390,7 +8392,7 @@ export default function App() {
           <div className="flex gap-1 px-2 w-max">
             {tabItems.map(([k, ic, label]) => (
               <button key={k} onClick={() => setTab(k)}
-                className={"shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 rounded-t-lg text-[12.5px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-55")}
+                className={"shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 rounded-t-lg text-[13.5px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-55")}
                 style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
                 <Icon name={ic} className="w-4 h-4 shrink-0" />
                 <span>{label}</span>
@@ -8423,7 +8425,7 @@ export default function App() {
               ))}
             </div>
             <button onClick={() => setProject((p) => ({ ...p, theme: { ...DEFAULT_THEME } }))}
-              className="mt-3 text-[11px] text-stone-400 underline">初期色に戻す</button>
+              className="mt-3 text-[12px] text-stone-500 underline">初期色に戻す</button>
           </div>
         )}
       </header>
@@ -8449,12 +8451,12 @@ export default function App() {
             })}
             {/* ホバーで開く一覧（左中央配置・右へ開く。2026-08-23 AK指示）。absolute＝本文の幅を1pxも削らない */}
             <div className="pointer-events-none opacity-0 group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity absolute left-9 top-0 w-56 max-h-[70vh] overflow-y-auto rounded-xl border border-stone-200 bg-white/95 backdrop-blur shadow-xl p-1.5 z-50">
-              <div className="text-[9px] font-bold tracking-widest text-stone-300 px-2 pb-1">目次</div>
+              <div className="text-[10.5px] font-bold tracking-widest text-stone-300 px-2 pb-1">目次</div>
               {tocItems.map((it) => {
                 const active = tocActive === it.id;
                 return (
                   <button key={it.id} onClick={() => jumpToToc(it.id)}
-                    className={"block w-full text-left text-[11.5px] leading-snug px-2 py-1 rounded-lg hover:bg-stone-100 " + (it.group ? "font-bold mt-1 " : "") + (active ? "font-bold text-stone-900 bg-stone-50" : "text-stone-500")}
+                    className={"block w-full text-left text-[12.5px] leading-snug px-2 py-1 rounded-lg hover:bg-stone-100 " + (it.group ? "font-bold mt-1 " : "") + (active ? "font-bold text-stone-900 bg-stone-50" : "text-stone-600")}
                     style={active || it.group ? { color: it.group && !active ? theme.accent : undefined } : {}}>
                     {it.label}
                   </button>
@@ -8468,16 +8470,16 @@ export default function App() {
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
         {sched && (
-          <div className="max-w-[1500px] mx-auto mb-4 rounded-xl border border-stone-200 bg-white px-3 sm:px-4 py-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-[12px]">
+          <div className="max-w-[1500px] mx-auto mb-4 rounded-xl border border-stone-200 bg-white px-3 sm:px-4 py-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-[13px]">
             <span className="inline-flex items-center gap-1.5 font-bold text-stone-700">
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: theme.accent }} />
               {sched.phase || "進行中"}
             </span>
             {(sched.status === "delivered" || sched.status === "posted") && (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">納品済</span>
+              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600">納品済</span>
             )}
             {sched.shootDate && (
-              <span className="text-stone-500">撮影 {sched.shootDate.slice(5).replace("-", "/")}{sched.shootTime ? " " + sched.shootTime : ""}</span>
+              <span className="text-stone-600">撮影 {sched.shootDate.slice(5).replace("-", "/")}{sched.shootTime ? " " + sched.shootTime : ""}</span>
             )}
             {sched.next && sched.next.date && (
               <span className={"font-bold " + (sched.next.days < 0 ? "text-rose-600" : sched.next.days <= 3 ? "text-amber-600" : "text-stone-600")}>
@@ -8489,7 +8491,7 @@ export default function App() {
             {sched.canReportUp && (
               <button onClick={reportUp} disabled={reportingUp}
                 title="この案件のあがりをAKに報告（ボールをAKに渡す）。phaseは動かさず、AKが確認して次へ進めます。"
-                className="ml-auto shrink-0 text-[11px] font-bold px-3 py-1 rounded-lg text-white shadow disabled:opacity-50"
+                className="ml-auto shrink-0 text-[12px] font-bold px-3 py-1 rounded-lg text-white shadow disabled:opacity-50"
                 style={{ background: theme.accent, color: accentText }}>
                 {reportingUp ? "報告中…" : "✅ あがり報告"}
               </button>
@@ -8501,7 +8503,7 @@ export default function App() {
         {TAB_SHARE_PANE[tab] && (
           <div className="max-w-[1500px] mx-auto mb-4 flex justify-end">
             <button onClick={() => copyShareUrl(tab)} disabled={sharing} title="このタブの共有URLをコピー"
-              className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: theme.accent, color: accentText }}>
+              className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: theme.accent, color: accentText }}>
               <Icon name="share" className="w-3.5 h-3.5" />{sharing ? "発行中…" : TAB_SHARE_LABEL[tab]}
             </button>
           </div>
@@ -8509,14 +8511,14 @@ export default function App() {
 
         {/* ===== 構成台本の指標（TOTAL尺・字数・字/秒・取り込み）：構成台本タブの中に内包 ===== */}
         {tab === "script" && (
-          <div className={(stacked && project.format !== "talk" ? "max-w-[1400px]" : "max-w-[1500px]") + " mx-auto mb-4 rounded-lg border bg-white px-3 sm:px-4 py-2 flex items-center gap-3 flex-wrap text-[12px]"} style={{ borderColor: "rgba(17,24,39,0.06)" }}>
+          <div className={(stacked && project.format !== "talk" ? "max-w-[1400px]" : "max-w-[1500px]") + " mx-auto mb-4 rounded-lg border bg-white px-3 sm:px-4 py-2 flex items-center gap-3 flex-wrap text-[13px]"} style={{ borderColor: "rgba(17,24,39,0.06)" }}>
             <div className="flex items-baseline gap-1.5" style={{ fontFamily: mono }}>
-              <span className="text-[9px] tracking-widest text-stone-400">TOTAL</span>
+              <span className="text-[10.5px] tracking-widest text-stone-500">TOTAL</span>
               <span className="text-base sm:text-xl font-bold tabular-nums leading-none text-stone-800">{fmt(totalEst)}</span>
-              <span className="text-[10px] text-stone-400">{totalChars.toLocaleString()}字</span>
-              <span className="text-[10px] tabular-nums text-stone-400 ml-1 pl-1.5 border-l border-stone-200" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
+              <span className="text-[11px] text-stone-500">{totalChars.toLocaleString()}字</span>
+              <span className="text-[11px] tabular-nums text-stone-500 ml-1 pl-1.5 border-l border-stone-200" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
             </div>
-            <label className="flex items-center gap-1 text-[11px] text-stone-500">
+            <label className="flex items-center gap-1 text-[12px] text-stone-600">
               <input type="number" min="3" max="8" step="0.5" value={project.rate}
                 onChange={(e) => setProject((p) => ({ ...p, rate: Number(e.target.value) || 5 }))}
                 className="w-11 sm:w-12 bg-stone-50 border border-stone-200 rounded-md px-1 sm:px-1.5 py-1 text-center focus:outline-none focus:border-stone-400"
@@ -8525,7 +8527,7 @@ export default function App() {
             </label>
             <button onClick={() => { setImportTarget("current"); setImportFileName(""); setFullImportText(""); setShowFullImport(true); }}
               title="JSON / 構成台本コピー / TXT・CSV・Excel から取り込み（この案件を更新）"
-              className="ml-auto h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-stone-200 hover:bg-stone-50 text-stone-600">
+              className="ml-auto h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-stone-200 hover:bg-stone-50 text-stone-600">
               <Icon name="download" className="w-3.5 h-3.5" />取り込み
             </button>
             {/* 全体の分数：シーン尺（設定した秒数の合計）と文字数換算（原稿の字数÷字/秒）を並べる */}
@@ -8553,52 +8555,52 @@ export default function App() {
                 <Icon name="book" className="w-6 h-6 mt-0.5 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <h2 className="text-xl font-bold">レギュレーション一覧</h2>
-                  <p className="mt-1 text-[12px] text-stone-300 leading-relaxed">登録の基本単位はクライアント／チャンネルです。全案件共通 → クライアント共通 → 案件固有の例外、の順に自動適用されます。</p>
+                  <p className="mt-1 text-[13px] text-stone-300 leading-relaxed">登録の基本単位はクライアント／チャンネルです。全案件共通 → クライアント共通 → 案件固有の例外、の順に自動適用されます。</p>
                 </div>
-                <button onClick={() => { setManualScope("channel"); setShowManual(true); }} className="shrink-0 rounded-lg bg-white text-stone-900 px-3 py-2 text-[11px] font-bold hover:bg-stone-100">「{curChannel}」の規定を編集</button>
+                <button onClick={() => { setManualScope("channel"); setShowManual(true); }} className="shrink-0 rounded-lg bg-white text-stone-900 px-3 py-2 text-[12px] font-bold hover:bg-stone-100">「{curChannel}」の規定を編集</button>
               </div>
             </div>
 
             <section className={cardCls}>
-              {cardHead("全案件共通", <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">Obsidian承認済み</span>)}
+              {cardHead("全案件共通", <span className="text-[11px] font-bold px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">Obsidian承認済み</span>)}
               <div className="p-4 grid sm:grid-cols-2 gap-2.5">
                 {APPLIED_PREFLIGHT_RULES.map(([category, rule, scope], i) => (
                   <div key={i} className="rounded-xl border border-stone-200 bg-stone-50 px-3.5 py-3">
-                    <div className="flex items-center gap-2 mb-1"><span className="text-[10px] font-bold text-stone-500">{category}</span><span className="ml-auto text-[9px] text-stone-400">{scope}</span></div>
-                    <p className="text-[12px] font-bold text-stone-800 leading-relaxed">{rule}</p>
+                    <div className="flex items-center gap-2 mb-1"><span className="text-[11px] font-bold text-stone-600">{category}</span><span className="ml-auto text-[10.5px] text-stone-500">{scope}</span></div>
+                    <p className="text-[13px] font-bold text-stone-800 leading-relaxed">{rule}</p>
                   </div>
                 ))}
                 {(globalManuals || []).map((m, i) => (
                   <div key={"g" + i} className="rounded-xl border border-blue-100 bg-blue-50/40 px-3.5 py-3">
-                    <div className="text-[10px] font-bold text-blue-600 mb-1">{m.cat || "全社ルール"}</div>
-                    <p className="text-[12px] font-bold text-stone-800">{m.title || "名称未設定"}</p>{m.body && <p className="text-[11px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</p>}
+                    <div className="text-[11px] font-bold text-blue-600 mb-1">{m.cat || "全社ルール"}</div>
+                    <p className="text-[13px] font-bold text-stone-800">{m.title || "名称未設定"}</p>{m.body && <p className="text-[12px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</p>}
                   </div>
                 ))}
               </div>
             </section>
 
             <section className={cardCls}>
-              {cardHead("クライアント／チャンネル別", <span className="text-[10px] text-stone-400">{channelGroups.length}件</span>)}
+              {cardHead("クライアント／チャンネル別", <span className="text-[11px] text-stone-500">{channelGroups.length}件</span>)}
               <div className="p-4 space-y-3">
                 {channelGroups.map(({ channel, items }) => {
                   const info = channelInfo[channel] || {};
                   const rules = info.manuals || [];
                   return <details key={channel} open={channel === curChannel} className="rounded-xl border border-stone-200 bg-white overflow-hidden">
                     <summary className="cursor-pointer px-4 py-3 flex items-center gap-2 bg-stone-50 select-none">
-                      <Icon name="folder" className="w-4 h-4 text-stone-500" /><span className="text-[13px] font-bold text-stone-800">{channel}</span>
-                      <span className="text-[10px] text-stone-400 ml-auto">共通ルール {rules.length}件・案件 {items.length}件</span>
+                      <Icon name="folder" className="w-4 h-4 text-stone-600" /><span className="text-[14px] font-bold text-stone-800">{channel}</span>
+                      <span className="text-[11px] text-stone-500 ml-auto">共通ルール {rules.length}件・案件 {items.length}件</span>
                     </summary>
                     <div className="p-3 space-y-2">
-                      {rules.length === 0 && <p className="text-[11px] text-stone-400 px-1">チャンネル共通の追加ルールはまだありません。</p>}
-                      {rules.map((m, i) => <div key={i} className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2"><span className="text-[10px] font-bold text-amber-700">{m.cat || "チャンネルルール"}</span><div className="text-[12px] font-bold text-stone-800">{m.title || "名称未設定"}</div>{m.body && <div className="text-[11px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</div>}</div>)}
+                      {rules.length === 0 && <p className="text-[12px] text-stone-500 px-1">チャンネル共通の追加ルールはまだありません。</p>}
+                      {rules.map((m, i) => <div key={i} className="rounded-lg bg-amber-50 border border-amber-100 px-3 py-2"><span className="text-[11px] font-bold text-amber-700">{m.cat || "チャンネルルール"}</span><div className="text-[13px] font-bold text-stone-800">{m.title || "名称未設定"}</div>{m.body && <div className="text-[12px] text-stone-600 mt-1 whitespace-pre-wrap">{m.body}</div>}</div>)}
                       <div className="pt-1 grid sm:grid-cols-2 gap-2">
                         {items.map((x) => {
                           const d = caseData(x.id);
                           const manuals = (d && d.manuals) || [];
                           return <div key={x.id} className={"rounded-lg border px-3 py-2 " + (x.id === activeId ? "border-rose-200 bg-rose-50/50" : "border-stone-200 bg-white")}>
-                            <div className="flex items-center gap-2"><span className="text-[12px] font-bold text-stone-800 truncate">{x.name}</span>{x.id === activeId && <span className="text-[9px] font-bold text-rose-600 shrink-0">開いている案件</span>}<span className="ml-auto text-[10px] text-stone-400 shrink-0">例外 {manuals.length}件</span></div>
-                            {manuals.map((m, i) => <div key={i} className="mt-2 pl-2 border-l-2 border-rose-200"><div className="text-[11px] font-bold text-stone-700">{m.title || "名称未設定"}</div>{m.body && <div className="text-[10px] text-stone-500 whitespace-pre-wrap">{m.body}</div>}</div>)}
-                            {!d && <div className="text-[9px] text-stone-400 mt-1">案件を開くと固有ルールを表示します</div>}
+                            <div className="flex items-center gap-2"><span className="text-[13px] font-bold text-stone-800 truncate">{x.name}</span>{x.id === activeId && <span className="text-[10.5px] font-bold text-rose-600 shrink-0">開いている案件</span>}<span className="ml-auto text-[11px] text-stone-500 shrink-0">例外 {manuals.length}件</span></div>
+                            {manuals.map((m, i) => <div key={i} className="mt-2 pl-2 border-l-2 border-rose-200"><div className="text-[12px] font-bold text-stone-700">{m.title || "名称未設定"}</div>{m.body && <div className="text-[11px] text-stone-600 whitespace-pre-wrap">{m.body}</div>}</div>)}
+                            {!d && <div className="text-[10.5px] text-stone-500 mt-1">案件を開くと固有ルールを表示します</div>}
                           </div>;
                         })}
                       </div>
@@ -8608,7 +8610,7 @@ export default function App() {
               </div>
             </section>
 
-            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[11px] text-blue-800 leading-relaxed">
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-[12px] text-blue-800 leading-relaxed">
               <span className="font-bold">現在の案件：</span>{project.name} ／ {curChannel}　
               公開前チェックでは、上の全案件共通ルール・「{curChannel}」の共通ルール・この案件だけの例外を自動でまとめて確認します。
             </div>
@@ -8620,20 +8622,20 @@ export default function App() {
         {tab === "overview" && (
           <div className="max-w-[1000px] mx-auto mb-8">
             <div className="flex items-center gap-2 mb-4 flex-wrap">
-              <p className="text-[12px] text-stone-500 leading-relaxed flex-1 min-w-[200px]">
+              <p className="text-[13px] text-stone-600 leading-relaxed flex-1 min-w-[200px]">
                 チャンネル「<span className="font-bold" style={{ color: theme.main }}>{curChannel}</span>」のコンセプト。<span className="font-bold">同じチャンネル（フォルダ）の全案件で共有</span>されます。
               </p>
               {curChannel !== DEFAULT_CHANNEL && (
                 <div className="shrink-0 flex items-center gap-1.5">
                   <button onClick={() => publishChannel(curChannel, false)} disabled={chSharing}
                     title="このチャンネルのコンセプト＋配下の全案件をまとめて見せる共有URLを発行（読み取り専用）"
-                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50" style={{ background: theme.main }}>
+                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow disabled:opacity-50" style={{ background: theme.main }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
                     {chSharing ? "発行中…" : (channelInfo[curChannel] && channelInfo[curChannel].shareId) ? "共有を更新" : "見せる用に共有"}
                   </button>
                   <button onClick={() => publishChannel(curChannel, true)} disabled={chSharing}
                     title="先方がURLから全案件の企画・サムネ・構成台本を直接編集できる共有URLを発行（ログイン不要・リアルタイム反映）"
-                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold shadow disabled:opacity-50 border" style={{ borderColor: theme.accent, color: theme.accent }}>
+                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold shadow disabled:opacity-50 border" style={{ borderColor: theme.accent, color: theme.accent }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                     {chSharing ? "発行中…" : "編集つきで共有"}
                   </button>
@@ -8641,7 +8643,7 @@ export default function App() {
               )}
             </div>
             {curChannel === DEFAULT_CHANNEL && (
-              <div className="mb-4 text-[12px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 inline-flex items-start gap-1.5">
+              <div className="mb-4 text-[13px] text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 inline-flex items-start gap-1.5">
                 <Icon name="warn" className="w-4 h-4 shrink-0 mt-0.5" /><span>この案件は「未分類」です。サイドバーでフォルダにクライアント名を付ける（✎）と、チャンネル単位でコンセプトを管理できます。</span>
               </div>
             )}
@@ -8654,16 +8656,16 @@ export default function App() {
                   const tally = CMT_CATEGORIES.map((c) => [c, comments.filter((x) => (x.category || "その他") === c).length]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
                   return tally.length ? (
                     <div className="mb-3">
-                      <div className="text-[11px] font-bold text-stone-500 mb-1.5">この案件で来た修正の傾向（カテゴリ別）</div>
-                      <div className="flex flex-wrap gap-1.5">{tally.map(([c, n]) => (<span key={c} className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-600">{c} {n}</span>))}</div>
+                      <div className="text-[12px] font-bold text-stone-600 mb-1.5">この案件で来た修正の傾向（カテゴリ別）</div>
+                      <div className="flex flex-wrap gap-1.5">{tally.map(([c, n]) => (<span key={c} className="text-[12px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-600">{c} {n}</span>))}</div>
                     </div>
-                  ) : <p className="text-[11px] text-stone-400 mb-3">まだ修正コメントがありません。動画確認で来た修正がカテゴリ別にここへ集まります。</p>;
+                  ) : <p className="text-[12px] text-stone-500 mb-3">まだ修正コメントがありません。動画確認で来た修正がカテゴリ別にここへ集まります。</p>;
                 })()}
                 <label className="block">
-                  <span className="text-[11px] font-bold text-stone-500">このクライアントで気をつけること（蓄積メモ）</span>
+                  <span className="text-[12px] font-bold text-stone-600">このクライアントで気をつけること（蓄積メモ）</span>
                   <textarea value={curChannelInfo.clientNotes || ""} onChange={(e) => updateChannelInfo({ clientNotes: e.target.value })}
                     placeholder="例）テロップの誤字に厳しい／OPは短め好み／顔出しNGの人がいる／納期は前倒し希望 …案件をこなすごとに追記"
-                    className="mt-1 w-full h-24 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" />
+                    className="mt-1 w-full h-24 text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" />
                 </label>
               </div>
             </section>
@@ -8672,16 +8674,16 @@ export default function App() {
               {cardHead("チャンネル基本情報")}
               <div className="p-4 grid sm:grid-cols-2 gap-3">
                 <label className="block">
-                  <span className="text-[11px] font-bold text-stone-500">チャンネル名</span>
+                  <span className="text-[12px] font-bold text-stone-600">チャンネル名</span>
                   <input value={curChannelInfo.name} onChange={(e) => updateChannelInfo({ name: e.target.value })}
                     placeholder="例）Bird Flip チャンネル"
                     className="mt-1 w-full text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
                 </label>
                 <label className="block">
-                  <span className="text-[11px] font-bold text-stone-500">チャンネルURL</span>
+                  <span className="text-[12px] font-bold text-stone-600">チャンネルURL</span>
                   <input value={curChannelInfo.url} onChange={(e) => updateChannelInfo({ url: e.target.value })}
                     placeholder="https://www.youtube.com/@..."
-                    className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                    className="mt-1 w-full text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
                 </label>
                 {[
                   ["promanUrl", "プロマネのURL"],
@@ -8689,10 +8691,10 @@ export default function App() {
                   ["checklistUrl", "チェックリストのURL"],
                 ].map(([key, label]) => (
                   <label key={key} className="block">
-                    <span className="text-[11px] font-bold text-stone-500">{label}</span>
+                    <span className="text-[12px] font-bold text-stone-600">{label}</span>
                     <input value={curChannelInfo[key]} onChange={(e) => updateChannelInfo({ [key]: e.target.value })}
                       placeholder="https://..."
-                      className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                      className="mt-1 w-full text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
                   </label>
                 ))}
               </div>
@@ -8707,10 +8709,10 @@ export default function App() {
                   ["purpose", "CV先・チャンネルの目的", "最終的に何につなげるか（自社サービス送客／集客／採用／ブランディング 等）"],
                 ].map(([key, label, ph]) => (
                   <label key={key} className="block">
-                    <span className="text-[11px] font-bold text-stone-500">{label}</span>
+                    <span className="text-[12px] font-bold text-stone-600">{label}</span>
                     <textarea value={curChannelInfo[key]} onChange={(e) => updateChannelInfo({ [key]: e.target.value })}
                       placeholder={ph}
-                      className="mt-1 w-full h-20 text-[13px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" />
+                      className="mt-1 w-full h-20 text-[14px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" />
                   </label>
                 ))}
               </div>
@@ -8718,15 +8720,15 @@ export default function App() {
 
             <section className={cardCls + " mb-4"}>
               <div className="px-4 py-2.5 flex items-center justify-between border-b border-stone-100">
-                <span className="text-[12px] font-bold tracking-wide text-stone-600">競合チャンネル</span>
-                <span className="text-[10px] text-stone-400">URLを貼ると登録者数を自動取得</span>
+                <span className="text-[13px] font-bold tracking-wide text-stone-600">競合チャンネル</span>
+                <span className="text-[11px] text-stone-500">URLを貼ると登録者数を自動取得</span>
               </div>
               <div className="p-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                   {(curChannelInfo.competitors || []).map((c, i) => (
                       <div key={i} className="border border-stone-200 rounded-xl overflow-hidden flex flex-col bg-stone-50/50 relative">
                         <button onClick={() => removeCompetitor(i)} title="削除"
-                          className="absolute top-1 right-1 z-10 w-6 h-6 rounded-lg grid place-items-center bg-white/80 text-stone-400 hover:text-red-500 hover:bg-white shadow-sm"><Icon name="trash" className="w-3 h-3" /></button>
+                          className="absolute top-1 right-1 z-10 w-6 h-6 rounded-lg grid place-items-center bg-white/80 text-stone-500 hover:text-red-500 hover:bg-white shadow-sm"><Icon name="trash" className="w-3 h-3" /></button>
                         {compBusy[i] ? (
                           <div className="aspect-video grid place-items-center bg-white border-b border-stone-100"><div className="w-12 h-12 rounded-full bg-stone-200 animate-pulse" /></div>
                         ) : c.thumb ? (
@@ -8734,14 +8736,14 @@ export default function App() {
                             <img src={c.thumb} alt="" className="w-14 h-14 rounded-full object-cover" referrerPolicy="no-referrer" />
                           </a>
                         ) : (
-                          <div className="aspect-video grid place-items-center bg-white border-b border-dashed border-stone-200 text-[9px] text-stone-300 text-center px-1">URLを貼ると<br />サムネ表示</div>
+                          <div className="aspect-video grid place-items-center bg-white border-b border-dashed border-stone-200 text-[10.5px] text-stone-300 text-center px-1">URLを貼ると<br />サムネ表示</div>
                         )}
                         <div className="px-2 pt-1.5">
                           {c.name
-                            ? <div className="text-[11px] font-bold text-stone-700 leading-snug line-clamp-2" title={c.name}>{c.name}</div>
-                            : <div className="text-[10px] text-stone-300">未取得</div>}
+                            ? <div className="text-[12px] font-bold text-stone-700 leading-snug line-clamp-2" title={c.name}>{c.name}</div>
+                            : <div className="text-[11px] text-stone-300">未取得</div>}
                           {(c.subs > 0 || c.videos > 0) && (
-                            <div className="text-[9px] text-stone-500 flex flex-wrap gap-x-1.5" style={{ fontFamily: mono }}>
+                            <div className="text-[10.5px] text-stone-600 flex flex-wrap gap-x-1.5" style={{ fontFamily: mono }}>
                               <span title="登録者数">👤 {fmtNum(c.subs)}</span>
                               {c.videos > 0 && <span title="動画数">🎬 {fmtNum(c.videos)}</span>}
                             </div>
@@ -8754,22 +8756,22 @@ export default function App() {
                             placeholder="チャンネルURL"
                             onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== c.url) fetchCompetitor(i, v); }}
                             onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                            className="w-full text-[9px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
+                            className="w-full text-[10.5px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
                           <input value={c.note || ""} onChange={(e) => updateCompetitor(i, { note: e.target.value })}
                             placeholder="メモ"
-                            className="w-full text-[10px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
+                            className="w-full text-[11px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
                         </div>
                       </div>
                   ))}
                   <button onClick={addCompetitor}
-                    className="border border-dashed border-stone-300 rounded-xl aspect-[3/4] grid place-items-center text-stone-400 hover:bg-stone-50 hover:text-stone-600">
-                    <span className="inline-flex flex-col items-center gap-1 text-[11px] font-bold"><Icon name="plus" className="w-5 h-5" />競合を追加</span>
+                    className="border border-dashed border-stone-300 rounded-xl aspect-[3/4] grid place-items-center text-stone-500 hover:bg-stone-50 hover:text-stone-600">
+                    <span className="inline-flex flex-col items-center gap-1 text-[12px] font-bold"><Icon name="plus" className="w-5 h-5" />競合を追加</span>
                   </button>
                 </div>
               </div>
             </section>
 
-            <p className="text-[11px] text-stone-400 leading-relaxed">
+            <p className="text-[12px] text-stone-500 leading-relaxed">
               ここで決めたコンセプト・ターゲット・競合は、このチャンネルの全案件で共有されます。企画やタイトルを考えるときの土台にしてください。
             </p>
           </div>
@@ -8780,21 +8782,21 @@ export default function App() {
         {/* ================= トーク系 構成台本タブ ================= */}
         {tab === "script" && project.format === "talk" && (() => {
           const t = project.talk || newTalk();
-          const labelCls = "text-[11px] font-bold tracking-wide";
-          const taCls = "mt-1 w-full text-[13.5px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-stone-400 resize-y";
+          const labelCls = "text-[12px] font-bold tracking-wide";
+          const taCls = "mt-1 w-full text-[14.5px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-stone-400 resize-y";
           const sec = (no, title, hint, children) => (
             <section className={cardCls + " mb-3"}>
               <div className="px-4 py-2.5 flex items-center gap-2 border-b border-stone-100">
-                <span className="w-6 h-6 rounded-lg grid place-items-center text-[11px] font-bold text-white shrink-0" style={{ background: theme.main }}>{no}</span>
-                <span className="text-[13px] font-bold text-stone-700">{title}</span>
-                {hint && <span className="text-[10px] text-stone-400 ml-auto">{hint}</span>}
+                <span className="w-6 h-6 rounded-lg grid place-items-center text-[12px] font-bold text-white shrink-0" style={{ background: theme.main }}>{no}</span>
+                <span className="text-[14px] font-bold text-stone-700">{title}</span>
+                {hint && <span className="text-[11px] text-stone-500 ml-auto">{hint}</span>}
               </div>
               <div className="p-4">{children}</div>
             </section>
           );
           return (
             <div className="max-w-[900px] mx-auto">
-              <p className="text-[12px] text-stone-500 mb-3">トーク系台本（一人語り・対談など）。タイトルは「企画・サムネ」タブと連携しています。</p>
+              <p className="text-[13px] text-stone-600 mb-3">トーク系台本（一人語り・対談など）。タイトルは「企画・サムネ」タブと連携しています。</p>
               {sec("①", "タイトル", "企画・サムネと連携", (
                 <input value={(project.plans && project.plans[0] && project.plans[0].title) || ""} onChange={(e) => setPlanField(0, "title", e.target.value)}
                   placeholder="動画のタイトル" className="w-full text-[15px] font-bold border border-stone-200 rounded-lg px-3 py-2.5 focus:outline-none focus:border-stone-400" />
@@ -8809,9 +8811,9 @@ export default function App() {
                 <div className="space-y-1.5">
                   {t.toc.map((item, i) => (
                     <div key={i} className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-stone-400 w-5 shrink-0 text-center" style={{ fontFamily: mono }}>{i + 1}</span>
+                      <span className="text-[12px] font-bold text-stone-500 w-5 shrink-0 text-center" style={{ fontFamily: mono }}>{i + 1}</span>
                       <input value={item} onChange={(e) => setToc(i, e.target.value)} placeholder={"項目 " + (i + 1)}
-                        className="flex-1 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                        className="flex-1 text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
                       <button onClick={() => removeToc(i)} className="w-7 h-7 rounded-lg grid place-items-center text-stone-300 hover:bg-red-50 hover:text-red-500 shrink-0"><Icon name="trash" className="w-3.5 h-3.5" /></button>
                     </div>
                   ))}
@@ -8823,15 +8825,15 @@ export default function App() {
                   {t.body.map((b, i) => (
                     <div key={b.id} id={"row-" + b.id} className="border rounded-xl overflow-hidden transition-shadow" style={flashId === b.id ? { boxShadow: "0 0 0 3px " + theme.accent } : { borderColor: "#e7e5e4" }}>
                       <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-stone-50 border-b border-stone-100">
-                        <span className="text-[10px] font-bold text-stone-400 shrink-0" style={{ fontFamily: mono }}>本編{i + 1}</span>
+                        <span className="text-[11px] font-bold text-stone-500 shrink-0" style={{ fontFamily: mono }}>本編{i + 1}</span>
                         <input value={b.heading} onChange={(e) => setBody(b.id, { heading: e.target.value })} placeholder="この区切りの見出し"
-                          className="flex-1 min-w-0 bg-transparent text-[13px] font-bold focus:outline-none" />
-                        <button onClick={() => moveBody(b.id, -1)} title="上へ" className="w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-200 shrink-0"><Icon name="up" className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => moveBody(b.id, 1)} title="下へ" className="w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-200 shrink-0"><Icon name="down" className="w-3.5 h-3.5" /></button>
+                          className="flex-1 min-w-0 bg-transparent text-[14px] font-bold focus:outline-none" />
+                        <button onClick={() => moveBody(b.id, -1)} title="上へ" className="w-6 h-6 grid place-items-center rounded text-stone-500 hover:bg-stone-200 shrink-0"><Icon name="up" className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => moveBody(b.id, 1)} title="下へ" className="w-6 h-6 grid place-items-center rounded text-stone-500 hover:bg-stone-200 shrink-0"><Icon name="down" className="w-3.5 h-3.5" /></button>
                         <button onClick={() => removeBody(b.id)} title="削除" className="w-6 h-6 grid place-items-center rounded text-stone-300 hover:bg-red-50 hover:text-red-500 shrink-0"><Icon name="trash" className="w-3.5 h-3.5" /></button>
                       </div>
                       <AutoTextarea value={b.script} onChange={(e) => setBody(b.id, { script: e.target.value })} placeholder="話す内容（原稿）。質問は行頭に ◼ を付けると見出し扱いになります"
-                        className="w-full text-[13.5px] leading-relaxed px-3 py-2.5 focus:outline-none" minHeight={128} />
+                        className="w-full text-[14.5px] leading-relaxed px-3 py-2.5 focus:outline-none" minHeight={128} />
                     </div>
                   ))}
                   <button onClick={addBody} className="text-xs font-bold px-3 py-1.5 rounded-lg border border-stone-300 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="plus" className="w-3.5 h-3.5" />本編を追加</button>
@@ -8854,40 +8856,40 @@ export default function App() {
             <section className={cardCls + " mb-4"}>
               {cardHead("番組情報", (
                 <button onClick={openHistory} title="タイトル・サムネ文言・内容・原稿の変更履歴。変更前に戻せる"
-                  className="text-[10px] font-bold text-stone-400 hover:text-stone-700 px-2 py-1 rounded-md hover:bg-stone-100 transition-colors">
+                  className="text-[11px] font-bold text-stone-500 hover:text-stone-700 px-2 py-1 rounded-md hover:bg-stone-100 transition-colors">
                   変更履歴
                 </button>
               ))}
               <div className="grid sm:grid-cols-2 border-b border-stone-100">
                 <div className="flex sm:border-r border-stone-100">
-                  <div className="w-20 shrink-0 px-3 py-2 text-[11px] font-bold text-stone-400">撮影日</div>
+                  <div className="w-20 shrink-0 px-3 py-2 text-[12px] font-bold text-stone-500">撮影日</div>
                   <input className={metaInput} value={m.shootDate} placeholder="例：5月16日" onChange={(e) => setMeta("shootDate", e.target.value)} />
                 </div>
                 <div className="flex border-t sm:border-t-0 border-stone-100">
-                  <div className="w-20 shrink-0 px-3 py-2 text-[11px] font-bold text-stone-400">撮影場所</div>
+                  <div className="w-20 shrink-0 px-3 py-2 text-[12px] font-bold text-stone-500">撮影場所</div>
                   <input className={metaInput} value={m.place} onChange={(e) => setMeta("place", e.target.value)} />
                 </div>
               </div>
               {/* タイトル（企画・サムネタブと連携）＝ラベル下・改行可。中身の行数ぶん自動で伸びる（切れて見えないようにする） */}
               <div className="border-b border-stone-100 px-3 py-2">
-                <div className="text-[11px] font-bold text-stone-400 mb-1">タイトル</div>
+                <div className="text-[12px] font-bold text-stone-500 mb-1">タイトル</div>
                 <AutoTextarea value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路"
                   onChange={(e) => setPlanField(0, "title", e.target.value)} title="企画・サムネタブのタイトルと連携しています"
-                  minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
+                  minHeight={44} className="block w-full bg-transparent text-[14px] leading-relaxed focus:outline-none placeholder:text-stone-400" />
               </div>
               {/* サムネ文言 ＝2パターン。ラベル下・改行可。空行込みで全文見えるように自動で伸ばす */}
               <div className="grid sm:grid-cols-2">
                 <div className="px-3 py-2 sm:border-r border-stone-100">
-                  <div className="text-[11px] font-bold text-stone-400 mb-1">サムネ文言 ①</div>
+                  <div className="text-[12px] font-bold text-stone-500 mb-1">サムネ文言 ①</div>
                   <AutoTextarea value={((project.plans || [])[0] && project.plans[0].thumbText) || ""} placeholder="例）人生、詰んだ。"
                     onChange={(e) => setPlanField(0, "thumbText", e.target.value)} title="企画・サムネタブのサムネ文言と連携しています"
-                    minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
+                    minHeight={44} className="block w-full bg-transparent text-[14px] leading-relaxed focus:outline-none placeholder:text-stone-400" />
                 </div>
                 <div className="px-3 py-2 border-t sm:border-t-0 border-stone-100">
-                  <div className="text-[11px] font-bold text-stone-400 mb-1">サムネ文言 ②</div>
+                  <div className="text-[12px] font-bold text-stone-500 mb-1">サムネ文言 ②</div>
                   <AutoTextarea value={((project.plans || [])[0] && project.plans[0].thumbText2) || ""} placeholder="もう1パターン（任意）"
                     onChange={(e) => setPlanField(0, "thumbText2", e.target.value)} title="企画・サムネタブのサムネ文言②と連携しています"
-                    minHeight={44} className="block w-full bg-transparent text-[13px] leading-relaxed focus:outline-none placeholder:text-stone-300" />
+                    minHeight={44} className="block w-full bg-transparent text-[14px] leading-relaxed focus:outline-none placeholder:text-stone-400" />
                 </div>
               </div>
             </section>
@@ -8903,7 +8905,7 @@ export default function App() {
             <div className="flex justify-end items-center gap-2 -mt-2 -mb-1">
               <button onClick={() => setScriptView((v) => v === "mindmap" ? "table" : "mindmap")}
                 title={scriptView === "mindmap" ? "台本の編集画面に戻す" : "マインドマップで見る"}
-                className={"text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors " + (scriptView === "mindmap" ? "text-white border-transparent" : "border-stone-200 text-stone-500 hover:bg-stone-50")}
+                className={"text-[12px] font-bold px-2.5 py-1 rounded-lg border transition-colors " + (scriptView === "mindmap" ? "text-white border-transparent" : "border-stone-200 text-stone-600 hover:bg-stone-50")}
                 style={scriptView === "mindmap" ? { background: theme.main } : {}}>
                 {scriptView === "mindmap" ? "◂ 台本に戻る" : "マインドマップで見る"}
               </button>
@@ -8913,7 +8915,7 @@ export default function App() {
               {!isNarrow && scriptView !== "mindmap" && (
                 <button onClick={toggleScriptLayout}
                   title={scriptLayout === "stack" ? "横並びの表に戻す" : "原稿を全幅で読む（上下積み）"}
-                  className="text-[11px] text-stone-400 hover:text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors">
+                  className="text-[12px] text-stone-500 hover:text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors">
                   {scriptLayout === "stack" ? "表示：上下積み（原稿全幅）" : "表示：横並びの表"}
                 </button>
               )}
@@ -8921,7 +8923,7 @@ export default function App() {
                 <button
                   onClick={() => setMeta("scriptDensity", scriptDensity === "standard" ? "compact" : scriptDensity === "compact" ? "detail" : "standard")}
                   title="原稿の情報量を切替（撮影前はコンパクトで見渡す・執筆時は詳細）。案件に保存されるので共有相手にも同じ見え方になります"
-                  className="text-[11px] text-stone-400 hover:text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors">
+                  className="text-[12px] text-stone-500 hover:text-stone-700 px-2 py-1 rounded-lg hover:bg-stone-100 transition-colors">
                   密度：{scriptDensity === "compact" ? "コンパクト" : scriptDensity === "detail" ? "詳細" : "標準"}
                 </button>
               )}
@@ -8953,7 +8955,7 @@ export default function App() {
                 <thead>
                   <tr style={{ background: theme.main, color: mainText }}>
                     {["時間", "内容", "シーン", "秒数", "所要時間", "原稿"].map((h, i) => (
-                      <th key={i} className="sticky z-[5] px-3 py-2 text-left text-[10px] font-bold tracking-[0.15em] whitespace-nowrap"
+                      <th key={i} className="sticky z-[5] px-3 py-2 text-left text-[11px] font-bold tracking-wide whitespace-nowrap"
                         style={{ top: headerH, background: theme.main }}>
                         <span style={{ opacity: 0.9 }}>{h}</span>
                       </th>
@@ -8985,7 +8987,7 @@ export default function App() {
                                 value={r.label}
                                 onChange={(v) => updateRow(r.id, { label: v })}
                                 placeholder="ロケーション名（例：ご自宅）"
-                                className="flex-1 bg-transparent text-[13px] font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
+                                className="flex-1 bg-transparent text-[14px] font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
                                 style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                               />
                               {dayPickerEl(r, true)}
@@ -8995,27 +8997,27 @@ export default function App() {
                                 onChange={(e) => updateRow(r.id, { time: e.target.value })}
                                 onClick={(e) => e.stopPropagation()}
                                 title="到着・開始予定時刻（香盤表と連動／以降のシーンの実時刻の起点）"
-                                className="shrink-0 w-[64px] self-center mr-1 bg-transparent text-[12px] font-bold tabular-nums text-center rounded px-0 py-0.5 focus:outline-none focus:bg-white/15 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                                className="shrink-0 w-[64px] self-center mr-1 bg-transparent text-[13px] font-bold tabular-nums text-center rounded px-0 py-0.5 focus:outline-none focus:bg-white/15 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                                 style={{ fontFamily: mono, color: mainText, opacity: r.time ? 1 : 0.5 }} />
                               {!r.time && clocks[r.id] != null && (
-                                <span className="shrink-0 self-center mr-1 text-[11px] tabular-nums opacity-50" style={{ fontFamily: mono, color: mainText }} title="前のロケ時刻からの自動算出（実時刻）">
+                                <span className="shrink-0 self-center mr-1 text-[12px] tabular-nums opacity-50" style={{ fontFamily: mono, color: mainText }} title="前のロケ時刻からの自動算出（実時刻）">
                                   ≈{fmtClock(clocks[r.id])}
                                 </span>
                               )}
                               <button
                                 onClick={() => updateRow(r.id, { done: !r.done })}
                                 title={r.done ? "撮影完了を取り消す（香盤表と連動）" : "このロケを撮影完了にする（香盤表と連動）"}
-                                className={"shrink-0 self-center text-[10px] font-bold px-2.5 py-1 my-1 mr-2 rounded-md whitespace-nowrap transition-colors " + (r.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
+                                className={"shrink-0 self-center text-[11px] font-bold px-2.5 py-1 my-1 mr-2 rounded-md whitespace-nowrap transition-colors " + (r.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
                                 {r.done
                                   ? <span className="inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />完了</span>
                                   : <span className="inline-flex items-center gap-1"><Icon name="check" className="w-3.5 h-3.5" />撮影完了</span>}
                               </button>
                               {r.done && (() => { const lc = locations.find((l) => l.id === r.id); return (
-                                <span className="shrink-0 self-center mr-2 text-[10px] whitespace-nowrap opacity-60" style={{ color: mainText, fontFamily: mono }} title="撮影完了で畳み中">
+                                <span className="shrink-0 self-center mr-2 text-[11px] whitespace-nowrap opacity-60" style={{ color: mainText, fontFamily: mono }} title="撮影完了で畳み中">
                                   {lc ? lc.scenes.length : 0}シーン・尺 {fmt(lc ? lc.secSum : 0)} ▾畳み
                                 </span>
                               ); })()}
-                              <span className="self-center pr-3 text-[9px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
+                              <span className="self-center pr-3 text-[10.5px] tracking-[0.2em] opacity-40" style={{ color: mainText, fontFamily: mono }}>LOCATION</span>
                             </div>
                           </td>
                         </tr>
@@ -9046,14 +9048,14 @@ export default function App() {
                             <button
                               onClick={(e) => { e.stopPropagation(); updateRow(r.id, { done: !r.done }); }}
                               title={r.done ? "撮影完了を取り消す" : "このシーンを撮影完了にする"}
-                              className={"shrink-0 w-6 h-6 grid place-items-center rounded-md border transition-colors " + (r.done ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-300 text-stone-400 hover:bg-stone-100 hover:border-stone-400")}>
+                              className={"shrink-0 w-6 h-6 grid place-items-center rounded-md border transition-colors " + (r.done ? "bg-emerald-500 border-emerald-500 text-white" : "bg-white border-stone-300 text-stone-500 hover:bg-stone-100 hover:border-stone-400")}>
                               <Icon name="check" className="w-3.5 h-3.5" />
                             </button>
-                            <span className="cursor-grab active:cursor-grabbing text-stone-300 text-[10px] leading-none select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">⋮⋮</span>
+                            <span className="cursor-grab active:cursor-grabbing text-stone-300 text-[11px] leading-none select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">⋮⋮</span>
                             <div className="min-w-0 w-full text-center">
                               {clocks[r.id] != null ? (
                                 <div
-                                  className="w-full text-[11px] tabular-nums text-center px-0.5 py-0.5"
+                                  className="w-full text-[12px] tabular-nums text-center px-0.5 py-0.5"
                                   style={{ fontFamily: mono, color: "#9CA3AF" }}
                                   title="香盤表のロケ到着時刻＋尺の積み上げ（実時刻）。時刻はロケ見出しまたは香盤表タブで編集">
                                   {fmtClock(clocks[r.id])}
@@ -9066,11 +9068,11 @@ export default function App() {
                                   onClick={(e) => e.stopPropagation()}
                                   onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
                                   onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                                  className="w-full text-[11px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-stone-100 hover:bg-stone-100/60"
+                                  className="w-full text-[12px] tabular-nums text-center bg-transparent rounded px-0.5 py-0.5 focus:outline-none focus:bg-stone-100 hover:bg-stone-100/60"
                                   style={{ fontFamily: mono, color: r.tc != null ? theme.accent : "#9CA3AF", fontWeight: r.tc != null ? 700 : 400 }}
                                   title="開始時刻を手入力で固定（空欄で自動に戻る）" />
                               )}
-                              <span className="text-[9px] text-stone-300 tabular-nums" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
+                              <span className="text-[10.5px] text-stone-300 tabular-nums" style={{ fontFamily: mono }}>#{sceneNos[r.id]}</span>
                             </div>
                           </div>
                         </td>
@@ -9080,7 +9082,7 @@ export default function App() {
                             onChange={(v) => updateRow(r.id, { label: v })}
                             rows={1}
                             placeholder="内容"
-                            className="block w-full resize-none bg-transparent text-[13px] font-medium leading-snug px-3 py-2 focus:outline-none placeholder:text-stone-300"
+                            className="block w-full resize-none bg-transparent text-[14px] font-medium leading-snug px-3 py-2 focus:outline-none placeholder:text-stone-400"
                             style={{ minHeight: 38 }}
                           />
                         </td>
@@ -9088,7 +9090,7 @@ export default function App() {
                           <select
                             value={r.type}
                             onChange={(e) => updateRow(r.id, { type: e.target.value, sec: null })}
-                            className="w-full text-[11px] font-bold rounded-full px-2.5 py-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-stone-300 appearance-none text-center"
+                            className="w-full text-[12px] font-bold rounded-full px-2.5 py-1.5 cursor-pointer focus:outline-none focus:ring-2 focus:ring-stone-300 appearance-none text-center"
                             style={{ background: t.bg, color: t.color }}
                           >
                             {TYPE_KEYS.map((k) => <option key={k} value={k}>{SECTION_TYPES[k].full}</option>)}
@@ -9099,16 +9101,16 @@ export default function App() {
                             type="number" min="1"
                             value={target}
                             onChange={(e) => updateRow(r.id, { sec: e.target.value === "" ? null : Number(e.target.value) })}
-                            className="w-full text-[12px] text-center bg-stone-50 rounded-md px-1 py-1.5 tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-300"
+                            className="w-full text-[13px] text-center bg-stone-50 rounded-md px-1 py-1.5 tabular-nums focus:outline-none focus:ring-2 focus:ring-stone-300"
                             style={{ fontFamily: mono }}
                             title="このシーンの目安秒数"
                           />
                         </td>
                         <td className="align-top px-2 pt-2.5">
-                          <div className={"text-[12px] tabular-nums leading-tight whitespace-nowrap " + (over ? "text-red-500 font-bold" : chars ? "text-stone-800 font-semibold" : "text-stone-300")} style={{ fontFamily: mono }}>
+                          <div className={"text-[13px] tabular-nums leading-tight whitespace-nowrap " + (over ? "text-red-500 font-bold" : chars ? "text-stone-800 font-semibold" : "text-stone-300")} style={{ fontFamily: mono }}>
                             {chars ? fmt(dur) : "—"}
                           </div>
-                          <div className="text-[10px] text-stone-400 leading-tight mt-0.5" style={{ fontFamily: mono }}>{chars}字</div>
+                          <div className="text-[11px] text-stone-500 leading-tight mt-0.5" style={{ fontFamily: mono }}>{chars}字</div>
                         </td>
                         <td className="align-top p-0 border-l border-stone-100">
                           <ScriptCell value={r.script} onChange={(v) => updateRow(r.id, { script: v })} accent={theme.accent} />
@@ -9119,12 +9121,12 @@ export default function App() {
                 </tbody>
                 <tfoot>
                   <tr style={{ background: theme.main, color: mainText }}>
-                    <td className="px-3 py-2.5 text-[11px] tabular-nums" style={{ fontFamily: mono, opacity: 0.7 }}>{fmt(totalEst)}</td>
-                    <td className="px-3 py-2.5 text-[12px] font-bold tracking-wider">合計</td>
+                    <td className="px-3 py-2.5 text-[12px] tabular-nums" style={{ fontFamily: mono, opacity: 0.7 }}>{fmt(totalEst)}</td>
+                    <td className="px-3 py-2.5 text-[13px] font-bold tracking-wider">合計</td>
                     <td></td>
-                    <td className="px-1 py-2.5 text-center text-[12px] tabular-nums" style={{ fontFamily: mono, opacity: 0.7 }}>{totalTarget}</td>
-                    <td className="px-2 py-2.5 text-[13px] font-bold tabular-nums whitespace-nowrap" style={{ fontFamily: mono }}>{fmt(totalEst)}</td>
-                    <td className="px-3 py-2.5 text-[11px]" style={{ fontFamily: mono, opacity: 0.6 }}>{totalChars.toLocaleString()}字</td>
+                    <td className="px-1 py-2.5 text-center text-[13px] tabular-nums" style={{ fontFamily: mono, opacity: 0.7 }}>{totalTarget}</td>
+                    <td className="px-2 py-2.5 text-[14px] font-bold tabular-nums whitespace-nowrap" style={{ fontFamily: mono }}>{fmt(totalEst)}</td>
+                    <td className="px-3 py-2.5 text-[12px]" style={{ fontFamily: mono, opacity: 0.6 }}>{totalChars.toLocaleString()}字</td>
                   </tr>
                 </tfoot>
               </table>
@@ -9162,8 +9164,8 @@ export default function App() {
                 /* 撮影時刻＝「06:30 開始」（現実の時刻）。動画内TCしか無い時は「00:18 TC」と明示して尺と混同させない */
                 const startTimeEl = clocks[r.id] != null ? (
                   <span className="inline-flex items-baseline gap-1 whitespace-nowrap" title="撮影予定時刻（ロケ到着時刻＋尺の積み上げ）">
-                    <span className="text-[12px] tabular-nums font-medium" style={{ fontFamily: mono, color: "#59616C" }}>{fmtClock(clocks[r.id]).padStart(5, "0")}</span>
-                    <span className="text-[10px]" style={{ color: "#969CA5" }}>開始</span>
+                    <span className="text-[13px] tabular-nums font-medium" style={{ fontFamily: mono, color: "#59616C" }}>{fmtClock(clocks[r.id]).padStart(5, "0")}</span>
+                    <span className="text-[11px]" style={{ color: "#969CA5" }}>開始</span>
                   </span>
                 ) : (
                   <input
@@ -9172,18 +9174,18 @@ export default function App() {
                     draggable={false}
                     onBlur={(e) => { const v = e.target.value.trim(); updateRow(r.id, { tc: v === "" ? null : parseTC(v) }); }}
                     onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                    className="w-[46px] text-[12px] tabular-nums bg-transparent rounded px-0.5 focus:outline-none focus:bg-stone-50"
+                    className="w-[46px] text-[13px] tabular-nums bg-transparent rounded px-0.5 focus:outline-none focus:bg-stone-50"
                     style={{ fontFamily: mono, color: r.tc != null ? "#171A1F" : "#59616C", fontWeight: r.tc != null ? 700 : 500 }}
                     title="動画内の開始位置（TC）。手入力で固定、空欄で自動。撮影時刻はロケ見出しの時刻を入れると出ます" />
                 );
                 const startTimeWrap = clocks[r.id] != null ? startTimeEl : (
-                  <span className="inline-flex items-baseline gap-0.5 whitespace-nowrap">{startTimeEl}<span className="text-[10px]" style={{ color: "#969CA5" }}>TC</span></span>
+                  <span className="inline-flex items-baseline gap-0.5 whitespace-nowrap">{startTimeEl}<span className="text-[11px]" style={{ color: "#969CA5" }}>TC</span></span>
                 );
                 const pillEl = (
                   <span className="relative inline-flex items-center shrink-0 h-[22px] rounded-full border" style={{ background: hexA(t.dot, 0.09), borderColor: hexA(t.dot, 0.22) }}>
                     <span className="w-1.5 h-1.5 rounded-full ml-2.5 shrink-0" style={{ background: t.dot }} />
                     <select value={r.type} onChange={(e) => updateRow(r.id, { type: e.target.value, sec: null })}
-                      className="text-[11px] font-semibold bg-transparent pl-1.5 pr-4 h-full cursor-pointer focus:outline-none appearance-none" style={{ color: t.dot }}>
+                      className="text-[12px] font-semibold bg-transparent pl-1.5 pr-4 h-full cursor-pointer focus:outline-none appearance-none" style={{ color: t.dot }}>
                       {TYPE_KEYS.map((k) => <option key={k} value={k}>{k}</option>)}
                     </select>
                     <span className="pointer-events-none absolute right-1.5 text-[8px]" style={{ color: t.dot, opacity: 0.7 }}>▾</span>
@@ -9196,20 +9198,20 @@ export default function App() {
                       <input type="number" min="1" autoFocus defaultValue={target}
                         onBlur={(e) => { const v = e.target.value; updateRow(r.id, { sec: v === "" ? null : Number(v) }); setSecEdit(null); }}
                         onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") e.target.blur(); }}
-                        className="w-14 h-6 text-[12px] text-right rounded-md px-1 tabular-nums bg-white focus:outline-none"
+                        className="w-14 h-6 text-[13px] text-right rounded-md px-1 tabular-nums bg-white focus:outline-none"
                         style={{ fontFamily: mono, border: "1px solid rgba(74,145,235,0.45)", color: "#171A1F" }} title="秒で入力" />
                     ) : (
                       <button onClick={() => setSecEdit(r.id)} title={"動画内の想定尺 " + target + "秒（クリックで秒編集）"}
-                        className="text-[12px] font-semibold tabular-nums rounded px-1 -ml-1 hover:bg-stone-50 whitespace-nowrap" style={{ color: "#3F4650" }}>{fmtDurJP(target)}</button>
+                        className="text-[13px] font-semibold tabular-nums rounded px-1 -ml-1 hover:bg-stone-50 whitespace-nowrap" style={{ color: "#3F4650" }}>{fmtDurJP(target)}</button>
                     )}
                     {/* 撮影画面では文字数を出さない。実測は目安の1.5倍を超えた時だけ赤で知らせる。詳細モードだけ常時字数も出す */}
                     {over && (
-                      <span className="text-[10.5px] px-1 -ml-1 rounded whitespace-nowrap font-semibold" style={{ color: "#E04C4C", background: "#FFF0F0" }} title={"原稿量から実測 " + fmtDurJP(dur) + "（" + chars + "字）。目安の1.5倍超"}>
+                      <span className="text-[11.5px] px-1 -ml-1 rounded whitespace-nowrap font-semibold" style={{ color: "#E04C4C", background: "#FFF0F0" }} title={"原稿量から実測 " + fmtDurJP(dur) + "（" + chars + "字）。目安の1.5倍超"}>
                         実測 {fmtDurJP(dur)}
                       </span>
                     )}
                     {!over && scriptDensity === "detail" && chars > 0 && (
-                      <span className="text-[10.5px] px-1 -ml-1 whitespace-nowrap" style={{ color: "#A3A9B1" }}>{chars}字</span>
+                      <span className="text-[11.5px] px-1 -ml-1 whitespace-nowrap" style={{ color: "#A3A9B1" }}>{chars}字</span>
                     )}
                   </div>
                 );
@@ -9218,14 +9220,14 @@ export default function App() {
                 const titleEl = (
                   <div className="flex items-start gap-2 min-w-0">
                     <BufferedTextarea value={r.label} onChange={(v) => updateRow(r.id, { label: v })} rows={1} placeholder="シーンタイトル"
-                      className="block flex-1 min-w-0 resize-none bg-transparent text-[15px] focus:outline-none placeholder:text-stone-300 placeholder:font-normal"
+                      className="block flex-1 min-w-0 resize-none bg-transparent text-[15px] focus:outline-none placeholder:text-stone-400 placeholder:font-normal"
                       style={{ fontWeight: 650, color: "#171A1F", lineHeight: 1.35, textDecoration: sceneDone ? "line-through" : "none" }} />
                     {warnCount > 0 && (
-                      <span className="shrink-0 inline-flex items-center gap-0.5 text-[10.5px] font-bold px-1.5 h-[19px] rounded-full mt-[1px]" style={{ background: "#FEF3E2", color: "#B45309" }} title={warnCount + "件の要確認行（先方確定待ちなど）"}>
+                      <span className="shrink-0 inline-flex items-center gap-0.5 text-[11.5px] font-bold px-1.5 h-[19px] rounded-full mt-[1px]" style={{ background: "#FEF3E2", color: "#B45309" }} title={warnCount + "件の要確認行（先方確定待ちなど）"}>
                         ⚠{warnCount}
                       </span>
                     )}
-                    <span className="shrink-0 text-[11px] tabular-nums pt-[3px]" style={{ fontFamily: mono, color: "#A3A9B1" }}>#{pad2(sceneNos[r.id])}</span>
+                    <span className="shrink-0 text-[12px] tabular-nums pt-[3px]" style={{ fontFamily: mono, color: "#A3A9B1" }}>#{pad2(sceneNos[r.id])}</span>
                   </div>
                 );
                 const toggleShot = (line) => { const cur = r.insertChecks || {}; const nx = { ...cur }; if (nx[line]) delete nx[line]; else nx[line] = true; updateRow(r.id, { insertChecks: nx }); };
@@ -9251,7 +9253,7 @@ export default function App() {
                    ⚠要確認は密度に関わらずタイトル横のバッジ（warnCount）で必ず見えるので、ここで畳んでも見落とさない */
                 const scriptLinesForPreview = (r.script || "").split("\n").map((l) => l.trim()).filter(Boolean);
                 const compactPreviewEl = (
-                  <div className="text-[13.5px] leading-[1.6] truncate" style={{ color: scriptLinesForPreview[0] ? "#4A515B" : "#C6CBD1" }}>
+                  <div className="text-[14.5px] leading-[1.6] truncate" style={{ color: scriptLinesForPreview[0] ? "#4A515B" : "#9AA1AA" }}>
                     {scriptLinesForPreview[0] || "（原稿未入力）"}
                     {scriptLinesForPreview.length > 1 && <span style={{ color: "#B8BDC4" }}> ほか{scriptLinesForPreview.length - 1}行</span>}
                   </div>
@@ -9261,18 +9263,18 @@ export default function App() {
                   <div>
                     {scriptEl}
                     {isInsert && insertEdit === r.id && (
-                      <button onClick={() => setInsertEdit(null)} className="mt-1 ml-0 text-[11px] underline" style={{ color: "#626A75" }}>チェックリストに戻る</button>
+                      <button onClick={() => setInsertEdit(null)} className="mt-1 ml-0 text-[12px] underline" style={{ color: "#626A75" }}>チェックリストに戻る</button>
                     )}
                   </div>
                 ) : (
                   <div className="-mt-1">
                     <div className="rounded-lg border max-w-[560px]" style={{ borderColor: "rgba(17,24,39,0.08)", background: "#FFFFFF" }}>
                       <div className="flex items-center gap-2 px-3 h-8">
-                        <button onClick={() => toggleInsertCollapsed(r.id)} className="inline-flex items-center gap-1.5 text-[12px] font-semibold" style={{ color: t.dot }} title={collapsed ? "開く" : "畳む"}>
-                          <span className="text-[9px] inline-block transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}>▾</span>
+                        <button onClick={() => toggleInsertCollapsed(r.id)} className="inline-flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: t.dot }} title={collapsed ? "開く" : "畳む"}>
+                          <span className="text-[10.5px] inline-block transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}>▾</span>
                           インサート（{insertItems.length}）
                         </button>
-                        {doneN > 0 && <span className="text-[10.5px] tabular-nums" style={{ color: doneN === insertItems.length ? "#2E9E5B" : "#8C939D" }}>{doneN}/{insertItems.length} 撮影済</span>}
+                        {doneN > 0 && <span className="text-[11.5px] tabular-nums" style={{ color: doneN === insertItems.length ? "#2E9E5B" : "#8C939D" }}>{doneN}/{insertItems.length} 撮影済</span>}
                         <div className="flex-1" />
                         <button onClick={() => setInsertEdit(r.id)} title="カットの一覧を編集（1行＝1カット）" className="w-6 h-6 grid place-items-center rounded text-stone-300 hover:text-stone-600 hover:bg-stone-100 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
                       </div>
@@ -9286,7 +9288,7 @@ export default function App() {
                                   <input type="checkbox" checked={on}
                                     onChange={() => { const nx = { ...checks }; if (on) delete nx[l]; else nx[l] = true; updateRow(r.id, { insertChecks: nx }); }}
                                     className="mt-[3px] w-4 h-4 shrink-0 rounded accent-emerald-600 cursor-pointer" />
-                                  <span className="text-[13.5px] leading-[1.5]" style={{ color: on ? "#A3A9B1" : "#30353C", textDecoration: on ? "line-through" : "none" }}>{stripParen(l)}</span>
+                                  <span className="text-[14.5px] leading-[1.5]" style={{ color: on ? "#A3A9B1" : "#30353C", textDecoration: on ? "line-through" : "none" }}>{stripParen(l)}</span>
                                 </label>
                               </li>
                             );
@@ -9295,17 +9297,17 @@ export default function App() {
                       )}
                     </div>
                     {insertNotes.length > 0 && (
-                      <div className="mt-2 text-[13px] leading-[1.6] whitespace-pre-wrap" style={{ color: "#4A515B" }}>{insertNotes.join("\n")}</div>
+                      <div className="mt-2 text-[14px] leading-[1.6] whitespace-pre-wrap" style={{ color: "#4A515B" }}>{insertNotes.join("\n")}</div>
                     )}
                   </div>
                 );
                 const actionsEl = (
                   <div className="flex items-center justify-end gap-0.5">
                     <button onClick={() => updateRow(r.id, { done: !r.done })} title={r.done ? "撮影完了を取り消す" : "撮影完了にする"}
-                      className={"w-6 h-6 grid place-items-center rounded-md transition-opacity " + (r.done ? "bg-emerald-500 text-white" : "text-stone-300 hover:text-stone-500 hover:bg-stone-100 " + (isNarrow ? "" : "opacity-0 group-hover:opacity-100"))}>
+                      className={"w-6 h-6 grid place-items-center rounded-md transition-opacity " + (r.done ? "bg-emerald-500 text-white" : "text-stone-300 hover:text-stone-600 hover:bg-stone-100 " + (isNarrow ? "" : "opacity-0 group-hover:opacity-100"))}>
                       <Icon name="check" className="w-3.5 h-3.5" />
                     </button>
-                    <button onClick={openMenu} title="メニュー（上へ/下へ/追加/削除）" className="w-6 h-6 grid place-items-center rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 text-[15px] leading-none">⋮</button>
+                    <button onClick={openMenu} title="メニュー（上へ/下へ/追加/削除）" className="w-6 h-6 grid place-items-center rounded-md text-stone-500 hover:text-stone-700 hover:bg-stone-100 text-[15px] leading-none">⋮</button>
                   </div>
                 );
                 const timelineEl = (
@@ -9342,7 +9344,7 @@ export default function App() {
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap mb-2">
                           <div className="h-7 w-6 grid place-items-center cursor-grab active:cursor-grabbing select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">
-                            <Icon name="grip" className="w-3.5 h-3.5 text-stone-400" />
+                            <Icon name="grip" className="w-3.5 h-3.5 text-stone-500" />
                           </div>
                           {startTimeWrap}{pillEl}{durEl}
                           <div className="flex-1" />
@@ -9388,23 +9390,23 @@ export default function App() {
                             </span>
                             <div className="min-w-0 flex-1">
                               <BufferedInput value={sp.title} onChange={(v) => updateRow(r.id, { label: sp.prefix + v + sp.suffix })} placeholder="場所（例：名古屋｜ご自宅）"
-                                className="w-full bg-transparent text-[17px] leading-snug focus:outline-none placeholder:text-white/30"
+                                className="w-full bg-transparent text-[17px] leading-snug focus:outline-none placeholder:text-white/40"
                                 style={{ fontWeight: 700, color: mainText, textDecoration: r.done ? "line-through" : "none" }} />
-                              {sub && <div className="hidden sm:block text-[11.5px] leading-snug truncate" style={{ color: hexA(mainText, 0.6) }}>{sub}</div>}
+                              {sub && <div className="hidden sm:block text-[12px] leading-snug truncate" style={{ color: hexA(mainText, 0.6) }}>{sub}</div>}
                             </div>
                           </div>
                           <div className="flex items-center gap-3 shrink-0 ml-auto">
-                            <span className="hidden lg:inline text-[11.5px]" style={{ color: hexA(mainText, 0.55) }}>{lc ? lc.scenes.length : 0}シーン</span>
-                            <span className="inline-flex items-center gap-1 text-[12.5px] font-medium tabular-nums" style={{ fontFamily: mono, color: hexA(mainText, 0.8) }} title={"この章のシーン尺の合計" + (sp.suffix.trim() ? "　目標 " + sp.suffix.trim() : "")}>
+                            <span className="hidden lg:inline text-[12px]" style={{ color: hexA(mainText, 0.55) }}>{lc ? lc.scenes.length : 0}シーン</span>
+                            <span className="inline-flex items-center gap-1 text-[13px] font-medium tabular-nums" style={{ fontFamily: mono, color: hexA(mainText, 0.8) }} title={"この章のシーン尺の合計" + (sp.suffix.trim() ? "　目標 " + sp.suffix.trim() : "")}>
                               <Icon name="clock" className="w-3.5 h-3.5" />{fmt(lc ? lc.secSum : 0)}
                             </span>
                             <div className={"flex items-center gap-1.5 transition-opacity " + (isNarrow || r.time || r.done || maxDay > 1 ? "" : "opacity-0 group-hover/loc:opacity-100 focus-within:opacity-100")}>
                             {dayPickerEl(r, true)}
                             <input type="time" value={r.time || ""} onChange={(e) => updateRow(r.id, { time: e.target.value })} title="到着・開始予定時刻（香盤表と連動）"
-                              className="shrink-0 w-[66px] h-6 bg-transparent text-[11.5px] font-medium tabular-nums text-center rounded focus:outline-none focus:bg-[var(--hv)] appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                              className="shrink-0 w-[66px] h-6 bg-transparent text-[12.5px] font-medium tabular-nums text-center rounded focus:outline-none focus:bg-[var(--hv)] appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                               style={{ fontFamily: mono, color: r.time ? mainText : hexA(mainText, 0.4) }} />
                             <button onClick={() => updateRow(r.id, { done: !r.done })} title={r.done ? "撮影完了を取り消す" : "このロケを撮影完了にする"}
-                              className={"shrink-0 h-6 text-[11px] font-semibold px-2 rounded-md inline-flex items-center gap-1 " + (r.done ? "bg-emerald-400/20 text-emerald-300" : "hover:bg-[var(--hv)]")} style={r.done ? {} : { color: hexA(mainText, 0.7) }}>
+                              className={"shrink-0 h-6 text-[12px] font-semibold px-2 rounded-md inline-flex items-center gap-1 " + (r.done ? "bg-emerald-400/20 text-emerald-300" : "hover:bg-[var(--hv)]")} style={r.done ? {} : { color: hexA(mainText, 0.7) }}>
                               <Icon name={r.done ? "checkCircle" : "check"} className="w-3 h-3" />{r.done ? "撮影済" : "完了"}
                             </button>
                           </div>
@@ -9418,15 +9420,15 @@ export default function App() {
                         </div>
                       )}
                       {r && r.done && g.scenes.length > 0 && visibleScenes.length === 0 && (
-                        <div className="text-[11px] px-3 py-2" style={{ color: "#8C939D" }}>撮影済み・{g.scenes.length}シーンを畳んでいます</div>
+                        <div className="text-[12px] px-3 py-2" style={{ color: "#8C939D" }}>撮影済み・{g.scenes.length}シーンを畳んでいます</div>
                       )}
                     </div>
                   );
                 })}
                 {/* 合計 */}
-                <div className="flex items-center gap-3 px-3 py-2.5 mt-4 text-[11.5px] tabular-nums border-t" style={{ borderColor: BORDER, color: "#454B54", fontFamily: mono }}>
+                <div className="flex items-center gap-3 px-3 py-2.5 mt-4 text-[12.5px] tabular-nums border-t" style={{ borderColor: BORDER, color: "#454B54", fontFamily: mono }}>
                   <span className="font-semibold tracking-wider">合計</span>
-                  <span className="ml-auto text-[13px] font-semibold" style={{ color: "#171A1F" }}>{fmt(totalEst)}</span>
+                  <span className="ml-auto text-[14px] font-semibold" style={{ color: "#171A1F" }}>{fmt(totalEst)}</span>
                   <span style={{ color: "#8C939D" }}>{totalChars.toLocaleString()}字</span>
                 </div>
               </section>
@@ -9435,23 +9437,23 @@ export default function App() {
 
             {/* 追加：巨大CTAにしない。破線の1段 */}
             <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 h-11" style={{ border: "1px dashed rgba(17,24,39,0.12)" }}>
-              <span className="text-[12px] inline-flex items-center gap-1" style={{ color: "#626A75" }}><Icon name="plus" className="w-3.5 h-3.5" />シーンを追加</span>
+              <span className="text-[13px] inline-flex items-center gap-1" style={{ color: "#626A75" }}><Icon name="plus" className="w-3.5 h-3.5" />シーンを追加</span>
               {TYPE_KEYS.map((k) => (
                 <button key={k} onClick={() => setRows((rows) => [...rows, newScene(k)])}
-                  className="inline-flex items-center gap-1.5 h-[22px] px-2.5 rounded-full border text-[11px] font-semibold hover:opacity-80"
+                  className="inline-flex items-center gap-1.5 h-[22px] px-2.5 rounded-full border text-[12px] font-semibold hover:opacity-80"
                   style={{ background: hexA(SECTION_TYPES[k].dot, 0.09), borderColor: hexA(SECTION_TYPES[k].dot, 0.22), color: SECTION_TYPES[k].dot }}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: SECTION_TYPES[k].dot }} />{k}
                 </button>
               ))}
               <span className="w-px h-4 bg-stone-200 mx-1" />
               <button onClick={() => setRows((rows) => { const lastLoc = [...rows].reverse().find((x) => x.kind === "location"); const d = lastLoc ? dayOf(lastLoc) : 1; return [...rows, { ...newLocation(""), ...(d > 1 ? { day: d } : {}) }]; })}
-                className="text-[12px] inline-flex items-center gap-1 hover:text-stone-800" style={{ color: "#626A75" }}>
+                className="text-[13px] inline-flex items-center gap-1 hover:text-stone-800" style={{ color: "#626A75" }}>
                 <Icon name="pin" className="w-3.5 h-3.5" />場所を追加
               </button>
               <div className="flex-1" />
               <button
                 onClick={() => { if (window.confirm("この案件の構成をリセットして一日密着テンプレート（8ロケーション）に戻しますか？")) setProject((p) => ({ ...p, rows: templateRows() })); }}
-                className="text-[11px] text-stone-400 underline hover:text-red-400">
+                className="text-[12px] text-stone-500 underline hover:text-red-400">
                 テンプレートに戻す
               </button>
             </div>
@@ -9459,13 +9461,13 @@ export default function App() {
             {/* 凡例・操作ヒントはコンパクト時は隠す（撮影前に構成全体を見渡す用途なので、常時出す情報を減らす） */}
             {scriptDensity !== "compact" && (<>
             {/* 凡例：5種別の意味（初見でも分かる） */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 px-1 text-[10.5px]" style={{ color: "#656C76" }}>
+            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 px-1 text-[11.5px]" style={{ color: "#656C76" }}>
               {[["インサート", "情景・印象を伝えるカット"], ["VLOG", "日常の動き・行動の記録"], ["ブリッジ", "場や流れをつなぐ"], ["解説系", "インタビュー・説明・対話"], ["訴求", "メッセージ・結論・想い"]].map(([k, d]) => (
                 <span key={k} className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: SECTION_TYPES[k].dot }} />{k}：{d}</span>
               ))}
             </div>
 
-            <p className="mt-3 text-[10.5px] leading-relaxed" style={{ color: "#8C939D" }}>
+            <p className="mt-3 text-[11.5px] leading-relaxed" style={{ color: "#8C939D" }}>
               原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」で ◼︎ 質問行（Q.）／行頭に ⚠ で要確認行（先方確定待ちなど・共有前チェックに出ます）　／　行頭の⋮⋮をドラッグで並べ替え（場所は📍をドラッグで配下ごと移動）・右クリックでメニュー　／　尺（動画内の想定）はクリックで秒編集、目安の1.5倍を超えた時だけ実測を赤表示（{project.rate}字/秒換算）　／　インサートは1行＝1カット、チェックで撮影済み　／　場所の時刻＝香盤表と連動、各シーンは到着時刻＋尺の積み上げ　／　自動保存
             </p>
             </>)}
@@ -9480,16 +9482,16 @@ export default function App() {
               <div className="px-4 py-2.5 flex items-center justify-between border-b border-stone-100 flex-wrap gap-2">
                 <div className="flex items-center gap-2">
                   <span className="w-1.5 h-4 rounded-full" style={{ background: theme.accent }} />
-                  <h2 className="text-[12px] font-bold tracking-wider text-stone-600">香盤表 — 1日の流れ</h2>
+                  <h2 className="text-[13px] font-bold tracking-wider text-stone-600">香盤表 — 1日の流れ</h2>
                 </div>
-                <div className="text-[11px] text-stone-400" style={{ fontFamily: mono }}>
+                <div className="text-[12px] text-stone-500" style={{ fontFamily: mono }}>
                   {m.shootDate || "撮影日未設定"}{maxDay > 1 && <>・{maxDay}日撮影</>}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}・シーン尺 {fmt(totalTarget)}{totalTravel > 0 && <>・交通費 ¥{totalTravel.toLocaleString()}</>}
                 </div>
               </div>
 
               <div className="px-4 sm:px-6 py-5">
                 {locations.length === 0 && (
-                  <p className="text-sm text-stone-400 text-center py-8">構成台本タブでロケーションを追加すると、ここに1日の流れが表示されます。</p>
+                  <p className="text-sm text-stone-500 text-center py-8">構成台本タブでロケーションを追加すると、ここに1日の流れが表示されます。</p>
                 )}
 
                 {locations.map((loc, i) => (
@@ -9504,16 +9506,16 @@ export default function App() {
                         type="time"
                         value={loc.time}
                         onChange={(e) => updateRow(loc.id, { time: e.target.value })}
-                        className="bg-transparent text-[11px] sm:text-[14px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                        className="bg-transparent text-[12px] sm:text-[14px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                         style={{ fontFamily: mono, color: loc.done ? "#A8A29E" : theme.main, textDecoration: loc.done ? "line-through" : "none" }}
                         title="到着・開始予定時刻（最初のロケに時刻を入れると、以降は撮影尺から自動で連動）"
                       />
                       {!parseClock(loc.time) && clocks[loc.id] != null && (
-                        <span className="text-[10px] sm:text-[12px] tabular-nums text-stone-400 leading-none mt-0.5" style={{ fontFamily: mono }} title="前のロケ到着時刻＋撮影尺の積み上げから自動算出（目安）">
+                        <span className="text-[11px] sm:text-[13px] tabular-nums text-stone-500 leading-none mt-0.5" style={{ fontFamily: mono }} title="前のロケ到着時刻＋撮影尺の積み上げから自動算出（目安）">
                           ≈{fmtClock(clocks[loc.id])}
                         </span>
                       )}
-                      <div className="w-5 h-5 sm:w-7 sm:h-7 mt-1 rounded-full grid place-items-center font-bold text-[10px] sm:text-[12px] shadow-sm z-10 transition-colors"
+                      <div className="w-5 h-5 sm:w-7 sm:h-7 mt-1 rounded-full grid place-items-center font-bold text-[11px] sm:text-[13px] shadow-sm z-10 transition-colors"
                         style={{ background: loc.done ? "#A8A29E" : theme.accent, color: accentText, fontFamily: mono }}>
                         {loc.done ? <Icon name="check" className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> : (loc.noInDay || i + 1)}
                       </div>
@@ -9527,7 +9529,7 @@ export default function App() {
                     {i > 0 && dayStarts[loc.id] == null && (() => {
                       const prev = locations[i - 1];
                       if (samePlace(prev, loc)) return (
-                        <div className="mb-2 px-2.5 py-1 flex items-center gap-1.5 text-[10px] text-stone-300" title="前のロケと同じ住所のため移動なし（交通費の対象外）">
+                        <div className="mb-2 px-2.5 py-1 flex items-center gap-1.5 text-[11px] text-stone-300" title="前のロケと同じ住所のため移動なし（交通費の対象外）">
                           <Icon name="pin" className="w-3 h-3" />同じ場所（移動なし）
                         </div>
                       );
@@ -9537,31 +9539,31 @@ export default function App() {
                       const dq = loc.lat != null ? loc.lat + "," + loc.lng : (loc.address || "").trim();
                       const dirHref = oq && dq ? "https://www.google.com/maps/dir/?api=1&origin=" + encodeURIComponent(oq) + "&destination=" + encodeURIComponent(dq) : null;
                       return (
-                        <div className="mb-2 px-2.5 py-1.5 rounded-lg border border-dashed border-stone-200 bg-stone-50 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-stone-500">
-                          <span className="inline-flex items-center gap-1 font-bold text-stone-400 shrink-0"><Icon name="map" className="w-3.5 h-3.5" />移動</span>
+                        <div className="mb-2 px-2.5 py-1.5 rounded-lg border border-dashed border-stone-200 bg-stone-50 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-stone-600">
+                          <span className="inline-flex items-center gap-1 font-bold text-stone-500 shrink-0"><Icon name="map" className="w-3.5 h-3.5" />移動</span>
                           <span className="min-w-0 truncate" title={from + " → " + to}>{from} <span className="text-stone-300">→</span> {to}</span>
                           <span className="flex items-center gap-1.5 ml-auto">
                             <input
                               value={loc.travelBy || ""}
                               onChange={(e) => updateRow(loc.id, { travelBy: e.target.value })}
                               placeholder="電車・車など"
-                              className="w-[84px] bg-white border border-stone-200 rounded px-1.5 py-0.5 text-[11px] focus:outline-none placeholder:text-stone-300"
+                              className="w-[84px] bg-white border border-stone-200 rounded px-1.5 py-0.5 text-[12px] focus:outline-none placeholder:text-stone-400"
                             />
                             <span className="inline-flex items-center gap-0.5">
-                              <span className="text-stone-400">¥</span>
+                              <span className="text-stone-500">¥</span>
                               <input
                                 type="number" inputMode="numeric" min="0"
                                 value={loc.travelCost == null ? "" : loc.travelCost}
                                 onChange={(e) => updateRow(loc.id, { travelCost: e.target.value === "" ? null : Number(e.target.value) })}
                                 placeholder="0"
-                                className="w-[64px] bg-white border border-stone-200 rounded px-1.5 py-0.5 text-[11px] tabular-nums focus:outline-none placeholder:text-stone-300"
+                                className="w-[64px] bg-white border border-stone-200 rounded px-1.5 py-0.5 text-[12px] tabular-nums focus:outline-none placeholder:text-stone-400"
                                 style={{ fontFamily: mono }}
                                 title="この区間の交通費（片道の実費）"
                               />
                             </span>
                             {dirHref && (
                               <a href={dirHref} target="_blank" rel="noreferrer" title="Googleマップで経路を開く"
-                                 className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-stone-200 text-stone-500 hover:bg-white whitespace-nowrap">経路</a>
+                                 className="text-[11px] font-bold px-1.5 py-0.5 rounded border border-stone-200 text-stone-600 hover:bg-white whitespace-nowrap">経路</a>
                             )}
                           </span>
                         </div>
@@ -9570,7 +9572,7 @@ export default function App() {
                     <div className={"relative rounded-xl border overflow-visible transition-all duration-200 " + (loc.done ? "border-stone-200 bg-stone-100 opacity-60" : (loc.peak ? "border-2 bg-white shadow-md" : "border-stone-200 bg-white shadow-sm"))}
                       style={loc.peak && !loc.done ? { borderColor: theme.accent } : undefined}>
                       {loc.peak && !loc.done && (
-                        <span className="absolute -top-2.5 left-3 z-20 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm inline-flex items-center gap-0.5"
+                        <span className="absolute -top-2.5 left-3 z-20 text-[11px] font-bold px-2 py-0.5 rounded-full shadow-sm inline-flex items-center gap-0.5"
                           style={{ background: theme.accent, color: accentText }}>★ 山場</span>
                       )}
                       <div className={"flex items-stretch overflow-hidden " + (loc.peak ? "rounded-t-[10px]" : "rounded-t-xl")} style={{ background: theme.main, filter: loc.done ? "grayscale(1)" : "none" }}>
@@ -9594,20 +9596,20 @@ export default function App() {
                         <button
                           onClick={() => updateRow(loc.id, { done: !loc.done })}
                           title={loc.done ? "撮影完了を取り消す" : "このロケの撮影を完了にして畳む"}
-                          className={"shrink-0 self-center text-[11px] font-bold px-2.5 py-1.5 my-1 rounded-md whitespace-nowrap transition-colors " + (loc.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
+                          className={"shrink-0 self-center text-[12px] font-bold px-2.5 py-1.5 my-1 rounded-md whitespace-nowrap transition-colors " + (loc.done ? "bg-white/15 hover:bg-white/25 text-white/80" : "bg-white text-stone-700 hover:bg-stone-100 shadow-sm")}>
                           {loc.done
                             ? <span className="inline-flex items-center gap-1"><Icon name="undo" className="w-3.5 h-3.5" />戻す</span>
                             : <span className="inline-flex items-center gap-1"><Icon name="check" className="w-3.5 h-3.5" /><span className="sm:hidden">完了</span><span className="hidden sm:inline">撮影完了</span></span>}
                         </button>
                         <div className="hidden sm:flex items-center gap-0.5 pr-2 opacity-0 group-hover/loc:opacity-100 transition-opacity">
-                          <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと上へ" onClick={() => moveLocationBlock(loc.id, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
-                          <button className="w-6 h-6 grid place-items-center rounded text-[11px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと下へ" onClick={() => moveLocationBlock(loc.id, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
+                          <button className="w-6 h-6 grid place-items-center rounded text-[12px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと上へ" onClick={() => moveLocationBlock(loc.id, -1)}><Icon name="up" className="w-3.5 h-3.5" /></button>
+                          <button className="w-6 h-6 grid place-items-center rounded text-[12px] hover:bg-white/15" style={{ color: mainText }} title="ロケーションごと下へ" onClick={() => moveLocationBlock(loc.id, 1)}><Icon name="down" className="w-3.5 h-3.5" /></button>
                         </div>
                       </div>
 
                       {loc.done ? (
                         /* 完了時：グレーアウト＆縮小（1行サマリ） */
-                        <div className="px-3 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-stone-400 min-w-0" style={{ fontFamily: mono }}>
+                        <div className="px-3 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-stone-500 min-w-0" style={{ fontFamily: mono }}>
                           <span className="font-bold text-emerald-600 inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />撮影完了</span>
                           <span>{loc.scenes.length}シーン</span>
                           <span className="ml-auto whitespace-nowrap">想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}</span>
@@ -9616,33 +9618,33 @@ export default function App() {
                         <>
                           <div className="grid sm:grid-cols-2 border-b border-stone-200/70 bg-white">
                             <div className="flex items-center sm:border-r border-stone-100">
-                              <span className="pl-3 pr-1 shrink-0 text-stone-400"><Icon name="pin" className="w-3.5 h-3.5" /></span>
+                              <span className="pl-3 pr-1 shrink-0 text-stone-500"><Icon name="pin" className="w-3.5 h-3.5" /></span>
                               <AddressField loc={loc} onChange={(patch) => updateRow(loc.id, patch)} />
                             </div>
                             <div className="flex items-center border-t sm:border-t-0 border-stone-100">
-                              <span className="pl-3 pr-1 shrink-0 text-stone-400"><Icon name="note" className="w-3.5 h-3.5" /></span>
+                              <span className="pl-3 pr-1 shrink-0 text-stone-500"><Icon name="note" className="w-3.5 h-3.5" /></span>
                               <input
                                 value={loc.note}
                                 onChange={(e) => updateRow(loc.id, { note: e.target.value })}
                                 placeholder="メモ（駐車場・許可・持ち物など）"
-                                className="block w-full bg-transparent text-[12px] px-1 py-2 focus:outline-none placeholder:text-stone-300"
+                                className="block w-full bg-transparent text-[13px] px-1 py-2 focus:outline-none placeholder:text-stone-400"
                               />
                             </div>
                           </div>
 
                           {/* シーンチップ */}
                           <div className="px-3 py-2.5 flex flex-wrap items-center gap-1.5">
-                            {loc.scenes.length === 0 && <span className="text-[11px] text-stone-300">シーンなし</span>}
+                            {loc.scenes.length === 0 && <span className="text-[12px] text-stone-300">シーンなし</span>}
                             {loc.scenes.map((s) => {
                               const st = SECTION_TYPES[s.type];
                               return (
-                                <span key={s.id} className="text-[10px] font-bold px-2 py-1 rounded-full"
+                                <span key={s.id} className="text-[11px] font-bold px-2 py-1 rounded-full"
                                   style={{ background: st.bg, color: st.color }}>
                                   {s.label || st.full}
                                 </span>
                               );
                             })}
-                            <span className="ml-auto text-[10px] text-stone-400 whitespace-nowrap" style={{ fontFamily: mono }}>
+                            <span className="ml-auto text-[11px] text-stone-500 whitespace-nowrap" style={{ fontFamily: mono }}>
                               {loc.scenes.length}シーン / 想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}
                             </span>
                           </div>
@@ -9655,7 +9657,7 @@ export default function App() {
                 ))}
               </div>
             </section>
-            <p className="text-[11px] text-stone-400 leading-relaxed">
+            <p className="text-[12px] text-stone-500 leading-relaxed">
               時刻・住所・メモはこの画面で入力（構成台本と自動で連動）　／　ロケ間の「移動」行に手段・交通費を入れると合計が上に出ます（共有ページにも表示）　／　↑↓でロケーションごと順番を入れ替え（配下のシーンも一緒に動きます）　／　右上のボタンで香盤表だけをスプシ用にコピーできます
             </p>
           </>
@@ -9665,11 +9667,11 @@ export default function App() {
         {tab === "plan" && (
           <>
             <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
-              <p className="text-[12px] text-stone-500 leading-relaxed max-w-2xl">
+              <p className="text-[13px] text-stone-600 leading-relaxed max-w-2xl">
                 <span className="font-bold">「{curChannel}」の企画一覧</span>。1つの企画＝1本の動画＝1案件です。行をクリックすると参考サムネを展開、<span className="font-bold">「構成台本へ→」</span>でその企画の台本を書けます。
               </p>
               <button onClick={addBoardCase}
-                className="shrink-0 text-[11px] font-bold px-3 py-2 rounded-lg shadow inline-flex items-center gap-1"
+                className="shrink-0 text-[12px] font-bold px-3 py-2 rounded-lg shadow inline-flex items-center gap-1"
                 style={{ background: theme.accent, color: accentText }}>
                 <Icon name="plus" className="w-3.5 h-3.5" />企画を追加
               </button>
@@ -9692,42 +9694,42 @@ export default function App() {
                     <div className="flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-stone-50" onClick={() => openBoardCase(entry.id)}>
                       <div className="shrink-0 flex flex-col -my-1" onClick={(e) => e.stopPropagation()}>
                         <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, -1); }} disabled={pi === 0} title="この企画を上へ"
-                          className="w-4 h-4 grid place-items-center rounded text-stone-400 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="up" className="w-3 h-3" /></button>
+                          className="w-4 h-4 grid place-items-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="up" className="w-3 h-3" /></button>
                         <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, 1); }} disabled={pi === boardCases.length - 1} title="この企画を下へ"
-                          className="w-4 h-4 grid place-items-center rounded text-stone-400 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="down" className="w-3 h-3" /></button>
+                          className="w-4 h-4 grid place-items-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="down" className="w-3 h-3" /></button>
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); openBoardCase(entry.id); }} title={expanded ? "畳む" : "参考サムネを開く"}
-                        className="shrink-0 w-6 h-6 grid place-items-center rounded-lg text-[11px] font-bold tabular-nums"
+                        className="shrink-0 w-6 h-6 grid place-items-center rounded-lg text-[12px] font-bold tabular-nums"
                         style={{ background: isActive ? theme.accent : "#f5f5f4", color: isActive ? accentText : "#78716c" }}>
                         #{pi + 1}
                       </button>
                       {firstVid
                         ? <img src={"https://img.youtube.com/vi/" + firstVid + "/default.jpg"} alt="" className="shrink-0 w-12 h-7 object-cover rounded" />
-                        : <div className="shrink-0 w-12 h-7 rounded bg-stone-100 grid place-items-center text-[10px] text-stone-300"><Icon name="image" className="w-3.5 h-3.5" /></div>}
+                        : <div className="shrink-0 w-12 h-7 rounded bg-stone-100 grid place-items-center text-[11px] text-stone-300"><Icon name="image" className="w-3.5 h-3.5" /></div>}
                       {data ? (
                         <input value={title} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "title", e.target.value)}
                           placeholder={"タイトル案（例：30歳で会社を捨てた男の末路）"}
-                          className="flex-1 min-w-0 text-[13px] font-bold bg-transparent border-0 border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1" />
+                          className="flex-1 min-w-0 text-[14px] font-bold bg-transparent border-0 border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1" />
                       ) : brokenIds[entry.id] ? (
-                        <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-rose-500">{entry.name}（本体データ無し → 右のゴミ箱で削除）</span>
-                      ) : <span className="flex-1 min-w-0 truncate text-[13px] font-bold text-stone-400">{entry.name}（読み込み中…）</span>}
+                        <span className="flex-1 min-w-0 truncate text-[14px] font-bold text-rose-500">{entry.name}（本体データ無し → 右のゴミ箱で削除）</span>
+                      ) : <span className="flex-1 min-w-0 truncate text-[14px] font-bold text-stone-500">{entry.name}（読み込み中…）</span>}
                       {data && (
                         <div className="hidden md:flex flex-col gap-1 w-44 shrink-0 -my-0.5" onClick={(e) => e.stopPropagation()}>
                           <input value={thumbText} onChange={(e) => updateBoardTitle(entry.id, "thumbText", e.target.value)}
                             placeholder="サムネ文言①"
-                            className="w-full text-[12px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
+                            className="w-full text-[13px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
                           <input value={thumbText2} onChange={(e) => updateBoardTitle(entry.id, "thumbText2", e.target.value)}
                             placeholder="サムネ文言②"
-                            className="w-full text-[12px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
+                            className="w-full text-[13px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
                         </div>
                       )}
                       <button onClick={(e) => { e.stopPropagation(); goScript(entry.id); }} title="この企画の構成台本を書く"
-                        className="shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white" style={{ background: theme.main }}>
+                        className="shrink-0 text-[12px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white" style={{ background: theme.main }}>
                         <Icon name="file" className="w-3.5 h-3.5" /><span className="hidden sm:inline">構成台本へ</span> →
                       </button>
                       <button onClick={(e) => { e.stopPropagation(); deleteBoardCase(entry.id); }} title="この企画（案件）を削除"
-                        className="shrink-0 w-7 h-7 rounded-lg grid place-items-center text-stone-400 hover:bg-red-50 hover:text-red-500"><Icon name="trash" className="w-3.5 h-3.5" /></button>
-                      <span className="shrink-0 w-4 text-center text-[10px] text-stone-400 transition-transform" style={{ transform: expanded ? "none" : "rotate(-90deg)" }}>▾</span>
+                        className="shrink-0 w-7 h-7 rounded-lg grid place-items-center text-stone-500 hover:bg-red-50 hover:text-red-500"><Icon name="trash" className="w-3.5 h-3.5" /></button>
+                      <span className="shrink-0 w-4 text-center text-[11px] text-stone-500 transition-transform" style={{ transform: expanded ? "none" : "rotate(-90deg)" }}>▾</span>
                     </div>
 
                     {/* 折り畳み時：参考サムネを横並びで一覧表示（サムネ君風・クリックで展開して編集） */}
@@ -9742,10 +9744,10 @@ export default function App() {
                               <div key={ri} className="shrink-0 w-48">
                                 <div className="relative">
                                   <img src={"https://img.youtube.com/vi/" + rf.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover rounded-md border border-stone-200" />
-                                  {sc && <span className="absolute top-1 left-1 text-[10px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
-                                  {sc && <span className="absolute top-1 right-1 text-[10px] font-bold text-white bg-black/70 px-1.5 py-0.5 rounded" style={{ fontFamily: mono }}>{sc.ratioStr}</span>}
+                                  {sc && <span className="absolute top-1 left-1 text-[11px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
+                                  {sc && <span className="absolute top-1 right-1 text-[11px] font-bold text-white bg-black/70 px-1.5 py-0.5 rounded" style={{ fontFamily: mono }}>{sc.ratioStr}</span>}
                                 </div>
-                                <div className="text-[10px] font-bold leading-tight mt-1 line-clamp-2 text-stone-600">{rf.title}</div>
+                                <div className="text-[11px] font-bold leading-tight mt-1 line-clamp-2 text-stone-600">{rf.title}</div>
                               </div>
                             );
                           })}
@@ -9755,9 +9757,9 @@ export default function App() {
 
                     {/* 旧データ：複数企画案を持つ案件 → 分割導線 */}
                     {hasMulti && (
-                      <div className="mx-2.5 mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-center justify-between gap-2">
+                      <div className="mx-2.5 mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800 flex items-center justify-between gap-2">
                         <span>この案件には企画案が<span className="font-bold">{data.plans.length}件</span>入っています。1企画＝1案件にするには分けてください。</span>
-                        <button onClick={() => splitExtraPlans(entry.id)} className="shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600">別々の案件に分ける</button>
+                        <button onClick={() => splitExtraPlans(entry.id)} className="shrink-0 text-[12px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600">別々の案件に分ける</button>
                       </div>
                     )}
 
@@ -9766,30 +9768,30 @@ export default function App() {
                       const pl = project.plans[0];
                       return (
                         <div className="px-3 pb-3 pt-1 border-t border-stone-100">
-                          <div className="text-[11px] font-bold text-stone-500 mb-2">参考サムネ・動画（5本まで）</div>
+                          <div className="text-[12px] font-bold text-stone-600 mb-2">参考サムネ・動画（5本まで）</div>
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                             {pl.refs.map((rf, ri) => {
                               const busy = refBusy[pl.id + ":" + ri];
                               const sc = rf.uploadDate ? scoreVideo(rf, Date.now()) : null;
                               return (
                                 <div key={ri} className="border border-stone-200 rounded-xl overflow-hidden flex flex-col bg-stone-50/50">
-                                  <div className="px-2 pt-1.5 text-[9px] font-bold text-stone-400">参考 {ri + 1}</div>
+                                  <div className="px-2 pt-1.5 text-[10.5px] font-bold text-stone-500">参考 {ri + 1}</div>
                                   {busy ? (
                                     <div className="aspect-video mx-2 my-1 rounded-lg bg-stone-200 animate-pulse" />
                                   ) : rf.vid ? (
                                     <a href={"https://www.youtube.com/watch?v=" + rf.vid} target="_blank" rel="noreferrer" className="block relative mx-2 mt-1">
                                       <img src={"https://img.youtube.com/vi/" + rf.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover rounded-lg" />
-                                      {rf.duration && <span className="absolute bottom-1 right-1 text-[9px] font-bold text-white bg-black/75 px-1 rounded" style={{ fontFamily: mono }}>{rf.duration}</span>}
-                                      {sc && <span className="absolute top-1 left-1 text-[10px] font-bold text-white px-1.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
+                                      {rf.duration && <span className="absolute bottom-1 right-1 text-[10.5px] font-bold text-white bg-black/75 px-1 rounded" style={{ fontFamily: mono }}>{rf.duration}</span>}
+                                      {sc && <span className="absolute top-1 left-1 text-[11px] font-bold text-white px-1.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
                                     </a>
                                   ) : (
-                                    <div className="aspect-video mx-2 my-1 rounded-lg border border-dashed border-stone-300 grid place-items-center text-[9px] text-stone-300">URLを貼る</div>
+                                    <div className="aspect-video mx-2 my-1 rounded-lg border border-dashed border-stone-300 grid place-items-center text-[10.5px] text-stone-300">URLを貼る</div>
                                   )}
                                   {rf.vid && (
                                     <div className="px-2 pt-1">
-                                      <div className="text-[10px] font-bold text-stone-700 leading-snug line-clamp-2" title={rf.title}>{rf.title}</div>
-                                      <div className="text-[9px] text-stone-400 truncate" title={rf.channel}>{rf.channel}</div>
-                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[9px] text-stone-500 mt-0.5" style={{ fontFamily: mono }}>
+                                      <div className="text-[11px] font-bold text-stone-700 leading-snug line-clamp-2" title={rf.title}>{rf.title}</div>
+                                      <div className="text-[10.5px] text-stone-500 truncate" title={rf.channel}>{rf.channel}</div>
+                                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10.5px] text-stone-600 mt-0.5" style={{ fontFamily: mono }}>
                                         <span title="再生数">▶ {fmtNum(rf.views)}</span>
                                         <span title="登録者数">👤 {fmtNum(rf.subs)}</span>
                                         {sc && <span className="font-bold" style={{ color: GRADE_COLOR[sc.grade] }} title="再生数÷登録者数（バズ倍率）">{sc.ratioStr}</span>}
@@ -9803,7 +9805,7 @@ export default function App() {
                                       placeholder="YouTube URL"
                                       onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== rf.url) fetchPlanRef(pl.id, ri, v); else if (!v && rf.url) updatePlanRef(pl.id, ri, emptyRef()); }}
                                       onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                                      className="w-full text-[9px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
+                                      className="w-full text-[10.5px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
                                   </div>
                                 </div>
                               );
@@ -9819,10 +9821,10 @@ export default function App() {
             </div>
 
             <button onClick={addBoardCase}
-              className="mt-2 text-xs font-bold px-4 py-2.5 rounded-lg border border-dashed border-stone-300 hover:bg-white inline-flex items-center gap-1.5 w-full justify-center text-stone-500">
+              className="mt-2 text-xs font-bold px-4 py-2.5 rounded-lg border border-dashed border-stone-300 hover:bg-white inline-flex items-center gap-1.5 w-full justify-center text-stone-600">
               <Icon name="plus" className="w-4 h-4" />このチャンネルに企画（案件）を追加
             </button>
-            <p className="text-[11px] text-stone-400 leading-relaxed mt-2">
+            <p className="text-[12px] text-stone-500 leading-relaxed mt-2">
               評価は<span className="font-bold">再生数 ÷ 登録者数</span>（バズ倍率）と投稿の新しさから自動算出（S＝5倍以上 / A＝3倍 / B＝等倍 / C＝それ未満）。各企画は別々の案件として保存され、ログインすればクラウド同期されます。
             </p>
           </>
@@ -9835,26 +9837,26 @@ export default function App() {
             <div className="mb-4 rounded-2xl border border-stone-200 bg-white px-5 py-4 shadow-sm">
               <div className="flex items-center gap-1.5 mb-1">
                 <Icon name="sparkle" className="w-4 h-4 shrink-0" style={{ color: theme.accent }} />
-                <span className="text-[13px] font-bold text-stone-800">文字起こしから構成を作る</span>
+                <span className="text-[14px] font-bold text-stone-800">文字起こしから構成を作る</span>
               </div>
-              <p className="text-[11.5px] text-stone-500 mb-2 leading-relaxed">
+              <p className="text-[12.5px] text-stone-600 mb-2 leading-relaxed">
                 ①でロケ・時刻・シーンの型だけの骨組みを作ります（原稿はまだ空）。構成台本タブで並び順を確認・手直ししたら、②で同じ文字起こしからQ&A原稿を書き込みます。ここまでで8割、仕上げは構成台本タブで。
               </p>
               <BufferedTextarea value={project.transcriptRaw || ""} onChange={setTranscriptRaw}
                 placeholder="ここに文字起こし・取材メモを貼り付け…" rows={6}
-                className="w-full text-[12.5px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y placeholder:text-stone-300" />
+                className="w-full text-[13.5px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y placeholder:text-stone-400" />
               <div className="mt-2.5 flex items-center gap-2 flex-wrap">
                 <button onClick={runSkeletonGenerate} disabled={!((project.transcriptRaw || "").trim()) || transcriptBusy}
-                  className="text-[12px] font-bold px-3.5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1.5"
+                  className="text-[13px] font-bold px-3.5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1.5"
                   style={{ background: theme.accent, color: accentText }}>
                   {transcriptStep === "skeleton" ? "生成中…" : "① 骨組みを作る"}
                 </button>
                 <button onClick={runFillQa} disabled={!((project.transcriptRaw || "").trim()) || !(project.rows || []).length || transcriptBusy}
                   title={!(project.rows || []).length ? "先に①で骨組みを作ってください" : ""}
-                  className="text-[12px] font-bold px-3.5 py-2 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 disabled:opacity-40 inline-flex items-center gap-1.5">
+                  className="text-[13px] font-bold px-3.5 py-2 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 disabled:opacity-40 inline-flex items-center gap-1.5">
                   {transcriptStep === "fillqa" ? "書き込み中…" : "② Q&A原稿を書き込む"}
                 </button>
-                {transcriptBusy && <span className="text-[11px] text-stone-400">少し時間がかかります…</span>}
+                {transcriptBusy && <span className="text-[12px] text-stone-500">少し時間がかかります…</span>}
               </div>
             </div>
           <div className="space-y-5">
@@ -9862,27 +9864,27 @@ export default function App() {
                「質問(Q)＋回答」のカードに分解し、本文幅を760pxに制限・文字を大きく・行間1.7に。
                長文を横幅いっぱいに流さない／全部同じ文字サイズにしない／罫線で区切らない、が方針 */}
             <div className="flex items-start justify-between gap-3 flex-wrap">
-              <p className="text-[13px] text-stone-500 leading-relaxed max-w-[760px]">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold text-stone-700">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
-              <button onClick={resetHearing} className="shrink-0 text-[11px] font-bold text-stone-400 hover:text-stone-600 underline">初期テンプレに戻す</button>
+              <p className="text-[14px] text-stone-600 leading-relaxed max-w-[760px]">撮影前に演者のことを聞き取るシート。ここを埋めると<span className="font-bold text-stone-700">構成台本のネタ元</span>になります。「🤖 AIに読ませる用リンク」で渡せば、この内容から構成案を作らせられます。</p>
+              <button onClick={resetHearing} className="shrink-0 text-[12px] font-bold text-stone-500 hover:text-stone-600 underline">初期テンプレに戻す</button>
             </div>
             <button onClick={() => setHearingImport({ raw: "" })}
-              className="w-full rounded-xl border border-dashed p-3.5 text-[13px] font-bold inline-flex items-center justify-center gap-2 transition-colors hover:bg-stone-50"
+              className="w-full rounded-xl border border-dashed p-3.5 text-[14px] font-bold inline-flex items-center justify-center gap-2 transition-colors hover:bg-stone-50"
               style={{ borderColor: theme.accent, color: theme.accent }}>
               <Icon name="sparkle" className="w-4 h-4" />文字起こしを貼ってAIに自動でまとめてもらう
             </button>
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] text-stone-400">GPT等に渡す：</span>
-              <button onClick={copyHearingForAI} className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+              <span className="text-[12px] text-stone-500">GPT等に渡す：</span>
+              <button onClick={copyHearingForAI} className="text-[13px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
                 <Icon name="sparkle" className="w-3.5 h-3.5" />GPT用にコピー
               </button>
-              <button onClick={exportHearingCSV} className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+              <button onClick={exportHearingCSV} className="text-[13px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
                 <Icon name="download" className="w-3.5 h-3.5" />CSVで書き出し
               </button>
             </div>
             {/* スマホ用の横型目次（デスクトップは右に固定目次） */}
             <aside className="relative w-full lg:hidden" aria-label="取材メモの目次">
               <nav className="flex flex-wrap items-center gap-1.5 min-h-7 py-0.5">
-                <span className="text-[9px] font-bold tracking-widest text-stone-300 mr-1">目次</span>
+                <span className="text-[10.5px] font-bold tracking-widest text-stone-300 mr-1">目次</span>
                   {(project.hearing || []).map((sec, si) => {
                     const active = hearingTocActive === sec.id;
                     const lineWidth = 18 + ((si * 11) % 23);
@@ -9894,7 +9896,7 @@ export default function App() {
                         <span className="block h-[3px] rounded-full transition-all"
                           style={{ width: lineWidth, backgroundColor: active ? theme.accent : "#c9c9c7" }} />
                         <span role="tooltip"
-                          className="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-stone-800 px-2 py-1 text-[10px] font-bold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                          className="pointer-events-none absolute left-1/2 top-full z-30 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md bg-stone-800 px-2 py-1 text-[11px] font-bold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                           {si + 1}. {sec.title || "無題のセクション"}
                         </span>
                       </button>
@@ -9912,8 +9914,8 @@ export default function App() {
                       <div className="flex items-center gap-2.5 mb-3">
                         <span className="shrink-0 w-9 h-9 rounded-xl grid place-items-center bg-stone-100 text-stone-600"><Icon name="note" className="w-[18px] h-[18px]" /></span>
                         <input value={sec.title} onChange={(e) => setHearingTitle(sec.id, e.target.value)} placeholder="セクション名"
-                          className="flex-1 min-w-0 text-[19px] font-bold text-stone-800 bg-transparent focus:outline-none leading-tight placeholder:text-stone-300" />
-                        <span className="shrink-0 text-[11px] font-bold tabular-nums px-2 py-0.5 rounded-md" style={filled === sec.items.length && sec.items.length ? { background: "#F0FBF4", color: "#2E9E5B" } : { background: "#F4F4F3", color: "#8A8A86" }}>{filled}/{sec.items.length}</span>
+                          className="flex-1 min-w-0 text-[19px] font-bold text-stone-800 bg-transparent focus:outline-none leading-tight placeholder:text-stone-400" />
+                        <span className="shrink-0 text-[12px] font-bold tabular-nums px-2 py-0.5 rounded-md" style={filled === sec.items.length && sec.items.length ? { background: "#F0FBF4", color: "#2E9E5B" } : { background: "#F4F4F3", color: "#8A8A86" }}>{filled}/{sec.items.length}</span>
                         <button onClick={() => removeHearingSection(sec.id)} title="セクション削除" className="shrink-0 opacity-0 group-hover/sec:opacity-100 text-stone-300 hover:text-rose-500 transition-opacity"><Icon name="trash" className="w-4 h-4" /></button>
                       </div>
                       <div className="space-y-3">
@@ -9925,8 +9927,8 @@ export default function App() {
                               <span className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-[15px] font-black leading-none" style={{ background: "#FFF1F3", color: "#EF4055" }}>Q</span>
                               <div className="flex-1 min-w-0 max-w-[760px] pt-1">
                                 <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)} placeholder="質問・項目名"
-                                  className="w-full text-[15.5px] font-bold text-stone-800 bg-transparent focus:outline-none leading-snug placeholder:text-stone-300" />
-                                {it.hint && <div className="mt-1 text-[12px] text-stone-400 leading-relaxed whitespace-pre-wrap break-words">{it.hint}</div>}
+                                  className="w-full text-[15.5px] font-bold text-stone-800 bg-transparent focus:outline-none leading-snug placeholder:text-stone-400" />
+                                {it.hint && <div className="mt-1 text-[13px] text-stone-500 leading-relaxed whitespace-pre-wrap break-words">{it.hint}</div>}
                               </div>
                               <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500 transition-opacity"><Icon name="close" className="w-4 h-4" /></button>
                             </div>
@@ -9942,16 +9944,16 @@ export default function App() {
                           </div>
                         ))}
                       </div>
-                      <button onClick={() => addHearingItem(sec.id)} className="mt-3 text-[12px] font-bold text-stone-400 hover:text-stone-700 inline-flex items-center gap-1 transition-colors"><Icon name="plus" className="w-3.5 h-3.5" />項目を追加</button>
+                      <button onClick={() => addHearingItem(sec.id)} className="mt-3 text-[13px] font-bold text-stone-500 hover:text-stone-700 inline-flex items-center gap-1 transition-colors"><Icon name="plus" className="w-3.5 h-3.5" />項目を追加</button>
                     </section>
                   );
                 })}
-                <button onClick={addHearingSection} className="text-[13px] font-bold text-stone-500 hover:text-stone-800 inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 hover:border-stone-400 px-4 py-3 w-full justify-center transition-colors"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
+                <button onClick={addHearingSection} className="text-[14px] font-bold text-stone-600 hover:text-stone-800 inline-flex items-center gap-1.5 rounded-xl border border-dashed border-stone-300 hover:border-stone-400 px-4 py-3 w-full justify-center transition-colors"><Icon name="plus" className="w-4 h-4" />セクションを追加</button>
               </div>
               {/* デスクトップ右固定の目次（セクション→該当位置へ） */}
               <aside className="hidden lg:block sticky top-24" aria-label="取材メモの目次">
                 <div className="rounded-xl border border-stone-200 p-3" style={{ background: "#FAFAFA" }}>
-                  <div className="text-[10px] font-bold tracking-widest text-stone-400 mb-1.5 px-1.5">目次</div>
+                  <div className="text-[11px] font-bold tracking-widest text-stone-500 mb-1.5 px-1.5">目次</div>
                   <div className="space-y-0.5">
                     {(project.hearing || []).map((sec, si) => {
                       const active = hearingTocActive === sec.id;
@@ -9959,10 +9961,10 @@ export default function App() {
                       return (
                         <button key={sec.id}
                           onClick={() => { setHearingTocActive(sec.id); jumpToHearing("hearing-sec-" + sec.id); }}
-                          className={"w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12.5px] leading-snug transition-colors " + (active ? "bg-white shadow-sm text-stone-800 font-bold" : "text-stone-600 hover:bg-white hover:text-stone-800")}>
-                          <span className="shrink-0 w-5 h-5 rounded-md grid place-items-center text-[10px] font-bold tabular-nums" style={active ? { background: theme.accent, color: accentText } : { background: "#ECECEA", color: "#6B6B68" }}>{si + 1}</span>
+                          className={"w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13.5px] leading-snug transition-colors " + (active ? "bg-white shadow-sm text-stone-800 font-bold" : "text-stone-600 hover:bg-white hover:text-stone-800")}>
+                          <span className="shrink-0 w-5 h-5 rounded-md grid place-items-center text-[11px] font-bold tabular-nums" style={active ? { background: theme.accent, color: accentText } : { background: "#ECECEA", color: "#6B6B68" }}>{si + 1}</span>
                           <span className="flex-1 min-w-0 truncate">{sec.title || "無題のセクション"}</span>
-                          <span className="shrink-0 text-[10px] tabular-nums text-stone-400">{filled}/{sec.items.length}</span>
+                          <span className="shrink-0 text-[11px] tabular-nums text-stone-500">{filled}/{sec.items.length}</span>
                         </button>
                       );
                     })}
@@ -9974,7 +9976,7 @@ export default function App() {
           <div className="mt-8 pt-6 border-t border-stone-200">
             {/* 1枚のページにする（AK 2026-09-08）。聞き取りシートと13の質問はどちらも構成前のメモで、
                 切替タブに分けると「もう片方に何を書いたか」を思い出しながら書くことになる。上から続けて書く。 */}
-            <h2 className="text-[13px] font-bold text-stone-700 mb-1">認識OSの13の質問</h2>
+            <h2 className="text-[14px] font-bold text-stone-700 mb-1">認識OSの13の質問</h2>
             <WizardPane project={project} setProject={setProject} theme={theme} setTab={setTab} />
           </div>
           </div>
@@ -9989,7 +9991,7 @@ export default function App() {
               {[["企画案", (project.plans || []).length], ["素材", (project.assets || []).length], ["確認用動画", (project.assets || []).filter((a) => a.category === "確認用動画").length]].map(([lbl, n]) => (
                 <div key={lbl} className="rounded-2xl border border-stone-200 bg-white p-3 text-center">
                   <div className="text-[20px] font-bold text-stone-800">{n}</div>
-                  <div className="text-[11px] text-stone-500">{lbl}</div>
+                  <div className="text-[12px] text-stone-600">{lbl}</div>
                 </div>
               ))}
             </div>
@@ -9999,25 +10001,25 @@ export default function App() {
         {/* ================= 素材管理タブ（assets単一正本） ================= */}
         {tab === "assets" && (
           <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1">
-            <p className="text-[12px] text-stone-500 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-400">ファイルやフォルダはFinderから各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でアップできます（フォルダは中身をまとめてアップ）。名前は鉛筆アイコンで変更できます。</span></p>
+            <p className="text-[13px] text-stone-600 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-500">ファイルやフォルダはFinderから各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でアップできます（フォルダは中身をまとめてアップ）。名前は鉛筆アイコンで変更できます。</span></p>
             {project.shareId && (
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <button onClick={() => importGuestUploads(false)} title="編集者が共有リンクから上げた素材をここに取り込む"
-                  className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                  className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
                   <Icon name="refresh" className="w-3.5 h-3.5" /> 編集者アップを取り込み
                 </button>
                 {(project.assets || []).some((a) => a.key && a.type !== "youtube") && (
                   <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => a.key && a.type !== "youtube")); showToast(n + "件のダウンロードを開始"); }}
-                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                    className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
                     <Icon name="download" className="w-3.5 h-3.5" /> 全部DL
                   </button>
                 )}
                 {selAssets.length > 0 && (<>
                   <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => selAssets.includes(a.id))); showToast(n + "件のダウンロードを開始"); }}
-                    className="text-[11px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.main }}>
+                    className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.main }}>
                     <Icon name="download" className="w-3.5 h-3.5" /> 選択をDL（{selAssets.length}）
                   </button>
-                  <button onClick={() => setSelAssets([])} className="text-[11px] text-stone-400 hover:text-stone-600 underline">選択解除</button>
+                  <button onClick={() => setSelAssets([])} className="text-[12px] text-stone-500 hover:text-stone-600 underline">選択解除</button>
                 </>)}
               </div>
             )}
@@ -10033,21 +10035,21 @@ export default function App() {
                     className={"rounded-2xl bg-white p-4 transition-colors " + (dragCat === cat ? "border-2 border-dashed" : "border border-stone-200")}
                     style={dragCat === cat ? { borderColor: theme.accent, background: "#fafaf8" } : {}}>
                     <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-                      <h3 className="text-[13px] font-bold text-stone-800">{ASSET_CAT_ICON[cat]} {cat} <span className="text-stone-400 font-normal">{items.length}</span></h3>
-                      <label className={"text-[11px] font-bold px-2.5 py-1.5 rounded-lg shadow cursor-pointer " + (project.shareId ? "" : "opacity-40 pointer-events-none")} style={{ background: theme.main, color: "#fff" }}>
+                      <h3 className="text-[14px] font-bold text-stone-800">{ASSET_CAT_ICON[cat]} {cat} <span className="text-stone-500 font-normal">{items.length}</span></h3>
+                      <label className={"text-[12px] font-bold px-2.5 py-1.5 rounded-lg shadow cursor-pointer " + (project.shareId ? "" : "opacity-40 pointer-events-none")} style={{ background: theme.main, color: "#fff" }}>
                         ＋ファイル
                         <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); uploadAssets(fs, cat); e.target.value = ""; }} />
                       </label>
                     </div>
-                    <p className="text-[10px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#a8a29e" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}</p>
+                    <p className="text-[11px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#a8a29e" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}</p>
                     {uping && (
                       <div className="mb-2 rounded-lg bg-stone-50 border border-stone-200 px-3 py-2">
-                        <div className="text-[11px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬆ {assetUp.name}</span><span className="font-bold tabular-nums">{assetUp.pct}%</span></div>
+                        <div className="text-[12px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬆ {assetUp.name}</span><span className="font-bold tabular-nums">{assetUp.pct}%</span></div>
                         <div className="mt-1 h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full transition-all" style={{ width: assetUp.pct + "%", background: theme.accent }} /></div>
                       </div>
                     )}
                     {items.length === 0 ? (
-                      <p className="text-[11px] text-stone-400 py-2">{uping ? "" : "まだありません"}</p>
+                      <p className="text-[12px] text-stone-500 py-2">{uping ? "" : "まだありません"}</p>
                     ) : (() => {
                       // フォルダごとドロップした素材はシーン別(00_外観〜)にまとめて表示。平置きにしない。
                       const groups = []; const gi = {};
@@ -10055,14 +10057,14 @@ export default function App() {
                       groups.sort((x, y) => (x[0] === "" ? -1 : y[0] === "" ? 1 : x[0].localeCompare(y[0], "ja")));
                       const selGroup = (arr, on) => setSelAssets((cur) => { const ids = arr.filter((a) => a.key && a.type !== "youtube").map((a) => a.id); return on ? Array.from(new Set([...cur, ...ids])) : cur.filter((id) => !ids.includes(id)); });
                       const renderRow = (a) => (
-                          <li key={a.id} className="flex items-center gap-2 py-2 text-[12px]">
+                          <li key={a.id} className="flex items-center gap-2 py-2 text-[13px]">
                             {a.key && a.type !== "youtube"
                               ? <input type="checkbox" checked={selAssets.includes(a.id)} onChange={() => toggleSelAsset(a.id)} title="まとめてDL用に選択" className="shrink-0 w-3.5 h-3.5 accent-stone-600 cursor-pointer" />
                               : <span className="shrink-0 w-3.5" />}
                             <span className="shrink-0">{a.type === "youtube" ? "▶️" : a.type === "mp4" ? "🎬" : "📄"}</span>
                             {renamingAsset === a.id ? (
                               <input autoFocus defaultValue={a.name} placeholder="素材の名前"
-                                className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1 text-[12px] outline-none"
+                                className="flex-1 min-w-0 border border-stone-300 rounded px-2 py-1 text-[13px] outline-none"
                                 style={{ borderColor: theme.accent }}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter") { renameAsset(a.id, e.currentTarget.value); setRenamingAsset(null); }
@@ -10075,12 +10077,12 @@ export default function App() {
                             {renamingAsset !== a.id && (
                               <button onClick={() => setRenamingAsset(a.id)} title="名前を変更" className="shrink-0 text-stone-300 hover:text-stone-600"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
                             )}
-                            {a.size ? <span className="shrink-0 text-stone-400">{fmtSize(a.size)}</span> : null}
-                            <select value={a.category} onChange={(e) => moveAsset(a.id, e.target.value)} className="shrink-0 border border-stone-200 rounded px-1 py-0.5 text-[10px] text-stone-500">
+                            {a.size ? <span className="shrink-0 text-stone-500">{fmtSize(a.size)}</span> : null}
+                            <select value={a.category} onChange={(e) => moveAsset(a.id, e.target.value)} className="shrink-0 border border-stone-200 rounded px-1 py-0.5 text-[11px] text-stone-600">
                               {ASSET_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                             </select>
                             {a.key && a.type !== "youtube" && (
-                              <button onClick={() => downloadAsset(a)} title="ダウンロード" className="shrink-0 text-stone-400 hover:text-stone-700"><Icon name="download" className="w-4 h-4" /></button>
+                              <button onClick={() => downloadAsset(a)} title="ダウンロード" className="shrink-0 text-stone-500 hover:text-stone-700"><Icon name="download" className="w-4 h-4" /></button>
                             )}
                             <button onClick={() => { if (window.confirm("この素材を削除しますか？")) removeAsset(a.id); }} className="shrink-0 text-stone-300 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
                           </li>
@@ -10098,10 +10100,10 @@ export default function App() {
                                   <div className="flex items-center gap-1.5 mt-2 mb-0.5 pb-0.5 border-b border-stone-100 cursor-pointer select-none hover:bg-stone-50 rounded-sm"
                                     onClick={() => setCollapsedFolders((m) => ({ ...m, [fkey]: !collapsed }))} title={collapsed ? "開く" : "閉じる"}>
                                     {dlIds.length > 0 && <input type="checkbox" checked={allSel} onClick={(e) => e.stopPropagation()} onChange={(e) => selGroup(arr, e.target.checked)} title="このシーンをまとめて選択" className="w-3.5 h-3.5 accent-stone-600 cursor-pointer" />}
-                                    <span className="text-[9px] text-stone-400 w-3 shrink-0 inline-block text-center transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}>▾</span>
-                                    <Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />
-                                    <span className="text-[11px] font-bold text-stone-500">{fname}</span>
-                                    <span className="text-[10px] text-stone-400">{arr.length}</span>
+                                    <span className="text-[10.5px] text-stone-500 w-3 shrink-0 inline-block text-center transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}>▾</span>
+                                    <Icon name="folder" className="w-3.5 h-3.5 text-stone-500" />
+                                    <span className="text-[12px] font-bold text-stone-600">{fname}</span>
+                                    <span className="text-[11px] text-stone-500">{arr.length}</span>
                                   </div>
                                 ) : null}
                                 {!collapsed && <ul className="divide-y divide-stone-100">{arr.map(renderRow)}</ul>}
@@ -10115,7 +10117,7 @@ export default function App() {
                 );
               })}
             </div>
-            {mediaBusy && <div className="mt-3 text-[12px] text-stone-500">{mediaBusy} {mediaProg ? mediaProg + "%" : ""}</div>}
+            {mediaBusy && <div className="mt-3 text-[13px] text-stone-600">{mediaBusy} {mediaProg ? mediaProg + "%" : ""}</div>}
           </div>
         )}
 
@@ -10159,29 +10161,29 @@ export default function App() {
             <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <h2 className="text-[15px] font-bold text-stone-800">納品完了</h2>
-                <p className="text-[12px] text-stone-500 mt-0.5">動画・ショートのURLは動画確認の完成データから自動。タイトル・概要欄・ハッシュタグ・目次は台本から自動生成。編集者も入力OK。</p>
+                <p className="text-[13px] text-stone-600 mt-0.5">動画・ショートのURLは動画確認の完成データから自動。タイトル・概要欄・ハッシュタグ・目次は台本から自動生成。編集者も入力OK。</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 {/* 先方確認用URL（2026-08-19 AK要望）: 納品完了ページだけを見せる共有URLを発行してコピー。
                     copyShareUrl は毎回publish＝常に最新の中身が先方に見える */}
                 <button onClick={() => copyShareUrl("deliver")}
                   title="先方に見せる確認ページのURLを発行してコピー（タイトル・サムネ・完成動画・概要欄だけが見えます）"
-                  className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800">
+                  className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-stone-200 bg-white text-stone-600 hover:border-stone-400 hover:text-stone-800">
                   <Icon name="copy" className="w-3.5 h-3.5" />確認用URLを生成
                 </button>
                 <button onClick={generateDeliverAll} disabled={deliverBusy}
-                  className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50"
+                  className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow disabled:opacity-50"
                   style={{ background: theme.accent, color: accentText }}>
                   <Icon name="sparkle" className="w-3.5 h-3.5" />{deliverBusy ? "生成中…" : "自動生成"}
                 </button>
-                <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-500 tabular-nums">{doneCount}/{dv.length}</span>
+                <span className="text-[12px] font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-600 tabular-nums">{doneCount}/{dv.length}</span>
                 {/* 納品セット完了の報告：Flip Boardリンク済案件だけ。納品確定はAKがFボードで押す（ここでは status を触らない） */}
                 {sched && ((sched.status === "delivered" || sched.status === "posted") ? (
-                  <span className="h-8 px-3 rounded-lg inline-flex items-center text-[11px] font-bold bg-emerald-50 text-emerald-600">納品済（Flip Board）</span>
+                  <span className="h-8 px-3 rounded-lg inline-flex items-center text-[12px] font-bold bg-emerald-50 text-emerald-600">納品済（Flip Board）</span>
                 ) : (
                   <button onClick={reportDelivered} disabled={reportingDelivered || !(m.deliverVideoUrl || "").trim()}
                     title="納品セットの完了をAKに報告（Flip Boardのボール→AK＋納品動画URLを書き添え）。納品完了動画のURLが入ると押せます。"
-                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold text-white shadow disabled:opacity-50 bg-emerald-500">
+                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow disabled:opacity-50 bg-emerald-500">
                     <Icon name="checkCircle" className="w-3.5 h-3.5" />{reportingDelivered ? "報告中…" : "納品セット完了を報告"}
                   </button>
                 ))}
@@ -10213,20 +10215,20 @@ export default function App() {
                         {/* 固定中は差替・削除・使用切替をどれも出さない＝固定を解除しないと動かせない */}
                         {!locked && (
                           <label onClick={(e) => e.stopPropagation()} title="画像を差し替え"
-                            className="absolute bottom-1 left-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-500 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
+                            className="absolute bottom-1 left-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-white/90 text-stone-600 shadow cursor-pointer opacity-0 group-hover:opacity-100 hover:bg-white">
                             差替<input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) replaceDeliverThumb(ti, f); e.target.value = ""; }} />
                           </label>
                         )}
                         {!locked && (
                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeDeliverThumb(ti); }} title="削除"
-                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[11px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
+                            className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-stone-700 text-white text-[12px] leading-none grid place-items-center opacity-70 hover:opacity-100 hover:bg-rose-500">×</button>
                         )}
                         {locked ? (
-                          <span className={"absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500")}>{rankLabel}</span>
+                          <span className={"absolute bottom-1 right-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-600")}>{rankLabel}</span>
                         ) : (
                           <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleDeliverThumbUse(ti); }}
                             title={used ? "候補に戻す" : "この画像を使用する"}
-                            className={"absolute bottom-1 right-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-500 hover:bg-white")}>
+                            className={"absolute bottom-1 right-1 text-[11px] font-bold px-1.5 py-0.5 rounded-full shadow " + (used ? "bg-emerald-500 text-white" : "bg-white/90 text-stone-600 hover:bg-white")}>
                             {rankLabel}
                           </button>
                         )}
@@ -10234,17 +10236,17 @@ export default function App() {
                       {/* 2026-08-28 AK要望：1枚ごとの「制作意図」。普段は閉じ、書いてあれば1行だけ覗く。先方の確認ページにも出る */}
                       <button type="button" onClick={() => setThumbIntentOpen((o) => ({ ...o, [t.key]: !o[t.key] }))}
                         title="このサムネの制作意図を書く"
-                        className="mt-1 w-full min-w-0 flex items-center gap-1 text-left text-[10px] font-bold text-stone-400 hover:text-stone-600">
+                        className="mt-1 w-full min-w-0 flex items-center gap-1 text-left text-[11px] font-bold text-stone-500 hover:text-stone-600">
                         <span className={"shrink-0 transition-transform " + (intentOpen ? "rotate-90" : "")}>›</span>
                         <span className="shrink-0">制作意図</span>
                         {!intentOpen && (intent.trim()
-                          ? <span className="font-normal text-stone-500 truncate">{intent.trim().replace(/\s+/g, " ")}</span>
+                          ? <span className="font-normal text-stone-600 truncate">{intent.trim().replace(/\s+/g, " ")}</span>
                           : <span className="font-normal text-stone-300">未記入</span>)}
                       </button>
                       {intentOpen && (
                         <AutoTextarea value={intent} onChange={(e) => setDeliverThumbIntent(ti, e.target.value)} readOnly={locked} autoFocus={!locked}
                           placeholder="何を伝えたいサムネか／なぜこの絵・この文言にしたか"
-                          className={"mt-1 block w-full text-[12px] leading-relaxed rounded-lg border border-stone-200 px-2 py-1.5 focus:outline-none focus:border-stone-400 placeholder:text-stone-300 " + (locked ? "bg-stone-50 text-stone-500" : "bg-white")} minHeight={48} />
+                          className={"mt-1 block w-full text-[13px] leading-relaxed rounded-lg border border-stone-200 px-2 py-1.5 focus:outline-none focus:border-stone-400 placeholder:text-stone-400 " + (locked ? "bg-stone-50 text-stone-600" : "bg-white")} minHeight={48} />
                       )}
                     </div>
                   );
@@ -10255,27 +10257,27 @@ export default function App() {
                       <Icon name="check" className="w-3 h-3" />
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold text-stone-400 mb-0.5 flex items-center gap-1.5">
+                      <div className="text-[12px] font-bold text-stone-500 mb-0.5 flex items-center gap-1.5">
                         {label}
-                        {auto && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">自動</span>}
+                        {auto && <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">自動</span>}
                         {lockable && (lockState === "locked" ? (
                           <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-stone-800 text-white" title={"固定日 " + lockDateLabel(deliverLocks()[key].at)}>
+                            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold px-1.5 py-0.5 rounded-full bg-stone-800 text-white" title={"固定日 " + lockDateLabel(deliverLocks()[key].at)}>
                               <Icon name="lock" className="w-2.5 h-2.5" />固定済 {lockDateLabel(deliverLocks()[key].at)}
                             </span>
                             <button onClick={() => unlockDeliverItem(key)} title="固定を解除して編集できるようにする"
-                              className="text-[10px] font-bold text-stone-400 hover:text-stone-700 underline">解除</button>
+                              className="text-[11px] font-bold text-stone-500 hover:text-stone-700 underline">解除</button>
                           </span>
                         ) : lockState === "stale" ? (
                           <span className="ml-auto flex items-center gap-1.5 shrink-0">
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700" title="固定した時の内容から変わっています。中身を確認してもう一度固定してください">固定後に変更あり</span>
+                            <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700" title="固定した時の内容から変わっています。中身を確認してもう一度固定してください">固定後に変更あり</span>
                             <button onClick={() => lockDeliverItem(key, label)} title="いまの内容で固定し直す"
-                              className="text-[10px] font-bold text-amber-700 hover:text-amber-900 underline">再固定</button>
+                              className="text-[11px] font-bold text-amber-700 hover:text-amber-900 underline">再固定</button>
                           </span>
                         ) : (
                           <button onClick={() => lockDeliverItem(key, label)} disabled={!filled}
                             title={filled ? "この内容で確定して固定する（誰も触れなくなります）" : "中身が入ると固定できます"}
-                            className="ml-auto shrink-0 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-700 disabled:opacity-40 disabled:hover:border-stone-200 disabled:hover:text-stone-400">
+                            className="ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border border-stone-200 text-stone-500 hover:border-stone-400 hover:text-stone-700 disabled:opacity-40 disabled:hover:border-stone-200 disabled:hover:text-stone-500">
                             <Icon name="lock" className="w-2.5 h-2.5" />固定
                           </button>
                         ))}
@@ -10300,7 +10302,7 @@ export default function App() {
                                       既に何枚かある時は下の小さいボタンにする＝6枚埋まった時に枠だけの空行ができない
                                       （2026-08-28 AK「6枚アップしてるのでこの追加の枠いらないかも」） */}
                                   {!locked && thumbs.length === 0 && (
-                                    <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-400 hover:text-stone-600 hover:border-stone-400 text-[13px] text-center leading-tight">
+                                    <label className="aspect-video rounded-md border border-dashed border-stone-300 grid place-items-center cursor-pointer text-stone-500 hover:text-stone-600 hover:border-stone-400 text-[14px] text-center leading-tight">
                                       ＋ サムネを追加
                                       <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files); e.target.value = ""; }} />
                                     </label>
@@ -10310,14 +10312,14 @@ export default function App() {
                                   <div className="mt-2.5 flex items-center gap-3 flex-wrap">
                                     {rest.length > 0 && (
                                       <button type="button" onClick={() => setThumbMoreOpen((v) => !v)}
-                                        className="flex items-center gap-1.5 text-[11px] font-bold text-stone-500 hover:text-stone-800">
+                                        className="flex items-center gap-1.5 text-[12px] font-bold text-stone-600 hover:text-stone-800">
                                         <span className={"transition-transform " + (thumbMoreOpen ? "rotate-90" : "")}>›</span>
                                         続きのサムネ {rest.length}枚
                                       </button>
                                     )}
                                     {!locked && thumbs.length > 0 && (
                                       <label title="ドラッグ＆ドロップでも追加できます"
-                                        className="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-full border border-stone-200 text-stone-400 hover:border-stone-400 hover:text-stone-700 cursor-pointer">
+                                        className="inline-flex items-center gap-1 text-[12px] font-bold px-2.5 py-1 rounded-full border border-stone-200 text-stone-500 hover:border-stone-400 hover:text-stone-700 cursor-pointer">
                                         ＋ サムネを追加
                                         <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { uploadDeliverThumbs(e.target.files); e.target.value = ""; }} />
                                       </label>
@@ -10332,7 +10334,7 @@ export default function App() {
                               </>
                             );
                           })()}
-                          <div className="text-[10px] text-stone-400 mt-2">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
+                          <div className="text-[11px] text-stone-500 mt-2">使用 {thumbs.filter((t, i) => deliverThumbUsed(t, i)).length}/{DELIVER_THUMB_USE_MAX}枚・候補{thumbs.filter((t, i) => !deliverThumbUsed(t, i)).length}枚（全{thumbs.length}枚）{thumbUp ? `・アップ中 ${thumbUp.i}/${thumbUp.n}（${thumbUp.pct}%）` : ""}</div>
                           {/* 全画面ライトボックス（背景クリック/Esc/×で閉・←→で前後） */}
                           {thumbLightbox && (
                             <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center" onClick={() => setThumbLightbox(null)}>
@@ -10343,7 +10345,7 @@ export default function App() {
                               </div>
                               {/* 拡大中も制作意図が読める（2026-08-28） */}
                               {(thumbLightbox.items[thumbLightbox.idx].intent || "").trim() && (
-                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 max-w-[80vw] text-white/85 text-[12px] leading-relaxed whitespace-pre-wrap px-4 py-2 rounded-xl bg-black/60" onClick={(e) => e.stopPropagation()}>
+                                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 max-w-[80vw] text-white/85 text-[13px] leading-relaxed whitespace-pre-wrap px-4 py-2 rounded-xl bg-black/60" onClick={(e) => e.stopPropagation()}>
                                   {thumbLightbox.items[thumbLightbox.idx].intent}
                                 </div>
                               )}
@@ -10368,22 +10370,22 @@ export default function App() {
                         // 案2は独立入力（自動生成が2案返せば埋まる／無ければ空のまま手入力）。
                         <div className="space-y-1.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="shrink-0 text-[10px] font-bold text-stone-400 w-10">案1</span>
+                            <span className="shrink-0 text-[11px] font-bold text-stone-500 w-10">案1</span>
                             <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder} readOnly={locked}
-                              className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} />
+                              className={"block w-full bg-transparent text-[14px] px-0 py-0.5 focus:outline-none placeholder:text-stone-400" + (locked ? " text-stone-600 cursor-not-allowed" : "")} />
                           </div>
                           <div className="flex items-center gap-1.5">
-                            <span className="shrink-0 text-[10px] font-bold text-stone-400 w-10">案2</span>
+                            <span className="shrink-0 text-[11px] font-bold text-stone-500 w-10">案2</span>
                             <input value={m[key + "2"] || ""} onChange={(e) => setMeta(key + "2", e.target.value)} placeholder="もう1つのタイトル案（任意）" readOnly={locked}
-                              className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} />
+                              className={"block w-full bg-transparent text-[14px] px-0 py-0.5 focus:outline-none placeholder:text-stone-400" + (locked ? " text-stone-600 cursor-not-allowed" : "")} />
                           </div>
                         </div>
                       ) : multiline ? (
                         <AutoTextarea value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder} readOnly={locked}
-                          className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} minHeight={60} />
+                          className={"block w-full bg-transparent text-[14px] px-0 py-0.5 focus:outline-none placeholder:text-stone-400" + (locked ? " text-stone-600 cursor-not-allowed" : "")} minHeight={60} />
                       ) : (
                         <input value={m[key] || ""} onChange={(e) => setMeta(key, e.target.value)} placeholder={placeholder} readOnly={locked}
-                          className={"block w-full bg-transparent text-[13px] px-0 py-0.5 focus:outline-none placeholder:text-stone-300" + (locked ? " text-stone-500 cursor-not-allowed" : "")} />
+                          className={"block w-full bg-transparent text-[14px] px-0 py-0.5 focus:outline-none placeholder:text-stone-400" + (locked ? " text-stone-600 cursor-not-allowed" : "")} />
                       )}
                       {/* URL欄はワンクリックで飛べるリンクを添える（入力欄のテキストは編集用に据え置き） */}
                       {key === "deliverVideoUrl" && (() => {
@@ -10393,7 +10395,7 @@ export default function App() {
                           <div className="flex flex-wrap gap-1.5 mt-1.5">
                             {urls.map((u, ui) => (
                               <a key={ui} href={u} target="_blank" rel="noreferrer" title={u}
-                                className="text-[10px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-500 hover:bg-stone-50 hover:text-stone-700 inline-flex items-center gap-1">
+                                className="text-[11px] font-bold px-2 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 hover:text-stone-700 inline-flex items-center gap-1">
                                 ↗ 動画を開く
                               </a>
                             ))}
@@ -10429,18 +10431,18 @@ export default function App() {
               </div>
               <div className="p-4">
                 {t.busy ? (
-                  <div className="py-16 text-center text-stone-400 text-sm">競合サムネを集めています…</div>
+                  <div className="py-16 text-center text-stone-500 text-sm">競合サムネを集めています…</div>
                 ) : (
                   <>
-                    <p className="text-[12px] text-stone-500 mb-3">YouTubeの一覧に並んだ想定。この中にあなたのサムネが1枚混ざっています。<span className="font-bold">タイトルごとパッと目に入る？</span>　目立たなければ色・文字・構図を見直すサイン。</p>
+                    <p className="text-[13px] text-stone-600 mb-3">YouTubeの一覧に並んだ想定。この中にあなたのサムネが1枚混ざっています。<span className="font-bold">タイトルごとパッと目に入る？</span>　目立たなければ色・文字・構図を見直すサイン。</p>
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-3 gap-y-4">
                       {cells.map((c, i) => c.mine ? (
                         <div key="mine">
                           <div className="relative rounded-xl overflow-hidden transition-all" style={t.reveal ? { boxShadow: "0 0 0 3px " + theme.accent } : {}}>
                             {(t.myImage || tp.thumbImage)
                               ? <img src={t.myImage || tp.thumbImage} alt="" className="w-full aspect-video object-cover" />
-                              : <div className="w-full aspect-video grid place-items-center bg-stone-200 text-[10px] text-stone-400">自作サムネ</div>}
-                            {t.reveal && <span className="absolute top-1.5 left-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded text-white shadow" style={{ background: theme.accent }}>あなた</span>}
+                              : <div className="w-full aspect-video grid place-items-center bg-stone-200 text-[11px] text-stone-500">自作サムネ</div>}
+                            {t.reveal && <span className="absolute top-1.5 left-1.5 text-[11px] font-bold px-1.5 py-0.5 rounded text-white shadow" style={{ background: theme.accent }}>あなた</span>}
                           </div>
                           <div className="flex gap-2 mt-2">
                             {channelIconOf(curChannel)
@@ -10449,9 +10451,9 @@ export default function App() {
                                 ? <img src={user.picture} alt="" className="w-9 h-9 rounded-full shrink-0 object-cover" referrerPolicy="no-referrer" />
                                 : <div className="w-9 h-9 rounded-full shrink-0 grid place-items-center text-white text-xs font-bold" style={{ background: theme.accent }}>{(curChannel || "あ").slice(0, 1)}</div>}
                             <div className="min-w-0">
-                              <div className="text-[13px] font-bold text-stone-900 leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={tp.title || tp.thumbText || ""}>{tp.title || tp.thumbText || "（タイトル未設定）"}</div>
-                              <div className="text-[11px] text-stone-500 mt-0.5 truncate">{curChannel}</div>
-                              <div className="text-[11px] text-stone-500 truncate">新着</div>
+                              <div className="text-[14px] font-bold text-stone-900 leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={tp.title || tp.thumbText || ""}>{tp.title || tp.thumbText || "（タイトル未設定）"}</div>
+                              <div className="text-[12px] text-stone-600 mt-0.5 truncate">{curChannel}</div>
+                              <div className="text-[12px] text-stone-600 truncate">新着</div>
                             </div>
                           </div>
                         </div>
@@ -10459,25 +10461,25 @@ export default function App() {
                         <a key={c.vid} href={"https://www.youtube.com/watch?v=" + c.vid} target="_blank" rel="noreferrer" className="block">
                           <div className="relative rounded-xl overflow-hidden bg-stone-100">
                             <img src={"https://img.youtube.com/vi/" + c.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover" />
-                            {parseDur(c.duration) && <span className="absolute bottom-1.5 right-1.5 text-[10px] font-bold text-white bg-black/80 px-1 py-0.5 rounded leading-none" style={{ fontFamily: mono }}>{parseDur(c.duration)}</span>}
+                            {parseDur(c.duration) && <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold text-white bg-black/80 px-1 py-0.5 rounded leading-none" style={{ fontFamily: mono }}>{parseDur(c.duration)}</span>}
                           </div>
                           <div className="flex gap-2 mt-2">
                             {c.avatar
                               ? <img src={c.avatar} alt="" className="w-9 h-9 rounded-full shrink-0 object-cover" referrerPolicy="no-referrer" />
                               : <div className="w-9 h-9 rounded-full shrink-0 bg-stone-200" />}
                             <div className="min-w-0">
-                              <div className="text-[13px] font-bold text-stone-900 leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={decodeHtml(c.title)}>{decodeHtml(c.title)}</div>
-                              <div className="text-[11px] text-stone-500 mt-0.5 truncate">{c.channel}</div>
-                              <div className="text-[11px] text-stone-500 truncate">{fmtNum(c.views)}回視聴{c.publishedAt ? "・" + relTime(c.publishedAt) : ""}</div>
+                              <div className="text-[14px] font-bold text-stone-900 leading-snug" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={decodeHtml(c.title)}>{decodeHtml(c.title)}</div>
+                              <div className="text-[12px] text-stone-600 mt-0.5 truncate">{c.channel}</div>
+                              <div className="text-[12px] text-stone-600 truncate">{fmtNum(c.views)}回視聴{c.publishedAt ? "・" + relTime(c.publishedAt) : ""}</div>
                             </div>
                           </div>
                         </a>
                       ))}
                     </div>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
-                      <button onClick={reshuffleThumbTest} className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="refresh" className="w-3.5 h-3.5" />配置をシャッフル</button>
-                      <button onClick={() => setThumbTest((x) => x && ({ ...x, reveal: !x.reveal }))} className="text-[12px] font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name={t.reveal ? "close" : "checkCircle"} className="w-3.5 h-3.5" />{t.reveal ? "答えを隠す" : "自分のを光らせる"}</button>
-                      <button onClick={() => runThumbTest(t.pid, t.keyword)} className="text-[12px] font-bold px-4 py-2 rounded-lg shadow inline-flex items-center gap-1 ml-auto" style={{ background: theme.accent, color: accentText }}><Icon name="refresh" className="w-3.5 h-3.5" />競合を引き直す</button>
+                      <button onClick={reshuffleThumbTest} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="refresh" className="w-3.5 h-3.5" />配置をシャッフル</button>
+                      <button onClick={() => setThumbTest((x) => x && ({ ...x, reveal: !x.reveal }))} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name={t.reveal ? "close" : "checkCircle"} className="w-3.5 h-3.5" />{t.reveal ? "答えを隠す" : "自分のを光らせる"}</button>
+                      <button onClick={() => runThumbTest(t.pid, t.keyword)} className="text-[13px] font-bold px-4 py-2 rounded-lg shadow inline-flex items-center gap-1 ml-auto" style={{ background: theme.accent, color: accentText }}><Icon name="refresh" className="w-3.5 h-3.5" />競合を引き直す</button>
                     </div>
                   </>
                 )}
@@ -10496,14 +10498,14 @@ export default function App() {
               <button onClick={() => setShowImport(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
-              <p className="text-[12px] text-stone-500 mb-2">
+              <p className="text-[13px] text-stone-600 mb-2">
                 Claudeが出力した原稿（<span className="font-bold" style={{ fontFamily: mono }}>【1】…【2】…</span> の形式）をそのまま貼り付けてください。番号がテーブルの <span className="font-bold" style={{ fontFamily: mono }}>#1 #2…</span> に対応します。
               </p>
               <textarea
                 value={importText}
                 onChange={(e) => setImportText(e.target.value)}
                 placeholder={"【1】自己紹介\n◼︎ おはようございます！\nよろしくお願いします！\n\n【2】現在の活動について\n…"}
-                className="w-full h-72 text-[13px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
+                className="w-full h-72 text-[14px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
               />
               <div className="mt-3 flex justify-end gap-2">
                 <button onClick={() => setShowImport(false)} className="text-xs font-bold px-4 py-2 rounded-lg border border-stone-200 hover:bg-stone-50">キャンセル</button>
@@ -10528,29 +10530,29 @@ export default function App() {
             </div>
             <div className="p-5">
               {/* 取込先の選択：新規案件 / 開いている案件を更新 */}
-              <div className="flex items-center gap-1.5 p-1.5 mb-3 rounded-xl bg-stone-100 text-[12px] font-bold">
+              <div className="flex items-center gap-1.5 p-1.5 mb-3 rounded-xl bg-stone-100 text-[13px] font-bold">
                 <button onClick={() => setImportTarget("new")}
-                  className={"flex-1 px-4 py-2.5 rounded-lg transition inline-flex items-center justify-center gap-2 " + (importTarget === "new" ? "bg-white shadow-md text-stone-800" : "text-stone-400 hover:text-stone-600 hover:bg-stone-50/50")}>
+                  className={"flex-1 px-4 py-2.5 rounded-lg transition inline-flex items-center justify-center gap-2 " + (importTarget === "new" ? "bg-white shadow-md text-stone-800" : "text-stone-500 hover:text-stone-600 hover:bg-stone-50/50")}>
                   <Icon name="plus" className="w-4 h-4" /> 新規案件として取り込む
                 </button>
                 <button onClick={() => setImportTarget("current")} disabled={!project}
-                  className={"flex-1 px-4 py-2.5 rounded-lg transition disabled:opacity-40 inline-flex items-center justify-center gap-2 " + (importTarget === "current" ? "bg-white shadow-md text-stone-800" : "text-stone-400 hover:text-stone-600 hover:bg-stone-50/50")}>
+                  className={"flex-1 px-4 py-2.5 rounded-lg transition disabled:opacity-40 inline-flex items-center justify-center gap-2 " + (importTarget === "current" ? "bg-white shadow-md text-stone-800" : "text-stone-500 hover:text-stone-600 hover:bg-stone-50/50")}>
                   <Icon name="refresh" className="w-4 h-4" /> この案件を更新{project ? "（" + project.name + "）" : ""}
                 </button>
               </div>
-              <p className="text-[12px] text-stone-500 mb-2">
+              <p className="text-[13px] text-stone-600 mb-2">
                 <span className="font-bold inline-flex items-center gap-1" style={{ color: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />なんでも放り込めばOK：</span>原稿・取材メモ・文字起こしを<span className="font-bold">そのまま</span>貼るか、ファイルを選ぶだけ。中身を自動判定して、生原稿ならAIが構成台本に整形、台本コピーTSVや <span style={{ fontFamily: mono }}>{"{ rows:[...] }"}</span> JSON ならそのまま取り込みます。<br />
-                <span className="text-stone-400">ファイルは選んだ瞬間に自動で取り込み開始します。</span>
+                <span className="text-stone-500">ファイルは選んだ瞬間に自動で取り込み開始します。</span>
                 {importTarget === "current" && <><br /><span className="font-bold text-amber-600 inline-flex items-center gap-1"><Icon name="warn" className="w-3.5 h-3.5" />更新モード：</span>取り込んだ内容で今の構成を上書きします（案件名・共有リンクは維持）。</>}
               </p>
               {/* ファイルから読み込む（TXT / CSV / Excel）*/}
               <input ref={importFileRef} type="file" accept=".txt,.csv,.tsv,.xlsx,.md,.json,text/plain,text/csv" onChange={onPickImportFile} className="hidden" />
               <div className="flex items-center gap-2 mb-2">
                 <button onClick={() => importFileRef.current && importFileRef.current.click()}
-                  className="text-[12px] font-bold px-3 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5">
+                  className="text-[13px] font-bold px-3 py-2 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1.5">
                   <Icon name="file" className="w-4 h-4" /> ファイルから読み込む
                 </button>
-                <span className="text-[11px] text-stone-400">TXT・CSV・Excel(.xlsx) 対応{importFileName ? "　／　" : ""}<span className="font-bold text-stone-500">{importFileName}</span></span>
+                <span className="text-[12px] text-stone-500">TXT・CSV・Excel(.xlsx) 対応{importFileName ? "　／　" : ""}<span className="font-bold text-stone-600">{importFileName}</span></span>
               </div>
               <div
                 onDragOver={handleImportDragOver}
@@ -10561,30 +10563,30 @@ export default function App() {
                   value={fullImportText}
                   onChange={(e) => setFullImportText(e.target.value)}
                   placeholder={'ここにファイルをドラッグ＆ドロップするか、JSON/TSV/テキストを貼り付けてください\n\n例）\n{\n  "name": "永田晃聖さん｜オリックス不動産",\n  "channel": "オリックス不動産",\n  "meta": { "highlight": "…" },\n  "rows": [\n    { "kind": "location", "label": "出社", "time": "8:50" },\n    { "kind": "scene", "type": "訴求", "sec": 180, "label": "自己紹介", "script": "◼ …" }\n  ]\n}'}
-                  className={"w-full h-72 text-[12px] leading-relaxed border-0 rounded-xl p-3 focus:outline-none resize-y " + (importValidation && importValidation.error ? "bg-red-50" : "bg-stone-50")}
+                  className={"w-full h-72 text-[13px] leading-relaxed border-0 rounded-xl p-3 focus:outline-none resize-y " + (importValidation && importValidation.error ? "bg-red-50" : "bg-stone-50")}
                   style={{ fontFamily: mono }}
                 />
                 <div className="absolute inset-0 rounded-xl flex items-center justify-center bg-black/5 pointer-events-none opacity-0 hover:opacity-100 transition">
-                  <div className="text-center text-stone-500">
+                  <div className="text-center text-stone-600">
                     <Icon name="fileAdd" className="w-8 h-8 mx-auto mb-1" />
-                    <div className="text-[12px] font-bold">ファイルをドロップ</div>
+                    <div className="text-[13px] font-bold">ファイルをドロップ</div>
                   </div>
                 </div>
               </div>
               {/* バリデーション結果の表示 */}
               {fullImportText.trim() && importValidation && (
-                <div className={"mt-2 text-[12px] px-3 py-2 rounded-lg flex items-start gap-2 " + (importValidation.error ? "bg-red-50 text-red-800 border border-red-100" : "bg-emerald-50 text-emerald-800 border border-emerald-100")}>
+                <div className={"mt-2 text-[13px] px-3 py-2 rounded-lg flex items-start gap-2 " + (importValidation.error ? "bg-red-50 text-red-800 border border-red-100" : "bg-emerald-50 text-emerald-800 border border-emerald-100")}>
                   <Icon name={importValidation.error ? "warn" : "checkCircle"} className="w-4 h-4 shrink-0 mt-0.5" />
                   <div className="flex-1">
                     {importValidation.error ? (
                       <>
                         <div className="font-bold mb-1">❌ {importValidation.error}</div>
-                        <div className="text-[11px] opacity-75">JSON形式で提供する場合は、`{` で始まり `}` で終わる有効なJSONである必要があります。または、プレーンテキスト・TSV形式で貼り付けると自動整形します。</div>
+                        <div className="text-[12px] opacity-75">JSON形式で提供する場合は、`{` で始まり `}` で終わる有効なJSONである必要があります。または、プレーンテキスト・TSV形式で貼り付けると自動整形します。</div>
                       </>
                     ) : (
                       <div className="flex items-center gap-1">
                         <span className="font-bold">✓ 準備完了</span>
-                        <span className="text-[11px] opacity-75">({importValidation.format === "json" ? "JSON形式" : "テキスト形式"})</span>
+                        <span className="text-[12px] opacity-75">({importValidation.format === "json" ? "JSON形式" : "テキスト形式"})</span>
                       </div>
                     )}
                   </div>
@@ -10615,11 +10617,11 @@ export default function App() {
             <div className="px-5 pt-3 shrink-0 flex gap-1.5 flex-wrap">
               {[["channel", curChannel === DEFAULT_CHANNEL ? "クライアント／チャンネル" : curChannel, (curChannelInfo.manuals || []).length], ["global", "全案件共通", globalManuals.length], ["case", "案件だけの例外", (project.manuals || []).length]].map(([k, label, n]) => (
                 <button key={k} onClick={() => setManualScope(k)}
-                  className={"text-[12px] font-bold px-3 py-1.5 rounded-lg border " + (manualScope === k ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-500")}
+                  className={"text-[13px] font-bold px-3 py-1.5 rounded-lg border " + (manualScope === k ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-600")}
                   style={manualScope === k ? { background: theme.main } : {}}>{label}<span className="opacity-60 ml-1">{n}</span></button>
               ))}
             </div>
-            <p className="px-5 pt-2 text-[11px] text-stone-400 shrink-0">{manualScope === "global" ? "全案件に適用する会社共通のルール。" : manualScope === "channel" ? "登録の基本はこちら。このクライアント（チャンネル）の配下にある全案件へ自動適用されます。" : "住所非公開など、この案件だけに必要な例外・追加条件に限定してください。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
+            <p className="px-5 pt-2 text-[12px] text-stone-500 shrink-0">{manualScope === "global" ? "全案件に適用する会社共通のルール。" : manualScope === "channel" ? "登録の基本はこちら。このクライアント（チャンネル）の配下にある全案件へ自動適用されます。" : "住所非公開など、この案件だけに必要な例外・追加条件に限定してください。"}共有リンクを発行すると編集者・先方も閲覧できます。</p>
             <div className="p-5 overflow-y-auto mg-scroll">
               {false && manualScope === "global" && <LabChannelRules channel="編集マニュアル" main={theme.main} snapId={project.shareId} token={project.shareToken} upToken={project.shareUpToken} liveId={project.liveId} liveToken={project.liveToken}
                 onAdopt={(t) => saveGlobalManuals([...globalManuals, { ...newManual("その他"), body: t }])} />}
@@ -10644,17 +10646,17 @@ export default function App() {
               <button onClick={() => setShowAssistant(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
-              <p className="text-[12px] text-stone-500 mb-2 leading-relaxed">
+              <p className="text-[13px] text-stone-600 mb-2 leading-relaxed">
                 先方・演者からの<span className="font-bold">LINEのメッセージ</span>や取材メモ、「冒頭もっと引き強く」みたいな<span className="font-bold">指示</span>を貼って送ると、AIが今開いている案件「<span className="font-bold">{project ? project.name : ""}</span>」の構成台本に反映します（住所・時間・メモ・シーン・原稿）。
               </p>
               <textarea
                 value={assistantText}
                 onChange={(e) => setAssistantText(e.target.value)}
                 placeholder={"例）\n明日の撮影、10時に本社ビル集合でお願いします。駐車場は地下、受付で「撮影」と伝えてください。\n社長は釣りが趣味で、休日は必ず海に行くそうです。創業のきっかけは父の影響とのこと。"}
-                className="w-full h-44 text-[13px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
+                className="w-full h-44 text-[14px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y"
               />
               {assistantSummary && (
-                <div className="mt-3 text-[12px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
+                <div className="mt-3 text-[13px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
                   <span className="font-bold inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />反映しました</span>{"\n" + assistantSummary}
                 </div>
               )}
@@ -10666,7 +10668,7 @@ export default function App() {
                   {assistantBusy ? "反映中…" : <><Icon name="sparkle" className="w-3.5 h-3.5" />構成に反映する</>}
                 </button>
               </div>
-              <p className="text-[10px] text-stone-400 mt-2">既存の内容は極力残して、関係する所だけ更新します。違ったら⌘Zや編集で直してね。</p>
+              <p className="text-[11px] text-stone-500 mt-2">既存の内容は極力残して、関係する所だけ更新します。違ったら⌘Zや編集で直してね。</p>
             </div>
           </div>
         </div>
@@ -10681,24 +10683,24 @@ export default function App() {
               <button onClick={() => setShowReview(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5 overflow-y-auto mg-scroll">
-              <p className="text-[12px] text-stone-500 mb-3 leading-relaxed">
+              <p className="text-[13px] text-stone-600 mb-3 leading-relaxed">
                 「<span className="font-bold">{project ? project.name : ""}</span>」の構成台本を、<span className="font-bold">誤字脱字</span>・<span className="font-bold">質問と回答の逆転</span>・<span className="font-bold">未記入の箇所</span>の3観点でチェックします。指摘をクリックすると該当シーンに移動します。
               </p>
               {reviewBusy ? (
-                <div className="py-10 text-center text-[13px] text-stone-400">
+                <div className="py-10 text-center text-[14px] text-stone-500">
                   <div className="inline-flex items-center gap-2"><Icon name="sparkle" className="w-4 h-4 animate-pulse" />チェック中…（10〜20秒ほど）</div>
                 </div>
               ) : reviewResult ? (
                 reviewResult.error ? (
-                  <div className="text-[12px] text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">チェックに失敗しました：{reviewResult.error}</div>
+                  <div className="text-[13px] text-red-700 bg-red-50 border border-red-100 rounded-lg px-3 py-2">チェックに失敗しました：{reviewResult.error}</div>
                 ) : reviewResult.issues.length === 0 ? (
-                  <div className="text-[13px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3 inline-flex items-start gap-1.5">
+                  <div className="text-[14px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-lg px-4 py-3 inline-flex items-start gap-1.5">
                     <Icon name="checkCircle" className="w-4 h-4 shrink-0 mt-0.5" /><span>{reviewResult.summary || "大きな問題は見つかりませんでした。"}</span>
                   </div>
                 ) : (
                   <div>
-                    {reviewResult.summary && <p className="text-[12px] text-stone-600 mb-3">{reviewResult.summary}</p>}
-                    <div className="text-[11px] text-stone-400 mb-2">{reviewResult.issues.length}件の指摘</div>
+                    {reviewResult.summary && <p className="text-[13px] text-stone-600 mb-3">{reviewResult.summary}</p>}
+                    <div className="text-[12px] text-stone-500 mb-2">{reviewResult.issues.length}件の指摘</div>
                     <ul className="space-y-2">
                       {reviewResult.issues.map((it, i) => {
                         const cat = it.category || "その他";
@@ -10708,12 +10710,12 @@ export default function App() {
                             onClick={() => jumpToRow(it.rowId)}
                             className={"border border-stone-200 rounded-xl px-3.5 py-2.5 " + (it.rowId ? "cursor-pointer hover:bg-stone-50" : "")}>
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white" style={{ background: col }}>{cat}</span>
-                              {it.sceneLabel && <span className="text-[11.5px] font-bold text-stone-700 truncate">{it.sceneLabel}</span>}
-                              {it.rowId && <span className="text-[10px] text-stone-400 ml-auto shrink-0">クリックで移動 ↗</span>}
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white" style={{ background: col }}>{cat}</span>
+                              {it.sceneLabel && <span className="text-[12.5px] font-bold text-stone-700 truncate">{it.sceneLabel}</span>}
+                              {it.rowId && <span className="text-[11px] text-stone-500 ml-auto shrink-0">クリックで移動 ↗</span>}
                             </div>
-                            <div className="text-[12.5px] text-stone-700 leading-relaxed">{it.detail}</div>
-                            {it.suggestion && <div className="text-[12px] text-emerald-800 mt-1 leading-relaxed">→ {it.suggestion}</div>}
+                            <div className="text-[13.5px] text-stone-700 leading-relaxed">{it.detail}</div>
+                            {it.suggestion && <div className="text-[13px] text-emerald-800 mt-1 leading-relaxed">→ {it.suggestion}</div>}
                           </li>
                         );
                       })}
@@ -10721,7 +10723,7 @@ export default function App() {
                   </div>
                 )
               ) : (
-                <div className="py-8 text-center text-[13px] text-stone-400">チェックを開始します…</div>
+                <div className="py-8 text-center text-[14px] text-stone-500">チェックを開始します…</div>
               )}
             </div>
             <div className="px-5 py-3 border-t border-stone-100 flex justify-between items-center shrink-0">
@@ -10748,23 +10750,23 @@ export default function App() {
             </div>
             <div className="p-4 overflow-y-auto">
               {!histList.length ? (
-                <p className="text-[12px] text-stone-400 py-8 text-center">
+                <p className="text-[13px] text-stone-500 py-8 text-center">
                   まだ履歴がない。これ以降の変更（タイトル・サムネ文言・内容・原稿・ロケ名）が保存されるたびにここへ積まれる。
                 </p>
               ) : histList.map((h, i) => (
                 <div key={i} className="border border-stone-200 rounded-xl mb-2 overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-1.5 bg-stone-50 border-b border-stone-100">
-                    <span className="text-[10px] tabular-nums text-stone-400 shrink-0" style={{ fontFamily: mono }}>
+                    <span className="text-[11px] tabular-nums text-stone-500 shrink-0" style={{ fontFamily: mono }}>
                       {new Date(h.at).toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
                     </span>
-                    <span className="text-[11px] font-bold text-stone-600 truncate flex-1">{h.label}</span>
+                    <span className="text-[12px] font-bold text-stone-600 truncate flex-1">{h.label}</span>
                     <button onClick={() => { try { navigator.clipboard.writeText(h.before); showToast("変更前をコピーした"); } catch (e) {} }}
-                      className="shrink-0 text-[10px] text-stone-400 hover:text-stone-700 px-2 py-0.5 rounded hover:bg-stone-200">コピー</button>
+                      className="shrink-0 text-[11px] text-stone-500 hover:text-stone-700 px-2 py-0.5 rounded hover:bg-stone-200">コピー</button>
                     <button onClick={() => restoreHistory(h)}
-                      className="shrink-0 text-[10px] font-bold px-2.5 py-0.5 rounded-md text-white" style={{ background: theme.accent, color: accentText }}>これに戻す</button>
+                      className="shrink-0 text-[11px] font-bold px-2.5 py-0.5 rounded-md text-white" style={{ background: theme.accent, color: accentText }}>これに戻す</button>
                   </div>
-                  <div className="px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-stone-700 bg-emerald-50/40">{h.before}</div>
-                  <div className="px-3 py-2 text-[12px] leading-relaxed whitespace-pre-wrap break-words text-stone-400 border-t border-stone-100">
+                  <div className="px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words text-stone-700 bg-emerald-50/40">{h.before}</div>
+                  <div className="px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap break-words text-stone-500 border-t border-stone-100">
                     {h.after ? h.after : <span className="italic">（空になった）</span>}
                   </div>
                 </div>
@@ -10788,51 +10790,51 @@ export default function App() {
                   <div className="flex items-center gap-3">
                     {user.picture
                       ? <img src={user.picture} alt="" className="w-12 h-12 rounded-full" referrerPolicy="no-referrer" />
-                      : <div className="w-12 h-12 rounded-full bg-stone-200 grid place-items-center text-stone-500"><Icon name="user" className="w-6 h-6" /></div>}
+                      : <div className="w-12 h-12 rounded-full bg-stone-200 grid place-items-center text-stone-600"><Icon name="user" className="w-6 h-6" /></div>}
                     <div className="min-w-0">
                       <div className="text-sm font-bold truncate">{user.name}</div>
-                      <div className="text-[12px] text-stone-500 truncate">{user.email}</div>
+                      <div className="text-[13px] text-stone-600 truncate">{user.email}</div>
                     </div>
                   </div>
-                  <div className="mt-3 text-[12px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-1.5">
+                  <div className="mt-3 text-[13px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-1.5">
                     <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5" /><span><span className="font-bold">クラウド同期中</span>。案件はこのアカウントに保存され、スマホ・PC どの端末でも同じ案件を開けます。</span>
                   </div>
                   <div className="mt-3 rounded-xl border border-stone-200 p-3">
                     <div className="flex items-start gap-2">
-                      <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
+                      <Icon name="video" className="w-4 h-4 shrink-0 mt-0.5 text-stone-600" />
                       <div className="flex-1 min-w-0">
-                        <div className="text-[12px] font-bold">自分のCloudflare Stream</div>
+                        <div className="text-[13px] font-bold">自分のCloudflare Stream</div>
                         {cfStream.loading ? (
-                          <div className="text-[11px] text-stone-400 mt-1">接続状態を確認中…</div>
+                          <div className="text-[12px] text-stone-500 mt-1">接続状態を確認中…</div>
                         ) : cfStream.connected ? (
                           <>
-                            <div className="text-[11px] text-emerald-700 mt-1 truncate">接続済み：{cfStream.accountName}</div>
-                            <div className="text-[10px] text-stone-400 mt-1">確認動画はこのアカウントへ直接保存され、料金・容量もこのアカウント側になります。</div>
+                            <div className="text-[12px] text-emerald-700 mt-1 truncate">接続済み：{cfStream.accountName}</div>
+                            <div className="text-[11px] text-stone-500 mt-1">確認動画はこのアカウントへ直接保存され、料金・容量もこのアカウント側になります。</div>
                           </>
                         ) : (
-                          <div className="text-[11px] text-stone-500 mt-1">接続すると、確認動画をあなた自身のStreamへ保存して高速再生できます。</div>
+                          <div className="text-[12px] text-stone-600 mt-1">接続すると、確認動画をあなた自身のStreamへ保存して高速再生できます。</div>
                         )}
                       </div>
                     </div>
                     <div className="mt-2 flex justify-end">
                       {cfStream.connected
-                        ? <button onClick={disconnectCloudflare} disabled={cfBusy} className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">接続を解除</button>
-                        : <button onClick={connectCloudflare} disabled={cfBusy || cfStream.loading} className="text-[11px] font-bold px-3 py-1.5 rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40">{cfBusy ? "接続中…" : "Cloudflareを接続"}</button>}
+                        ? <button onClick={disconnectCloudflare} disabled={cfBusy} className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">接続を解除</button>
+                        : <button onClick={connectCloudflare} disabled={cfBusy || cfStream.loading} className="text-[12px] font-bold px-3 py-1.5 rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40">{cfBusy ? "接続中…" : "Cloudflareを接続"}</button>}
                     </div>
                   </div>
                   <div className="mt-3 rounded-xl border border-stone-200 overflow-hidden">
                     <button onClick={() => setConnectionsOpen((v) => !v)} className="w-full px-3 py-2.5 flex items-center gap-2 text-left hover:bg-stone-50">
-                      <Icon name="share" className="w-4 h-4 text-stone-500 shrink-0" />
+                      <Icon name="share" className="w-4 h-4 text-stone-600 shrink-0" />
                       <div className="flex-1">
-                        <div className="text-[12px] font-bold">ログイン情報の連携先</div>
-                        <div className="text-[10px] text-stone-400">保存先・用途・費用負担を確認</div>
+                        <div className="text-[13px] font-bold">ログイン情報の連携先</div>
+                        <div className="text-[11px] text-stone-500">保存先・用途・費用負担を確認</div>
                       </div>
-                      <span className="text-stone-400 text-xs">{connectionsOpen ? "▲" : "▼"}</span>
+                      <span className="text-stone-500 text-xs">{connectionsOpen ? "▲" : "▼"}</span>
                     </button>
                     {connectionsOpen && (
                       <div className="border-t border-stone-100 px-3 py-3">
                         {!connections ? (
-                          <div className="text-[11px] text-stone-400 text-center py-3">連携情報を読み込み中…</div>
+                          <div className="text-[12px] text-stone-500 text-center py-3">連携情報を読み込み中…</div>
                         ) : (() => {
                           const rows = [
                             ["本人確認", connections.identity, "user"],
@@ -10846,7 +10848,7 @@ export default function App() {
                           ];
                           return (
                             <div className="space-y-2">
-                              <div className="rounded-lg bg-stone-50 px-3 py-2 text-[10px] text-stone-500 leading-relaxed">
+                              <div className="rounded-lg bg-stone-50 px-3 py-2 text-[11px] text-stone-600 leading-relaxed">
                                 <span className="font-bold text-stone-700">Googleログイン</span>
                                 <span className="mx-1.5 text-stone-300">→</span>
                                 ものがたりっちの本人確認
@@ -10861,25 +10863,25 @@ export default function App() {
                                 return (
                                   <div key={label} className="rounded-lg border border-stone-100 px-2.5 py-2">
                                     <div className="flex items-center gap-2">
-                                      <div className={"w-6 h-6 rounded-md grid place-items-center shrink-0 " + (connected ? "bg-emerald-50 text-emerald-600" : "bg-stone-100 text-stone-400")}>
+                                      <div className={"w-6 h-6 rounded-md grid place-items-center shrink-0 " + (connected ? "bg-emerald-50 text-emerald-600" : "bg-stone-100 text-stone-500")}>
                                         <Icon name={ico} className="w-3.5 h-3.5" />
                                       </div>
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1.5">
-                                          <span className="text-[11px] font-bold">{label}</span>
-                                          <span className={"text-[9px] font-bold px-1.5 py-0.5 rounded-full " + (connected ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-500")}>{connected ? "接続中" : "未接続"}</span>
-                                          {owner && <span className={"text-[9px] font-bold px-1.5 py-0.5 rounded-full " + (own ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{owner}の契約</span>}
+                                          <span className="text-[12px] font-bold">{label}</span>
+                                          <span className={"text-[10.5px] font-bold px-1.5 py-0.5 rounded-full " + (connected ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-stone-600")}>{connected ? "接続中" : "未接続"}</span>
+                                          {owner && <span className={"text-[10.5px] font-bold px-1.5 py-0.5 rounded-full " + (own ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700")}>{owner}の契約</span>}
                                         </div>
-                                        <div className="text-[10px] text-stone-500 truncate">{item.provider}{item.accountName ? " / " + item.accountName : ""}</div>
+                                        <div className="text-[11px] text-stone-600 truncate">{item.provider}{item.accountName ? " / " + item.accountName : ""}</div>
                                       </div>
                                     </div>
-                                    <div className="text-[10px] text-stone-400 leading-relaxed mt-1 pl-8">{item.purpose}</div>
-                                    {label === "本人確認" && connections.identity.email && <div className="text-[10px] text-stone-500 mt-1 pl-8 truncate">連携メール：{connections.identity.email}</div>}
-                                    {label === "ログイン状態" && item.expiresAt && <div className="text-[10px] text-stone-500 mt-1 pl-8">有効期限：{new Date(item.expiresAt).toLocaleString("ja-JP")}</div>}
+                                    <div className="text-[11px] text-stone-500 leading-relaxed mt-1 pl-8">{item.purpose}</div>
+                                    {label === "本人確認" && connections.identity.email && <div className="text-[11px] text-stone-600 mt-1 pl-8 truncate">連携メール：{connections.identity.email}</div>}
+                                    {label === "ログイン状態" && item.expiresAt && <div className="text-[11px] text-stone-600 mt-1 pl-8">有効期限：{new Date(item.expiresAt).toLocaleString("ja-JP")}</div>}
                                   </div>
                                 );
                               })}
-                              <div className="pt-1 text-[9px] text-stone-400 leading-relaxed">
+                              <div className="pt-1 text-[10.5px] text-stone-500 leading-relaxed">
                                 APIキー・OAuthトークンそのものは安全のため表示しません。接続先と用途のみ表示しています。
                               </div>
                             </div>
@@ -10894,23 +10896,23 @@ export default function App() {
                 </div>
               ) : (
                 <div>
-                  <div className="text-[12px] text-stone-600 mb-3 leading-relaxed space-y-2">
-                    <div className="flex items-start gap-2"><Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" /><span><span className="font-bold">Googleアカウントで入る</span>と、自分の案件が<span className="font-bold">クラウドに保存</span>され、スマホでもPCでも同じ案件を開けます。</span></div>
-                    <div className="flex items-start gap-2"><Icon name="user" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" /><span>案件は<span className="font-bold">自分だけのもの</span>。他の人には見えません。一緒に作りたい案件だけ、相手を招待して共有できます。</span></div>
-                    <p className="text-stone-400 pl-6">ログインしなくても、この端末の中では今まで通り使えます。</p>
+                  <div className="text-[13px] text-stone-600 mb-3 leading-relaxed space-y-2">
+                    <div className="flex items-start gap-2"><Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" /><span><span className="font-bold">Googleアカウントで入る</span>と、自分の案件が<span className="font-bold">クラウドに保存</span>され、スマホでもPCでも同じ案件を開けます。</span></div>
+                    <div className="flex items-start gap-2"><Icon name="user" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" /><span>案件は<span className="font-bold">自分だけのもの</span>。他の人には見えません。一緒に作りたい案件だけ、相手を招待して共有できます。</span></div>
+                    <p className="text-stone-500 pl-6">ログインしなくても、この端末の中では今まで通り使えます。</p>
                   </div>
                   {GOOGLE_CLIENT_ID ? (
                     <div className="flex flex-col items-center py-2 min-h-[44px] gap-1.5">
                       <div ref={gbtnRef} />
-                      <span className="text-[10px] text-stone-400">ボタンを押すだけ・1クリックで入れます</span>
+                      <span className="text-[11px] text-stone-500">ボタンを押すだけ・1クリックで入れます</span>
                     </div>
                   ) : (
-                    <div className="text-[12px] text-stone-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 leading-relaxed">
+                    <div className="text-[13px] text-stone-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5 leading-relaxed">
                       <span className="inline-flex items-center gap-1 font-bold text-amber-800"><Icon name="warn" className="w-3.5 h-3.5" />ログインは準備中です</span><br />
                       もう少しで使えるようになります。今は端末内で保存されているので、このまま編集を続けてOKです。
                     </div>
                   )}
-                  {authBusy && <div className="text-center text-[12px] text-stone-400 mt-2">ログイン中…</div>}
+                  {authBusy && <div className="text-center text-[13px] text-stone-500 mt-2">ログイン中…</div>}
                 </div>
               )}
             </div>
@@ -10927,7 +10929,7 @@ export default function App() {
               <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
               <div className="flex-1" />
               <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
-                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[11px] font-bold border border-white/20 hover:bg-white/10">
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
                 {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
                 <span className="max-w-[120px] truncate">{user ? user.name : "ログイン"}</span>
               </button>
@@ -10938,30 +10940,30 @@ export default function App() {
             <div className="flex items-center gap-2 mb-6">
             <div className="relative flex-1 min-w-0">
               <div className="relative z-30 flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 py-2 shadow-sm">
-                <Icon name="search" className="w-4 h-4 text-stone-400 shrink-0" />
+                <Icon name="search" className="w-4 h-4 text-stone-500 shrink-0" />
                 <input value={caseSearch}
                   onFocus={primeSearch}
                   onChange={(e) => { setCaseSearch(e.target.value); searchNow(e.target.value); }}
                   onKeyDown={(e) => { if (e.key === "Escape") { setCaseSearch(""); setSearchHits(null); } }}
                   placeholder="全案件を横断検索（案件名・タイトル・ロケ名・原稿）"
-                  className="flex-1 min-w-0 text-[13px] bg-transparent focus:outline-none" />
-                {caseSearch && <button onClick={() => { setCaseSearch(""); setSearchHits(null); }} title="クリア" className="shrink-0 w-6 h-6 grid place-items-center rounded text-stone-400 hover:bg-stone-100"><Icon name="close" className="w-3.5 h-3.5" /></button>}
+                  className="flex-1 min-w-0 text-[14px] bg-transparent focus:outline-none" />
+                {caseSearch && <button onClick={() => { setCaseSearch(""); setSearchHits(null); }} title="クリア" className="shrink-0 w-6 h-6 grid place-items-center rounded text-stone-500 hover:bg-stone-100"><Icon name="close" className="w-3.5 h-3.5" /></button>}
               </div>
               {searchHits != null && (
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setSearchHits(null)} />
                   <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-stone-200 bg-white shadow-xl max-h-[60vh] overflow-y-auto mg-scroll">
                     {searchHits.length === 0 ? (
-                      <div className="px-4 py-3 text-[12px] text-stone-400">「{caseSearch}」にヒットなし</div>
+                      <div className="px-4 py-3 text-[13px] text-stone-500">「{caseSearch}」にヒットなし</div>
                     ) : searchHits.map((h, i) => (
                       <button key={h.caseId + ":" + i} onClick={() => jumpToCaseRow(h.caseId, h.rowId)}
                         className="w-full text-left px-3 py-2 border-b border-stone-100 last:border-0 hover:bg-stone-50 flex flex-col gap-0.5">
                         <span className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[10px] text-stone-400 shrink-0">{(channelIconOf(h.channel) || "📁") + h.channel}</span>
-                          <span className="text-[13px] font-bold text-stone-700 truncate">{h.caseName || "（無題）"}</span>
-                          {h.caseId === activeId && <span className="text-[9px] text-stone-400 shrink-0">表示中</span>}
+                          <span className="text-[11px] text-stone-500 shrink-0">{(channelIconOf(h.channel) || "📁") + h.channel}</span>
+                          <span className="text-[14px] font-bold text-stone-700 truncate">{h.caseName || "（無題）"}</span>
+                          {h.caseId === activeId && <span className="text-[10.5px] text-stone-500 shrink-0">表示中</span>}
                         </span>
-                        {h.snippet && <span className="text-[11px] text-stone-500 truncate">{h.snippet}</span>}
+                        {h.snippet && <span className="text-[12px] text-stone-600 truncate">{h.snippet}</span>}
                       </button>
                     ))}
                   </div>
@@ -10969,17 +10971,17 @@ export default function App() {
               )}
             </div>
             <button onClick={(e) => setAddMenu({ channel: DEFAULT_CHANNEL, x: e.clientX, y: e.clientY })}
-              className="shrink-0 h-9 px-3.5 rounded-xl inline-flex items-center gap-1.5 text-[12px] font-bold text-white shadow-sm" style={{ background: theme.accent }}>
+              className="shrink-0 h-9 px-3.5 rounded-xl inline-flex items-center gap-1.5 text-[13px] font-bold text-white shadow-sm" style={{ background: theme.accent }}>
               <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
             </button>
             <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
-              title="チャンネルを追加" className="shrink-0 h-9 px-3 rounded-xl inline-flex items-center gap-1 text-[12px] font-bold border border-stone-300 bg-white text-stone-500 hover:bg-stone-50">
+              title="チャンネルを追加" className="shrink-0 h-9 px-3 rounded-xl inline-flex items-center gap-1 text-[13px] font-bold border border-stone-300 bg-white text-stone-600 hover:bg-stone-50">
               <Icon name="folder" className="w-3.5 h-3.5" />＋
             </button>
             </div>
             {!user && (
-              <div className="mb-5 text-[12px] text-stone-600 bg-white border border-stone-200 rounded-xl px-4 py-3 flex items-start gap-2">
-                <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
+              <div className="mb-5 text-[13px] text-stone-600 bg-white border border-stone-200 rounded-xl px-4 py-3 flex items-start gap-2">
+                <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" />
                 <span><span className="font-bold">ログインすると</span>案件がクラウドに保存され、どの端末でも開けます。<button onClick={() => setShowAccount(true)} className="font-bold underline" style={{ color: theme.main }}>ログイン</button></span>
               </div>
             )}
@@ -10991,14 +10993,14 @@ export default function App() {
               return (
                 <div className="mb-7">
                   <div className="mb-5">
-                    <div className="text-[12px] font-bold mb-2 flex items-center gap-2 text-stone-600">続きから開く<span className="text-stone-300 font-normal">{recent.length}</span></div>
+                    <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">続きから開く<span className="text-stone-300 font-normal">{recent.length}</span></div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{recent.map(renderCaseCard)}</div>
                   </div>
                 </div>
               );
             })()}
 
-            <div className="text-[11px] font-bold tracking-[0.15em] text-stone-400 mb-2">チャンネル（{channelGroups.length}）</div>
+            <div className="text-[13px] font-bold tracking-wide text-stone-600 mb-2">チャンネル（{channelGroups.length}）</div>
             <div className="space-y-2.5">
               {channelGroups.map(({ channel, items }) => {
                 const ci = channelInfo[channel] || {};
@@ -11009,29 +11011,29 @@ export default function App() {
                       <button onClick={() => openChannel(channel)} title="このチャンネルの企画一覧を開く" className="flex items-start gap-2 min-w-0 flex-1 text-left group/cn">
                         {channelIconOf(channel)
                           ? <span className="w-4 h-4 shrink-0 mt-0.5 grid place-items-center text-[14px] leading-none">{channelIconOf(channel)}</span>
-                          : <svg className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>}
+                          : <svg className="w-4 h-4 shrink-0 mt-0.5 text-stone-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>}
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
                             <span className="text-[14px] font-bold text-stone-800 truncate group-hover/cn:underline">{channel}</span>
-                            <span className="text-[10px] text-stone-400 shrink-0">{items.length}案件</span>
-                            {ci.shareId && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 shrink-0">共有中</span>}
-                            <span className="text-[11px] shrink-0 opacity-0 group-hover/cn:opacity-100 transition-opacity" style={{ color: theme.main }}>開く →</span>
+                            <span className="text-[11px] text-stone-500 shrink-0">{items.length}案件</span>
+                            {ci.shareId && <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 shrink-0">共有中</span>}
+                            <span className="text-[12px] shrink-0 opacity-0 group-hover/cn:opacity-100 transition-opacity" style={{ color: theme.main }}>開く →</span>
                           </div>
                         </div>
                       </button>
                       <div className="flex gap-1 shrink-0">
-                        <button onClick={(e) => setAddMenu({ channel, x: e.clientX, y: e.clientY })} title="この中に案件を追加" className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="plus" className="w-3 h-3" />案件</button>
+                        <button onClick={(e) => setAddMenu({ channel, x: e.clientX, y: e.clientY })} title="この中に案件を追加" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="plus" className="w-3 h-3" />案件</button>
                         {channel !== DEFAULT_CHANNEL && (
-                          <button onClick={(e) => setChShareMenu({ channel, x: e.clientX, y: e.clientY })} disabled={chSharing} title="共有リンクを発行（見せる用／編集つきを選べます）" className="text-[10px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-50">共有</button>
+                          <button onClick={(e) => setChShareMenu({ channel, x: e.clientX, y: e.clientY })} disabled={chSharing} title="共有リンクを発行（見せる用／編集つきを選べます）" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-50">共有</button>
                         )}
                       </div>
                     </div>
                   </div>
                 );
               })}
-              {channelGroups.length === 0 && <p className="text-[12px] text-stone-400 text-center py-8">まだ案件がありません。上のボタンから作成してください。</p>}
+              {channelGroups.length === 0 && <p className="text-[13px] text-stone-500 text-center py-8">まだ案件がありません。上のボタンから作成してください。</p>}
             </div>
-            <p className="text-[10px] text-stone-400 mt-6 text-center">案件をクリックすると編集画面が開きます。左上ロゴでいつでもここに戻れます。</p>
+            <p className="text-[11px] text-stone-500 mt-6 text-center">案件をクリックすると編集画面が開きます。左上ロゴでいつでもここに戻れます。</p>
           </main>
         </div>
       )}
@@ -11042,9 +11044,9 @@ export default function App() {
           <div className="fixed inset-0 z-[60]" onClick={() => setAddMenu(null)} />
           <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(addMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: addMenu.y }}>
-            <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{addMenu.channel} に追加</div>
-            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "documentary"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><Icon name="video" className="w-4 h-4 shrink-0 text-stone-500" />一日密着</button>
-            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "talk"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2"><Icon name="mic" className="w-4 h-4 shrink-0 text-stone-500" />トーク系</button>
+            <div className="px-3 py-1.5 text-[11px] font-bold text-stone-500 truncate">{addMenu.channel} に追加</div>
+            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "documentary"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2"><Icon name="video" className="w-4 h-4 shrink-0 text-stone-600" />一日密着</button>
+            <button onClick={() => { const ch = addMenu.channel; setAddMenu(null); createProject(true, ch, "talk"); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2"><Icon name="mic" className="w-4 h-4 shrink-0 text-stone-600" />トーク系</button>
           </div>
         </>
       )}
@@ -11054,14 +11056,14 @@ export default function App() {
           <div className="fixed inset-0 z-[60]" onClick={() => setChShareMenu(null)} />
           <div className="mg-pop fixed z-[61] w-60 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(chShareMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 250), top: chShareMenu.y }}>
-            <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{chShareMenu.channel} を共有</div>
+            <div className="px-3 py-1.5 text-[11px] font-bold text-stone-500 truncate">{chShareMenu.channel} を共有</div>
             <button onClick={() => { const ch = chShareMenu.channel; setChShareMenu(null); publishChannel(ch, false); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 flex items-start gap-2">
               <svg className="mt-0.5 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
-              <span><span className="text-[12px] font-bold block">見せる用に共有</span><span className="text-[10px] text-stone-400">読み取り専用。説明・確認用</span></span>
+              <span><span className="text-[13px] font-bold block">見せる用に共有</span><span className="text-[11px] text-stone-500">読み取り専用。説明・確認用</span></span>
             </button>
             <button onClick={() => { const ch = chShareMenu.channel; setChShareMenu(null); publishChannel(ch, true); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 flex items-start gap-2">
               <svg className="mt-0.5 shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={theme.accent} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-              <span><span className="text-[12px] font-bold block" style={{ color: theme.accent }}>編集つきで共有</span><span className="text-[10px] text-stone-400">先方がその場で全部編集できる</span></span>
+              <span><span className="text-[13px] font-bold block" style={{ color: theme.accent }}>編集つきで共有</span><span className="text-[11px] text-stone-500">先方がその場で全部編集できる</span></span>
             </button>
           </div>
         </>
@@ -11073,28 +11075,28 @@ export default function App() {
           <div className="fixed inset-0 z-[60]" onClick={() => setCtxMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }} />
           <div className="mg-pop fixed z-[61] w-52 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(ctxMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 220), top: ctxMenu.y }}>
-            <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400 truncate">{ctxMenu.channel}</div>
+            <div className="px-3 py-1.5 text-[11px] font-bold text-stone-500 truncate">{ctxMenu.channel}</div>
             {ctxMenu.channel !== DEFAULT_CHANNEL && (
               <>
-                <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); publishChannel(ch, false); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); publishChannel(ch, false); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
                   見せる用に共有（読取専用）
                 </button>
-                <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); publishChannel(ch, true); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
+                <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); publishChannel(ch, true); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                   編集つきで共有
                 </button>
               </>
             )}
-            <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); createProject(true, ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />この中に案件を追加</button>
-            <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); renameChannel(ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2">✎ フォルダ名を変更</button>
-            <button onClick={(e) => { const ch = ctxMenu.channel; const x = ctxMenu.x, y = ctxMenu.y; setCtxMenu(null); setIconPick({ channel: ch, x, y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2">{channelIconOf(ctxMenu.channel) ? <span>{channelIconOf(ctxMenu.channel)}</span> : <Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />}アイコンを変更</button>
+            <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); createProject(true, ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-500" />この中に案件を追加</button>
+            <button onClick={() => { const ch = ctxMenu.channel; setCtxMenu(null); renameChannel(ch); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2">✎ フォルダ名を変更</button>
+            <button onClick={(e) => { const ch = ctxMenu.channel; const x = ctxMenu.x, y = ctxMenu.y; setCtxMenu(null); setIconPick({ channel: ch, x, y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2">{channelIconOf(ctxMenu.channel) ? <span>{channelIconOf(ctxMenu.channel)}</span> : <Icon name="folder" className="w-3.5 h-3.5 text-stone-500" />}アイコンを変更</button>
             {ctxMenu.channel !== DEFAULT_CHANNEL && (
               <div className="border-t border-stone-100 mt-1 pt-1">
-                <div className="px-3 pt-0.5 pb-1 text-[9.5px] font-bold text-stone-400">サイドバーの分類</div>
+                <div className="px-3 pt-0.5 pb-1 text-[11px] font-bold text-stone-500">サイドバーの分類</div>
                 {[["active", "進行中"], ["hold", "保留"], ["done", "完了"]].map(([v, label]) => (
                   <button key={v} onClick={() => { setChannelStatus(ctxMenu.channel, v); setCtxMenu(null); }}
-                    className={"w-full text-left px-3 py-1.5 hover:bg-stone-50 text-[12px] flex items-center gap-2 " + (((channelInfo[ctxMenu.channel] && channelInfo[ctxMenu.channel].status) || "active") === v ? "font-bold text-stone-800" : "text-stone-500")}>
+                    className={"w-full text-left px-3 py-1.5 hover:bg-stone-50 text-[13px] flex items-center gap-2 " + (((channelInfo[ctxMenu.channel] && channelInfo[ctxMenu.channel].status) || "active") === v ? "font-bold text-stone-800" : "text-stone-600")}>
                     <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: ((channelInfo[ctxMenu.channel] && channelInfo[ctxMenu.channel].status) || "active") === v ? theme.accent : "#d6d3d1" }} />
                     {label}
                   </button>
@@ -11103,11 +11105,11 @@ export default function App() {
             )}
             {ctxMenu.channel !== DEFAULT_CHANNEL && (
               <div className="flex border-t border-stone-100 mt-1">
-                <button onClick={() => { moveChannel(ctxMenu.channel, -1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
-                <button onClick={() => { moveChannel(ctxMenu.channel, 1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
+                <button onClick={() => { moveChannel(ctxMenu.channel, -1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
+                <button onClick={() => { moveChannel(ctxMenu.channel, 1); setCtxMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
               </div>
             )}
-            <button onClick={() => deleteChannel(ctxMenu.channel)} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[12px] font-bold text-red-500 flex items-center gap-2">
+            <button onClick={() => deleteChannel(ctxMenu.channel)} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[13px] font-bold text-red-500 flex items-center gap-2">
               <Icon name="trash" className="w-3.5 h-3.5" />フォルダごと削除
             </button>
           </div>
@@ -11120,24 +11122,24 @@ export default function App() {
           <div className="fixed inset-0 z-[60]" onClick={() => setChanMenu(null)} onContextMenu={(e) => { e.preventDefault(); setChanMenu(null); }} />
           <div className="mg-pop fixed z-[61] w-56 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(chanMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 236), top: chanMenu.y }}>
-            <div className="px-3 py-1.5 text-[10px] font-bold text-stone-400">移動先のチャンネルを選ぶ</div>
+            <div className="px-3 py-1.5 text-[11px] font-bold text-stone-500">移動先のチャンネルを選ぶ</div>
             <div className="max-h-72 overflow-y-auto mg-scroll">
               {channelOptions.map((c) => {
                 const isCur = c === chanMenu.channel;
                 return (
                   <button key={c} disabled={isCur}
                     onClick={() => { const id = chanMenu.id; setChanMenu(null); if (!isCur) setProjectChannel(id, c); }}
-                    className={"w-full text-left px-3 py-2 text-[12px] flex items-center gap-2 " + (isCur ? "bg-stone-50 text-stone-400 cursor-default" : "hover:bg-stone-50")}>
+                    className={"w-full text-left px-3 py-2 text-[13px] flex items-center gap-2 " + (isCur ? "bg-stone-50 text-stone-500 cursor-default" : "hover:bg-stone-50")}>
                     <span className="w-4 shrink-0 text-center leading-none">{channelIconOf(c) || "📁"}</span>
                     <span className="truncate flex-1">{c}</span>
-                    {isCur && <span className="text-[10px] text-stone-400 shrink-0">現在</span>}
+                    {isCur && <span className="text-[11px] text-stone-500 shrink-0">現在</span>}
                   </button>
                 );
               })}
             </div>
             <button onClick={() => { const id = chanMenu.id; setChanMenu(null); setRenamingId(null); setChannelEditId(id); }}
-              className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[12px] font-bold flex items-center gap-2">
-              <Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />新規フォルダに移動…
+              className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+              <Icon name="plus" className="w-3.5 h-3.5 text-stone-500" />新規フォルダに移動…
             </button>
           </div>
         </>
@@ -11149,10 +11151,10 @@ export default function App() {
           <div className="fixed inset-0 z-[60]" onClick={() => setCaseMenu(null)} onContextMenu={(e) => { e.preventDefault(); setCaseMenu(null); }} />
           <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(caseMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(caseMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 220) }}>
-            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); setChannelEditId(null); setRenamingId(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">✎</span>名前変更</button>
-            <button onClick={() => { const c = caseMenu; setCaseMenu(null); setChanMenu({ id: c.id, channel: c.channel, x: c.x, y: c.y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">📁</span>チャンネル移動</button>
-            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); duplicateProject(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><span className="w-4 text-center">⎘</span>複製</button>
-            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); deleteProject(id); }} className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 text-[12px] flex items-center gap-2 border-t border-stone-100"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
+            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); setChannelEditId(null); setRenamingId(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><span className="w-4 text-center">✎</span>名前変更</button>
+            <button onClick={() => { const c = caseMenu; setCaseMenu(null); setChanMenu({ id: c.id, channel: c.channel, x: c.x, y: c.y }); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><span className="w-4 text-center">📁</span>チャンネル移動</button>
+            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); duplicateProject(id); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><span className="w-4 text-center">⎘</span>複製</button>
+            <button onClick={() => { const id = caseMenu.id; setCaseMenu(null); deleteProject(id); }} className="w-full text-left px-3 py-2 hover:bg-red-50 text-red-500 text-[13px] flex items-center gap-2 border-t border-stone-100"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
           </div>
         </>
       )}
@@ -11164,14 +11166,14 @@ export default function App() {
           <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
             style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 200) }}>
             <div className="flex border-b border-stone-100">
-              <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
-              <button onClick={() => { moveRow(rowMenu.idx, 1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[12px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
+              <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
+              <button onClick={() => { moveRow(rowMenu.idx, 1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
             </div>
-            <button onClick={() => { const idx = rowMenu.idx, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(rowMenu.kind === "location" ? "解説系" : (sceneType || "解説系"))); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-400" />下にシーンを追加</button>
-            <button onClick={() => { const idx = rowMenu.idx; setRowMenu(null); insertBelow(idx, newLocation("")); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="folder" className="w-3.5 h-3.5 text-stone-400" />下にロケ（セクション）を追加</button>
-            <button onClick={() => { setRowMenu(null); setShowReview(true); if (!reviewBusy) runReview(); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="spellcheck" className="w-3.5 h-3.5 text-stone-400" />AI校正チェック（台本全体）</button>
-            <button onClick={() => { setRowMenu(null); setShowAssistant(true); setAssistantSummary(""); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] flex items-center gap-2"><Icon name="robot" className="w-3.5 h-3.5 text-stone-400" />AIで反映（メッセージを貼る）</button>
-            <button onClick={() => { const id = rowMenu.id; setRowMenu(null); deleteRow(id); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[12px] font-bold text-red-500 flex items-center gap-2"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
+            <button onClick={() => { const idx = rowMenu.idx, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(rowMenu.kind === "location" ? "解説系" : (sceneType || "解説系"))); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-500" />下にシーンを追加</button>
+            <button onClick={() => { const idx = rowMenu.idx; setRowMenu(null); insertBelow(idx, newLocation("")); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="folder" className="w-3.5 h-3.5 text-stone-500" />下にロケ（セクション）を追加</button>
+            <button onClick={() => { setRowMenu(null); setShowReview(true); if (!reviewBusy) runReview(); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="spellcheck" className="w-3.5 h-3.5 text-stone-500" />AI校正チェック（台本全体）</button>
+            <button onClick={() => { setRowMenu(null); setShowAssistant(true); setAssistantSummary(""); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="robot" className="w-3.5 h-3.5 text-stone-500" />AIで反映（メッセージを貼る）</button>
+            <button onClick={() => { const id = rowMenu.id; setRowMenu(null); deleteRow(id); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-red-50 text-[13px] font-bold text-red-500 flex items-center gap-2"><Icon name="trash" className="w-3.5 h-3.5" />削除</button>
           </div>
         </>
       )}
@@ -11182,9 +11184,9 @@ export default function App() {
           <div className="fixed inset-0 z-[62]" onClick={() => setIconPick(null)} onContextMenu={(e) => { e.preventDefault(); setIconPick(null); }} />
           <div className="mg-pop fixed z-[63] w-[244px] bg-white rounded-xl shadow-2xl border border-stone-200 p-2.5 text-stone-700"
             style={{ left: Math.min(iconPick.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 256), top: Math.min(iconPick.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 230) }}>
-            <div className="px-1 pb-1.5 text-[10px] font-bold text-stone-400 truncate flex items-center justify-between">
+            <div className="px-1 pb-1.5 text-[11px] font-bold text-stone-500 truncate flex items-center justify-between">
               <span className="truncate">{iconPick.channel} のアイコン</span>
-              {channelIconOf(iconPick.channel) && <button onClick={() => setChannelIcon(iconPick.channel, "")} className="shrink-0 text-stone-400 hover:text-stone-600 underline">なし</button>}
+              {channelIconOf(iconPick.channel) && <button onClick={() => setChannelIcon(iconPick.channel, "")} className="shrink-0 text-stone-500 hover:text-stone-600 underline">なし</button>}
             </div>
             <div className="grid grid-cols-6 gap-0.5">
               {CHANNEL_ICONS.map((em) => (
@@ -11207,7 +11209,7 @@ export default function App() {
             <div className="p-5">
               {!user ? (
                 <div className="text-center py-4">
-                  <p className="text-[13px] text-stone-600 mb-3">共同編集にはログインが必要です。</p>
+                  <p className="text-[14px] text-stone-600 mb-3">共同編集にはログインが必要です。</p>
                   <button onClick={() => { setShowInvite(false); setShowAccount(true); }} className="text-xs font-bold px-5 py-2.5 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>ログインする</button>
                 </div>
               ) : (() => {
@@ -11216,7 +11218,7 @@ export default function App() {
                 const members = (project.members || []).filter((m) => m !== ownerEmail);
                 return (
                   <div>
-                    <p className="text-[12px] text-stone-600 leading-relaxed mb-3">
+                    <p className="text-[13px] text-stone-600 leading-relaxed mb-3">
                       「<span className="font-bold">{project.name}</span>」を、招待した人の<span className="font-bold">Googleアカウント</span>で<span className="font-bold">一緒に編集</span>できるようにします。招待された人はログインすると自分の案件一覧にこの案件が出ます。
                     </p>
                     {isOwner ? (
@@ -11224,32 +11226,32 @@ export default function App() {
                         <input value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} type="email"
                           onKeyDown={(e) => { if (e.key === "Enter") inviteMember(); }}
                           placeholder="招待する人のGmailアドレス"
-                          className="flex-1 min-w-0 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                          className="flex-1 min-w-0 text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
                         <button onClick={inviteMember} disabled={inviteBusy || !inviteEmail.trim()}
                           className="text-xs font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 shrink-0" style={{ background: theme.accent, color: accentText }}>
                           {inviteBusy ? "…" : "招待"}
                         </button>
                       </div>
                     ) : (
-                      <div className="text-[12px] text-stone-500 bg-stone-50 rounded-lg px-3 py-2 mb-3">この案件のオーナーは <span className="font-bold">{ownerEmail}</span> です。あなたは編集メンバーとして参加しています。</div>
+                      <div className="text-[13px] text-stone-600 bg-stone-50 rounded-lg px-3 py-2 mb-3">この案件のオーナーは <span className="font-bold">{ownerEmail}</span> です。あなたは編集メンバーとして参加しています。</div>
                     )}
-                    <div className="text-[11px] font-bold text-stone-400 mb-1.5">メンバー</div>
+                    <div className="text-[12px] font-bold text-stone-500 mb-1.5">メンバー</div>
                     <div className="space-y-1.5">
-                      <div className="flex items-center gap-2 text-[12.5px] px-2 py-1.5 rounded-lg bg-stone-50">
-                        <span className="w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold text-white shrink-0" style={{ background: theme.main }}>{(ownerEmail[0] || "?").toUpperCase()}</span>
+                      <div className="flex items-center gap-2 text-[13.5px] px-2 py-1.5 rounded-lg bg-stone-50">
+                        <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] font-bold text-white shrink-0" style={{ background: theme.main }}>{(ownerEmail[0] || "?").toUpperCase()}</span>
                         <span className="truncate">{ownerEmail}</span>
-                        <span className="ml-auto text-[10px] font-bold text-stone-400 shrink-0">オーナー</span>
+                        <span className="ml-auto text-[11px] font-bold text-stone-500 shrink-0">オーナー</span>
                       </div>
                       {members.map((m) => (
-                        <div key={m} className="flex items-center gap-2 text-[12.5px] px-2 py-1.5 rounded-lg border border-stone-100">
-                          <span className="w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold text-white shrink-0 bg-stone-400">{(m[0] || "?").toUpperCase()}</span>
+                        <div key={m} className="flex items-center gap-2 text-[13.5px] px-2 py-1.5 rounded-lg border border-stone-100">
+                          <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] font-bold text-white shrink-0 bg-stone-400">{(m[0] || "?").toUpperCase()}</span>
                           <span className="truncate">{m}</span>
-                          {isOwner && <button onClick={() => uninviteMember(m)} className="ml-auto text-[10px] font-bold text-stone-300 hover:text-red-500 shrink-0">外す</button>}
+                          {isOwner && <button onClick={() => uninviteMember(m)} className="ml-auto text-[11px] font-bold text-stone-300 hover:text-red-500 shrink-0">外す</button>}
                         </div>
                       ))}
-                      {members.length === 0 && <p className="text-[11px] text-stone-400 px-2">まだ他のメンバーはいません。</p>}
+                      {members.length === 0 && <p className="text-[12px] text-stone-500 px-2">まだ他のメンバーはいません。</p>}
                     </div>
-                    <p className="text-[10px] text-stone-400 mt-3 leading-relaxed">同時編集は最後の保存が優先されます。大きな変更は声を掛け合ってね。</p>
+                    <p className="text-[11px] text-stone-500 mt-3 leading-relaxed">同時編集は最後の保存が優先されます。大きな変更は声を掛け合ってね。</p>
                   </div>
                 );
               })()}
@@ -11263,17 +11265,17 @@ export default function App() {
         <div className="fixed inset-0 z-[205] bg-black/45 flex items-center justify-center p-4" onClick={() => setShareAudience(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-4 flex items-center justify-between border-b border-stone-200" style={{ background: theme.main, color: mainText }}>
-              <div><h3 className="text-sm font-bold">誰に共有しますか？</h3><p className="text-[10px] opacity-70 mt-0.5">相手に必要な動画・情報・権限だけを自動で設定します</p></div>
+              <div><h3 className="text-sm font-bold">誰に共有しますか？</h3><p className="text-[11px] opacity-70 mt-0.5">相手に必要な動画・情報・権限だけを自動で設定します</p></div>
               <button onClick={() => setShareAudience(null)} className="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5 grid sm:grid-cols-2 gap-3">
               <button onClick={() => { setShareAudience(null); copyShareUrl("review", false, "client"); }} className="text-left rounded-xl border-2 border-stone-200 p-4 hover:border-stone-400 hover:bg-stone-50 transition-colors">
                 <div className="text-[14px] font-bold text-stone-900">先方に共有</div>
-                <p className="mt-2 text-[11px] text-stone-500 leading-relaxed">動画の再生とタイムコードコメントだけ。共有前に公開レギュレーションを確認し、社内ルールは表示しません。</p>
+                <p className="mt-2 text-[12px] text-stone-600 leading-relaxed">動画の再生とタイムコードコメントだけ。共有前に公開レギュレーションを確認し、社内ルールは表示しません。</p>
               </button>
               <button onClick={() => { const h = handoffs.find((x) => x.id === "editor") || HANDOFF_DEFAULTS[0]; setShareAudience(null); doHandoff({ ...h, tabs: Array.from(new Set(["review", ...(h.tabs || []), "manual"])), start: "review", upload: true }); }} className="text-left rounded-xl border-2 border-stone-200 p-4 hover:border-rose-300 hover:bg-rose-50/40 transition-colors">
                 <div className="text-[14px] font-bold text-stone-900">編集者に共有</div>
-                <p className="mt-2 text-[11px] text-stone-500 leading-relaxed">動画・制作情報・素材・この案件に適用されるレギュレーションを共有。動画アップとダウンロードもできます。</p>
+                <p className="mt-2 text-[12px] text-stone-600 leading-relaxed">動画・制作情報・素材・この案件に適用されるレギュレーションを共有。動画アップとダウンロードもできます。</p>
               </button>
             </div>
           </div>
@@ -11285,9 +11287,9 @@ export default function App() {
           全部最初からになってしまう」）。レギュレーション検査は数十秒かかるので、捨てると毎回やり直しになる。 */}
       {preflight && preflight.minimized && (
         <div className="fixed bottom-4 right-4 z-[210] flex items-center gap-2 rounded-full shadow-lg pl-4 pr-2 py-2" style={{ background: theme.main, color: mainText }}>
-          <span className="text-[12px] font-bold">直したら戻ってください</span>
+          <span className="text-[13px] font-bold">直したら戻ってください</span>
           <button onClick={() => setPreflight((p) => ({ ...p, minimized: false }))}
-            className="text-[12px] font-bold px-3 py-1.5 rounded-full" style={{ background: theme.accent, color: accentText }}>チェックに戻る</button>
+            className="text-[13px] font-bold px-3 py-1.5 rounded-full" style={{ background: theme.accent, color: accentText }}>チェックに戻る</button>
           <button onClick={() => setPreflight(null)} title="チェックを閉じる（結果は破棄されます）"
             className="w-7 h-7 rounded-full grid place-items-center hover:bg-white/15"><Icon name="close" className="w-3.5 h-3.5" /></button>
         </div>
@@ -11296,7 +11298,7 @@ export default function App() {
         <div className="fixed inset-0 z-[210] bg-black/45 flex items-center justify-center p-3 sm:p-5" onClick={() => !preflightBusy && setPreflight((p) => ({ ...p, minimized: true }))}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3.5 flex items-center gap-3 border-b border-stone-200" style={{ background: theme.main, color: mainText }}>
-              <div className="flex-1"><h3 className="text-sm font-bold">確認用URLを生成する前のチェック</h3><p className="text-[10px] opacity-70 mt-0.5">{project.name} ・ Obsidianナレッジ {preflight.knowledgeVersion}</p></div>
+              <div className="flex-1"><h3 className="text-sm font-bold">確認用URLを生成する前のチェック</h3><p className="text-[11px] opacity-70 mt-0.5">{project.name} ・ Obsidianナレッジ {preflight.knowledgeVersion}</p></div>
               <button onClick={() => setPreflight((p) => ({ ...p, minimized: true }))} disabled={preflightBusy} title="畳む（検査結果は残ります）" className="w-8 h-8 rounded-lg grid place-items-center hover:bg-white/15 disabled:opacity-40"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4">
@@ -11312,71 +11314,71 @@ export default function App() {
                 return (
                   <section className="rounded-xl border border-stone-200 p-3.5 space-y-3">
                     <div className="flex items-center gap-2">
-                      <div className="text-[12px] font-bold text-stone-800">先方に出る実物（これを確認してからURL生成）</div>
-                      {missing.length > 0 && <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">未記入: {missing.join("・")}</span>}
+                      <div className="text-[13px] font-bold text-stone-800">先方に出る実物（これを確認してからURL生成）</div>
+                      {missing.length > 0 && <span className="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">未記入: {missing.join("・")}</span>}
                     </div>
                     <div>
-                      <div className="text-[10px] font-bold text-stone-400 mb-0.5">タイトル</div>
-                      <div className="text-[13.5px] font-bold text-stone-800 leading-snug">{(m.deliverTitle || "").trim() || <span className="text-stone-300">（未記入）</span>}</div>
+                      <div className="text-[11px] font-bold text-stone-500 mb-0.5">タイトル</div>
+                      <div className="text-[14.5px] font-bold text-stone-800 leading-snug">{(m.deliverTitle || "").trim() || <span className="text-stone-300">（未記入）</span>}</div>
                     </div>
                     {thumbs.length > 0 && (
                       <div>
-                        <div className="text-[10px] font-bold text-stone-400 mb-1">サムネ（使用分）</div>
+                        <div className="text-[11px] font-bold text-stone-500 mb-1">サムネ（使用分）</div>
                         <div className="flex gap-2 flex-wrap">
                           {thumbs.slice(0, 3).map((t, i2) => (
                             <div key={i2} className="w-40">
                               <img src={SHARE_API + "/api/file/" + t.key} alt="" className="h-24 w-full rounded-lg border border-stone-200 object-cover" />
-                              {(t.intent || "").trim() && <div className="text-[10px] text-stone-500 leading-snug mt-1 whitespace-pre-wrap">{t.intent}</div>}
+                              {(t.intent || "").trim() && <div className="text-[11px] text-stone-600 leading-snug mt-1 whitespace-pre-wrap">{t.intent}</div>}
                             </div>
                           ))}
                         </div>
                       </div>
                     )}
                     <div>
-                      <div className="text-[10px] font-bold text-stone-400 mb-0.5">概要欄</div>
-                      <div className="text-[12px] text-stone-700 whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto rounded-lg bg-stone-50 border border-stone-100 p-2.5">{(m.deliverDescription || "").trim() || <span className="text-stone-300">（未記入）</span>}</div>
+                      <div className="text-[11px] font-bold text-stone-500 mb-0.5">概要欄</div>
+                      <div className="text-[13px] text-stone-700 whitespace-pre-wrap leading-relaxed max-h-44 overflow-y-auto rounded-lg bg-stone-50 border border-stone-100 p-2.5">{(m.deliverDescription || "").trim() || <span className="text-stone-300">（未記入）</span>}</div>
                     </div>
                     {(m.deliverHashtags || "").trim() && (
                       <div>
-                        <div className="text-[10px] font-bold text-stone-400 mb-0.5">ハッシュタグ</div>
-                        <div className="text-[12px] text-stone-700 whitespace-pre-wrap">{m.deliverHashtags}</div>
+                        <div className="text-[11px] font-bold text-stone-500 mb-0.5">ハッシュタグ</div>
+                        <div className="text-[13px] text-stone-700 whitespace-pre-wrap">{m.deliverHashtags}</div>
                       </div>
                     )}
                   </section>
                 );
               })()}
               <details className="rounded-xl border border-stone-200 bg-stone-50/50 overflow-hidden">
-                <summary className="px-3.5 py-3 cursor-pointer text-[12px] font-bold text-stone-600 select-none">レギュレーション {regulationChecklist.length}件（この規定に照らして検査しています）</summary>
+                <summary className="px-3.5 py-3 cursor-pointer text-[13px] font-bold text-stone-600 select-none">レギュレーション {regulationChecklist.length}件（この規定に照らして検査しています）</summary>
                 <div className="border-t border-stone-200 bg-white px-3.5 py-1">
                   {regulationChecklist.map((r, i) => (
                     <div key={r.key} className={"flex items-start gap-2.5 py-2.5 " + (i ? "border-t border-stone-100" : "")}>
-                      <span className="shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">{r.cat}</span>
-                      <span className="flex-1 min-w-0 text-[11.5px] leading-relaxed text-stone-700">
+                      <span className="shrink-0 text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">{r.cat}</span>
+                      <span className="flex-1 min-w-0 text-[12.5px] leading-relaxed text-stone-700">
                         {r.title}
-                        {r.body && <span className="block text-[10.5px] text-stone-500 mt-0.5 whitespace-pre-wrap">{r.body}</span>}
+                        {r.body && <span className="block text-[11.5px] text-stone-600 mt-0.5 whitespace-pre-wrap">{r.body}</span>}
                       </span>
-                      <span className="shrink-0 text-[9px] text-stone-400">{r.scope}</span>
+                      <span className="shrink-0 text-[10.5px] text-stone-500">{r.scope}</span>
                     </div>
                   ))}
-                  {regulationChecklist.length === 0 && <p className="text-[11px] text-stone-400 py-3">適用されるレギュレーションはありません。</p>}
+                  {regulationChecklist.length === 0 && <p className="text-[12px] text-stone-500 py-3">適用されるレギュレーションはありません。</p>}
                 </div>
               </details>
               {/* レギュレーション検査の状態（2026-08-28）。検査していないのに「完了しています」と出す表示を廃止。
                   走っている／終わった／繋がらなかった、を必ずそのまま出す */}
               {preflight.concernsBusy ? (
                 <section className="rounded-xl border border-stone-200 bg-stone-50 p-3.5">
-                  <div className="text-[12px] font-bold text-stone-700">レギュレーション検査中…</div>
-                  <p className="text-[11px] text-stone-500 mt-1 leading-relaxed">タイトル・概要欄・ハッシュタグ・サムネ・台本を、全社とクライアントの規定に照らして見ています。</p>
+                  <div className="text-[13px] font-bold text-stone-700">レギュレーション検査中…</div>
+                  <p className="text-[12px] text-stone-600 mt-1 leading-relaxed">タイトル・概要欄・ハッシュタグ・サムネ・台本を、全社とクライアントの規定に照らして見ています。</p>
                 </section>
               ) : preflight.error ? (
                 <section className="rounded-xl border border-rose-200 bg-rose-50/60 p-3.5">
-                  <div className="text-[12px] font-bold text-rose-800">レギュレーション検査ができませんでした</div>
-                  <p className="text-[11px] text-rose-700 mt-1 leading-relaxed">{preflight.error}　未チェックのまま出す場合は「検査を待たずに共有する」を押してください。</p>
+                  <div className="text-[13px] font-bold text-rose-800">レギュレーション検査ができませんでした</div>
+                  <p className="text-[12px] text-rose-700 mt-1 leading-relaxed">{preflight.error}　未チェックのまま出す場合は「検査を待たずに共有する」を押してください。</p>
                 </section>
               ) : (preflight.concerns || []).length === 0 ? (
                 <section className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-3.5">
-                  <div className="text-[12px] font-bold text-emerald-800">レギュレーション検査：懸念なし</div>
-                  <p className="text-[11px] text-emerald-700 mt-1 leading-relaxed">{preflight.summary || "タイトル・概要欄・ハッシュタグ・サムネ・台本を規定に照らして確認しました。"}</p>
+                  <div className="text-[13px] font-bold text-emerald-800">レギュレーション検査：懸念なし</div>
+                  <p className="text-[12px] text-emerald-700 mt-1 leading-relaxed">{preflight.summary || "タイトル・概要欄・ハッシュタグ・サムネ・台本を規定に照らして確認しました。"}</p>
                 </section>
               ) : null}
               {/* 台本の自動レビュー（端末内の構造チェック）。修正は任意＝「そのまま共有」もできる */}
@@ -11387,26 +11389,26 @@ export default function App() {
                 return (
                   <section className="rounded-xl border p-3.5" style={{ borderColor: hard.length ? "#F6CCCC" : "#E5E7EB" }}>
                     <div className="flex items-center gap-2 mb-1.5">
-                      <span className="text-[12px] font-bold text-stone-800">台本の自動レビュー</span>
+                      <span className="text-[13px] font-bold text-stone-800">台本の自動レビュー</span>
                     </div>
-                    <p className="text-[11px] text-stone-500 leading-relaxed">シーン/ロケの記入漏れ・インサートのカット不足・回答欄・撮影順の矛盾を端末内で確認します。</p>
-                    {!rv.busy && rv.issues.length === 0 && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[12px] font-bold">問題ありません。</div>}
+                    <p className="text-[12px] text-stone-600 leading-relaxed">シーン/ロケの記入漏れ・インサートのカット不足・回答欄・撮影順の矛盾を端末内で確認します。</p>
+                    {!rv.busy && rv.issues.length === 0 && <div className="mt-3 rounded-lg bg-emerald-50 text-emerald-700 px-3 py-2 text-[13px] font-bold">問題ありません。</div>}
                     {rv.applied && rv.applied.length > 0 && (
                       <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-100 px-3 py-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-[12px] font-bold text-emerald-800">AIが {rv.applied.length} 箇所を直しました</span>
-                          {rv.canUndo && <button onClick={undoAutofix} className="ml-auto text-[11px] underline text-emerald-800">元に戻す</button>}
+                          <span className="text-[13px] font-bold text-emerald-800">AIが {rv.applied.length} 箇所を直しました</span>
+                          {rv.canUndo && <button onClick={undoAutofix} className="ml-auto text-[12px] underline text-emerald-800">元に戻す</button>}
                         </div>
                         <ul className="mt-1 space-y-0.5">
                           {rv.applied.map((o, i) => (
-                            <li key={i} onClick={() => { if (o.op !== "delete_row") { setPreflight(null); jumpToRow(o.rowId); } }} className={"text-[11.5px] text-emerald-900 " + (o.op !== "delete_row" ? "cursor-pointer hover:underline" : "")}>
+                            <li key={i} onClick={() => { if (o.op !== "delete_row") { setPreflight(null); jumpToRow(o.rowId); } }} className={"text-[12.5px] text-emerald-900 " + (o.op !== "delete_row" ? "cursor-pointer hover:underline" : "")}>
                               <span className="opacity-70">{o.op === "delete_row" ? "削除" : o.op === "set_label" ? "見出し" : o.op === "set_script" ? "カット追加" : o.op === "set_time" ? "時刻" : "置換"}</span>　{o.label ? <span className="font-bold">{o.label}</span> : null}　{o.reason}
                             </li>
                           ))}
                         </ul>
                       </div>
                     )}
-                    {rv.fixError && <div className="mt-2 text-[11px] text-rose-700">{rv.fixError}</div>}
+                    {rv.fixError && <div className="mt-2 text-[12px] text-rose-700">{rv.fixError}</div>}
                     {hard.length > 0 && (
                       <div className="mt-3">
                         {/* 同じ指摘が10件以上並ぶと「で、どうすればいいの」になる（2026-09-08 AK指摘）。
@@ -11414,13 +11416,13 @@ export default function App() {
                             まとめて直すボタンはスクロールしても隠れないよう上に貼り付ける。 */}
                         <div className="sticky top-0 z-10 -mx-1 px-1 pt-1 pb-2 bg-white">
                           <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                            <div className="text-[12px] font-bold text-rose-700">共有前に直すこと（{hard.length}件）</div>
+                            <div className="text-[13px] font-bold text-rose-700">共有前に直すこと（{hard.length}件）</div>
                             <button onClick={runAutofix} disabled={rv.fixing}
-                              className="ml-auto h-8 px-3.5 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
+                              className="ml-auto h-8 px-3.5 rounded-lg text-[13px] font-bold text-white shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
                               <Icon name="sparkle" className="w-3.5 h-3.5" />{rv.fixing ? "AIが直しています…" : "AIがまとめて直す"}
                             </button>
                           </div>
-                          <p className="text-[10.5px] text-stone-400">下の「AIが直せる」ぶんはこのボタン1回で終わります。中身のある原稿は書き換えません。直した後に「元に戻す」できます。</p>
+                          <p className="text-[11.5px] text-stone-500">下の「AIが直せる」ぶんはこのボタン1回で終わります。中身のある原稿は書き換えません。直した後に「元に戻す」できます。</p>
                         </div>
                         {(() => {
                           // AIのまとめて直すが面倒を見る種類。ここに無いものは人が書くしかない＝そう明記する。
@@ -11440,10 +11442,10 @@ export default function App() {
                                 return (
                                   <div key={g.key} className="rounded-xl border border-stone-200 overflow-hidden">
                                     <div className="px-3 py-2 flex items-center gap-2 flex-wrap bg-stone-50">
-                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: catCol(g.category) }}>{g.category}</span>
-                                      <span className="text-[12px] font-bold text-stone-700">{g.detail}</span>
-                                      <span className="text-[11px] text-stone-400">{g.items.length}件</span>
-                                      <span className={"ml-auto text-[10.5px] font-bold px-2 py-0.5 rounded-full " + (auto ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50")}>
+                                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white shrink-0" style={{ background: catCol(g.category) }}>{g.category}</span>
+                                      <span className="text-[13px] font-bold text-stone-700">{g.detail}</span>
+                                      <span className="text-[12px] text-stone-500">{g.items.length}件</span>
+                                      <span className={"ml-auto text-[11.5px] font-bold px-2 py-0.5 rounded-full " + (auto ? "text-emerald-700 bg-emerald-50" : "text-amber-700 bg-amber-50")}>
                                         {auto ? "AIが直せる" : "自分で書く"}
                                       </span>
                                     </div>
@@ -11452,7 +11454,7 @@ export default function App() {
                                         <button key={i} type="button" disabled={!it.rowId}
                                           onClick={() => { if (it.rowId) { setPreflight((p) => ({ ...p, minimized: true })); jumpToRow(it.rowId); } }}
                                           title={it.suggestion ? "→ " + it.suggestion : "この箇所へ飛ぶ"}
-                                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-40 max-w-[220px] truncate">
+                                          className="text-[12px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-50 disabled:opacity-40 max-w-[220px] truncate">
                                           {it.sceneLabel || "（無題）"}{it.rowId ? " ↗" : ""}
                                         </button>
                                       ))}
@@ -11467,10 +11469,10 @@ export default function App() {
                     )}
                     {soft.length > 0 && (
                       <details className="mt-2">
-                        <summary className="text-[11px] text-stone-500 cursor-pointer">参考：{soft.length}件（回答が空の質問など・撮影前なら通常）</summary>
+                        <summary className="text-[12px] text-stone-600 cursor-pointer">参考：{soft.length}件（回答が空の質問など・撮影前なら通常）</summary>
                         <ul className="mt-1.5 space-y-1">
                           {soft.map((it, i) => (
-                            <li key={i} onClick={() => { if (it.rowId) { setPreflight((p) => ({ ...p, minimized: true })); jumpToRow(it.rowId); } }} className="text-[11.5px] text-stone-600 px-2 py-1 rounded hover:bg-stone-50 cursor-pointer">
+                            <li key={i} onClick={() => { if (it.rowId) { setPreflight((p) => ({ ...p, minimized: true })); jumpToRow(it.rowId); } }} className="text-[12.5px] text-stone-600 px-2 py-1 rounded hover:bg-stone-50 cursor-pointer">
                               <span className="font-bold">{it.sceneLabel}</span>：{it.detail}
                             </li>
                           ))}
@@ -11482,12 +11484,12 @@ export default function App() {
               })()}
               {(preflight.concerns || []).length > 0 && (
                 <section className="rounded-xl border border-amber-200 bg-amber-50/40 p-3.5">
-                  <div className="text-[12px] font-bold text-amber-900 mb-2">レギュレーション検査：あなたの確認が必要な懸念</div>
+                  <div className="text-[13px] font-bold text-amber-900 mb-2">レギュレーション検査：あなたの確認が必要な懸念</div>
                   <div className="space-y-2.5">
                     {preflight.concerns.map((c) => (
                       <label key={c.id} className="block rounded-lg border border-amber-200 bg-white p-3 cursor-pointer">
-                        <div className="flex items-start gap-2">{c.severity === "block" ? <span className="mt-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] grid place-items-center shrink-0">!</span> : <input type="checkbox" className="mt-0.5 w-4 h-4 accent-amber-600" checked={!!preflight.acknowledged[c.id]} onChange={() => setPreflight((p) => ({ ...p, acknowledged: { ...p.acknowledged, [c.id]: !p.acknowledged[c.id] } }))} />}
-                          <div className="min-w-0"><div className="text-[12px] font-bold text-stone-800">{c.severity === "block" ? "要修正" : "要確認"}：{c.title}</div><p className="text-[11px] text-stone-600 mt-1">{c.reason}</p>{c.evidence && <p className="text-[10px] text-stone-400 mt-1">根拠：{c.evidence}</p>}<p className="text-[11px] text-amber-800 mt-1">対応：{c.suggestion}</p></div>
+                        <div className="flex items-start gap-2">{c.severity === "block" ? <span className="mt-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[11px] grid place-items-center shrink-0">!</span> : <input type="checkbox" className="mt-0.5 w-4 h-4 accent-amber-600" checked={!!preflight.acknowledged[c.id]} onChange={() => setPreflight((p) => ({ ...p, acknowledged: { ...p.acknowledged, [c.id]: !p.acknowledged[c.id] } }))} />}
+                          <div className="min-w-0"><div className="text-[13px] font-bold text-stone-800">{c.severity === "block" ? "要修正" : "要確認"}：{c.title}</div><p className="text-[12px] text-stone-600 mt-1">{c.reason}</p>{c.evidence && <p className="text-[11px] text-stone-500 mt-1">根拠：{c.evidence}</p>}<p className="text-[12px] text-amber-800 mt-1">対応：{c.suggestion}</p></div>
                         </div>
                       </label>
                     ))}
@@ -11496,16 +11498,16 @@ export default function App() {
               )}
             </div>
             <div className="px-5 py-3 border-t border-stone-200 flex items-center justify-between gap-3 bg-stone-50 flex-wrap">
-              <span className="text-[10px] text-stone-400">内容を変えていなければ次回からこの画面は出ません</span>
+              <span className="text-[11px] text-stone-500">内容を変えていなければ次回からこの画面は出ません</span>
               <div className="flex items-center gap-3 ml-auto">
                 {/* 検査に繋がらない・待てない時の逃げ道（08-24 AK「AI待ちで共有できないのはきつい」）。
                     ただし既に見つかった懸念だけは finishPublishPreflight 側で必ず止める */}
                 {(preflight.concernsBusy || preflight.error) && (
                   <button onClick={() => finishPublishPreflight(true)} disabled={preflightBusy}
-                    className="text-[11.5px] underline text-stone-500 hover:text-stone-800 disabled:opacity-40">検査を待たずに共有する</button>
+                    className="text-[12.5px] underline text-stone-600 hover:text-stone-800 disabled:opacity-40">検査を待たずに共有する</button>
                 )}
                 <button onClick={() => finishPublishPreflight(false)} disabled={preflightBusy || preflight.concernsBusy || !!preflight.error || (preflight.concerns || []).some((c) => c.severity === "block") || (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])}
-                  className="px-4 py-2 rounded-lg text-[12px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
+                  className="px-4 py-2 rounded-lg text-[13px] font-bold text-white shadow disabled:opacity-35" style={{ background: theme.accent, color: accentText }}>
                   {preflightBusy ? "URL生成中…" : preflight.concernsBusy ? "レギュレーション検査中…" : (preflight.review && preflight.review.issues.some((it) => !it.soft)) ? "そのまま共有する" : "実物を確認した — URL生成"}
                 </button>
               </div>
@@ -11523,11 +11525,11 @@ export default function App() {
               <button onClick={() => setShareModal(null)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5">
-              <p className="text-[12px] text-stone-500 mb-2">
+              <p className="text-[13px] text-stone-600 mb-2">
                 {shareModal.handoff
                   ? <>下の<span className="font-bold">文面（リンク入り）はもうコピー済み</span>。DiscordやLINEにそのまま貼るだけ。相手には<span className="font-bold">{(shareModal.handoff.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>だけが見えます（その中で切替OK・読み取り専用）。内容を直したら押し直せば同じURLに反映。</>
                   : shareModal.ai
-                  ? <>このURLを<span className="font-bold">Claude や ChatGPT に貼り付け</span>てください。構成台本の中身（JSON）をそのまま読み込めます。編集者向けの構成づくりや校正・変更点まとめを頼めます。<span className="text-stone-400">※ share.html ではなく中身データのリンク。内容を直したら押し直せば最新に。</span></>
+                  ? <>このURLを<span className="font-bold">Claude や ChatGPT に貼り付け</span>てください。構成台本の中身（JSON）をそのまま読み込めます。編集者向けの構成づくりや校正・変更点まとめを頼めます。<span className="text-stone-500">※ share.html ではなく中身データのリンク。内容を直したら押し直せば最新に。</span></>
                   : shareModal.live
                   ? <>このURLを渡すと、先方が<span className="font-bold">{shareModal.tab ? `「${TAB_LABEL[shareModal.tab] || shareModal.tab}」` : "全タブ"}をその場で編集</span>できます（リアルタイム同時編集・ログイン不要）。あなたもこのリンクを開けば一緒に編集できます。{shareModal.tab && <>他のタブは表示されません。</>}<span className="font-bold text-rose-500">編集できる人全員に渡るので取り扱い注意。</span></>
                   : shareModal.planShare
@@ -11543,25 +11545,25 @@ export default function App() {
                   : <>このURLを先方に送ってください。<span className="font-bold">案件まるごと（読み取り専用）</span>が開きます。各ページにコメント・修正依頼を書き込めます。</>}
               </p>
               <div className="flex items-center gap-2 bg-stone-50 border border-stone-200 rounded-lg px-3 py-2">
-                <input readOnly value={shareModal.url} className="flex-1 min-w-0 bg-transparent text-[12px] focus:outline-none" style={{ fontFamily: mono }}
+                <input readOnly value={shareModal.url} className="flex-1 min-w-0 bg-transparent text-[13px] focus:outline-none" style={{ fontFamily: mono }}
                   onFocus={(e) => e.target.select()} />
                 <button onClick={async () => { try { await navigator.clipboard.writeText(shareModal.url); showToast("URLをコピーしました"); } catch (e) {} }}
-                  className="text-[11px] font-bold px-3 py-1.5 rounded-md shadow shrink-0" style={{ background: theme.accent, color: accentText }}>コピー</button>
+                  className="text-[12px] font-bold px-3 py-1.5 rounded-md shadow shrink-0" style={{ background: theme.accent, color: accentText }}>コピー</button>
               </div>
               {shareModal.handoff && shareModal.text && (
                 <div className="mt-3">
                   <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold tracking-wider text-stone-400">送る文面（コピー済み）</span>
+                    <span className="text-[11px] font-bold tracking-wider text-stone-500">送る文面（コピー済み）</span>
                     <button onClick={async () => { try { await navigator.clipboard.writeText(shareModal.text); showToast("文面をコピーしました"); } catch (e) {} }}
-                      className="text-[10px] font-bold px-2 py-1 rounded-md border border-stone-200 hover:bg-stone-50">文面を再コピー</button>
+                      className="text-[11px] font-bold px-2 py-1 rounded-md border border-stone-200 hover:bg-stone-50">文面を再コピー</button>
                   </div>
                   <textarea readOnly value={shareModal.text} rows={4} onFocus={(e) => e.target.select()}
-                    className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-[12px] text-stone-700 resize-none focus:outline-none" />
+                    className="w-full bg-stone-50 border border-stone-200 rounded-lg px-3 py-2 text-[13px] text-stone-700 resize-none focus:outline-none" />
                 </div>
               )}
               <div className="mt-3 flex justify-between items-center">
-                <a href={shareModal.url} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline" style={{ color: theme.main }}>プレビューを開く ↗</a>
-                <span className="text-[10px] text-stone-400">内容を直したら「共有を更新」で同じURLに反映されます</span>
+                <a href={shareModal.url} target="_blank" rel="noreferrer" className="text-[12px] font-bold underline" style={{ color: theme.main }}>プレビューを開く ↗</a>
+                <span className="text-[11px] text-stone-500">内容を直したら「共有を更新」で同じURLに反映されます</span>
               </div>
             </div>
           </div>
@@ -11577,19 +11579,19 @@ export default function App() {
               <button onClick={() => setShowHandoffEdit(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
             </div>
             <div className="p-5 space-y-4">
-              <p className="text-[11px] text-stone-500 leading-relaxed">相手ごとに「見せるタブ・最初に開くタブ・送る文面」を決められます。文面の <code className="bg-stone-100 px-1 rounded">{"{url}"}</code> はリンクに、<code className="bg-stone-100 px-1 rounded">{"{name}"}</code> は案件名に置き換わります。</p>
+              <p className="text-[12px] text-stone-600 leading-relaxed">相手ごとに「見せるタブ・最初に開くタブ・送る文面」を決められます。文面の <code className="bg-stone-100 px-1 rounded">{"{url}"}</code> はリンクに、<code className="bg-stone-100 px-1 rounded">{"{name}"}</code> は案件名に置き換わります。</p>
               {handoffs.map((h, idx) => (
                 <div key={h.id} className="border border-stone-200 rounded-xl p-3 space-y-2.5">
                   <div className="flex items-center gap-2">
                     <input value={h.emoji || ""} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, emoji: e.target.value.slice(0, 2) } : x))}
                       className="w-10 text-center text-[15px] border border-stone-200 rounded-lg py-1.5" placeholder="📨" />
                     <input value={h.label} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, label: e.target.value } : x))}
-                      className="flex-1 text-[13px] font-bold border border-stone-200 rounded-lg px-3 py-1.5" placeholder="ボタン名（例：編集へ）" />
+                      className="flex-1 text-[14px] font-bold border border-stone-200 rounded-lg px-3 py-1.5" placeholder="ボタン名（例：編集へ）" />
                     <button onClick={() => saveHandoffs(handoffs.filter((_, i) => i !== idx))} title="このプリセットを削除"
-                      className="w-8 h-8 grid place-items-center rounded-lg text-stone-400 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
+                      className="w-8 h-8 grid place-items-center rounded-lg text-stone-500 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" className="w-4 h-4" /></button>
                   </div>
                   <div>
-                    <div className="text-[10px] font-bold text-stone-400 mb-1">見せるタブ</div>
+                    <div className="text-[11px] font-bold text-stone-500 mb-1">見せるタブ</div>
                     <div className="flex flex-wrap gap-1.5">
                       {HANDOFF_TAB_CHOICES.map((t) => {
                         const on = (h.tabs || []).includes(t);
@@ -11599,28 +11601,28 @@ export default function App() {
                             const start = tabs.includes(h.start) ? h.start : (tabs[0] || "");
                             saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, tabs, start } : x));
                           }}
-                            className={"text-[11px] font-bold px-2.5 py-1 rounded-full border " + (on ? "text-white border-transparent" : "text-stone-500 border-stone-200 hover:bg-stone-50")}
+                            className={"text-[12px] font-bold px-2.5 py-1 rounded-full border " + (on ? "text-white border-transparent" : "text-stone-600 border-stone-200 hover:bg-stone-50")}
                             style={on ? { background: theme.accent } : {}}>{TAB_LABEL[t]}</button>
                         );
                       })}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-stone-400">最初に開く</span>
+                    <span className="text-[11px] font-bold text-stone-500">最初に開く</span>
                     <select value={h.start || ""} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, start: e.target.value } : x))}
-                      className="text-[12px] border border-stone-200 rounded-lg px-2 py-1 bg-white">
+                      className="text-[13px] border border-stone-200 rounded-lg px-2 py-1 bg-white">
                       {(h.tabs || []).map((t) => <option key={t} value={t}>{TAB_LABEL[t]}</option>)}
                     </select>
                   </div>
                   <textarea value={h.msg || ""} onChange={(e) => saveHandoffs(handoffs.map((x, i) => i === idx ? { ...x, msg: e.target.value } : x))} rows={3}
-                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-[12px] text-stone-700 resize-none focus:outline-none" placeholder="送る文面（{url} と {name} が使えます）" />
+                    className="w-full border border-stone-200 rounded-lg px-3 py-2 text-[13px] text-stone-700 resize-none focus:outline-none" placeholder="送る文面（{url} と {name} が使えます）" />
                 </div>
               ))}
               <div className="flex items-center justify-between pt-1">
                 <button onClick={() => saveHandoffs([...handoffs, { id: "custom-" + Date.now(), emoji: "📨", label: "新しい受け渡し", tabs: ["review"], start: "review", msg: "{name}\n{url}" }])}
-                  className="text-[12px] font-bold flex items-center gap-1" style={{ color: theme.main }}><Icon name="plus" className="w-4 h-4" />受け渡しを追加</button>
+                  className="text-[13px] font-bold flex items-center gap-1" style={{ color: theme.main }}><Icon name="plus" className="w-4 h-4" />受け渡しを追加</button>
                 <button onClick={() => { if (confirm("初期の3つ（編集へ／先方へ／演者へ）に戻す？")) saveHandoffs(HANDOFF_DEFAULTS.map((h) => ({ ...h, tabs: [...h.tabs] }))); }}
-                  className="text-[11px] text-stone-400 hover:text-stone-600 underline">初期設定に戻す</button>
+                  className="text-[12px] text-stone-500 hover:text-stone-600 underline">初期設定に戻す</button>
               </div>
             </div>
           </div>
@@ -11635,16 +11637,16 @@ export default function App() {
               <Icon name="sparkle" className="w-5 h-5" style={{ color: theme.accent }} />
               <h3 className="text-sm font-bold tracking-wider">文字起こしから自動でまとめる</h3>
             </div>
-            <p className="text-[12px] text-stone-500 mb-3">取材・打ち合わせ・電話の<span className="font-bold">文字起こしやメモ</span>を貼り付けて。AIが各ヒアリング項目に振り分けて要約します。<span className="text-stone-400">※空欄の項目だけ埋めます（入力済みは上書きしません）。該当が無い項目は空のままにします。</span></p>
+            <p className="text-[13px] text-stone-600 mb-3">取材・打ち合わせ・電話の<span className="font-bold">文字起こしやメモ</span>を貼り付けて。AIが各ヒアリング項目に振り分けて要約します。<span className="text-stone-500">※空欄の項目だけ埋めます（入力済みは上書きしません）。該当が無い項目は空のままにします。</span></p>
             <textarea autoFocus value={hearingImport.raw} onChange={(e) => setHearingImport({ raw: e.target.value })}
               placeholder="ここに文字起こし・取材メモを貼り付け…"
-              className="w-full h-56 text-[13px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y leading-relaxed" />
+              className="w-full h-56 text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y leading-relaxed" />
             <div className="mt-3 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-stone-400">{(hearingImport.raw || "").length.toLocaleString()} 字</span>
+              <span className="text-[12px] text-stone-500">{(hearingImport.raw || "").length.toLocaleString()} 字</span>
               <div className="flex gap-2">
-                <button onClick={() => setHearingImport(null)} disabled={hearingBusy} className="text-[12px] font-bold px-3 py-2 rounded-lg text-stone-500 hover:bg-stone-100 disabled:opacity-40">キャンセル</button>
+                <button onClick={() => setHearingImport(null)} disabled={hearingBusy} className="text-[13px] font-bold px-3 py-2 rounded-lg text-stone-600 hover:bg-stone-100 disabled:opacity-40">キャンセル</button>
                 <button onClick={runHearingFill} disabled={hearingBusy || !(hearingImport.raw || "").trim()}
-                  className="text-[12px] font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
+                  className="text-[13px] font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1.5" style={{ background: theme.accent, color: accentText }}>
                   {hearingBusy ? <><span className="inline-block w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />まとめてる…</> : <><Icon name="sparkle" className="w-3.5 h-3.5" />AIでまとめる</>}
                 </button>
               </div>
@@ -11677,7 +11679,7 @@ export default function App() {
           <div className="absolute inset-0 bg-black/30" />
           <div className="relative w-full max-w-sm h-full bg-white shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-4 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
-              <h3 className="text-sm font-bold tracking-wider">先方コメント {openComments.length > 0 && <span className="ml-1 text-[11px] opacity-80">未対応 {openComments.length}</span>}</h3>
+              <h3 className="text-sm font-bold tracking-wider">先方コメント {openComments.length > 0 && <span className="ml-1 text-[12px] opacity-80">未対応 {openComments.length}</span>}</h3>
               <div className="flex items-center gap-1">
                 <button onClick={() => fetchComments()} title="再読み込み" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="refresh" className="w-4 h-4" /></button>
                 <button onClick={() => setShowComments(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
@@ -11685,29 +11687,29 @@ export default function App() {
             </div>
             <div className="flex-1 overflow-y-auto mg-scroll p-3 space-y-2" style={{ background: "#F4F3EF" }}>
               {comments.filter((c) => !isClip(c)).length === 0 && (
-                <p className="text-[12px] text-stone-400 text-center py-10">まだコメントはありません。<br />共有URLを先方に送ると、ここに届きます。</p>
+                <p className="text-[13px] text-stone-500 text-center py-10">まだコメントはありません。<br />共有URLを先方に送ると、ここに届きます。</p>
               )}
               {[...comments.filter((c) => !isClip(c))].sort((a, b) => (a.resolved === b.resolved ? (a.createdAt < b.createdAt ? 1 : -1) : a.resolved ? 1 : -1)).map((c) => (
                 <div key={c.id} className={"rounded-xl border p-3 " + (c.resolved ? "bg-stone-100 border-stone-200 opacity-70" : "bg-white border-stone-200 shadow-sm")}>
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]" style={{ background: theme.main, color: mainText }}>
+                    <span className="text-[12px] font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]" style={{ background: theme.main, color: mainText }}>
                       {c.sceneLabel || "全体"}
                     </span>
                     {/* 動画コメントのタイムコード。2026-08-25 青山さん「秒数がわからない」：データには timecode が
                         入っているのにここが「全体」チップだけで捨てていた。押すと動画確認タブへ移動（該当秒はチップ表記）。 */}
                     {typeof c.timecode === "number" && c.timecode > 0 && (
                       <button onClick={() => { setShowComments(false); setTab("review"); }} title="動画確認タブを開く"
-                        className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-stone-800 text-white hover:opacity-80">
+                        className="text-[12px] font-bold px-2 py-0.5 rounded-full shrink-0 bg-stone-800 text-white hover:opacity-80">
                         ▶ {fmtTC(c.timecode)}
                       </button>
                     )}
-                    <span className="text-[10px] text-stone-400 shrink-0 ml-auto">{(c.createdAt || "").slice(5, 16).replace("T", " ")}</span>
+                    <span className="text-[11px] text-stone-500 shrink-0 ml-auto">{(c.createdAt || "").slice(5, 16).replace("T", " ")}</span>
                   </div>
-                  <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words text-stone-800">{c.text}</p>
+                  <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words text-stone-800">{c.text}</p>
                   <div className="mt-1.5 flex items-center justify-between">
-                    <span className="text-[11px] text-stone-400">{c.author || "ゲスト"}</span>
+                    <span className="text-[12px] text-stone-500">{c.author || "ゲスト"}</span>
                     <button onClick={() => resolveComment(c.id, !c.resolved)}
-                      className={"text-[10px] font-bold px-2.5 py-1 rounded-full " + (c.resolved ? "bg-stone-200 text-stone-500" : "text-white")}
+                      className={"text-[11px] font-bold px-2.5 py-1 rounded-full " + (c.resolved ? "bg-stone-200 text-stone-600" : "text-white")}
                       style={c.resolved ? {} : { background: "#10B981" }}>
                       {c.resolved ? "未対応に戻す" : "対応済にする"}
                     </button>
@@ -11715,7 +11717,7 @@ export default function App() {
                 </div>
               ))}
             </div>
-            <div className="px-4 py-2.5 border-t border-stone-200 text-[10px] text-stone-400">
+            <div className="px-4 py-2.5 border-t border-stone-200 text-[11px] text-stone-500">
               コメントは先方が共有ページから投稿。撮影・原稿の修正に反映してね
             </div>
           </div>
@@ -11726,16 +11728,16 @@ export default function App() {
       {selectedIds.length > 0 && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 pl-4 pr-2 py-2 rounded-full shadow-2xl"
           style={{ background: theme.main, color: mainText }}>
-          <span className="text-[12px] font-bold mr-1">{selectedIds.length}件 選択中</span>
-          <span className="text-[11px] opacity-70 mr-2 hidden sm:inline">左の番号をドラッグでまとめて移動</span>
+          <span className="text-[13px] font-bold mr-1">{selectedIds.length}件 選択中</span>
+          <span className="text-[12px] opacity-70 mr-2 hidden sm:inline">左の番号をドラッグでまとめて移動</span>
           <button onClick={copySelectedScripts}
-            className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">⧉ 原稿をコピー</button>
+            className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">⧉ 原稿をコピー</button>
           <button onClick={downloadSelectedScripts} title="選択した原稿を.txtで保存（Claudeにファイルとしてドラッグ＝空にならない）"
-            className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">↓ .txt</button>
+            className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">↓ .txt</button>
           <button onClick={deleteSelected}
-            className="text-[11px] font-bold px-3 py-1.5 rounded-full" style={{ background: "#DC2645", color: "#fff" }}>削除</button>
+            className="text-[12px] font-bold px-3 py-1.5 rounded-full" style={{ background: "#DC2645", color: "#fff" }}>削除</button>
           <button onClick={clearSelection}
-            className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/25">選択解除</button>
+            className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-white/15 hover:bg-white/25">選択解除</button>
         </div>
       )}
 
@@ -11754,10 +11756,10 @@ export default function App() {
             <span className="text-lg">🤖</span>
             <div className="flex-1 min-w-0">
               <div className="text-sm font-bold leading-tight">AIアシスタント</div>
-              <div className="text-[10px] opacity-70 truncate">{project.format === "talk" ? "トーク系" : "一日密着"}・Bird Flip流で一緒に書く</div>
+              <div className="text-[11px] opacity-70 truncate">{project.format === "talk" ? "トーク系" : "一日密着"}・Bird Flip流で一緒に書く</div>
             </div>
             {chatMsgs.length > 0 && (
-              <button onClick={clearChat} title="会話をクリア" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15 text-[11px]">🗑</button>
+              <button onClick={clearChat} title="会話をクリア" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15 text-[12px]">🗑</button>
             )}
             <button onClick={() => setChatOpen(false)} title="閉じる" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
           </div>
@@ -11765,46 +11767,46 @@ export default function App() {
           {/* メッセージ */}
           <div className="flex-1 overflow-y-auto mg-scroll px-3 py-3 space-y-2.5 bg-stone-50">
             {chatMsgs.length === 0 && !chatBusy && (
-              <div className="text-[12px] text-stone-400 leading-relaxed px-1 py-2">
-                <p className="font-bold text-stone-500 mb-1.5">台本を一緒に作れます。例えば：</p>
+              <div className="text-[13px] text-stone-500 leading-relaxed px-1 py-2">
+                <p className="font-bold text-stone-600 mb-1.5">台本を一緒に作れます。例えば：</p>
                 <ul className="space-y-1.5">
                   {["この文字起こし貼るね → 5シーンの台本にして", "#2の質問、知ってる感が出てる。素朴に直して", "冒頭に視聴者が思わず見ちゃう驚きを足して", "全体ざっと校正して気になる所教えて"].map((ex, i) => (
                     <li key={i}><button onClick={() => setChatInput(ex.replace(/^.+→ /, ""))} className="text-left w-full px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 hover:border-stone-400 text-stone-600">{ex}</button></li>
                   ))}
                 </ul>
-                <p className="mt-2.5 text-[11px] text-stone-400">変更は<span className="font-bold">提案として</span>出る → ✅で反映。勝手には書き換えないよ。</p>
+                <p className="mt-2.5 text-[12px] text-stone-500">変更は<span className="font-bold">提案として</span>出る → ✅で反映。勝手には書き換えないよ。</p>
               </div>
             )}
             {chatMsgs.map((msg, i) => {
-              if (msg.role === "system") return <div key={i} className="text-center text-[10px] text-stone-400 py-0.5">{msg.content}</div>;
+              if (msg.role === "system") return <div key={i} className="text-center text-[11px] text-stone-500 py-0.5">{msg.content}</div>;
               const mine = msg.role === "user";
               return (
                 <div key={i} className={"flex " + (mine ? "justify-end" : "justify-start")}>
-                  <div className={"max-w-[88%] text-[12.5px] leading-relaxed rounded-2xl px-3 py-2 whitespace-pre-wrap break-words " + (mine ? "rounded-br-sm" : "bg-white border border-stone-200 text-stone-700 rounded-bl-sm")}
+                  <div className={"max-w-[88%] text-[13.5px] leading-relaxed rounded-2xl px-3 py-2 whitespace-pre-wrap break-words " + (mine ? "rounded-br-sm" : "bg-white border border-stone-200 text-stone-700 rounded-bl-sm")}
                     style={mine ? { background: theme.accent, color: accentText } : undefined}>{msg.content}</div>
                 </div>
               );
             })}
             {chatBusy && (
-              <div className="flex justify-start"><div className="bg-white border border-stone-200 rounded-2xl rounded-bl-sm px-3 py-2 text-[12px] text-stone-400 inline-flex items-center gap-1">考え中<span className="animate-pulse">…</span></div></div>
+              <div className="flex justify-start"><div className="bg-white border border-stone-200 rounded-2xl rounded-bl-sm px-3 py-2 text-[13px] text-stone-500 inline-flex items-center gap-1">考え中<span className="animate-pulse">…</span></div></div>
             )}
 
             {/* 変更提案カード（承認待ち） */}
             {chatProposal && (
               <div className="rounded-xl border-2 bg-white p-3 shadow-sm" style={{ borderColor: theme.accent }}>
-                <div className="text-[11px] font-bold mb-1 inline-flex items-center gap-1" style={{ color: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />変更の提案</div>
-                <p className="text-[12px] text-stone-700 leading-relaxed whitespace-pre-wrap">{chatProposal.summary || "台本を更新します。"}</p>
-                <div className="text-[10px] text-stone-400 mt-1">{chatProposal.format === "talk" ? "トーク台本を更新" : "構成台本 全" + ((chatProposal.rows || []).length) + "行に更新"}</div>
+                <div className="text-[12px] font-bold mb-1 inline-flex items-center gap-1" style={{ color: theme.accent }}><Icon name="sparkle" className="w-3.5 h-3.5" />変更の提案</div>
+                <p className="text-[13px] text-stone-700 leading-relaxed whitespace-pre-wrap">{chatProposal.summary || "台本を更新します。"}</p>
+                <div className="text-[11px] text-stone-500 mt-1">{chatProposal.format === "talk" ? "トーク台本を更新" : "構成台本 全" + ((chatProposal.rows || []).length) + "行に更新"}</div>
                 <div className="flex gap-2 mt-2.5">
-                  <button onClick={applyProposal} className="flex-1 text-[12px] font-bold py-2 rounded-lg text-white" style={{ background: theme.accent, color: accentText }}>✅ この内容で反映</button>
-                  <button onClick={() => setChatProposal(null)} className="text-[12px] font-bold px-3 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-500">却下</button>
+                  <button onClick={applyProposal} className="flex-1 text-[13px] font-bold py-2 rounded-lg text-white" style={{ background: theme.accent, color: accentText }}>✅ この内容で反映</button>
+                  <button onClick={() => setChatProposal(null)} className="text-[13px] font-bold px-3 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-600">却下</button>
                 </div>
               </div>
             )}
             {/* 直前の反映を取り消す */}
             {chatUndo && !chatProposal && (
               <div className="flex justify-center">
-                <button onClick={undoChat} className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-stone-200 hover:bg-stone-300 text-stone-600 inline-flex items-center gap-1">↩️ 直前の反映を取り消す</button>
+                <button onClick={undoChat} className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-stone-200 hover:bg-stone-300 text-stone-600 inline-flex items-center gap-1">↩️ 直前の反映を取り消す</button>
               </div>
             )}
             <div ref={chatEndRef} />
@@ -11816,7 +11818,7 @@ export default function App() {
               <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendChat(); } }}
                 placeholder="依頼や相談を入力（⌘+Enterで送信）。素材を貼ってもOK"
-                className="flex-1 min-w-0 text-[12.5px] border border-stone-200 rounded-xl px-3 py-2 max-h-40 resize-y focus:outline-none focus:border-stone-400" rows={2} />
+                className="flex-1 min-w-0 text-[13.5px] border border-stone-200 rounded-xl px-3 py-2 max-h-40 resize-y focus:outline-none focus:border-stone-400" rows={2} />
               <button onClick={sendChat} disabled={chatBusy || !chatInput.trim()}
                 className="shrink-0 w-10 h-10 rounded-xl grid place-items-center text-white disabled:opacity-30" style={{ background: theme.main, color: mainText }}>
                 <Icon name="up" className="w-4 h-4" />
@@ -11841,13 +11843,13 @@ export default function App() {
           <div className="fixed bottom-6 right-6 z-50 w-[300px] max-w-[calc(100vw-3rem)] bg-white rounded-2xl shadow-2xl border border-stone-200 p-3.5">
             <div className="flex items-center gap-2 mb-2">
               <span className="w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: theme.accent }} />
-              <span className="text-[12px] font-bold text-stone-700 truncate flex-1">{label}</span>
-              <span className="text-[13px] font-bold tabular-nums shrink-0" style={{ color: theme.accent }}>{Math.round(pct || 0)}%</span>
+              <span className="text-[13px] font-bold text-stone-700 truncate flex-1">{label}</span>
+              <span className="text-[14px] font-bold tabular-nums shrink-0" style={{ color: theme.accent }}>{Math.round(pct || 0)}%</span>
             </div>
             <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
               <div className="h-full rounded-full transition-all duration-300" style={{ width: (pct || 0) + "%", background: theme.accent }} />
             </div>
-            <div className="text-[10px] text-stone-400 mt-1.5">完了までこの画面を閉じないでね（タブ移動はOK）</div>
+            <div className="text-[11px] text-stone-500 mt-1.5">完了までこの画面を閉じないでね（タブ移動はOK）</div>
           </div>
         );
       })()}
