@@ -8872,7 +8872,7 @@ export default function App() {
             </>)}
 
             {/* 台本編集／マインドマップの表示切替（Phase3） */}
-            <div className="flex justify-end items-center gap-2 -mb-1">
+            <div className="flex justify-end items-center gap-2 -mt-2 -mb-1">
               <button onClick={() => setScriptView((v) => v === "mindmap" ? "table" : "mindmap")}
                 title={scriptView === "mindmap" ? "台本の編集画面に戻す" : "マインドマップで見る"}
                 className={"text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-colors " + (scriptView === "mindmap" ? "text-white border-transparent" : "border-stone-200 text-stone-500 hover:bg-stone-50")}
@@ -9335,7 +9335,7 @@ export default function App() {
                   const lc = r ? locations.find((l) => l.id === r.id) : null;
                   const isDragOver = r && dragOverIndex === g.idx && dragIds && !dragIds.includes(r.id);
                   return (
-                    <div key={r ? r.id : "nolocation"} className={gi === 0 ? "" : "mt-9"}>
+                    <div key={r ? r.id : "nolocation"} className={gi === 0 ? "" : "mt-6"}>
                       {r && maxDay > 1 && dayStarts[r.id] != null && (
                         <div className="mb-2">{dayBannerEl(dayStarts[r.id])}</div>
                       )}
@@ -9343,7 +9343,7 @@ export default function App() {
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
                           className="group/loc flex flex-wrap items-center gap-2.5 py-2.5 mb-2 rounded-lg scroll-mt-24"
-                          style={{ background: hexA(theme.main, 0.14), borderLeft: "6px solid " + theme.accent, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
+                          style={{ background: hexA(theme.accent, 0.11), ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span className="w-10 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
                             <Icon name="pin" className="w-4 h-4" style={{ color: "#8C939D" }} />
                           </span>
