@@ -10,6 +10,7 @@
    ============================================================ */
 
 import { DurableObject } from "cloudflare:workers";
+import { handleMcp } from "./mcp.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -116,6 +117,9 @@ export default {
       const stub = env.LIVEDOC.get(env.LIVEDOC.idFromName(parts[2]));
       return stub.fetch(request);
     }
+
+    // MCP（Claude用の台本読み書き）。認証はBearerキー、実装は mcp.js
+    if (parts[0] === "mcp" && !parts[1]) return handleMcp(request, env, { slim });
 
     try {
       // 案件JSONを proj_id から引く共通ヘルパー（2026-08-25）。
