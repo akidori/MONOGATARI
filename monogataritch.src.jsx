@@ -3495,6 +3495,9 @@ export default function App() {
   const [secEdit, setSecEdit] = useState(null);             // Scene Row の尺をクリック編集中のシーンid
   const [insertEdit, setInsertEdit] = useState(null);       // インサートカードを原稿編集に切り替えているシーンid
   const [insertCollapsed, setInsertCollapsed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem("mg:insertCollapsed") || "[]")); } catch (e) { return new Set(); } });
+  /* 案件一覧を「進行中（完了以外）」だけに絞る設定。端末ごとに覚える */
+  const [onlyActive, setOnlyActive] = useState(() => { try { return localStorage.getItem("mg:onlyActive") === "1"; } catch (e) { return false; } });
+  const toggleOnlyActive = () => setOnlyActive((v) => { const nx = !v; try { localStorage.setItem("mg:onlyActive", nx ? "1" : "0"); } catch (e) {} return nx; });
   const toggleInsertCollapsed = (id) => setInsertCollapsed((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); try { localStorage.setItem("mg:insertCollapsed", JSON.stringify([...nx])); } catch (e) {} return nx; });
   // サイドバーのセクション(お気に入り/進行中/保留/完了)折りたたみ。08-24 AK提供モックアップ対応
   const [sectionCollapsed, setSectionCollapsed] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:sectionCollapsed") || "{}"); } catch (_) { return {}; } });
@@ -5233,7 +5236,7 @@ export default function App() {
      レギュレーション一覧のクライアント／チャンネル別グルーピング表示（caseData経由でmanuals件数
      を出す）が全案件のboardCacheを必要とするため。 */
   useEffect(() => {
-    if (!loaded || (view !== "home" && tab !== "regulations")) return;
+    if (!loaded || (view !== "home" && tab !== "regulations" && !(onlyActive && casePickerOpen))) return;
     let cancelled = false;
     (async () => {
       for (const x of index) {
@@ -5247,7 +5250,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [view, tab, index, loaded]);
+  }, [view, tab, index, loaded, onlyActive, casePickerOpen]);
   /* アクティブ案件にplans[0]が無ければ1枠だけ用意（ボード編集の土台） */
   useEffect(() => {
     if (tab !== "plan" || !project) return;
@@ -7973,6 +7976,10 @@ export default function App() {
                 style={{ color: mainText }} />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-white/30 pointer-events-none">⌘K</span>
             </div>
+            <label className="mt-2 flex items-center gap-2 px-0.5 text-[12px] text-white/70 cursor-pointer select-none" title="完了した案件と、保留・完了のチャンネルを一覧から隠します（開いている案件と、検索中の結果は隠しません）">
+              <input type="checkbox" checked={onlyActive} onChange={toggleOnlyActive} className="w-3.5 h-3.5 cursor-pointer" style={{ accentColor: theme.accent }} />
+              進行中の案件だけ表示
+            </label>
           </div>
         )}
 
@@ -8003,8 +8010,12 @@ export default function App() {
             </div>
           ) : (() => {
             const q = caseQuery.trim().toLowerCase();
+            /* 「進行中だけ表示」：完了の案件を隠す。開いている案件・検索中は隠さない。ステータス未取得の案件は隠さない */
+            const isLive = (x) => { if (!onlyActive || q || x.id === activeId) return true; const d = caseData(x.id); return !(d && d.status === "完了"); };
             /* チャンネル1件分のツリー（見出し＋案件＋ページ）。ステータス別セクションから使い回す */
-            const renderChannelGroup = (channel, allItems) => {
+            const renderChannelGroup = (channel, allItemsRaw) => {
+              const allItems = allItemsRaw.filter(isLive);
+              if (onlyActive && !q && !allItems.length) return null;
               const items = q && !channel.toLowerCase().includes(q) ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
               if (q && !items.length && !channel.toLowerCase().includes(q)) return null;
               const hasActive = items.some((x) => x.id === activeId);
@@ -8120,10 +8131,10 @@ export default function App() {
             }
             return (
               <>
-                {favoriteCases.length > 0 && (
+                {favoriteCases.filter(isLive).length > 0 && (
                   <div className="mb-1">
-                    {renderSectionHeader("favorites", "お気に入り", favoriteCases.length)}
-                    {!isCollapsed("favorites") && favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
+                    {renderSectionHeader("favorites", "お気に入り", favoriteCases.filter(isLive).length)}
+                    {!isCollapsed("favorites") && favoriteCases.filter(isLive).filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
                       const active = p.id === activeId;
                       return (
                         <button key={p.id} onClick={() => switchProject(p.id)}
@@ -8138,9 +8149,10 @@ export default function App() {
                   </div>
                 )}
                 {SECTIONS.map(([key, label]) => {
+                  if (onlyActive && !q && key !== "active") return null;
                   const groups = channelGroups.filter((g) => g.status === key);
-                  const caseCount = groups.reduce((n, g) => n + g.items.length, 0);
-                  if (!groups.length) return null;
+                  const caseCount = groups.reduce((n, g) => n + g.items.filter(isLive).length, 0);
+                  if (!groups.length || (onlyActive && !q && caseCount === 0)) return null;
                   return (
                     <div key={key}>
                       {renderSectionHeader(key, label, caseCount)}
