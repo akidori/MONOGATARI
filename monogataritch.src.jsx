@@ -9375,36 +9375,36 @@ export default function App() {
                         return (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-4 rounded-xl border bg-white hover:bg-[#FCFBF9] transition-colors duration-150 overflow-hidden scroll-mt-24"
-                          style={{ borderColor: "#E4E1DA", "--ac": theme.accent, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
-                          <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px] bg-stone-300 group-focus-within/loc:bg-[var(--ac)] transition-colors duration-150" />
+                          className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-4 rounded-xl border transition-[filter] duration-150 hover:brightness-[1.12] overflow-hidden scroll-mt-24"
+                          style={{ background: theme.main, borderColor: hexA(mainText, 0.1), "--ac": theme.accent, "--ln": hexA(mainText, 0.25), "--hv": hexA(mainText, 0.12), ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
+                          <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px] bg-[var(--ln)] group-focus-within/loc:bg-[var(--ac)] transition-colors duration-150" />
                           <span className="shrink-0 flex items-center gap-4 select-none cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
-                            <span className="text-[24px] leading-none font-semibold tabular-nums" style={{ fontFamily: mono, color: "#3A404A" }}>{sp.num}</span>
-                            <span className="w-px h-8 bg-stone-200" />
+                            <span className="text-[24px] leading-none font-semibold tabular-nums" style={{ fontFamily: mono, color: mainText }}>{sp.num}</span>
+                            <span className="w-px h-8" style={{ background: hexA(mainText, 0.2) }} />
                           </span>
                           <div className="min-w-0 flex-1 flex items-center gap-2.5">
-                            <span className="shrink-0 grid place-items-center w-7 h-7 rounded-lg" style={{ background: hexA(theme.accent, 0.1), color: theme.accent }}>
+                            <span className="shrink-0 grid place-items-center w-7 h-7 rounded-lg" style={{ background: hexA(mainText, 0.1), color: theme.accent }}>
                               <Icon name={secIcon} className="w-4 h-4" />
                             </span>
                             <div className="min-w-0 flex-1">
                               <BufferedInput value={sp.title} onChange={(v) => updateRow(r.id, { label: sp.prefix + v + sp.suffix })} placeholder="場所（例：名古屋｜ご自宅）"
-                                className="w-full bg-transparent text-[17px] leading-snug focus:outline-none placeholder:text-stone-300"
-                                style={{ fontWeight: 700, color: "#171A1F", textDecoration: r.done ? "line-through" : "none" }} />
-                              {sub && <div className="hidden sm:block text-[11.5px] leading-snug truncate" style={{ color: "#8C939D" }}>{sub}</div>}
+                                className="w-full bg-transparent text-[17px] leading-snug focus:outline-none placeholder:text-white/30"
+                                style={{ fontWeight: 700, color: mainText, textDecoration: r.done ? "line-through" : "none" }} />
+                              {sub && <div className="hidden sm:block text-[11.5px] leading-snug truncate" style={{ color: hexA(mainText, 0.6) }}>{sub}</div>}
                             </div>
                           </div>
                           <div className="flex items-center gap-3 shrink-0 ml-auto">
-                            <span className="hidden lg:inline text-[11.5px]" style={{ color: "#8C939D" }}>{lc ? lc.scenes.length : 0}シーン</span>
-                            <span className="inline-flex items-center gap-1 text-[12.5px] font-medium tabular-nums" style={{ fontFamily: mono, color: "#5F6670" }} title={"この章のシーン尺の合計" + (sp.suffix.trim() ? "　目標 " + sp.suffix.trim() : "")}>
+                            <span className="hidden lg:inline text-[11.5px]" style={{ color: hexA(mainText, 0.55) }}>{lc ? lc.scenes.length : 0}シーン</span>
+                            <span className="inline-flex items-center gap-1 text-[12.5px] font-medium tabular-nums" style={{ fontFamily: mono, color: hexA(mainText, 0.8) }} title={"この章のシーン尺の合計" + (sp.suffix.trim() ? "　目標 " + sp.suffix.trim() : "")}>
                               <Icon name="clock" className="w-3.5 h-3.5" />{fmt(lc ? lc.secSum : 0)}
                             </span>
                             <div className={"flex items-center gap-1.5 transition-opacity " + (isNarrow || r.time || r.done || maxDay > 1 ? "" : "opacity-0 group-hover/loc:opacity-100 focus-within:opacity-100")}>
-                            {dayPickerEl(r, false)}
+                            {dayPickerEl(r, true)}
                             <input type="time" value={r.time || ""} onChange={(e) => updateRow(r.id, { time: e.target.value })} title="到着・開始予定時刻（香盤表と連動）"
-                              className="shrink-0 w-[66px] h-6 bg-transparent text-[11.5px] font-medium tabular-nums text-center rounded focus:outline-none focus:bg-stone-50 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
-                              style={{ fontFamily: mono, color: r.time ? "#454B54" : "#B8BDC4" }} />
+                              className="shrink-0 w-[66px] h-6 bg-transparent text-[11.5px] font-medium tabular-nums text-center rounded focus:outline-none focus:bg-[var(--hv)] appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
+                              style={{ fontFamily: mono, color: r.time ? mainText : hexA(mainText, 0.4) }} />
                             <button onClick={() => updateRow(r.id, { done: !r.done })} title={r.done ? "撮影完了を取り消す" : "このロケを撮影完了にする"}
-                              className={"shrink-0 h-6 text-[11px] font-semibold px-2 rounded-md inline-flex items-center gap-1 " + (r.done ? "bg-emerald-50 text-emerald-700" : "text-stone-500 hover:bg-stone-100")}>
+                              className={"shrink-0 h-6 text-[11px] font-semibold px-2 rounded-md inline-flex items-center gap-1 " + (r.done ? "bg-emerald-400/20 text-emerald-300" : "hover:bg-[var(--hv)]")} style={r.done ? {} : { color: hexA(mainText, 0.7) }}>
                               <Icon name={r.done ? "checkCircle" : "check"} className="w-3 h-3" />{r.done ? "撮影済" : "完了"}
                             </button>
                           </div>
