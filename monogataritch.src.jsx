@@ -8045,8 +8045,15 @@ export default function App() {
                 </div>
               );
             };
+            /* 完了は既定で畳む（2026-09-21 AK「完了した案件は非表示にできるように」）。見出しを押すと開閉、開閉は端末に覚える。検索中は畳まず一致を出す */
+            const isCollapsed = (key) => !q && (sectionCollapsed[key] === undefined ? key === "done" : !!sectionCollapsed[key]);
             const renderSectionHeader = (key, label, count) => (
-              <div className="flex items-center gap-2 px-2 pt-4 pb-2 text-[11px] text-white/60 font-semibold"><span>{label}</span><span className="ml-auto">{count}</span></div>
+              <button type="button" aria-expanded={!isCollapsed(key)} title={isCollapsed(key) ? label + "を表示" : label + "を隠す"}
+                onClick={() => setSectionCollapsed((v) => ({ ...v, [key]: !isCollapsed(key) }))}
+                className="w-full flex items-center gap-2 px-2 pt-4 pb-2 text-[11px] text-white/60 font-semibold hover:text-white/80 text-left">
+                <span className="text-[9px] transition-transform" style={{ transform: isCollapsed(key) ? "rotate(-90deg)" : "none" }}>▾</span>
+                <span>{label}</span><span className="ml-auto">{count}</span>
+              </button>
             );
             const SECTIONS = [["active", "進行中"], ["hold", "保留"], ["done", "完了"]];
             if (q && !index.some((p) => ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q))) {
@@ -8057,7 +8064,7 @@ export default function App() {
                 {favoriteCases.length > 0 && (
                   <div className="mb-1">
                     {renderSectionHeader("favorites", "お気に入り", favoriteCases.length)}
-                    {favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
+                    {!isCollapsed("favorites") && favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
                       const active = p.id === activeId;
                       return (
                         <button key={p.id} onClick={() => switchProject(p.id)}
@@ -8078,7 +8085,7 @@ export default function App() {
                   return (
                     <div key={key}>
                       {renderSectionHeader(key, label, caseCount)}
-                      {groups.map((g) => renderChannelGroup(g.channel, g.items))}
+                      {!isCollapsed(key) && groups.map((g) => renderChannelGroup(g.channel, g.items))}
                     </div>
                   );
                 })}
