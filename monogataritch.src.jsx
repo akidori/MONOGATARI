@@ -9363,7 +9363,7 @@ export default function App() {
                   const lc = r ? locations.find((l) => l.id === r.id) : null;
                   const isDragOver = r && dragOverIndex === g.idx && dragIds && !dragIds.includes(r.id);
                   return (
-                    <div key={r ? r.id : "nolocation"} className={gi === 0 ? "" : "mt-6"}>
+                    <div key={r ? r.id : "nolocation"} className={gi === 0 ? "" : "mt-4"}>
                       {r && maxDay > 1 && dayStarts[r.id] != null && (
                         <div className="mb-2">{dayBannerEl(dayStarts[r.id])}</div>
                       )}
@@ -9375,7 +9375,7 @@ export default function App() {
                         return (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-2 rounded-xl border bg-white hover:bg-[#FCFBF9] transition-colors duration-150 overflow-hidden scroll-mt-24"
+                          className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-4 rounded-xl border bg-white hover:bg-[#FCFBF9] transition-colors duration-150 overflow-hidden scroll-mt-24"
                           style={{ borderColor: "#E4E1DA", "--ac": theme.accent, ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px] bg-stone-300 group-focus-within/loc:bg-[var(--ac)] transition-colors duration-150" />
                           <span className="shrink-0 flex items-center gap-4 select-none cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
