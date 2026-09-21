@@ -8895,8 +8895,19 @@ export default function App() {
             </section>
 
             {/* ハイライト（独立カード） */}
+            {/* 章ヘッダーと同じ見た目（濃い背景・明るい文字）のヘッダー ＋ 本文カード */}
+            <div className="relative flex items-center gap-4 pl-5 pr-3 py-3 mb-4 min-h-[66px] rounded-xl border overflow-hidden" style={{ background: theme.main, borderColor: hexA(mainText, 0.1) }}>
+              <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px]" style={{ background: hexA(mainText, 0.25) }} />
+              <span className="shrink-0 flex items-center gap-4 select-none">
+                <Icon name="star" className="w-6 h-6" style={{ color: theme.accent }} />
+                <span className="w-px h-8" style={{ background: hexA(mainText, 0.2) }} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-[17px] leading-snug" style={{ fontWeight: 700, color: mainText }}>ハイライト</div>
+                <div className="text-[12px] leading-snug" style={{ color: hexA(mainText, 0.6) }}>冒頭フック</div>
+              </div>
+            </div>
             <section className={cardCls + " mb-4"}>
-              {cardHead("ハイライト（冒頭フック）")}
               <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（行頭に「・」で ◼︎ 質問行）" />
             </section>
             </>)}
