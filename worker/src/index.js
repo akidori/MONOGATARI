@@ -1417,6 +1417,34 @@ ${qList}
         } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
       }
 
+      // ===== Studio OS連携: ホーム画面「今日の仕事」（2026-09-23）=====
+      // GET /api/today — 認証必須（requireUser）。Studio OSのMCPエンドポイント（POST /api/v1/mcp）を
+      // 1本だけ叩き、get_workツール（今日の仕事ページ＝案件の今の工程・請求・その他の仕事・待ち・保留を
+      // 見出しごとにグループ化したもの）をそのまま中継する。認証はSTUDIO_MCP_KEY（Studio OS側の
+      // MCP_API_KEYと同じ値、事前に両サービスへ設定が必要）。Studio OS側はMCP_MEMBER_ID（本人）で
+      // 動くため、返る内容は常にその1名分（現状ものがたりっちは個人ワークOSとして運用）。
+      // 未設定・Studio OS未応答時は connected:false を返す。ホーム画面はこれを見て静かに非表示にする
+      // （AK 2026-09-07 §4「待ちはホームの既定表示にしない」を踏まえ、詳細は開いた時だけ出す設計）。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "today" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_MCP_KEY) return json({ connected: false });
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/mcp", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: "Bearer " + env.STUDIO_MCP_KEY },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_work", arguments: {} } }),
+          });
+          if (!r.ok) return json({ connected: false });
+          const j = await r.json().catch(() => null);
+          const text = j && j.result && j.result.content && j.result.content[0] && j.result.content[0].text;
+          if (j && j.result && j.result.isError) return json({ connected: false });
+          if (!text) return json({ connected: false });
+          let work; try { work = JSON.parse(text); } catch (e) { return json({ connected: false }); }
+          return json({ connected: true, work });
+        } catch (e) { return json({ connected: false }); }
+      }
+
       // ===== 編集者の入口が用意されているかを Studio OS が一括で確認する（2026-08-23）=====
       // 勇人さんがdl_fb50で「mg案件未紐付け→自力ログイン→個人案件に上げて弾かれる」で詰まった事故の再発防止。
       // Studio OS は deliverables.mg_project_id を持つが「共有/編集者リンクが発行済みか」は mg 側の

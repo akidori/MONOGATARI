@@ -3664,6 +3664,8 @@ export default function App() {
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
   const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
+  const [todayWork, setTodayWork] = useState(null);          // Studio OS「今日の仕事」(/api/today経由・get_work中継)。ホームの「今日の仕事」でだけ使う
+  const [todayWorkOpenKey, setTodayWorkOpenKey] = useState(null); // 展開中のグループキー（既定は畳んでおく＝AK 2026-09-07 §4）
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("channel"); // global | channel | case（基本はクライアント単位）
 
@@ -6557,6 +6559,21 @@ export default function App() {
     })();
     return () => { live = false; };
   }, [project && project.shareId]);
+
+  // ホーム「今日の仕事」：Studio OSのMCP(get_work)をWorker(/api/today)経由で中継取得。
+  // 未ログイン・未接続（STUDIO_MCP_KEY未設定等）時はtodayWork=nullのままでホーム側は何も出さない。
+  React.useEffect(() => {
+    if (!user || !MG_SESSION) { setTodayWork(null); return; }
+    let live = true;
+    (async () => {
+      try {
+        const r = await fetch(SHARE_API + "/api/today", { headers: { Authorization: "Bearer " + MG_SESSION } });
+        const d = await r.json();
+        if (live) setTodayWork(d && d.connected ? d.work : null);
+      } catch (_) { if (live) setTodayWork(null); }
+    })();
+    return () => { live = false; };
+  }, [user]);
 
   // あがり報告：担当編集者のワンタップで ball→AK（Flip Board書き戻し）。phaseは触らずAKが確認して進める。
   const [reportingUp, setReportingUp] = useState(false);
@@ -10986,7 +11003,39 @@ export default function App() {
               </div>
             )}
 
-            {/* ===== 最近触った（クイックアクセス）。タスク管理(今日やること/確認待ち/期限)はFlip Boardに集約 ===== */}
+            {/* ===== 今日の仕事（Studio OS連携・2026-09-23）。件数だけ見せて開くと詳細＝Studio OS自身の
+                 「待ちはホームの既定表示にしない」(AK 2026-09-07 §4)に合わせた控えめな表示。
+                 未接続（STUDIO_MCP_KEY未設定・Studio OS未応答）の時は静かに何も出さない ===== */}
+            {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
+              <div className="mb-7">
+                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
+                  今日の仕事<span className="text-stone-300 font-normal">Studio OS</span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {todayWork.groups.filter((g) => g.rows && g.rows.length).map((g) => (
+                    <div key={g.key} className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden" style={{ minWidth: 176 }}>
+                      <button onClick={() => setTodayWorkOpenKey((k) => (k === g.key ? null : g.key))}
+                        className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-stone-50">
+                        <span className="text-[13px] font-bold text-stone-700">{g.title}</span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 shrink-0">{g.rows.length}</span>
+                      </button>
+                      {todayWorkOpenKey === g.key && (
+                        <div className="border-t border-stone-100 px-3.5 py-2 space-y-2 max-h-64 overflow-y-auto">
+                          {g.rows.slice(0, 20).map((r, i) => (
+                            <div key={i} className="text-[12px]">
+                              <div className="font-semibold text-stone-700 truncate">{r.label}</div>
+                              {r.due && <div className="text-stone-400 mt-0.5">{r.due}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ===== 最近触った（クイックアクセス） ===== */}
             {(() => {
               const { recent } = homeSections;
               if (!index.length || !recent.length) return null;

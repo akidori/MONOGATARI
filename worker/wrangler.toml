@@ -5,6 +5,9 @@ workers_dev = true
 
 # Googleログイン用：OAuthクライアントID（公開値）。Google Cloud で作成して貼る
 # セッション署名鍵は秘密： wrangler secret put SESSION_SECRET
+# ホーム画面「今日の仕事」用：Studio OSのMCP_API_KEYと同じ値を設定（Studio OS側で
+# MCP_MEMBER_IDも要設定）。未設定でもアプリ自体は動く（ホームのセクションが出ないだけ）：
+# wrangler secret put STUDIO_MCP_KEY
 [vars]
 GOOGLE_CLIENT_ID = "177151250196-ta2k23m2fe1ac9bras75ajk6ia79h88k.apps.googleusercontent.com"
 # Cloudflare Stream（確認用動画の自動トランスコード）。トークンは秘密： wrangler secret put STREAM_API_TOKEN
