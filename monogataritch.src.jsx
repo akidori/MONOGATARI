@@ -7783,7 +7783,7 @@ export default function App() {
     <div className="fixed inset-0 overflow-y-auto" style={{ background: "#E9E8E3" }}>
       <header className="sticky top-0 z-10 shadow-sm" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
         <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
-          <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-10 w-auto -my-1" style={{ filter: "brightness(0) invert(1)" }} />
+          <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-8 w-auto" style={{ filter: "brightness(0) invert(1)" }} />
         </div>
       </header>
       <main className="max-w-[1200px] mx-auto px-5 py-7">
@@ -7961,7 +7961,7 @@ export default function App() {
         <div className="px-3 py-2.5 border-b border-white/10">
           <button onClick={() => setView("home")} title="ホーム（チャンネル一覧）へ"
             className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors">
-            <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-12 w-auto shrink-0 -my-2.5" style={{ filter: mainText === "#FFFFFF" ? "brightness(0) invert(1)" : "none" }} />
+            <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-9 w-auto shrink-0 -my-1" style={{ filter: mainText === "#FFFFFF" ? "brightness(0) invert(1)" : "none" }} />
             <svg className="w-4 h-4 ml-auto text-white/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
@@ -11054,7 +11054,7 @@ export default function App() {
         <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
             <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
-              <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-10 w-auto -my-1" style={{ filter: mainText === "#FFFFFF" ? "brightness(0) invert(1)" : "none" }} />
+              <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-8 w-auto" style={{ filter: mainText === "#FFFFFF" ? "brightness(0) invert(1)" : "none" }} />
               <div className="flex-1" />
               <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
                 className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
