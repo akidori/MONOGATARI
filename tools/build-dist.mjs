@@ -8,7 +8,7 @@ const publicFiles = [
   "index.html", "app.js", "app.css", "tailwind.css", "sw.js", "manifest.json",
   "settings.html", "cases.html", "share.html", "lp.html", "mcp-login.html", "_headers", ".nojekyll",
   "icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon-64.png",
-  "logo-header.png", "logo-source.png",
+  "logo-header.png", "logo-source.png", "logo-wordmark.png",
 ];
 
 await rm(dist, { recursive: true, force: true });
