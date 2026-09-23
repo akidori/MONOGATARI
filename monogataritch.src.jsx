@@ -1343,6 +1343,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
     case "up": return (<svg {...c}><path d="M6 14l6-6 6 6" /></svg>);
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     case "folder": return (<svg {...c}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /></svg>);
+    case "home": return (<svg {...c}><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9" /></svg>);
     case "star": return (<svg {...c} fill="currentColor" stroke="none"><path d="M12 2.5l2.95 6.32 6.97.68-5.26 4.73 1.56 6.87L12 17.6l-6.22 3.5 1.56-6.87L2.08 9.5l6.97-.68L12 2.5z" /></svg>);
     case "share": return (<svg {...c}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 13.2l7.6 4.6M15.8 6.2L8.2 10.8" /></svg>);
     case "grip": return (<svg {...c} strokeWidth="0" fill="currentColor"><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>);
@@ -10952,7 +10953,54 @@ export default function App() {
               </button>
             </div>
           </header>
-          <main className="max-w-[1200px] mx-auto px-5 py-7">
+          <div className="max-w-[1320px] mx-auto px-5 flex items-start gap-6">
+          <aside className="hidden lg:flex flex-col shrink-0 w-[192px] py-7 sticky top-[64px] gap-4" style={{ maxHeight: "calc(100vh - 64px)", overflowY: "auto" }}>
+            <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold" style={{ background: theme.accent + "14", color: theme.accent }}>
+              <Icon name="home" className="w-4 h-4 shrink-0" />ホーム
+            </div>
+            {favoriteCases.length > 0 && (
+              <div>
+                <div className="px-2.5 text-[10.5px] font-bold tracking-wide text-stone-400 mb-1">お気に入り</div>
+                <div className="flex flex-col gap-0.5">
+                  {favoriteCases.slice(0, 10).map((c) => (
+                    <button key={c.id} onClick={() => openCase(c.id)} title={c.name}
+                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12.5px] text-stone-600 hover:bg-white truncate">
+                      <Icon name="star" className="w-3.5 h-3.5 shrink-0 text-stone-400" />
+                      <span className="truncate">{c.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {channelGroups.length > 0 && (
+              <div>
+                <div className="px-2.5 text-[10.5px] font-bold tracking-wide text-stone-400 mb-1">チャンネル</div>
+                <div className="flex flex-col gap-0.5">
+                  {channelGroups.slice(0, 12).map(({ channel, items }) => (
+                    <button key={channel} onClick={() => openChannel(channel)} title={channel}
+                      className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12.5px] text-stone-600 hover:bg-white">
+                      {channelIconOf(channel)
+                        ? <span className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[12px] leading-none">{channelIconOf(channel)}</span>
+                        : <svg className="w-3.5 h-3.5 shrink-0 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>}
+                      <span className="flex-1 min-w-0 truncate">{channel}</span>
+                      <span className="text-[10.5px] text-stone-400 shrink-0">{items.length}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
+              <button onClick={() => { setTodayWorkOpenKey(null); document.getElementById("home-today-work")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12.5px] text-stone-600 hover:bg-white">
+                <Icon name="cloud" className="w-3.5 h-3.5 shrink-0 text-stone-400" />今日の仕事へ
+              </button>
+            )}
+            <div className="mt-auto px-2.5 py-2 rounded-lg text-[11px] flex items-center gap-1.5" style={{ background: todayWork ? "#E7F6EC" : "transparent", color: todayWork ? "#15803D" : "#A8A29E" }}>
+              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: todayWork ? "#22C55E" : "#D6D3D1" }} />
+              Studio OS {todayWork ? "連携中" : "未接続"}
+            </div>
+          </aside>
+          <main className="flex-1 min-w-0 py-7">
             {/* 全案件 横断検索＋新規（1行に統合） */}
             <div className="flex items-center gap-2 mb-6">
             <div className="relative flex-1 min-w-0">
@@ -11007,7 +11055,7 @@ export default function App() {
                  「待ちはホームの既定表示にしない」(AK 2026-09-07 §4)に合わせた控えめな表示。
                  未接続（STUDIO_MCP_KEY未設定・Studio OS未応答）の時は静かに何も出さない ===== */}
             {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
-              <div className="mb-7">
+              <div className="mb-7" id="home-today-work">
                 <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
                   今日の仕事<span className="text-stone-300 font-normal">Studio OS</span>
                 </div>
@@ -11084,6 +11132,7 @@ export default function App() {
             </div>
             <p className="text-[11px] text-stone-500 mt-6 text-center">案件をクリックすると編集画面が開きます。左上ロゴでいつでもここに戻れます。</p>
           </main>
+          </div>
         </div>
       )}
 
