@@ -394,7 +394,10 @@ const assetsFromLegacy = (p) => {
 };
 /* 既存案件のステータスを中身から軽く推定（未設定時のみ。全部「未着手」表示を避ける） */
 const inferStatus = (p) => {
-  const hasVid = !!p.video || (Array.isArray(p.plans) && p.plans.some((pl) => pl.video));
+  // 納品完了タブで納品動画を「固定」＝納品確定（2026-09-26: 永田さん密着が納品済みなのに確認中のままだった）
+  if (p.meta && p.meta.deliverLocks && p.meta.deliverLocks.deliverVideoUrl) return "完了";
+  const hasReview = !!(p.review && Array.isArray(p.review.versions) && p.review.versions.some((v) => v && !v.trashedAt));
+  const hasVid = hasReview || !!p.video || (Array.isArray(p.plans) && p.plans.some((pl) => pl.video));
   if (hasVid) return "確認中";
   const hasScript = (Array.isArray(p.rows) && p.rows.some((r) => r.kind === "scene" && (r.script || "").trim())) || (p.talk && Array.isArray(p.talk.body) && p.talk.body.some((b) => (b.script || "").trim()));
   if (hasScript) return "編集中";
@@ -5553,16 +5556,33 @@ export default function App() {
   const favoriteCases = useMemo(() => index.filter((x) => x.favorite), [index]);
   /* 案件カード用：本体（アクティブ=project / 他=boardCache）を引く。未読込はindexだけ */
   const caseData = (id) => (id === activeId && project) ? project : boardCache[id];
+  /* 案件のステータスはその都度求める。保存済みの project.status は初回読み込み時の推定のまま固まっていた（2026-09-26
+     永田さん密着が納品済みなのに「確認中」）。AKにはStudio OSの実際の工程（進行・完了）を優先して出す */
+  const [studioStatus, setStudioStatus] = useState({}); // {caseId: {status, stepName}}（Worker /api/case-status・管理者のみ）
+  const liveStatus = (id, d) => (studioStatus[id] && studioStatus[id].status) || (d ? inferStatus(d) : "未着手");
   const daysLeft = (d) => { if (!d) return null; const t = new Date(d + "T23:59:59").getTime(); if (isNaN(t)) return null; return Math.ceil((t - Date.now()) / 86400000); };
   /* ホームの作業セクション（今日やること/確認待ち/期限近い/最近触った）を算出 */
   const homeSections = useMemo(() => {
-    const rows = index.map((x) => { const d = caseData(x.id); return { id: x.id, name: (d && d.name) || x.name, channel: x.channel || DEFAULT_CHANNEL, collab: x.collab, status: (d && d.status) || "未着手", deadline: (d && d.deadline) || "", nextAction: (d && d.nextAction) || "", updatedAt: (d && d.updatedAt) || x.createdAt || 0, dl: daysLeft(d && d.deadline) }; });
+    const rows = index.map((x) => { const d = caseData(x.id); return { id: x.id, name: (d && d.name) || x.name, channel: x.channel || DEFAULT_CHANNEL, collab: x.collab, status: liveStatus(x.id, d), deadline: (d && d.deadline) || "", nextAction: (d && d.nextAction) || "", updatedAt: (d && d.updatedAt) || x.createdAt || 0, dl: daysLeft(d && d.deadline) }; });
     const review = rows.filter((r) => r.status === "確認中");
     const due = rows.filter((r) => r.dl != null && r.dl <= 7 && r.status !== "完了").sort((a, b) => a.dl - b.dl);
     const todo = rows.filter((r) => r.status !== "完了" && (r.nextAction.trim() || (r.dl != null && r.dl <= 3))).sort((a, b) => (a.dl == null ? 99 : a.dl) - (b.dl == null ? 99 : b.dl)).slice(0, 8);
     const recent = recentIds.map((id) => rows.find((r) => r.id === id)).filter(Boolean).slice(0, 6);
     return { rows, review, due, todo, recent };
-  }, [index, boardCache, project, recentIds, activeId]);
+  }, [index, boardCache, project, recentIds, activeId, studioStatus]);
+
+  useEffect(() => {
+    if (!isStaff || !MG_SESSION || !index.length || (view !== "home" && view !== "analytics")) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(SHARE_API + "/api/case-status", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION }, body: JSON.stringify({ ids: index.map((x) => x.id) }) });
+        const d = await r.json().catch(() => null);
+        if (!cancelled && r.ok && d && d.statuses) setStudioStatus(d.statuses);
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [isStaff, view, index.length]);
 
   /* アナリティクス（Phase 2）：読み込めた案件本体から集計する。グラフは最小限、気づきと次のアクションをセットで出す */
   const analytics = useMemo(() => {
@@ -5578,7 +5598,7 @@ export default function App() {
       chan[ch].total++;
       if (!d) continue;
       loadedN++;
-      const st = STATUSES.includes(d.status) ? d.status : "未着手";
+      const st = liveStatus(x.id, d);
       statusCount[st]++;
       if (st === "完了") chan[ch].done++; else if (st !== "未着手") chan[ch].active++;
       const cmts = (d.review && Array.isArray(d.review.comments)) ? d.review.comments : [];
@@ -5603,7 +5623,7 @@ export default function App() {
     openByCase.sort((a, b) => b.high - a.high || b.open - a.open);
     const channels = Object.values(chan).sort((a, b) => b.total - a.total);
     return { total: index.length, loadedN, statusCount, channels, cTotal, cOpen, cHighOpen, cats, repeats, openByCase: openByCase.slice(0, 5) };
-  }, [index, boardCache, project, activeId]);
+  }, [index, boardCache, project, activeId, studioStatus]);
 
   const StatusBadge = ({ s }) => { const c = STATUS_COLOR[s] || STATUS_COLOR["未着手"]; return <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: c.bg, color: c.fg }}>{s}</span>; };
   const renderCaseCard = (r) => {
@@ -11762,7 +11782,7 @@ export default function App() {
         const active = a.statusCount["企画中"] + a.statusCount["撮影前"] + a.statusCount["編集中"] + a.statusCount["確認中"];
         const kbApproved = knowledgeBase && !knowledgeBase.failed ? knowledgeBase.company.filter((k) => k.status === "approved").length : null;
         const kbCandidate = knowledgeBase && !knowledgeBase.failed ? knowledgeBase.company.filter((k) => k.status === "candidate").length : null;
-        const firstOf = (st) => index.find((x) => { const d = caseData(x.id); return d && d.status === st; });
+        const firstOf = (st) => index.find((x) => { const d = caseData(x.id); return d && liveStatus(x.id, d) === st; });
         const insights = [];
         if (a.cHighOpen > 0 && a.openByCase[0]) insights.push({ tone: "rose", text: `優先度「高」の修正指摘が${a.cHighOpen}件、未完了のまま残っています。`, action: `「${a.openByCase[0].name}」を開く`, run: () => openCase(a.openByCase[0].id) });
         if (a.statusCount["確認中"] > 0) { const f = firstOf("確認中"); insights.push({ tone: "rose", text: `確認中の案件が${a.statusCount["確認中"]}件あります。先方・社内の確認が止まっていないか見てください。`, action: f ? `「${f.name}」を開く` : null, run: f ? () => openCase(f.id) : null }); }
