@@ -8459,6 +8459,14 @@ export default function App() {
               ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               : <Icon name="user" className="w-[18px] h-[18px]" />}
           </button>
+          {/* 通知（工程の締切リマインド＋その工程のマニュアル）。案件を開いている時にも気づけるようにここにも置く */}
+          {user && (
+            <button onClick={() => setShowNotifs((v) => !v)} title="通知"
+              className="relative w-8 h-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 shrink-0" style={{ color: mainText }}>
+              <Icon name="bell" className="w-4 h-4" />
+              {!!(notifs && notifs.unread) && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold grid place-items-center">{notifs.unread}</span>}
+            </button>
+          )}
           <span className="relative hidden sm:flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: theme.accent }}></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
