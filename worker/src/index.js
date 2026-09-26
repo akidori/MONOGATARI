@@ -1635,6 +1635,7 @@ ${qList}
         return json({ items, unread: items.filter((n) => !n.read).length });
       }
       // POST /api/reminders/preview — 今朝送る（送った）リマインドの確認用。送信はしない。管理者のみ
+      // 返り値の mails が「1人1通にまとめた後」のメール一覧、mode が今の REMINDERS_MODE
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "reminders" && parts[2] === "preview" && !parts[3]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);

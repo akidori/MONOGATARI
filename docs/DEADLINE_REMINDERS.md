@@ -7,9 +7,18 @@ AK「ものがたりっちで各工程の日程も把握して、登録した編
 - 毎朝 8:00（日本時間、Worker cron `0 23 * * *`）に `worker/src/reminders.js` の `runDeadlineReminders` が動く
 - **日程の正本は Studio OS**：`GET /api/v1/deliverables?productionStatus=active&expand=detail` で、`mgProjectId` が付いた進行中の案件の工程（`deliverable_steps`）を読む。ものがたりっち側に日程は持たない
 - **対象の工程**：編集者の工程だけ。テンプレの担当役割（`defaultRole`）が `Editor` の工程。役割が未設定のテンプレは工程名（編集・修正・初稿・素材整理・納品）で判定。完了・スキップ済みは除く
-- **タイミング**：締切の前日・当日・超過（3日目まで毎朝）。**超過4日目以降は編集者には送らず、AK（管理者）に1回だけ**「完了の登録漏れか締切の見直しを確認して」と知らせる（Studio OSの締切は最終締切からの自動逆算が多く、完了登録漏れのまま催促が続くのを防ぐため）
+- **通知を増やさないルール**（2026-09-26 AK「通知が多いのは1番きつい」）
+  - **メールは1人1日1通まで**：その朝の分を1通にまとめる（件名に件数、マニュアルは重複を除いて最大3節、11件目以降は「ほかN件」）
+  - **前日はアプリ内だけ**（メールなし）。メールは当日と超過のときだけ
+  - **超過の催促は1回だけ**（毎朝は送らない）。超過が3日を過ぎても完了にならない工程は、編集者ではなく **AKに1回だけ・まとめて1通**（完了の登録漏れか締切の見直しを確認）
+  - **アプリ内通知は工程ごとに1件**（前日→当日→超過で置き換え、たまらない）
+  - **届かない担当者の検知**：Studio OSの編集担当のメールが、ものがたりっちの案件メンバーにいなければ、AKのまとめに1回だけ載せる
 - **宛先**：その案件にものがたりっちで登録された共同編集メンバー（オーナーを除く）。Studio OSで編集担当（assignments の Editor）が決まっていて、その人がメンバーにいれば、その人だけに送る。メール（ZHC bot `BOT_API_URL` 経由、招待メールと同じ経路）とアプリ内通知（右上のベル）
-- **重複防止**：同じ工程・同じ段階・同じ日には1回だけ（KV `remind:<案件>:<工程>:<段階>:<日付>`、3日で消える）
+- **重複防止**：同じ工程・同じ段階・同じ締切では1回だけ（KV `remind:<案件>:<工程>:<段階>:<締切>`、30日で消える。締切が変わったら数え直す）
+- **運転モード** `REMINDERS_MODE`（worker/wrangler.toml）
+  - `preview`（既定）：誰にも送らない。送る予定だったメール・通知の一覧を **AKのアプリ内通知1件**にまとめる（毎朝同じ1件を置き換え）。メール設定やStudio OSのメンバー読み取りに問題があれば、そこに注意として出す
+  - `on`：送る。preview で数日見て問題が無ければ切り替える（wrangler.toml を `on` にしてデプロイ）
+  - `off`：何もしない
 - **マニュアル**：工程に合う節の要点を最大2節添える。対応表は `STEP_GUIDES`（reminders.js）1か所
   - 素材整理 → マニュアル「必ず守るルール」＋構成のルール「C. 引き出し方」
   - 本編集・粗編・初稿 → 構成のルール「A. セクション5種」「B. 脳の順番」
@@ -30,7 +39,7 @@ Studio OS の業務・ナレッジを中継する `/api/today`・`/api/knowledge
 ## 必要な設定
 
 - 既存の Secret だけで動く：`STUDIO_AGENT_KEY`（Studio OS 読み取り）、`BOT_API_URL` / `BOT_API_KEY`（メール）
-- Worker のデプロイ：main に反映されると GitHub Actions（`.github/workflows/deploy-worker.yml`）が自動デプロイする（要：リポジトリの Actions シークレット `CLOUDFLARE_API_TOKEN`。未設定ならスキップ）。手動なら `cd worker && npx wrangler deploy -c wrangler.toml`（`-c` を付けないとリポジトリ直下の Pages 用設定を拾う）
+- Worker のデプロイ：GitHub の Actions →「Deploy Worker (mg-share)」→ Run workflow でデプロイする（`.github/workflows/deploy-worker.yml`・mainへのマージでは自動で出ない）（要：リポジトリの Actions シークレット `CLOUDFLARE_API_TOKEN`。未設定ならスキップ）。手動なら `cd worker && npx wrangler deploy -c wrangler.toml`（`-c` を付けないとリポジトリ直下の Pages 用設定を拾う）
 
 ## 前提・制限
 

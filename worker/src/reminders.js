@@ -1,12 +1,15 @@
 /* ===== 工程の締切リマインド＋マニュアル配信（2026-09-26 AK） =====
    Studio OS の工程（deliverable_steps）の締切を毎朝読み、ものがたりっちに登録された編集者
-   （共同編集メンバー）へ「前日・当日・超過（3日目まで）」でメールとアプリ内通知を送る。
-   超過が3日を過ぎたら編集者への催促は止め、AK（管理者）に1回だけ知らせる。
-   催促には、その工程に合うマニュアル（knowledge/ と構成のルール）の要点を添えて、
-   マニュアルを受け身でも読んでもらえるようにする。
+   （共同編集メンバー）へ知らせる。催促には、その工程に合うマニュアル（knowledge/ と構成のルール）の
+   要点を添えて、マニュアルを受け身でも読んでもらえるようにする。
+   ■ 通知を増やさないルール（2026-09-26 AK「通知が多いのは1番きつい」）
+   - メールは1人1日1通まで（その日の分を1通にまとめる）。アプリ内通知は工程ごとに1件（段階が進んだら置き換え）
+   - 前日はアプリ内だけ（メールなし）。メールは当日と超過のときだけ
+   - 超過の催促は1回だけ。超過が3日を過ぎても完了にならない工程は、編集者ではなくAKに1回だけ（まとめて1通）
+   - 同じ工程・同じ段階・同じ締切では2回送らない（締切が変わったら数え直す）
+   - REMINDERS_MODE：off＝何もしない／preview（既定）＝誰にも送らず、送る予定の一覧をAKのアプリ内通知に1件だけ出す／on＝送る
    - 日程の正本は Studio OS（ここでは読むだけ。ものがたりっち側に日程を持たない）
    - 対象は編集者の工程だけ（Studio OS のテンプレの担当役割が Editor。役割が未設定の工程は名前で判定）
-   - 同じ工程・同じ段階・同じ日には1回しか送らない（KV で重複防止）
    純粋なロジックはここに置き、index.js から env と資料テキストを渡して呼ぶ（Node でテストできるように）。 */
 
 export const STUDIO_API = "https://studio-os-5dm.pages.dev/api/v1";
@@ -84,62 +87,129 @@ export async function planReminders({ deliverables, loadCase, docs, today, membe
     if (!kase) continue;
     const owner = (kase.ownerEmail || "").toLowerCase();
     const editors = Array.from(new Set((kase.members || []).map((m) => (m || "").toLowerCase()).filter((m) => m && m.includes("@") && m !== owner)));
-    if (!editors.length) continue; // ものがたりっちに編集者が登録されていない案件は送らない
     // Studio OSで編集担当（assignments の Editor）が決まっていて、その人がこの案件の編集者なら、その人にだけ送る
-    const assigned = (d.assignments || []).filter((a) => a && !a.archived && EDITOR_ROLES.has(a.role))
-      .map((a) => (memberEmailById[a.memberId] || "").toLowerCase()).filter(Boolean);
+    const assigned = Array.from(new Set((d.assignments || []).filter((a) => a && !a.archived && EDITOR_ROLES.has(a.role))
+      .map((a) => (memberEmailById[a.memberId] || "").toLowerCase()).filter(Boolean)));
+    const caseName = kase.name || d.title || "案件";
+    // Studio OSの編集担当のメールが、ものがたりっちの案件メンバーにいない（＝その人には届かない）ことをAKに1回だけ知らせる
+    const missing = assigned.filter((e) => !editors.includes(e)).sort();
+    if (missing.length && adminEmails.length) {
+      out.push({ caseId: d.mgProjectId, caseName, key: `${d.mgProjectId}:mismatch:${missing.join(",")}`, to: adminEmails, forAdmin: true, kind: "mismatch", missing });
+    }
+    if (!editors.length) continue; // ものがたりっちに編集者が登録されていない案件は送らない
     const narrowed = editors.filter((e) => assigned.includes(e));
     const to = narrowed.length ? narrowed : editors;
     for (const { s, ph } of due) {
-      const base = { caseId: d.mgProjectId, caseName: kase.name || d.title || "案件", stepId: s.id, stepName: s.stepName, deadline: s.deadline.slice(0, 10), phase: ph };
+      const deadline = s.deadline.slice(0, 10);
+      const base = { caseId: d.mgProjectId, caseName, stepId: s.id, stepName: s.stepName, deadline, phase: ph };
       if (ph.key === "stale") {
-        // 編集者にはもう送らない。AKに1回だけ（日付を含めないキー＝以後は送らない）
-        if (adminEmails.length) out.push({ ...base, key: `${d.mgProjectId}:${s.id}:stale`, to: adminEmails, editors: to, guides: [], forAdmin: true });
+        // 編集者にはもう送らない。AKに1回だけ（締切が変わらない限り以後は送らない）
+        if (adminEmails.length) out.push({ ...base, key: `${d.mgProjectId}:${s.id}:stale:${deadline}`, to: adminEmails, editors: to, guides: [], forAdmin: true, kind: "stale" });
         continue;
       }
-      out.push({ ...base, key: `${d.mgProjectId}:${s.id}:${ph.key}:${today}`, to, guides: guidesFor(s.stepName, docs) });
+      // 前日はアプリ内だけ。超過は日付を含めないキー＝1回だけ
+      out.push({ ...base, key: `${d.mgProjectId}:${s.id}:${ph.key}:${deadline}`, to, guides: guidesFor(s.stepName, docs), mail: ph.key !== "eve" });
     }
   }
   return out;
 }
 
-export function composeEmail(r, appOrigin) {
-  const url = `${appOrigin}/?case=${encodeURIComponent(r.caseId)}`;
-  if (r.forAdmin) {
-    return {
-      subject: `【ものがたりっち】超過が続いている工程：${r.caseName}（${r.stepName}）`,
-      body: `「${r.caseName}」の${r.stepName}は、締切（${r.deadline}）から${-r.phase.days}日たってもStudio OSで完了になっていません。\n\n編集者（${(r.editors || []).join("、")}）への自動の催促は${OVERDUE_EDITOR_DAYS}日で止めました。完了の登録漏れか、締切の見直しが必要かを確認してください。\n\n案件を開く：${url}\n\nBird Flip / ものがたりっち！`,
-    };
-  }
-  const head = r.phase.key === "over"
-    ? `「${r.caseName}」の${r.stepName}は、締切（${r.deadline}）を${-r.phase.days}日過ぎています。状況を教えてください。`
-    : `「${r.caseName}」の${r.stepName}は、${r.phase.key === "eve" ? "明日" : "今日"}（${r.deadline}）が締切です。`;
-  const guide = r.guides.length
-    ? "\n\n―― この工程で押さえること ――\n" + r.guides.map((g) => `【${g.source}】\n` + g.points.map((p) => `・${p}`).join("\n")).join("\n\n")
+const MAX_LIST = 10; // 1通に並べる件数の上限（超えたら「ほかN件」）
+const listed = (arr, fmt) => arr.slice(0, MAX_LIST).map(fmt).join("\n") + (arr.length > MAX_LIST ? `\n・ほか${arr.length - MAX_LIST}件（アプリの通知で確認できます）` : "");
+const itemLine = (r) => `・${r.caseName}（${r.stepName}）…${r.phase.label}（締切 ${r.deadline}）`;
+
+/* 編集者向け：その日の分を1通にまとめる。マニュアルの節は重複を除いて最大3つ */
+export function composeDigest(items, appOrigin) {
+  const first = items[0];
+  const worst = items.some((r) => r.phase.key === "over") ? "締切を過ぎた工程があります" : items.some((r) => r.phase.key === "today") ? "今日が締切の工程があります" : "明日が締切の工程があります";
+  const subject = items.length === 1
+    ? `【ものがたりっち】${first.phase.label}：${first.caseName}（${first.stepName}）`
+    : `【ものがたりっち】${worst}（${items.length}件）`;
+  const seen = new Set();
+  const guides = [];
+  for (const r of items) for (const g of r.guides || []) if (!seen.has(g.source) && guides.length < 3) { seen.add(g.source); guides.push(g); }
+  const guide = guides.length
+    ? "\n\n―― この工程で押さえること ――\n" + guides.map((g) => `【${g.source}】\n` + g.points.map((p) => `・${p}`).join("\n")).join("\n\n")
     : "";
+  const over = items.some((r) => r.phase.key === "over") ? "\n\n締切を過ぎている工程は、状況（いつ終わりそうか）をディレクターに教えてください。" : "";
+  const links = Array.from(new Set(items.map((r) => r.caseId))).slice(0, MAX_LIST)
+    .map((id) => `${(items.find((r) => r.caseId === id) || {}).caseName}：${appOrigin}/?case=${encodeURIComponent(id)}`).join("\n");
   return {
-    subject: `【ものがたりっち】${r.phase.label}：${r.caseName}（${r.stepName}）`,
-    body: `${head}\n\n案件を開く：${url}${guide}\n\n※このメールは工程の締切に合わせて自動で送っています。締切の変更はディレクターに相談してください。\nBird Flip / ものがたりっち！`,
+    subject,
+    body: `今日お知らせする工程です。\n\n${listed(items, itemLine)}${over}\n\n案件を開く：\n${links}${guide}\n\n※締切に合わせて自動で送っています（メールは1日1通まで・同じ工程の催促は1回だけ）。締切の変更はディレクターに相談してください。\nBird Flip / ものがたりっち！`,
   };
 }
+
+/* AK向け：超過が続いている工程・届かない担当者を1通にまとめる */
+export function composeAdminDigest(items, appOrigin) {
+  const stale = items.filter((r) => r.kind === "stale");
+  const mismatch = items.filter((r) => r.kind === "mismatch");
+  const parts = [];
+  if (stale.length) parts.push(`■ 締切から${OVERDUE_EDITOR_DAYS}日以上たっても完了になっていない工程（${stale.length}件）\n編集者への自動の催促は止めました。完了の登録漏れか、締切の見直しが必要かを確認してください。\n` +
+    listed(stale, (r) => `・${r.caseName}（${r.stepName}）締切 ${r.deadline}・${-r.phase.days}日超過 ${appOrigin}/?case=${encodeURIComponent(r.caseId)}`));
+  if (mismatch.length) parts.push(`■ リマインドが届かない編集担当（${mismatch.length}件）\nStudio OSの編集担当のメールが、ものがたりっちの案件メンバーにいません。案件に招待するか、Studio OSのメールを直してください。\n` +
+    listed(mismatch, (r) => `・${r.caseName}：${r.missing.join("、")}`));
+  return {
+    subject: `【ものがたりっち】確認が必要な工程・担当（${items.length}件）`,
+    body: parts.join("\n\n") + "\n\n※同じ内容は2回送りません。\nBird Flip / ものがたりっち！",
+  };
+}
+
+/* 旧API互換（1件だけのメール） */
+export const composeEmail = (r, appOrigin) => (r.forAdmin ? composeAdminDigest([r], appOrigin) : composeDigest([r], appOrigin));
 
 export function toNotification(r, now = Date.now()) {
   return {
     id: r.key, at: now, type: "deadline", read: false,
-    caseId: r.caseId, caseName: r.caseName, stepName: r.stepName, deadline: r.deadline,
+    caseId: r.caseId, caseName: r.caseName, stepId: r.stepId, stepName: r.stepName, deadline: r.deadline,
     phase: r.phase.key, title: `${r.phase.label}：${r.stepName}`, guides: r.guides,
   };
 }
 
+/* 一覧を1件のアプリ内通知にする（AK向けのまとめ・プレビュー用）。caseId が無いので「案件を開く」は出ない */
+const digestNotification = (id, title, caseName, sections, now) => ({
+  id, at: now, type: "digest", read: false, caseId: null, caseName, phase: "stale", title,
+  guides: sections.filter((x) => x.points.length),
+});
+
+/* アプリ内通知の保存：工程ごとに1件（同じ工程の古い段階は置き換え）、最大50件 */
+async function pushNotifs(env, to, notifs) {
+  const nk = "notif:" + to;
+  let list = (await env.SNAPS.get(nk, "json")) || [];
+  for (const n of notifs) {
+    list = list.filter((x) => x.id !== n.id && !(n.stepId && x.type === "deadline" && x.caseId === n.caseId && x.stepId === n.stepId));
+    list.unshift(n);
+  }
+  await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
+}
+
+async function sendMail(env, fetchImpl, to, mail, audit) {
+  if (!(env.BOT_API_URL && env.BOT_API_KEY)) return false;
+  try {
+    const r = await fetchImpl(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
+      method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
+      body: JSON.stringify({ to, subject: mail.subject, body: mail.body, audit_target: audit }),
+    });
+    return !!(r && r.ok !== false);
+  } catch (e) { return false; } // メール失敗でもアプリ内通知は残す
+}
+
+export const reminderMode = (env) => {
+  const m = String((env && env.REMINDERS_MODE) || "").trim().toLowerCase();
+  return m === "on" || m === "off" ? m : "preview";
+};
+
 /* ---- 実行（Worker の cron から呼ぶ） ---- */
 export async function runDeadlineReminders(env, docs, { dryRun = false, now = Date.now(), fetchImpl = fetch, adminEmails = [] } = {}) {
-  if (!env.STUDIO_AGENT_KEY) return { ok: false, reason: "STUDIO_AGENT_KEY 未設定", sent: [] };
+  const mode = reminderMode(env);
+  if (mode === "off" && !dryRun) return { ok: true, mode, skipped: "REMINDERS_MODE=off", sent: [] };
+  if (!env.STUDIO_AGENT_KEY) return { ok: false, mode, reason: "STUDIO_AGENT_KEY 未設定", sent: [] };
   const headers = { authorization: "Bearer " + env.STUDIO_AGENT_KEY };
   const deliverables = [];
   for (let page = 1; page <= 10; page++) {
     const r = await fetchImpl(`${STUDIO_API}/deliverables?productionStatus=active&expand=detail&limit=200&page=${page}`, { headers });
     const j = await r.json().catch(() => null);
-    if (!r.ok || !j || j.success === false) return { ok: false, reason: "Studio OS " + r.status, sent: [] };
+    if (!r.ok || !j || j.success === false) return { ok: false, mode, reason: "Studio OS " + r.status, sent: [] };
     deliverables.push(...(j.data || []));
     const total = (j.meta && j.meta.total) || 0;
     if (!(j.data || []).length || deliverables.length >= total) break;
@@ -155,32 +225,58 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
   const today = jstDate(now);
   const plan = await planReminders({ deliverables, loadCase, docs, today, memberEmailById, adminEmails });
   const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
-  const sent = [];
-  for (const r of plan) {
-    const dedupeKey = "remind:" + r.key;
-    if (await env.SNAPS.get(dedupeKey)) continue;
-    const mail = composeEmail(r, appOrigin);
-    if (dryRun) { sent.push({ ...r, mail }); continue; }
-    for (const to of r.to) {
-      if (env.BOT_API_URL && env.BOT_API_KEY) {
-        try {
-          await fetchImpl(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
-            method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
-            body: JSON.stringify({ to, subject: mail.subject, body: mail.body, audit_target: "monogataritch:remind:" + r.key }),
-          });
-        } catch (e) { /* メール失敗でもアプリ内通知は残す */ }
-      }
-      const nk = "notif:" + to;
-      const list = (await env.SNAPS.get(nk, "json")) || [];
-      if (!list.some((n) => n.id === r.key)) {
-        list.unshift(toNotification(r, now));
-        await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
-      }
-    }
-    await env.SNAPS.put(dedupeKey, "1", r.forAdmin ? { expirationTtl: 180 * 86400 } : { expirationTtl: 3 * 86400 });
-    sent.push(r);
+  // まだ送っていないものだけ
+  const fresh = [];
+  for (const r of plan) if (!(await env.SNAPS.get("remind:" + r.key))) fresh.push(r);
+  // 宛先ごとにまとめる
+  const byTo = new Map();
+  for (const r of fresh) for (const to of r.to) { if (!byTo.has(to)) byTo.set(to, { editor: [], admin: [] }); byTo.get(to)[r.forAdmin ? "admin" : "editor"].push(r); }
+  const mails = [];
+  for (const [to, g] of byTo) {
+    const mailItems = g.editor.filter((r) => r.mail);
+    if (mailItems.length) mails.push({ to, ...composeDigest(mailItems, appOrigin), items: mailItems.length });
+    if (g.admin.length) mails.push({ to, ...composeAdminDigest(g.admin, appOrigin), items: g.admin.length });
   }
-  return { ok: true, today, planned: plan.length, sent };
+  const summary = { ok: true, mode, today, planned: plan.length, fresh: fresh.length, mails: mails.map((m) => ({ to: m.to, subject: m.subject, items: m.items })) };
+  if (dryRun) return { ...summary, sent: fresh.map((r) => ({ ...r, to: r.to })), preview: mails };
+
+  if (mode === "preview") {
+    // 誰にも送らない。送る予定だった内容をAKのアプリ内通知1件にまとめる（毎朝同じ1件を置き換え・内容が同じなら既読のまま）
+    // 重複防止の記録も付けないので、on にした朝に今の状況で送り始める
+    const lines = mails.map((m) => `${m.to} へ「${m.subject}」`);
+    const inapp = fresh.filter((r) => !r.forAdmin && !r.mail).map((r) => `${r.to.join("、")}：${r.caseName}（${r.stepName}）${r.phase.label}`);
+    const warn = [];
+    if (!(env.BOT_API_URL && env.BOT_API_KEY)) warn.push("メール送信の設定（BOT_API_URL / BOT_API_KEY）がありません。on にしてもアプリ内通知だけになります");
+    if (!Object.keys(memberEmailById).length) warn.push("Studio OSのメンバーのメールが読めません。編集担当に絞れず、案件の編集者全員に送ります");
+    for (const to of adminEmails) {
+      const prev = ((await env.SNAPS.get("notif:" + to, "json")) || []).find((x) => x.id === "remind-preview");
+      const n = digestNotification("remind-preview", `お試し運転：本番なら今朝メール${mails.length}通`, "リマインドはまだ誰にも送っていません（REMINDERS_MODE=preview）", [
+        { source: "送る予定だったメール（1人1日1通にまとめ済み）", points: lines.slice(0, 20) },
+        { source: "アプリ内だけの通知（前日）", points: inapp.slice(0, 20) },
+        { source: "設定の注意", points: warn },
+      ], now);
+      if (!n.guides.length) n.guides = [{ source: "今朝の結果", points: ["送る予定の通知はありませんでした"] }];
+      if (prev && JSON.stringify(prev.guides) === JSON.stringify(n.guides)) n.read = prev.read;
+      await pushNotifs(env, to, [n]);
+    }
+    return { ...summary, sent: [] };
+  }
+
+  // mode === "on"：メール（1人1通）→ アプリ内通知 → 重複防止の記録
+  for (const m of mails) await sendMail(env, fetchImpl, m.to, m, "monogataritch:remind:" + today);
+  for (const [to, g] of byTo) {
+    const notifs = g.editor.map((r) => toNotification(r, now));
+    if (g.admin.length) {
+      const stale = g.admin.filter((r) => r.kind === "stale"), mis = g.admin.filter((r) => r.kind === "mismatch");
+      notifs.push(digestNotification("admin:" + today, `確認が必要な工程・担当 ${g.admin.length}件`, "Studio OSの確認が必要です", [
+        { source: `締切から${OVERDUE_EDITOR_DAYS}日以上たっても未完了`, points: stale.map((r) => `${r.caseName}（${r.stepName}）締切 ${r.deadline}`) },
+        { source: "リマインドが届かない編集担当（案件に未招待）", points: mis.map((r) => `${r.caseName}：${r.missing.join("、")}`) },
+      ], now));
+    }
+    await pushNotifs(env, to, notifs);
+  }
+  for (const r of fresh) await env.SNAPS.put("remind:" + r.key, "1", { expirationTtl: (r.forAdmin ? 180 : 30) * 86400 });
+  return { ...summary, sent: fresh };
 }
 
 /* ===== 編集者のダッシュボード（2026-09-26 AK「納期と注意事項を出せば、今何をすべきか・早いのか遅れてるのか分かる」）=====
