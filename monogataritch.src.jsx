@@ -3497,6 +3497,10 @@ export default function App() {
   const [memberInvite, setMemberInvite] = useState({ email: "", ids: {} }); // メンバー画面の招待フォーム（メール＋付与する案件id）
   const [notifs, setNotifs] = useState(null);          // アプリ内通知 {items, unread}（工程の締切リマインド等。Worker /api/notifications）
   const [showNotifs, setShowNotifs] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);       // AIに質問（ものがたりっちAIエージェント）パネル
+  const [askInput, setAskInput] = useState("");
+  const [askBusy, setAskBusy] = useState(false);
+  const [askLog, setAskLog] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:askLog") || "[]"); } catch (e) { return []; } });
   const [isStaff, setIsStaff] = useState(null);        // AK（管理者）か。Studio OSの業務・ナレッジは管理者だけに見せる（Workerが403を返したらfalse）
   const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
@@ -6685,7 +6689,8 @@ export default function App() {
       setKnowledgeInbox(d && d.connected ? d.candidates : null);
     } catch (_) { setKnowledgeInbox(null); }
   }, [user]);
-  React.useEffect(() => { loadKnowledgeInbox(); }, [loadKnowledgeInbox]);
+  // ナレッジ一覧・候補は画面に出さない（2026-09-26 AK「ナレッジ自体は見せなくてOK。必要な時に質問したら答えてくれればいい」）。
+  // 承認はStudio OSで行い、編集者には工程の催促とAIへの質問でナレッジを届ける。ここでは読み込まない。
 
   // アプリ内通知（工程の締切リマインド＋その工程のマニュアル）。起動時・5分ごと・画面に戻った時に取得
   const loadNotifs = React.useCallback(async () => {
@@ -6705,6 +6710,77 @@ export default function App() {
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
   }, [loadNotifs]);
+  /* ===== AIに質問（2026-09-26 AK「必要な時に質問したら回答してくれる」）=====
+     開いている案件の資料（基本情報・ヒアリング・質問の答え・台本・規定・未完了の修正指摘）を添えて Worker /api/agent/ask に聞く。
+     答えの根拠はマニュアル・構成のルール・公開前チェック・qa.md とこの案件資料だけ。答えられないものはAKへ回る */
+  const buildAgentContext = (p) => {
+    if (!p) return "";
+    const L = [];
+    const str = (v) => (typeof v === "string" ? v.trim() : "");
+    L.push("案件名：" + (p.name || "") + "（チャンネル：" + (p.channel || "") + "／形式：" + (p.format === "talk" ? "トーク" : "密着") + "）");
+    const meta = p.meta || {};
+    const metaLabel = { shootDate: "撮影日", place: "場所", client: "クライアント", highlight: "ハイライト", note: "メモ" };
+    for (const [k, v] of Object.entries(meta)) {
+      if (/^deliver/i.test(k)) continue;
+      if (Array.isArray(v)) { const t = v.map(str).filter(Boolean); if (t.length) L.push((k === "titles" ? "タイトル案" : k === "thumbs" ? "サムネ文言" : k) + "：" + t.join(" ／ ")); continue; }
+      if (str(v)) L.push((metaLabel[k] || k) + "：" + str(v));
+    }
+    const wz = p.wizard || {};
+    const wm = Object.entries(wz.meta || {}).filter(([, v]) => str(v)).map(([k, v]) => k + "：" + str(v));
+    if (wm.length) L.push("【質問ウィザードの前提】\n" + wm.join("\n"));
+    const wa = Object.values(wz.answers || {}).map(str).filter(Boolean);
+    if (wa.length) L.push("【質問13などの答え】\n" + wa.map((a, i) => "・" + a).join("\n"));
+    const hear = (p.hearing || []).map((sec) => { const it = (sec.items || []).filter((x) => str(x.value)).map((x) => "・" + x.label + "：" + str(x.value)); return it.length ? "［" + sec.title + "］\n" + it.join("\n") : ""; }).filter(Boolean);
+    if (hear.length) L.push("【取材メモ（ヒアリング）】\n" + hear.join("\n"));
+    const man = (p.manuals || []).filter((m) => str(m.title) || str(m.body)).map((m) => "・［" + (m.cat || "") + "］" + str(m.title) + (str(m.body) ? "：" + str(m.body) : ""));
+    if (man.length) L.push("【この案件の規定・NG】\n" + man.join("\n"));
+    if (p.format === "talk" && p.talk) {
+      const tb = (p.talk.body || []).filter((b) => str(b.heading) || str(b.script)).map((b, i) => "#" + (i + 1) + " " + str(b.heading) + "\n" + str(b.script));
+      if (tb.length) L.push("【台本（トーク）】\n" + tb.join("\n"));
+    } else {
+      let n = 0;
+      const rows = (p.rows || []).map((r) => {
+        if (r.kind === "scene") { n++; return "#" + n + " ［" + (r.type || "") + "］" + (r.sec ? r.sec + "秒 " : "") + str(r.label) + (str(r.script) ? "\n" + str(r.script) : ""); }
+        const t = [str(r.time), str(r.name || r.label || r.title), str(r.address), str(r.note)].filter(Boolean).join(" ");
+        return t ? "―― 場所：" + t : "";
+      }).filter(Boolean);
+      if (rows.length) L.push("【台本】\n" + rows.join("\n"));
+    }
+    const open = ((p.review && p.review.comments) || []).filter((c) => c.status !== "完了").slice(-20).map((c) => "・［" + (c.category || "") + "／" + (c.priority || "") + "］" + str(c.text));
+    if (open.length) L.push("【未完了の修正指摘】\n" + open.join("\n"));
+    let out = L.join("\n\n");
+    if (out.length > 38000) out = out.slice(0, 38000) + "\n（以下省略）";
+    return out;
+  };
+  const sendAsk = async () => {
+    const q = askInput.trim();
+    if (!q || askBusy) return;
+    if (!user || !MG_SESSION) { showToast("質問するにはログインしてね"); return; }
+    const inCase = view === "editor" && project;
+    setAskBusy(true);
+    try {
+      const r = await fetch(SHARE_API + "/api/agent/ask", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
+        body: JSON.stringify({ question: q, caseId: inCase ? project.id : "", caseName: inCase ? project.name : "", context: inCase ? buildAgentContext(project) : "" }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) throw new Error((d && d.error) || ("HTTP " + r.status));
+      const entry = { q, verdict: d.verdict, text: d.text, at: Date.now(), caseName: inCase ? project.name : "" };
+      setAskLog((log) => { const nx = [...log, entry].slice(-20); try { localStorage.setItem("mg:askLog", JSON.stringify(nx)); } catch (e) {} return nx; });
+      setAskInput("");
+    } catch (e) { showToast("答えを取得できませんでした：" + (e.message || e)); }
+    finally { setAskBusy(false); }
+  };
+  /* エージェントの出力（判定: / 回答: / 出典: …）を項目に分ける */
+  const parseAgentText = (t) => {
+    const out = {}; let cur = null;
+    for (const line of (t || "").split("\n")) {
+      const m = line.match(/^(判定|回答|出典|AKへの理由|資料にある手順|AKに渡す質問文)[:：]\s*(.*)$/);
+      if (m) { cur = m[1]; out[cur] = m[2]; } else if (cur) out[cur] += "\n" + line;
+    }
+    return out;
+  };
+
   const markNotifsRead = async (ids) => {
     if (!MG_SESSION) return;
     setNotifs((n) => n && ({ items: n.items.map((x) => (!ids || ids.includes(x.id) ? { ...x, read: true } : x)), unread: ids ? n.items.filter((x) => !x.read && !ids.includes(x.id)).length : 0 }));
@@ -6723,7 +6799,7 @@ export default function App() {
       setKnowledgeBase(r.ok && d && d.connected ? d : { failed: true, company: [], client: [] });
     } catch (_) { setKnowledgeBase({ failed: true, company: [], client: [] }); }
   }, [user]);
-  React.useEffect(() => { if (((view === "knowledge" && knowledgeTab === "base") || view === "analytics") && !knowledgeBase) loadKnowledgeBase(); }, [view, knowledgeTab, knowledgeBase, loadKnowledgeBase]);
+  React.useEffect(() => { if (view === "knowledge" && knowledgeTab === "base" && !knowledgeBase) loadKnowledgeBase(); }, [view, knowledgeTab, knowledgeBase, loadKnowledgeBase]);
 
   // 承認済みの会社ナレッジに改訂案（新しい版の候補）を出す。承認はStudio OSで人が行う（AIは確定しない）
   const reviseKnowledge = async () => {
@@ -8459,6 +8535,13 @@ export default function App() {
               ? <img src={user.picture} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               : <Icon name="user" className="w-[18px] h-[18px]" />}
           </button>
+          {/* AIに質問（この案件の資料とマニュアルから答える） */}
+          {user && (
+            <button onClick={() => setAskOpen(true)} title="AIに質問"
+              className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 shrink-0 text-[12px] font-bold" style={{ color: mainText }}>
+              <Icon name="sparkle" className="w-4 h-4" /><span className="hidden sm:inline">AIに質問</span>
+            </button>
+          )}
           {/* 通知（工程の締切リマインド＋その工程のマニュアル）。案件を開いている時にも気づけるようにここにも置く */}
           {user && (
             <button onClick={() => setShowNotifs((v) => !v)} title="通知"
@@ -11131,6 +11214,68 @@ export default function App() {
         </div>
       )}
 
+      {/* ===== AIに質問パネル（ものがたりっちAIエージェント・2026-09-26）===== */}
+      {askOpen && (
+        <div className="fixed inset-0 z-[60] bg-black/30" onClick={() => setAskOpen(false)}>
+          <div className="absolute inset-y-0 right-0 w-full sm:w-[420px] bg-white shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 flex items-center gap-2 shrink-0" style={{ background: theme.main, color: mainText }}>
+              <Icon name="sparkle" className="w-4 h-4" />
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-bold leading-tight">AIに質問</div>
+                <div className="text-[11px] opacity-70 truncate">{view === "editor" && project ? "「" + project.name + "」の資料とマニュアルから答えます" : "マニュアルから答えます（案件を開くとその案件の資料も見ます）"}</div>
+              </div>
+              <button onClick={() => setAskOpen(false)} title="閉じる" className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 bg-stone-50">
+              {askLog.length === 0 && !askBusy && (
+                <div className="text-[12.5px] text-stone-500 leading-relaxed px-1">
+                  <p className="font-bold text-stone-600 mb-1.5">台本・構成・撮影・編集で迷ったら聞いてください。例えば：</p>
+                  {["★が付いてるセリフって当日どう扱えばいい？", "この案件のNGって何がある？", "冒頭に経歴を入れたいけどあり？", "本編集で気をつけることは？"].map((ex) => (
+                    <button key={ex} onClick={() => setAskInput(ex)} className="block w-full text-left px-2.5 py-1.5 mb-1 rounded-lg bg-white border border-stone-200 hover:border-stone-400 text-stone-600">{ex}</button>
+                  ))}
+                  <p className="mt-2 text-[11.5px]">お金・日程・先方対応・構成の変更・センシティブな判断は、AIは答えずにAKさんへ確認を回します。</p>
+                </div>
+              )}
+              {askLog.map((e, i) => {
+                const f = parseAgentText(e.text);
+                const toAk = e.verdict === "AKへ";
+                return (
+                  <div key={i} className="space-y-1.5">
+                    <div className="flex justify-end"><div className="max-w-[88%] text-[13px] rounded-2xl rounded-br-sm px-3 py-2 whitespace-pre-wrap text-white" style={{ background: theme.accent }}>{e.q}</div></div>
+                    <div className="bg-white border border-stone-200 rounded-2xl rounded-bl-sm px-3 py-2.5 text-[13px] text-stone-700">
+                      {toAk ? (
+                        <>
+                          <div className="text-[11px] font-bold mb-1 px-1.5 py-0.5 rounded inline-block" style={{ background: "#FCF0DC", color: "#D97706" }}>AKさんに確認を送りました</div>
+                          {f["AKへの理由"] && <div className="text-[12px] text-stone-500 whitespace-pre-wrap">理由：{f["AKへの理由"].trim()}</div>}
+                          {f["資料にある手順"] && f["資料にある手順"].trim() && <div className="mt-1.5 whitespace-pre-wrap"><span className="text-[11px] font-bold text-stone-500">資料にあること：</span>{f["資料にある手順"].trim()}</div>}
+                        </>
+                      ) : (
+                        <>
+                          <div className="whitespace-pre-wrap leading-relaxed">{(f["回答"] || e.text).trim()}</div>
+                          {f["出典"] && <div className="mt-1.5 text-[11px] text-stone-400 whitespace-pre-wrap">出典：{f["出典"].trim()}</div>}
+                        </>
+                      )}
+                      {e.caseName && <div className="mt-1 text-[10.5px] text-stone-300">{e.caseName}</div>}
+                    </div>
+                  </div>
+                );
+              })}
+              {askBusy && <div className="text-[12.5px] text-stone-500 px-1">資料を確認しています…</div>}
+            </div>
+            <div className="shrink-0 border-t border-stone-200 p-2.5 bg-white">
+              <div className="flex items-end gap-2">
+                <textarea value={askInput} onChange={(e) => setAskInput(e.target.value)} rows={2}
+                  onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendAsk(); } }}
+                  placeholder="質問を入力（⌘+Enterで送信）"
+                  className="flex-1 text-[13px] border border-stone-300 rounded-lg px-2.5 py-2 resize-none focus:outline-none focus:border-stone-500" />
+                <button onClick={sendAsk} disabled={askBusy || !askInput.trim()} className="h-9 px-3.5 rounded-lg text-[13px] font-bold text-white disabled:opacity-40" style={{ background: theme.accent }}>送信</button>
+              </div>
+              {askLog.length > 0 && <button onClick={() => { setAskLog([]); try { localStorage.removeItem("mg:askLog"); } catch (e) {} }} className="mt-1.5 text-[11px] text-stone-400 hover:text-stone-600">履歴を消す</button>}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== 通知パネル（2026-09-26）: 工程の締切リマインド＋その工程のマニュアル ===== */}
       {showNotifs && (
         <div className="fixed inset-0 z-[60]" onClick={() => setShowNotifs(false)}>
@@ -11142,19 +11287,19 @@ export default function App() {
             {!notifs || !notifs.items.length ? (
               <p className="text-[12.5px] text-stone-500 px-4 py-6 text-center">通知はありません。担当している工程の締切の前日・当日・超過時に、こことメールでお知らせします。</p>
             ) : notifs.items.map((n) => {
-              const tone = n.phase === "over" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
+              const tone = n.type === "question" ? { bg: "#EFEAFD", fg: "#6D28D9" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
               const inIndex = index.some((x) => x.id === n.caseId);
               return (
                 <div key={n.id} className="px-4 py-3 border-b border-stone-100 last:border-0" style={n.read ? { opacity: 0.6 } : undefined}>
                   <div className="flex items-center gap-1.5 mb-0.5">
                     {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />}
                     <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded" style={{ background: tone.bg, color: tone.fg }}>{n.title}</span>
-                    <span className="ml-auto text-[10.5px] text-stone-400 shrink-0">締切 {n.deadline}</span>
+                    {n.deadline && <span className="ml-auto text-[10.5px] text-stone-400 shrink-0">締切 {n.deadline}</span>}
                   </div>
                   <div className="text-[13px] font-bold text-stone-800 truncate">{n.caseName}</div>
                   {Array.isArray(n.guides) && n.guides.length > 0 && (
                     <details className="mt-1">
-                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>この工程で押さえること</summary>
+                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : "この工程で押さえること"}</summary>
                       {n.guides.map((g, gi) => (
                         <div key={gi} className="mt-1.5">
                           <div className="text-[11px] font-bold text-stone-500">{g.source}</div>
@@ -11183,6 +11328,11 @@ export default function App() {
               <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
               <div className="flex-1" />
               {user && (
+                <button onClick={() => setAskOpen(true)} title="AIに質問" className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 mr-1.5 text-[12px] font-bold">
+                  <Icon name="sparkle" className="w-4 h-4" /><span className="hidden sm:inline">AIに質問</span>
+                </button>
+              )}
+              {user && (
                 <button onClick={() => setShowNotifs((v) => !v)} title="通知" className="relative h-8 w-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 mr-1.5">
                   <Icon name="bell" className="w-4 h-4" />
                   {!!(notifs && notifs.unread) && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold grid place-items-center">{notifs.unread}</span>}
@@ -11202,14 +11352,6 @@ export default function App() {
               style={view === "home" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
               <Icon name="home" className="w-4 h-4 shrink-0" />ホーム
             </button>
-            {isStaff !== false && <button onClick={() => setView("knowledge")}
-              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
-              style={view === "knowledge" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
-              <Icon name="sparkle" className="w-4 h-4 shrink-0" />ナレッジ
-              {!!(knowledgeInbox && knowledgeInbox.length) && (
-                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{knowledgeInbox.length}</span>
-              )}
-            </button>}
             <button onClick={() => setView("analytics")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={{ color: "#57534E" }}>
@@ -11307,9 +11449,6 @@ export default function App() {
             </button>
             </div>
             <div className="lg:hidden flex gap-2 -mt-3 mb-5">
-              {isStaff !== false && <button onClick={() => setView("knowledge")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
-                <Icon name="sparkle" className="w-3.5 h-3.5" />ナレッジ{knowledgeInbox && knowledgeInbox.length ? `（${knowledgeInbox.length}）` : ""}
-              </button>}
               <button onClick={() => setView("analytics")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="chart" className="w-3.5 h-3.5" />アナリティクス
               </button>
@@ -11616,8 +11755,8 @@ export default function App() {
         const insights = [];
         if (a.cHighOpen > 0 && a.openByCase[0]) insights.push({ tone: "rose", text: `優先度「高」の修正指摘が${a.cHighOpen}件、未完了のまま残っています。`, action: `「${a.openByCase[0].name}」を開く`, run: () => openCase(a.openByCase[0].id) });
         if (a.statusCount["確認中"] > 0) { const f = firstOf("確認中"); insights.push({ tone: "rose", text: `確認中の案件が${a.statusCount["確認中"]}件あります。先方・社内の確認が止まっていないか見てください。`, action: f ? `「${f.name}」を開く` : null, run: f ? () => openCase(f.id) : null }); }
-        if (a.repeats[0]) insights.push({ tone: "violet", text: `「${a.repeats[0].text.slice(0, 40)}${a.repeats[0].text.length > 40 ? "…" : ""}」という指摘が${a.repeats[0].cases}案件・${a.repeats[0].count}回出ています。ルール化の候補です。`, action: "ナレッジを確認", run: () => setView("knowledge") });
-        else if (a.cats[0] && a.cats[0].n >= 3) insights.push({ tone: "violet", text: `修正指摘は「${a.cats[0].category}」が${a.cats[0].n}件で最多です。チェックリスト化すると手戻りを減らせます。`, action: "ナレッジを確認", run: () => setView("knowledge") });
+        if (a.repeats[0]) insights.push({ tone: "violet", text: `「${a.repeats[0].text.slice(0, 40)}${a.repeats[0].text.length > 40 ? "…" : ""}」という指摘が${a.repeats[0].cases}案件・${a.repeats[0].count}回出ています。ルール化の候補です。`, action: isStaff ? "Studio OSでルール化を検討" : null, run: () => window.open(STUDIO_OS_KNOWLEDGE_URL, "_blank", "noopener") });
+        else if (a.cats[0] && a.cats[0].n >= 3) insights.push({ tone: "violet", text: `修正指摘は「${a.cats[0].category}」が${a.cats[0].n}件で最多です。チェックリスト化すると手戻りを減らせます。`, action: isStaff ? "Studio OSでルール化を検討" : null, run: () => window.open(STUDIO_OS_KNOWLEDGE_URL, "_blank", "noopener") });
         if (knowledgeInbox && knowledgeInbox.length) insights.push({ tone: "amber", text: `承認待ちのナレッジ候補が${knowledgeInbox.length}件あります（最終承認は人が行います）。`, action: "候補を見る", run: () => { setKnowledgeTab("inbox"); setView("knowledge"); } });
         const toneStyle = { rose: { background: "#FBE5EA", color: "#DC2645" }, violet: { background: "#EFEAFD", color: "#6D28D9" }, amber: { background: "#FCF0DC", color: "#D97706" } };
         const maxCat = a.cats[0] ? a.cats[0].n : 1;
@@ -11756,22 +11895,6 @@ export default function App() {
                     ))}
                   </div>
                 )}
-              </section>
-
-              <section className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm">
-                <h2 className="text-[13px] font-bold text-stone-700 mb-2">ナレッジ</h2>
-                {isStaff === false ? (
-                  <p className="text-[12.5px] text-stone-400">ナレッジの集計は管理者（AK）だけが見られます。</p>
-                ) : knowledgeInbox === null && (!knowledgeBase || knowledgeBase.failed) ? (
-                  <p className="text-[12.5px] text-stone-400">Studio OSに未接続のため表示できません。</p>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2 mb-2">
-                    <div><div className="text-[11px] text-stone-500">承認待ち</div><div className="text-[20px] font-black" style={{ color: knowledgeInbox && knowledgeInbox.length ? "#D97706" : "#292524" }}>{knowledgeInbox ? knowledgeInbox.length : "–"}</div></div>
-                    <div><div className="text-[11px] text-stone-500">会社ルール</div><div className="text-[20px] font-black text-stone-800">{kbApproved ?? "–"}</div>{kbCandidate ? <div className="text-[10.5px] text-stone-400">候補 {kbCandidate}</div> : null}</div>
-                    <div><div className="text-[11px] text-stone-500">クライアント</div><div className="text-[20px] font-black text-stone-800">{knowledgeBase && !knowledgeBase.failed ? knowledgeBase.client.length : "–"}</div></div>
-                  </div>
-                )}
-                <button onClick={() => setView("knowledge")} className="text-[12px] font-bold" style={{ color: theme.main }}>ナレッジを開く →</button>
               </section>
             </div>
           </main>
