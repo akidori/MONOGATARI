@@ -145,6 +145,9 @@ const now = Date.parse("2026-09-30T23:00:00Z"); // JST 10/01 08:00
   const mis = pl.find((r) => r.kind === "mismatch");
   assert.equal(mis.caseId, "p8"); assert.deepEqual(mis.missing, ["c@x.com"]); // 未招待の担当者はAKへ
   assert.equal(pl.find((r) => r.stepId === "u1"), undefined); // 編集者のいない案件の催促は無し
+  // オーナー（AK）自身が編集担当なら「届かない担当」にしない
+  const pl3 = await planReminders({ deliverables: dl.slice(1), loadCase: async (id) => kc[id], docs, today: "2026-10-01", memberEmailById: { mb_3: "AK@x.com" }, adminEmails: ["ak@x.com"] });
+  assert.equal(pl3.find((r) => r.kind === "mismatch"), undefined);
   const pl2 = await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01" });
   assert.deepEqual(pl2.find((r) => r.stepId === "t2").to, ["a@x.com", "b@x.com"]); // 担当不明なら全編集者
   assert.equal(pl2.find((r) => r.stepId === "t1"), undefined); // 管理者未設定なら超過4日以上は誰にも送らない
