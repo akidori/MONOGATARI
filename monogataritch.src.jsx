@@ -8506,7 +8506,9 @@ export default function App() {
 
       {/* ===== ツールバー ===== */}
       <header ref={headerRef} className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
-        <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap">
+        {/* 2026-09-26 AK「アイコン関連は一列に」：スマホは1段目＝メニューと案件名、2段目＝アイコンを1列。PCは全部1行 */}
+        <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto sm:flex-1">
           {/* Fボード埋め込み・編集リンク（?live=/?ch=）ではハンバーガーを出さない（ゲストに案件ツリーは無い） */}
           {APP_MODE.showProjectNavigation && (
           <button onClick={() => setSidebarOpen((s) => !s)} title="作業メニュー"
@@ -8515,19 +8517,21 @@ export default function App() {
           </button>
           )}
           {tab === "regulations" ? (
-            <div className="font-bold tracking-wide text-[14px] px-1.5 py-1 min-w-0 truncate" style={{ color: mainText, width: "min(46vw, 420px)" }}>レギュレーション一覧</div>
+            <div className="font-bold tracking-wide text-[14px] px-1.5 py-1 min-w-0 flex-1 truncate" style={{ color: mainText, maxWidth: 420 }}>レギュレーション一覧</div>
           ) : (
             <input
               value={project.name}
               onChange={(e) => renameProject(project.id, e.target.value)}
-              className="bg-transparent font-bold tracking-wide text-[14px] focus:outline-none focus:bg-white/10 rounded px-1.5 py-1 min-w-0"
+              className="bg-transparent font-bold tracking-wide text-[14px] focus:outline-none focus:bg-white/10 rounded px-1.5 py-1 min-w-0 flex-1"
               /* 200px固定だと長いタイトルが「…」も出ずに頭だけ表示され、リネームが効いてないように見えた（2026-08-08）。
                  幅を広げ、あふれ分は省略記号にする（サイドバーの truncate と同じ見え方に揃える） */
-              style={{ color: mainText, width: "min(46vw, 420px)", textOverflow: "ellipsis" }}
+              style={{ color: mainText, maxWidth: 420, textOverflow: "ellipsis" }}
               title={project.name || "案件名（クリックで編集）"}
             />
           )}
+          </div>
           {/* カテゴリ（チャンネル）チップはヘッダーから撤去（2026-07-23 AK指示）。変更は左の案件ツリー側で行う */}
+          <div className="flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
           {/* Googleアカウント（チャンネル名の右横） */}
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
             className="w-8 h-8 rounded-full grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden shrink-0" style={{ color: mainText }}>
@@ -8554,11 +8558,7 @@ export default function App() {
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: theme.accent }}></span>
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
           </span>
-          <div className="flex-1" />
-          <button onClick={() => setTab("regulations")} title="全社・クライアント別のレギュレーション一覧"
-            className={"h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10 " + (tab === "regulations" ? "bg-white/15" : "")} style={{ color: mainText }}>
-            <Icon name="book" className="w-4 h-4 shrink-0" /><span>規定一覧</span>
-          </button>
+          {/* 規定一覧・マニュアルのボタンは撤去（2026-09-26 AK「AIに質問があるのでいらない」）。レギュレーション一覧は左の作業メニューから開ける */}
           {/* 先方コメント */}
           {project.shareId && (
             <button onClick={() => { setShowComments(true); fetchComments(); }} title="先方コメント"
@@ -8572,21 +8572,16 @@ export default function App() {
               )}
             </button>
           )}
-          {/* マニュアル／決め事 */}
-          <button onClick={() => setShowManual(true)} title="マニュアル・決め事（全体／チャンネル／案件）"
-            className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10" style={{ color: mainText }}>
-            <Icon name="book" className="w-4 h-4 shrink-0" /><span className="hidden sm:inline">マニュアル</span>
-          </button>
           {/* 共有メニュー（共有リンク発行 / 台本コピー） */}
           <div className="relative">
             <button onClick={() => setShareMenu((v) => !v)} disabled={sharing} title="共有・書き出し"
-              className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-bold border shadow-sm hover:brightness-110 disabled:opacity-50" style={{ color: "#FFFFFF", background: "#DC2645", borderColor: "#EF4763" }}>
+              className="h-8 px-2 sm:px-3 rounded-lg flex items-center gap-1 sm:gap-1.5 text-[12px] font-bold border shadow-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap" style={{ color: "#FFFFFF", background: "#DC2645", borderColor: "#EF4763" }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
               {sharing ? "発行中…" : "共有"}
               {!sharing && <span className={"text-[10.5px] px-1.5 py-0.5 rounded-full " + (shareAudit.status === "checking" ? "bg-white/10" : shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-400/25 text-amber-100" : "bg-emerald-400/25 text-emerald-100")}>
                 {shareAudit.status === "checking" ? "確認中" : shareAudit.issues.some((issue) => !issue.soft) ? "要確認" + shareAudit.issues.filter((issue) => !issue.soft).length : "準備OK"}
               </span>}
-              <span className="opacity-50 text-[10.5px]">▾</span>
+              <span className="opacity-50 text-[10.5px] hidden sm:inline">▾</span>
             </button>
             {shareMenu && (<>
               <div className="fixed inset-0 z-40" onClick={() => setShareMenu(false)} />
@@ -8665,7 +8660,7 @@ export default function App() {
             </>)}
           </div>
           <button onClick={() => setShowInvite(true)} title="チームメンバーを招待して共同編集（要ログイン）"
-            className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10 relative" style={{ color: mainText }}>
+            className="h-8 px-1.5 sm:px-3 rounded-lg flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10 relative shrink-0" style={{ color: mainText }}>
             <Icon name="user" className="w-4 h-4" />
             <span className="hidden sm:inline">{project.collab ? "共同編集中" : "招待"}</span>
             {project.collab && (project.members || []).length > 1 && <span className="text-[11px] tabular-nums opacity-70">{(project.members || []).length}</span>}
@@ -8680,6 +8675,7 @@ export default function App() {
               <circle cx="16.5" cy="10.5" r="1.2" fill="currentColor" stroke="none" />
             </svg>
           </button>
+          </div>
         </div>
         {/* タブ：モバイルのみ横スクロールバー（詰め込まずフルラベルで読める。PCは左の縦レールへ移設） */}
         <div className="sm:hidden overflow-x-auto" style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
