@@ -5581,7 +5581,9 @@ export default function App() {
   /* 編集者のダッシュボード（2026-09-26 AK「納期と注意事項を出せば、今何をすべきか・早いのか遅れてるのか分かる」）。
      工程と締切はStudio OS（Worker /api/my-work）、注意事項（NG・規定／クライアントの傾向メモ／未完了の修正指摘）は案件の中身から */
   const [myWork, setMyWork] = useState(null); // { cases: [...] } | null
-  const [teamMode, setTeamMode] = useState("case"); // 担当と納期：案件ごと / 人ごと
+  const [teamMode, setTeamMode] = useState("board"); // 担当と納期：看板 / 表 / 人ごと（2026-09-26 AK「納期は看板と表で」）
+  const [teamGroup, setTeamGroup] = useState("due");  // 看板の列：締切の近さ / 今の工程
+  const [teamSort, setTeamSort] = useState({ key: "pace", dir: 1 }); // 表の並び替え
   const [teamShowDone, setTeamShowDone] = useState(false);
   useEffect(() => {
     if (!user || !MG_SESSION || (view !== "home" && view !== "team") || !index.length) return;
@@ -11980,14 +11982,14 @@ export default function App() {
               </button>
             </div>
           </header>
-          <main className="max-w-[980px] mx-auto px-4 sm:px-5 py-7">
+          <main className="max-w-[1200px] mx-auto px-4 sm:px-5 py-7">
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2 whitespace-nowrap"><Icon name="clock" className="w-5 h-5" style={{ color: theme.main }} />担当と納期</h1>
               <button onClick={() => setView("analytics")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700 whitespace-nowrap">アナリティクス</button>
               <button onClick={() => setView("home")} className="text-[12px] font-bold text-stone-500 hover:text-stone-700 whitespace-nowrap">← ホームへ</button>
             </div>
             <p className="text-[12px] text-stone-500 mb-4">
-              {connected ? "工程・締切・担当はStudio OS、編集者はものがたりっちの招待から。締切が近い順に並べています。" : "Studio OSとつながっていないため、ものがたりっちの編集者と案件の締切だけで表示しています。"}
+              {connected ? "工程・締切・担当はStudio OS、編集者はものがたりっちの招待から。看板の列の「締切」は今の工程の締切です（無ければ納期）。" : "Studio OSとつながっていないため、ものがたりっちの編集者と案件の締切だけで表示しています。"}
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
@@ -11997,13 +11999,21 @@ export default function App() {
               <Tile label="担当が未設定" value={noOwner} color={noOwner ? "#DC2645" : undefined} />
             </div>
 
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
               <div className="inline-flex p-0.5 rounded-lg bg-white border border-stone-200">
-                {[["case", "案件ごと"], ["person", "人ごと"]].map(([k, l]) => (
+                {[["board", "看板"], ["table", "表"], ["person", "人ごと"]].map(([k, l]) => (
                   <button key={k} onClick={() => setTeamMode(k)} className="px-3 h-8 rounded-md text-[12.5px] font-bold"
                     style={teamMode === k ? { background: theme.main, color: mainText } : { color: "#57534E" }}>{l}</button>
                 ))}
               </div>
+              {teamMode === "board" && (
+                <div className="inline-flex p-0.5 rounded-lg bg-white border border-stone-200">
+                  {[["due", "締切で分ける"], ["step", "工程で分ける"]].map(([k, l]) => (
+                    <button key={k} onClick={() => setTeamGroup(k)} className="px-2.5 h-8 rounded-md text-[12px] font-bold"
+                      style={teamGroup === k ? { background: "#EDEBE6", color: "#292524" } : { color: "#78716C" }}>{l}</button>
+                  ))}
+                </div>
+              )}
               <label className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-bold text-stone-600 select-none">
                 <input type="checkbox" checked={teamShowDone} onChange={(e) => setTeamShowDone(e.target.checked)} />完了も表示
               </label>
@@ -12011,39 +12021,115 @@ export default function App() {
 
             {shown.length === 0 ? (
               <div className="bg-white border border-stone-200 rounded-xl px-4 py-6 text-center text-[13px] text-stone-500 shadow-sm">表示する案件はありません。</div>
-            ) : teamMode === "case" ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-                {shown.map((r) => (
-                  <div key={r.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm" style={r.pace === "遅れ" ? { borderColor: "#F5B5C0" } : undefined}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <PaceChip r={r} />
-                      <button onClick={() => openCase(r.id)} className="min-w-0 flex-1 truncate text-[14px] font-bold text-stone-800 hover:underline text-left">{r.name}</button>
-                      <StatusBadge s={r.status} />
-                    </div>
-                    <div className="text-[11.5px] text-stone-500 mb-1.5 truncate">{r.channel}</div>
-                    <div className="text-[13px] text-stone-800 leading-snug">
-                      {r.cur
-                        ? <>今：<b>{r.cur.name}</b>{r.curPeople.length ? <span className="text-stone-600">（{r.curPeople.join("・")}）</span> : null} <span className="tabular-nums text-stone-600">{r.cur.deadline ? md(r.cur.deadline) + "まで" : "締切未設定"}</span></>
-                        : <span className="text-stone-600">{r.linked ? "全工程が完了" : "工程はStudio OSで未設定"}</span>}
-                    </div>
-                    <div className="mt-0.5 text-[12px] text-stone-600 tabular-nums">納期 <b className="text-stone-800">{r.finalDeadline ? md(r.finalDeadline) : "未設定"}</b></div>
-                    {r.steps.length > 1 && (
-                      <div className="mt-1.5 text-[11.5px] text-stone-500 leading-relaxed">
-                        {r.steps.map((st, i) => <span key={i}>{i > 0 && <span className="text-stone-300"> → </span>}<span className={i === 0 ? "font-bold text-stone-700" : ""}>{st.name}{st.deadline ? " " + md(st.deadline) : ""}</span></span>)}
-                      </div>
-                    )}
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {r.people.length === 0 && <span className="text-[11.5px] font-bold px-2 py-0.5 rounded-md" style={{ background: "#FBE5EA", color: "#DC2645" }}>担当が未設定</span>}
-                      {r.people.map((p) => (
-                        <span key={p.key} title={p.email || ""} className="text-[11.5px] px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 max-w-full truncate">
-                          <b className="text-stone-500 font-bold">{p.roles.join("・")}</b> {p.name}
-                        </span>
-                      ))}
-                    </div>
+            ) : teamMode === "board" ? (() => {
+              /* 看板：列＝締切の近さ（遅れ／今日／3日以内／今週／それ以降／未設定）か、今の工程 */
+              const DUE_COLS = [
+                { k: "遅れ", test: (r) => r.pace === "遅れ", c: "#DC2645" },
+                { k: "今日", test: (r) => r.pace === "今日", c: "#C2410C" },
+                { k: "3日以内", test: (r) => r.pace !== "完了" && r.dl != null && r.dl >= 1 && r.dl <= 3, c: "#B45309" },
+                { k: "今週", test: (r) => r.pace !== "完了" && r.dl != null && r.dl >= 4 && r.dl <= 7, c: "#2563EB" },
+                { k: "それ以降", test: (r) => r.pace !== "完了" && r.dl != null && r.dl > 7, c: "#15803D" },
+                { k: "締切未設定", test: (r) => r.pace === "締切未設定", c: "#78716C" },
+                { k: "完了", test: (r) => r.pace === "完了", c: "#15803D" },
+              ];
+              const STEP_ORDER = ["企画", "構成", "取材", "撮影", "素材整理", "粗編", "初稿", "本編集", "修正", "最終修正", "確認", "納品"];
+              const stepKey = (r) => (r.pace === "完了" ? "完了" : r.cur ? r.cur.name : "工程未設定");
+              const cols = teamGroup === "due"
+                ? DUE_COLS.map((c) => ({ ...c, items: shown.filter(c.test) })).filter((c) => c.items.length || c.k !== "完了")
+                : (() => {
+                    const names = Array.from(new Set(shown.map(stepKey)));
+                    const rank = (n) => { if (n === "完了") return 999; if (n === "工程未設定") return 998; const i = STEP_ORDER.findIndex((x) => n.includes(x)); return i < 0 ? 500 : i; };
+                    names.sort((x, y) => rank(x) - rank(y) || x.localeCompare(y, "ja"));
+                    return names.map((n) => ({ k: n, c: n === "完了" ? "#15803D" : n === "工程未設定" ? "#78716C" : theme.main, items: shown.filter((r) => stepKey(r) === n) }));
+                  })();
+              return (
+                <div key="board" className="-mx-4 sm:mx-0 px-4 sm:px-0 overflow-x-auto pb-2" style={{ scrollSnapType: "x mandatory", scrollPaddingLeft: 16 }}>
+                  <div className="flex gap-2 items-start">
+                    {cols.map((col) => (
+                      <section key={col.k} className="w-[78vw] max-w-[260px] sm:w-auto sm:max-w-none sm:flex-1 sm:min-w-[176px] shrink-0 rounded-xl bg-stone-200/60 p-1.5" style={{ scrollSnapAlign: "start" }}>
+                        <div className="px-1.5 py-1 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: col.c }} />
+                          <span className="text-[12.5px] font-black text-stone-700 truncate">{col.k}</span>
+                          <span className="ml-auto text-[11.5px] font-bold text-stone-500 tabular-nums">{col.items.length}</span>
+                        </div>
+                        <div className="space-y-1.5">
+                          {col.items.length === 0 && <div className="text-[11.5px] text-stone-400 text-center py-3">なし</div>}
+                          {col.items.map((r) => (
+                            <button key={r.id} onClick={() => openCase(r.id)} className="w-full text-left bg-white rounded-lg border border-stone-200 px-2.5 py-2 shadow-sm hover:shadow-md transition-shadow"
+                              style={r.pace === "遅れ" ? { borderColor: "#F5B5C0" } : undefined}>
+                              <div className="text-[13px] font-bold text-stone-800 leading-snug line-clamp-2">{r.name}</div>
+                              <div className="mt-1 text-[11.5px] text-stone-600 leading-snug">
+                                {r.cur ? <>今：<b className="text-stone-800">{r.cur.name}</b>{r.curPeople.length ? "（" + r.curPeople.join("・") + "）" : ""}</> : <span>{r.status}</span>}
+                              </div>
+                              <div className="mt-1 flex items-center gap-1.5 flex-wrap text-[11px] tabular-nums">
+                                {teamGroup === "step" && <PaceChip r={r} />}
+                                {r.cur && r.cur.deadline && <span className="text-stone-600">締切 <b className="text-stone-800">{md(r.cur.deadline)}</b></span>}
+                                <span className="text-stone-600">納期 <b className="text-stone-800">{r.finalDeadline ? md(r.finalDeadline) : "未設定"}</b></span>
+                                {teamGroup === "due" && r.dl != null && r.pace !== "完了" && <span className="ml-auto font-bold" style={{ color: col.c }}>{daysText(r)}</span>}
+                              </div>
+                              {!r.people.length && r.pace !== "完了" && <div className="mt-1 text-[11px] font-bold" style={{ color: "#DC2645" }}>担当が未設定</div>}
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
                   </div>
-                ))}
-              </div>
-            ) : (
+                </div>
+              );
+            })() : teamMode === "table" ? (() => {
+              /* 表：見出しを押すと並び替え。スマホは表の中だけ横スクロール（案件名の列は固定） */
+              const COLS = [
+                { k: "name", l: "案件", v: (r) => r.name },
+                { k: "pace", l: "状況", v: (r) => PACE[r.pace].o * 10000 + (r.dl ?? 9999) },
+                { k: "step", l: "今の工程", v: (r) => (r.cur ? r.cur.name : "") },
+                { k: "who", l: "担当（今の工程）", v: (r) => r.curPeople.join("・") },
+                { k: "due", l: "工程の締切", v: (r) => (r.cur && r.cur.deadline) || "9999" },
+                { k: "final", l: "納期", v: (r) => r.finalDeadline || "9999" },
+                { k: "people", l: "関わる人", v: (r) => r.people.map((p) => p.name).join("・") },
+              ];
+              const col = COLS.find((c) => c.k === teamSort.key) || COLS[1];
+              const sorted = [...shown].sort((a, b) => { const x = col.v(a), y = col.v(b); return (x < y ? -1 : x > y ? 1 : 0) * teamSort.dir; });
+              const th = "px-2.5 py-2 text-left text-[11.5px] font-bold text-stone-500 whitespace-nowrap cursor-pointer select-none hover:text-stone-800";
+              const td = "px-2.5 py-2 text-[12.5px] text-stone-700 align-top";
+              return (
+                /* key：看板と同じdivが使い回されて横スクロール位置が引き継がれ、固定列が隣の列に重なっていた */
+                <div key="table" className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-x-auto">
+                  <table className="w-full min-w-[760px] border-collapse">
+                    <thead className="bg-stone-50 border-b border-stone-200">
+                      <tr>
+                        {COLS.map((c, i) => (
+                          <th key={c.k} onClick={() => setTeamSort((s0) => ({ key: c.k, dir: s0.key === c.k ? -s0.dir : 1 }))}
+                            className={th + (i === 0 ? " sticky left-0 z-[1] bg-stone-50 border-r border-stone-200" : "")}>
+                            {/* 表のセルの幅指定は自動レイアウトで効かず、固定列が隣の列に重なったため中身の幅で決める */}
+                            <div className={i === 0 ? "w-[130px]" : ""}>{c.l}{teamSort.key === c.k ? (teamSort.dir > 0 ? " ▲" : " ▼") : ""}</div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map((r) => (
+                        <tr key={r.id} className="border-b border-stone-100 last:border-0 hover:bg-stone-50/70">
+                          <td className={td + " sticky left-0 z-[1] bg-white border-r border-stone-100"}>
+                            <div className="w-[130px]">
+                              <button onClick={() => openCase(r.id)} className="text-left font-bold text-stone-800 hover:underline leading-snug line-clamp-2">{r.name}</button>
+                              <div className="text-[11px] text-stone-400 truncate">{r.channel}</div>
+                            </div>
+                          </td>
+                          <td className={td}><PaceChip r={r} /></td>
+                          <td className={td + " whitespace-nowrap"}>{r.cur ? <b className="text-stone-800">{r.cur.name}</b> : <span className="text-stone-400">{r.status}</span>}</td>
+                          <td className={td}>{r.curPeople.length ? r.curPeople.join("・") : <span className="text-stone-400">—</span>}</td>
+                          <td className={td + " whitespace-nowrap tabular-nums"}>{r.cur && r.cur.deadline ? <b style={{ color: r.pace === "遅れ" ? "#DC2645" : undefined }}>{md(r.cur.deadline)}</b> : <span className="text-stone-400">未設定</span>}</td>
+                          <td className={td + " whitespace-nowrap tabular-nums"}>{r.finalDeadline ? md(r.finalDeadline) : <span className="text-stone-400">未設定</span>}</td>
+                          <td className={td}>
+                            {r.people.length ? r.people.map((p) => <div key={p.key} className="whitespace-nowrap"><span className="text-stone-400">{p.roles.join("・")}</span> {p.name}</div>) : <span className="font-bold" style={{ color: "#DC2645" }}>担当が未設定</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })() : (
               <div className="space-y-2.5">
                 {personList.map((p) => (
                   <section key={p.key} className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
