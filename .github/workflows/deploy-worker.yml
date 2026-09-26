@@ -1,18 +1,9 @@
 name: Deploy Worker (mg-share)
-# Worker（mg-share）はPagesと違い自動デプロイされないため、mainへの反映で自動デプロイする。
+# Worker（mg-share）をボタン1つでデプロイする（Pagesと違い自動では出ない）。
 # 必要なもの: リポジトリの Settings → Secrets and variables → Actions に CLOUDFLARE_API_TOKEN
 # （Cloudflareの「Edit Cloudflare Workers」テンプレートで作成）。未設定ならスキップする。
+# mainへのマージで勝手に本番へ出ないよう、手動（Actions →「Deploy Worker (mg-share)」→ Run workflow）だけで動かす。
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'worker/**'
-      - 'knowledge/**'
-      - 'agent/PROMPT.md'
-      - 'tools/SCRIPT_GEN_PROMPT.md'
-      - 'tools/test-deadline-reminders.mjs'
-      - 'package-lock.json'
-      - '.github/workflows/deploy-worker.yml'
   workflow_dispatch:
 permissions:
   contents: read

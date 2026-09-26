@@ -23,6 +23,9 @@ CF_OAUTH_REDIRECT_URI = "https://mg-share.aki-surf89315.workers.dev/api/cf/oauth
 CF_OAUTH_SCOPES = ""
 # 既存のAK用R2/Streamへフォールバックできる唯一のアカウント
 LEGACY_STREAM_OWNER_EMAIL = "aki.surf89315@gmail.com"
+# 工程の締切リマインド（毎朝8時）：off＝止める／preview＝誰にも送らず、送る予定をAKのアプリ内通知1件で確認／on＝送る
+# 最初は preview で数日様子を見て、内容に問題が無ければ on にする（メールは1人1日1通まで）
+REMINDERS_MODE = "preview"
 
 # 共有スナップショット＋コメント保存用 KV
 # 初回: wrangler kv namespace create SNAPS で id を発行して下記に貼る

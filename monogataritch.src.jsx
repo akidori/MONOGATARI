@@ -1366,7 +1366,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
 });
 
 /* 入力内容に応じて高さが伸びる textarea（全文が常に見える） */
-function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title, readOnly, autoFocus }) {
+function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title, readOnly, autoFocus, singleLine, style }) {
   const ref = useRef(null);
   const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
   /* トグルで開くタイプの入力欄向け。開いてもフォーカスがトグルのボタンに残っていると、
@@ -1383,8 +1383,10 @@ function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80,
   useEffect(() => { resize(ref.current); }, [val]);
   return (
     <textarea ref={ref} {...ime} value={val} placeholder={placeholder} className={className} title={title} readOnly={readOnly}
-      style={{ overflow: "hidden", resize: "none", minHeight }}
-      onChange={(e) => { set(e.target.value); resize(e.target); }}
+      style={{ overflow: "hidden", resize: "none", minHeight, ...(style || {}) }}
+      // singleLine＝見た目は折り返すが改行は入れない（長い名前が切れないように。2026-09-26 香盤表のロケ名）
+      onKeyDown={singleLine ? (e) => { if (e.key === "Enter" && !(e.nativeEvent && e.nativeEvent.isComposing)) e.preventDefault(); } : undefined}
+      onChange={(e) => { set(singleLine ? e.target.value.replace(/\r?\n/g, " ") : e.target.value); resize(e.target); }}
       onBlur={(e) => { flush(e); if (onBlur) onBlur(e); }} />
   );
 }
@@ -1708,7 +1710,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
      - !!赤!! は従来どおり赤。太字/ウェイトは blur 後のみ（編集中は透明textareaと字幅を揃える）
      太字/赤文字は全文を run 化してから行に流すので、改行をまたぐ ** でも崩れない */
   const runs = buildStyledRuns(val || "");
-  /* 行の役割：q=質問（◼︎始まり）/ star=★採用候補 / a=質問の直後に来る最初の本文行（回答の頭）/ null */
+  /* 行の役割：q=質問（◼︎始まり）/ star=★採用候補 / dir=演出・ト書き / a=質問の直後に来る最初の本文行（回答の頭）/ null */
   const lineFlags = (() => {
     const lines = runs.map((r) => r.text).join("").split("\n");
     let pendingA = false;
@@ -1717,6 +1719,10 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
       if (/^\s*⚠/.test(l)) return "warn";
       if (/^\s*★/.test(l)) return "star";
       if (/^\s*・/.test(l)) return "shot"; // 箇条書き＝撮る/拾うものリスト（チェック対象）。回答の頭判定は消費しない
+      // 演出・ト書き（行まるごと（…）か ▶︎ 始まり）＝セリフと見分けがつくよう青灰色（2026-09-26）。回答の頭判定は消費しない
+      if (/^\s*[（(][^）)]*[）)]\s*$/.test(l) || /^\s*▶/.test(l)) return "dir";
+      // 「ホテル開発中の映像など」「過去写真など」＝句読点の無い短い行で、映像・写真・素材などで終わる行も演出
+      if (l.trim().length <= 30 && !/[、。！？!?「」]/.test(l) && /(映像|写真|素材|カット|インサート|外観|風景|資料|画面|Bロール|B-roll)(など|等)?\s*$/i.test(l)) return "dir";
       if (pendingA && l.trim()) { pendingA = false; return "a"; }
       return null;
     });
@@ -1730,6 +1736,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     else if (flag === "q") st.color = "#171A1F";
     else if (flag === "warn") st.color = "#B45309";
     else if (flag === "star") st.color = "#5F5138";
+    else if (flag === "dir") { st.color = "#4F6B8A"; if (!focused) st.backgroundColor = "#EEF3F8"; }
     else if (flag === "shot" && shotChecks && shotChecks[(lineTextAt(li) || "").trim()]) { st.color = "#7B828C"; st.textDecoration = "line-through"; }
     if (!focused && r.bold) st.fontWeight = 800;
     else if (!focused && flag === "q") st.fontWeight = 600;
@@ -8779,6 +8786,8 @@ export default function App() {
       {!isNarrow && tocItems.length >= 3 && (
         <aside className="hidden sm:block shrink-0 sticky self-start w-10 h-fit z-40" style={{ top: "50%", transform: "translateY(-50%)" }} aria-label="このページの目次">
           <div className="group relative flex flex-col items-center gap-0.5">
+            {/* 線だけだと何か分からないので見出しを付ける（2026-09-26） */}
+            <span className="text-[9.5px] font-bold text-stone-400 tracking-wider mb-1 select-none">目次</span>
             {tocItems.map((it, si) => {
               const active = tocActive === it.id;
               const lineWidth = it.group ? 26 : 10 + ((si * 7) % 15);
@@ -9318,11 +9327,11 @@ export default function App() {
                             <div className="flex items-stretch overflow-hidden" style={{ background: theme.main, filter: r.done ? "grayscale(1)" : "none", opacity: r.done ? 0.7 : 1 }}>
                               <div className="w-6 shrink-0 grid place-items-center cursor-grab active:cursor-grabbing" style={{ background: stripe }}
                                 {...rowDragProps(idx, r.id)} title="ドラッグで移動" />
-                              <BufferedInput
+                              <AutoTextarea singleLine minHeight={36}
                                 value={r.label}
-                                onChange={(v) => updateRow(r.id, { label: v })}
+                                onChange={(e) => updateRow(r.id, { label: e.target.value })}
                                 placeholder="ロケーション名（例：ご自宅）"
-                                className="flex-1 bg-transparent text-[14px] font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
+                                className="flex-1 min-w-0 self-center block bg-transparent text-[14px] leading-snug font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
                                 style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                               />
                               {dayPickerEl(r, true)}
@@ -9724,8 +9733,8 @@ export default function App() {
                               <Icon name={secIcon} className="w-4 h-4" />
                             </span>
                             <div className="min-w-0 flex-1">
-                              <BufferedInput value={sp.title} onChange={(v) => updateRow(r.id, { label: sp.prefix + v + sp.suffix })} placeholder="場所（例：名古屋｜ご自宅）"
-                                className="w-full bg-transparent text-[17px] leading-snug focus:outline-none placeholder:text-white/40"
+                              <AutoTextarea singleLine minHeight={24} value={sp.title} onChange={(e) => updateRow(r.id, { label: sp.prefix + e.target.value + sp.suffix })} placeholder="場所（例：名古屋｜ご自宅）"
+                                className="w-full block bg-transparent text-[17px] leading-snug focus:outline-none placeholder:text-white/40"
                                 style={{ fontWeight: 700, color: mainText, textDecoration: r.done ? "line-through" : "none" }} />
                               {sub && <div className="hidden sm:block text-[12px] leading-snug truncate" style={{ color: hexA(mainText, 0.6) }}>{sub}</div>}
                             </div>
@@ -9921,11 +9930,12 @@ export default function App() {
                       )}
                       <div className={"flex items-stretch overflow-hidden " + (loc.peak ? "rounded-t-[10px]" : "rounded-t-xl")} style={{ background: theme.main, filter: loc.done ? "grayscale(1)" : "none" }}>
                         <div className="w-1.5 shrink-0" style={{ background: stripe }} />
-                        <input
+                        {/* 長いロケ名が切れないよう折り返す（改行は入らない） */}
+                        <AutoTextarea singleLine minHeight={36}
                           value={loc.label}
                           onChange={(e) => updateRow(loc.id, { label: e.target.value })}
                           placeholder="ロケーション名"
-                          className="flex-1 min-w-0 bg-transparent text-[14px] font-bold tracking-wide px-3 py-2 focus:outline-none"
+                          className="flex-1 min-w-0 self-center bg-transparent text-[14px] leading-snug font-bold tracking-wide px-3 py-2 focus:outline-none block"
                           style={{ color: mainText, textDecoration: loc.done ? "line-through" : "none" }}
                         />
                         {dayPickerEl(loc, true)}
@@ -11342,7 +11352,7 @@ export default function App() {
               {!!(notifs && notifs.unread) && <button onClick={() => markNotifsRead(null)} className="ml-auto text-[11.5px] font-bold text-stone-500 hover:text-stone-700">すべて既読</button>}
             </div>
             {!notifs || !notifs.items.length ? (
-              <p className="text-[12.5px] text-stone-500 px-4 py-6 text-center">通知はありません。担当している工程の締切の前日・当日・超過時に、こことメールでお知らせします。</p>
+              <p className="text-[12.5px] text-stone-500 px-4 py-6 text-center">通知はありません。担当している工程の締切の前日（ここだけ）・当日と超過（メールも・1日1通まで）にお知らせします。</p>
             ) : notifs.items.map((n) => {
               const tone = n.type === "question" ? { bg: "#EFEAFD", fg: "#6D28D9" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
               const inIndex = index.some((x) => x.id === n.caseId);
@@ -11353,10 +11363,10 @@ export default function App() {
                     <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded" style={{ background: tone.bg, color: tone.fg }}>{n.title}</span>
                     {n.deadline && <span className="ml-auto text-[10.5px] text-stone-400 shrink-0">締切 {n.deadline}</span>}
                   </div>
-                  <div className="text-[13px] font-bold text-stone-800 truncate">{n.caseName}</div>
+                  <div className={"text-[13px] font-bold text-stone-800 " + (n.type === "digest" ? "leading-snug" : "truncate")}>{n.caseName}</div>
                   {Array.isArray(n.guides) && n.guides.length > 0 && (
-                    <details className="mt-1">
-                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : "この工程で押さえること"}</summary>
+                    <details className="mt-1" open={n.type === "digest" && !n.read}>
+                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : n.type === "digest" ? "一覧を見る" : "この工程で押さえること"}</summary>
                       {n.guides.map((g, gi) => (
                         <div key={gi} className="mt-1.5">
                           <div className="text-[11px] font-bold text-stone-500">{g.source}</div>
