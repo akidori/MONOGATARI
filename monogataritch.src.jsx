@@ -1346,6 +1346,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     case "folder": return (<svg {...c}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /></svg>);
     case "home": return (<svg {...c}><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9" /></svg>);
+    case "chart": return (<svg {...c}><path d="M4 20h16" /><path d="M7 16v-5" /><path d="M12 16V7" /><path d="M17 16v-8" /></svg>);
     case "star": return (<svg {...c} fill="currentColor" stroke="none"><path d="M12 2.5l2.95 6.32 6.97.68-5.26 4.73 1.56 6.87L12 17.6l-6.22 3.5 1.56-6.87L2.08 9.5l6.97-.68L12 2.5z" /></svg>);
     case "share": return (<svg {...c}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 13.2l7.6 4.6M15.8 6.2L8.2 10.8" /></svg>);
     case "grip": return (<svg {...c} strokeWidth="0" fill="currentColor"><circle cx="9" cy="6" r="1.4" /><circle cx="15" cy="6" r="1.4" /><circle cx="9" cy="12" r="1.4" /><circle cx="15" cy="12" r="1.4" /><circle cx="9" cy="18" r="1.4" /><circle cx="15" cy="18" r="1.4" /></svg>);
@@ -5284,7 +5285,7 @@ export default function App() {
      レギュレーション一覧のクライアント／チャンネル別グルーピング表示（caseData経由でmanuals件数
      を出す）が全案件のboardCacheを必要とするため。 */
   useEffect(() => {
-    if (!loaded || (view !== "home" && tab !== "regulations")) return;
+    if (!loaded || (view !== "home" && view !== "analytics" && tab !== "regulations")) return;
     let cancelled = false;
     (async () => {
       for (const x of index) {
@@ -5550,6 +5551,47 @@ export default function App() {
     const recent = recentIds.map((id) => rows.find((r) => r.id === id)).filter(Boolean).slice(0, 6);
     return { rows, review, due, todo, recent };
   }, [index, boardCache, project, recentIds, activeId]);
+
+  /* アナリティクス（Phase 2）：読み込めた案件本体から集計する。グラフは最小限、気づきと次のアクションをセットで出す */
+  const analytics = useMemo(() => {
+    const statusCount = Object.fromEntries(STATUSES.map((s) => [s, 0]));
+    const chan = {}, catCount = {}, sameText = {};
+    let loadedN = 0, cTotal = 0, cOpen = 0, cHighOpen = 0;
+    const openByCase = [];
+    const norm = (t) => (t || "").replace(/[\s　、。,.!！?？「」『』()（）・…ー〜~]/g, "").toLowerCase();
+    for (const x of index) {
+      const d = caseData(x.id);
+      const ch = x.channel || DEFAULT_CHANNEL;
+      chan[ch] = chan[ch] || { channel: ch, total: 0, active: 0, done: 0 };
+      chan[ch].total++;
+      if (!d) continue;
+      loadedN++;
+      const st = STATUSES.includes(d.status) ? d.status : "未着手";
+      statusCount[st]++;
+      if (st === "完了") chan[ch].done++; else if (st !== "未着手") chan[ch].active++;
+      const cmts = (d.review && Array.isArray(d.review.comments)) ? d.review.comments : [];
+      let open = 0, high = 0;
+      for (const c of cmts) {
+        cTotal++;
+        const cat = CMT_CATEGORIES.includes(c.category) ? c.category : "その他";
+        catCount[cat] = (catCount[cat] || 0) + 1;
+        if (c.status !== "完了") { open++; if (c.priority === "高") high++; }
+        const k = norm(c.text);
+        if (k.length >= 4) {
+          const e = sameText[k] || (sameText[k] = { text: (c.text || "").trim(), category: cat, count: 0, cases: new Set() });
+          e.count++; e.cases.add(x.id);
+        }
+      }
+      cOpen += open; cHighOpen += high;
+      if (open) openByCase.push({ id: x.id, name: d.name || x.name, channel: ch, open, high });
+    }
+    const cats = Object.entries(catCount).map(([category, n]) => ({ category, n })).sort((a, b) => b.n - a.n);
+    const repeats = Object.values(sameText).filter((e) => e.count >= 2).map((e) => ({ text: e.text, category: e.category, count: e.count, cases: e.cases.size }))
+      .sort((a, b) => b.cases - a.cases || b.count - a.count).slice(0, 5);
+    openByCase.sort((a, b) => b.high - a.high || b.open - a.open);
+    const channels = Object.values(chan).sort((a, b) => b.total - a.total);
+    return { total: index.length, loadedN, statusCount, channels, cTotal, cOpen, cHighOpen, cats, repeats, openByCase: openByCase.slice(0, 5) };
+  }, [index, boardCache, project, activeId]);
 
   const StatusBadge = ({ s }) => { const c = STATUS_COLOR[s] || STATUS_COLOR["未着手"]; return <span className="text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: c.bg, color: c.fg }}>{s}</span>; };
   const renderCaseCard = (r) => {
@@ -6644,7 +6686,7 @@ export default function App() {
       setKnowledgeBase(d && d.connected ? d : null);
     } catch (_) { setKnowledgeBase(null); }
   }, [user]);
-  React.useEffect(() => { if (view === "knowledge" && knowledgeTab === "base" && !knowledgeBase) loadKnowledgeBase(); }, [view, knowledgeTab, knowledgeBase, loadKnowledgeBase]);
+  React.useEffect(() => { if (((view === "knowledge" && knowledgeTab === "base") || view === "analytics") && !knowledgeBase) loadKnowledgeBase(); }, [view, knowledgeTab, knowledgeBase, loadKnowledgeBase]);
 
   // ナレッジ候補の採用/見送り
   const decideKnowledge = async (id, decision) => {
@@ -11057,6 +11099,11 @@ export default function App() {
                 <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{knowledgeInbox.length}</span>
               )}
             </button>
+            <button onClick={() => setView("analytics")}
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
+              style={{ color: "#57534E" }}>
+              <Icon name="chart" className="w-4 h-4 shrink-0" />アナリティクス
+            </button>
             {favoriteCases.length > 0 && (
               <div>
                 <div className="px-2.5 text-[10.5px] font-bold tracking-wide text-stone-400 mb-1">お気に入り</div>
@@ -11142,6 +11189,14 @@ export default function App() {
               title="チャンネルを追加" className="shrink-0 h-9 px-3 rounded-xl inline-flex items-center gap-1 text-[13px] font-bold border border-stone-300 bg-white text-stone-600 hover:bg-stone-50">
               <Icon name="folder" className="w-3.5 h-3.5" />＋
             </button>
+            </div>
+            <div className="lg:hidden flex gap-2 -mt-3 mb-5">
+              <button onClick={() => setView("knowledge")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
+                <Icon name="sparkle" className="w-3.5 h-3.5" />ナレッジ{knowledgeInbox && knowledgeInbox.length ? `（${knowledgeInbox.length}）` : ""}
+              </button>
+              <button onClick={() => setView("analytics")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
+                <Icon name="chart" className="w-3.5 h-3.5" />アナリティクス
+              </button>
             </div>
             {!user && (
               <div className="mb-5 text-[13px] text-stone-600 bg-white border border-stone-200 rounded-xl px-4 py-3 flex items-start gap-2">
@@ -11309,6 +11364,177 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ===== アナリティクス画面（Phase 2・2026-09-26）。案件・修正指摘・ナレッジを集計し、気づきと次のアクションをセットで出す ===== */}
+      {view === "analytics" && (() => {
+        const a = analytics;
+        const active = a.statusCount["企画中"] + a.statusCount["撮影前"] + a.statusCount["編集中"] + a.statusCount["確認中"];
+        const kbApproved = knowledgeBase ? knowledgeBase.company.filter((k) => k.status === "approved").length : null;
+        const kbCandidate = knowledgeBase ? knowledgeBase.company.length - kbApproved : null;
+        const firstOf = (st) => index.find((x) => { const d = caseData(x.id); return d && d.status === st; });
+        const insights = [];
+        if (a.cHighOpen > 0 && a.openByCase[0]) insights.push({ tone: "rose", text: `優先度「高」の修正指摘が${a.cHighOpen}件、未完了のまま残っています。`, action: `「${a.openByCase[0].name}」を開く`, run: () => openCase(a.openByCase[0].id) });
+        if (a.statusCount["確認中"] > 0) { const f = firstOf("確認中"); insights.push({ tone: "rose", text: `確認中の案件が${a.statusCount["確認中"]}件あります。先方・社内の確認が止まっていないか見てください。`, action: f ? `「${f.name}」を開く` : null, run: f ? () => openCase(f.id) : null }); }
+        if (a.repeats[0]) insights.push({ tone: "violet", text: `「${a.repeats[0].text.slice(0, 40)}${a.repeats[0].text.length > 40 ? "…" : ""}」という指摘が${a.repeats[0].cases}案件・${a.repeats[0].count}回出ています。ルール化の候補です。`, action: "ナレッジを確認", run: () => setView("knowledge") });
+        else if (a.cats[0] && a.cats[0].n >= 3) insights.push({ tone: "violet", text: `修正指摘は「${a.cats[0].category}」が${a.cats[0].n}件で最多です。チェックリスト化すると手戻りを減らせます。`, action: "ナレッジを確認", run: () => setView("knowledge") });
+        if (knowledgeInbox && knowledgeInbox.length) insights.push({ tone: "amber", text: `承認待ちのナレッジ候補が${knowledgeInbox.length}件あります（最終承認は人が行います）。`, action: "候補を見る", run: () => { setKnowledgeTab("inbox"); setView("knowledge"); } });
+        const toneStyle = { rose: { background: "#FBE5EA", color: "#DC2645" }, violet: { background: "#EFEAFD", color: "#6D28D9" }, amber: { background: "#FCF0DC", color: "#D97706" } };
+        const maxCat = a.cats[0] ? a.cats[0].n : 1;
+        const Tile = ({ label, value, sub, color }) => (
+          <div className="bg-white border border-stone-200 rounded-xl px-4 py-3 shadow-sm">
+            <div className="text-[11.5px] font-bold text-stone-500">{label}</div>
+            <div className="text-[26px] font-black leading-tight" style={{ color: color || "#292524" }}>{value}</div>
+            {sub && <div className="text-[11px] text-stone-400">{sub}</div>}
+          </div>
+        );
+        return (
+        <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+          <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
+              <button onClick={() => setView("home")} className="flex items-center gap-2">
+                <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+                <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
+                {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
+                <span className="max-w-[120px] truncate">{user ? user.name : "ログイン"}</span>
+              </button>
+            </div>
+          </header>
+          <main className="max-w-[980px] mx-auto px-5 py-7">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="chart" className="w-5 h-5" style={{ color: theme.main }} />アナリティクス</h1>
+              <button onClick={() => setView("home")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700">← ホームへ</button>
+            </div>
+            <p className="text-[12px] text-stone-500 mb-5">
+              {a.total === 0 ? "まだ案件がありません。" : a.loadedN < a.total ? `案件を読み込み中…（${a.loadedN}/${a.total}件を集計済み）` : `全${a.total}件の案件を集計しています。`}
+            </p>
+
+            <section className="mb-6">
+              <h2 className="text-[13px] font-bold text-stone-600 mb-2">気づきと次のアクション</h2>
+              {insights.length === 0 ? (
+                <div className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 text-[13px] text-stone-500 shadow-sm">今のところ目立った滞りはありません。</div>
+              ) : (
+                <div className="space-y-2">
+                  {insights.map((it, i) => (
+                    <div key={i} className="bg-white border border-stone-200 rounded-xl px-4 py-3 shadow-sm flex items-center gap-3 flex-wrap">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: toneStyle[it.tone].color }} />
+                      <span className="flex-1 min-w-[200px] text-[13px] text-stone-700">{it.text}</span>
+                      {it.action && <button onClick={it.run} className="shrink-0 text-[12px] font-bold px-3 py-1.5 rounded-lg" style={toneStyle[it.tone]}>{it.action} →</button>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mb-6">
+              <Tile label="進行中の案件" value={active} sub={`全${a.total}件`} />
+              <Tile label="確認中" value={a.statusCount["確認中"]} color={a.statusCount["確認中"] ? STATUS_COLOR["確認中"].fg : undefined} />
+              <Tile label="完了" value={a.statusCount["完了"]} color={STATUS_COLOR["完了"].fg} />
+              <Tile label="未完了の修正指摘" value={a.cOpen} sub={a.cHighOpen ? `うち優先度「高」${a.cHighOpen}件` : `全${a.cTotal}件中`} color={a.cHighOpen ? "#DC2645" : undefined} />
+            </section>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+              <section className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm">
+                <h2 className="text-[13px] font-bold text-stone-700 mb-3">案件のステータス</h2>
+                {a.loadedN > 0 && (
+                  <div className="flex h-2.5 rounded-full overflow-hidden mb-2.5 bg-stone-100">
+                    {STATUSES.map((s) => a.statusCount[s] > 0 && <div key={s} title={`${s} ${a.statusCount[s]}件`} style={{ width: (a.statusCount[s] / a.loadedN * 100) + "%", background: STATUS_COLOR[s].fg }} />)}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-x-3 gap-y-1 mb-3">
+                  {STATUSES.map((s) => (
+                    <span key={s} className="text-[11.5px] text-stone-600 inline-flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full" style={{ background: STATUS_COLOR[s].fg }} />{s} <b>{a.statusCount[s]}</b>
+                    </span>
+                  ))}
+                </div>
+                <table className="w-full text-[12.5px]">
+                  <thead><tr className="text-stone-400 text-[11px]"><th className="text-left font-bold py-1">チャンネル</th><th className="text-right font-bold">案件</th><th className="text-right font-bold">進行中</th><th className="text-right font-bold">完了</th></tr></thead>
+                  <tbody>
+                    {a.channels.slice(0, 8).map((c) => (
+                      <tr key={c.channel} className="border-t border-stone-100">
+                        <td className="py-1.5"><button onClick={() => openChannel(c.channel)} className="text-left text-stone-700 hover:underline truncate max-w-[180px] inline-block align-middle">{(channelIconOf(c.channel) || "") + c.channel}</button></td>
+                        <td className="text-right text-stone-600">{c.total}</td>
+                        <td className="text-right text-stone-600">{c.active}</td>
+                        <td className="text-right text-stone-600">{c.done}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+
+              <section className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm">
+                <h2 className="text-[13px] font-bold text-stone-700 mb-3">修正指摘の傾向</h2>
+                {a.cTotal === 0 ? (
+                  <p className="text-[12.5px] text-stone-400">まだ修正指摘がありません（確認・修正タブのコメントを集計します）。</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {a.cats.slice(0, 6).map((c) => (
+                      <div key={c.category} className="flex items-center gap-2 text-[12px]">
+                        <span className="w-14 shrink-0 text-stone-600">{c.category}</span>
+                        <div className="flex-1 h-2 rounded-full bg-stone-100 overflow-hidden"><div className="h-full rounded-full" style={{ width: (c.n / maxCat * 100) + "%", background: theme.main }} /></div>
+                        <span className="w-8 text-right shrink-0 font-bold text-stone-700">{c.n}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {a.repeats.length > 0 && (
+                  <div className="mt-4">
+                    <div className="text-[11.5px] font-bold text-stone-500 mb-1.5">繰り返し出ている指摘</div>
+                    <div className="space-y-1">
+                      {a.repeats.map((r, i) => (
+                        <div key={i} className="flex items-start gap-2 text-[12px]">
+                          <span className="shrink-0 text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">{r.category}</span>
+                          <span className="flex-1 min-w-0 text-stone-700 truncate" title={r.text}>{r.text}</span>
+                          <span className="shrink-0 text-stone-400">{r.cases}案件・{r.count}回</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <section className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm">
+                <h2 className="text-[13px] font-bold text-stone-700 mb-2">修正が残っている案件</h2>
+                {a.openByCase.length === 0 ? <p className="text-[12.5px] text-stone-400">ありません</p> : (
+                  <div className="divide-y divide-stone-100">
+                    {a.openByCase.map((c) => (
+                      <button key={c.id} onClick={() => openCase(c.id)} className="w-full flex items-center gap-2 py-2 text-left hover:bg-stone-50 rounded">
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-[13px] font-bold text-stone-700 truncate">{c.name}</span>
+                          <span className="block text-[11px] text-stone-400 truncate">{c.channel}</span>
+                        </span>
+                        {c.high > 0 && <span className="shrink-0 text-[10.5px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: "#FBE5EA", color: "#DC2645" }}>高 {c.high}</span>}
+                        <span className="shrink-0 text-[12px] font-bold text-stone-600">未完了 {c.open}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+
+              <section className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm">
+                <h2 className="text-[13px] font-bold text-stone-700 mb-2">ナレッジ</h2>
+                {knowledgeInbox === null && !knowledgeBase ? (
+                  <p className="text-[12.5px] text-stone-400">Studio OSに未接続のため表示できません。</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <div><div className="text-[11px] text-stone-500">承認待ち</div><div className="text-[20px] font-black" style={{ color: knowledgeInbox && knowledgeInbox.length ? "#D97706" : "#292524" }}>{knowledgeInbox ? knowledgeInbox.length : "–"}</div></div>
+                    <div><div className="text-[11px] text-stone-500">会社ルール</div><div className="text-[20px] font-black text-stone-800">{kbApproved ?? "–"}</div>{kbCandidate ? <div className="text-[10.5px] text-stone-400">候補 {kbCandidate}</div> : null}</div>
+                    <div><div className="text-[11px] text-stone-500">クライアント</div><div className="text-[20px] font-black text-stone-800">{knowledgeBase ? knowledgeBase.client.length : "–"}</div></div>
+                  </div>
+                )}
+                <button onClick={() => setView("knowledge")} className="text-[12px] font-bold" style={{ color: theme.main }}>ナレッジを開く →</button>
+              </section>
+            </div>
+          </main>
+        </div>
+        );
+      })()}
 
       {/* ===== ナレッジ画面（Brain・2026-09-26）。Studio OSのKnowledge Learning Loopを表示・採用/見送りするだけの薄いUI ===== */}
       {view === "knowledge" && (
