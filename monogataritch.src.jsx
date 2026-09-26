@@ -3489,6 +3489,9 @@ export default function App() {
   const [helpBusy, setHelpBusy] = useState(false);
   const [showInvite, setShowInvite] = useState(false);     // 共同編集の招待モーダル
   const [inviteEmail, setInviteEmail] = useState("");
+  const [caseEditors, setCaseEditors] = useState(null);     // ホームの案件カードから開く編集者設定 {id}
+  const [caseEditorEmail, setCaseEditorEmail] = useState("");
+  const [caseEditorBusy, setCaseEditorBusy] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
@@ -4474,6 +4477,45 @@ export default function App() {
       setProject((p) => ({ ...p, members: r.members }));
       setIndex((cur) => cur.map((x) => (x.id === project.id ? { ...x, members: r.members } : x)));
     } catch (e) { showToast("失敗：" + (e.message || e)); }
+  };
+
+  /* ホームの案件カードから、案件を開かずに編集者（共同編集メンバー）を付与・解除する。
+     中身は上の inviteMember/uninviteMember と同じ /api/collab/* を案件id指定で呼ぶ。 */
+  const patchCaseMembers = (id, patch) => {
+    setIndex((cur) => { const nx = cur.map((x) => (x.id === id ? { ...x, ...patch } : x)); persistIndex(nx); return nx; });
+    if (project && project.id === id) {
+      setProject((p) => ({ ...p, members: patch.members, ...(patch.collab ? { collab: true, collabRole: patch.role, ownerEmail: patch.ownerEmail } : {}) }));
+    }
+  };
+  const inviteToCase = async (id, email) => {
+    const em = (email || "").trim().toLowerCase();
+    if (!em.includes("@")) { showToast("メールアドレスを確認してね"); return; }
+    if (!user) { showToast("編集者の付与にはログインが必要だよ"); return; }
+    setCaseEditorBusy(true);
+    try {
+      const x = index.find((i) => i.id === id);
+      if (x && !x.collab) {
+        let p = project && project.id === id ? project : null;
+        if (!p) { const r = await window.storage.get(STORE_PROJ(id)); if (r && r.value) p = JSON.parse(r.value); }
+        if (!p) throw new Error("案件の中身を読み込めませんでした");
+        const up = await authFetch("/api/collab/upsert", { id, project: { ...p, id } });
+        patchCaseMembers(id, { collab: true, role: up.role, ownerEmail: up.ownerEmail, members: up.members });
+      }
+      const r = await authFetch("/api/collab/invite", { id, email: em });
+      patchCaseMembers(id, { members: r.members });
+      setCaseEditorEmail("");
+      showToast(em + " を編集者にしました");
+    } catch (e) { showToast("付与できなかった：" + (e.message || e)); }
+    finally { setCaseEditorBusy(false); }
+  };
+  const removeFromCase = async (id, email) => {
+    if (!window.confirm(email + " をこの案件の編集者から外しますか？")) return;
+    setCaseEditorBusy(true);
+    try {
+      const r = await authFetch("/api/collab/uninvite", { id, email });
+      patchCaseMembers(id, { members: r.members });
+    } catch (e) { showToast("失敗：" + (e.message || e)); }
+    finally { setCaseEditorBusy(false); }
   };
 
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
@@ -11184,13 +11226,13 @@ export default function App() {
             })()}
 
             <div className="text-[13px] font-bold tracking-wide text-stone-600 mb-2">チャンネル（{channelGroups.length}）</div>
-            <div className="space-y-2.5">
+            <div className="space-y-6">
               {channelGroups.map(({ channel, items }) => {
                 const ci = channelInfo[channel] || {};
                 return (
-                  <div key={channel} className="bg-white border border-stone-200 rounded-xl px-4 py-2.5 shadow-sm"
+                  <div key={channel}
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
-                    <div className="flex items-start gap-2">
+                    <div className="flex items-start gap-2 px-1">
                       <button onClick={() => openChannel(channel)} title="このチャンネルの企画一覧を開く" className="flex items-start gap-2 min-w-0 flex-1 text-left group/cn">
                         {channelIconOf(channel)
                           ? <span className="w-4 h-4 shrink-0 mt-0.5 grid place-items-center text-[14px] leading-none">{channelIconOf(channel)}</span>
@@ -11210,6 +11252,52 @@ export default function App() {
                           <button onClick={(e) => setChShareMenu({ channel, x: e.clientX, y: e.clientY })} disabled={chSharing} title="共有リンクを発行（見せる用／編集つきを選べます）" className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-50">共有</button>
                         )}
                       </div>
+                    </div>
+                    {/* 案件カード（2026-09-26 AK「案件ごとにカードで整理・編集者の権限を付与」） */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 mt-2">
+                      {items.slice(0, 9).map((x) => {
+                        const owner = (x.ownerEmail || "").toLowerCase();
+                        const editors = (x.members || []).filter((m) => m !== owner);
+                        const canManage = !x.collab || x.role === "owner";
+                        return (
+                          <div key={x.id} className="bg-white border border-stone-200 rounded-xl shadow-sm hover:shadow-md hover:border-stone-300 transition-all flex flex-col min-w-0">
+                            <button onClick={() => openCase(x.id)} className="text-left px-3.5 pt-3 pb-2 flex-1 min-w-0 group/cc">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                {x.favorite && <Icon name="star" className="w-3.5 h-3.5 shrink-0 text-amber-400" />}
+                                <span className="text-[14px] font-bold text-stone-800 truncate">{x.name || "（無題）"}</span>
+                              </div>
+                              <div className="mt-1 text-[12px] font-semibold opacity-0 group-hover/cc:opacity-100 transition-opacity" style={{ color: theme.main }}>開く →</div>
+                            </button>
+                            <div className="flex items-center gap-1.5 px-3.5 pb-2.5 pt-2 border-t border-stone-100">
+                              {editors.length > 0 && (
+                                <div className="flex -space-x-1.5 shrink-0">
+                                  {editors.slice(0, 4).map((em) => (
+                                    <span key={em} title={em} className="w-6 h-6 rounded-full grid place-items-center text-[10px] font-bold text-white bg-stone-500 border-2 border-white">{em[0].toUpperCase()}</span>
+                                  ))}
+                                </div>
+                              )}
+                              <span className="text-[11px] text-stone-500 truncate">{editors.length ? "編集者 " + editors.length + "人" : "編集者なし"}</span>
+                              {canManage && (
+                                <button onClick={() => { setCaseEditors({ id: x.id }); setCaseEditorEmail(""); }}
+                                  title="この案件の編集者を追加・解除"
+                                  className="ml-auto shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1">
+                                  <Icon name="user" className="w-3 h-3" />編集者
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {items.length > 9 && (
+                        <button onClick={() => openChannelBoard(channel)} className="rounded-xl border border-dashed border-stone-300 text-[12.5px] font-bold text-stone-500 hover:bg-white min-h-[84px]">
+                          すべて（{items.length}）を見る →
+                        </button>
+                      )}
+                      {items.length === 0 && (
+                        <button onClick={(e) => setAddMenu({ channel, x: e.clientX, y: e.clientY })} className="rounded-xl border border-dashed border-stone-300 text-[12.5px] font-bold text-stone-500 hover:bg-white min-h-[84px] inline-flex items-center justify-center gap-1">
+                          <Icon name="plus" className="w-3.5 h-3.5" />案件を追加
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -11555,6 +11643,71 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ===== 案件ごとの編集者設定（ホームの案件カードから・案件を開かずに操作） ===== */}
+      {caseEditors && (() => {
+        const x = index.find((i) => i.id === caseEditors.id);
+        if (!x) return null;
+        const close = () => setCaseEditors(null);
+        const ownerEmail = (x.ownerEmail || (user && user.email) || "").toLowerCase();
+        const editors = (x.members || []).filter((m) => m !== ownerEmail);
+        const isOwner = !x.collab || x.role === "owner";
+        return (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={close}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
+                <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5 min-w-0"><Icon name="user" className="w-4 h-4 shrink-0" /><span className="truncate">編集者：{x.name || "（無題）"}</span></h3>
+                <button onClick={close} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15 shrink-0"><Icon name="close" className="w-4 h-4" /></button>
+              </div>
+              <div className="p-5">
+                {!user ? (
+                  <div className="text-center py-4">
+                    <p className="text-[14px] text-stone-600 mb-3">編集者の付与にはログインが必要です。</p>
+                    <button onClick={() => { close(); setShowAccount(true); }} className="text-xs font-bold px-5 py-2.5 rounded-lg shadow" style={{ background: theme.accent, color: accentText }}>ログインする</button>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-[13px] text-stone-600 leading-relaxed mb-3">
+                      追加した人は、自分の<span className="font-bold">Googleアカウント</span>でログインするとこの案件を<span className="font-bold">編集</span>できます（この案件だけ。他の案件は見えません）。
+                    </p>
+                    {isOwner ? (
+                      <div className="flex gap-2 mb-3">
+                        <input value={caseEditorEmail} onChange={(e) => setCaseEditorEmail(e.target.value)} type="email"
+                          onKeyDown={(e) => { if (e.key === "Enter" && !caseEditorBusy) inviteToCase(x.id, caseEditorEmail); }}
+                          placeholder="編集者のGmailアドレス"
+                          className="flex-1 min-w-0 text-[14px] border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400" />
+                        <button onClick={() => inviteToCase(x.id, caseEditorEmail)} disabled={caseEditorBusy || !caseEditorEmail.trim()}
+                          className="text-xs font-bold px-4 py-2 rounded-lg shadow disabled:opacity-40 shrink-0" style={{ background: theme.accent, color: accentText }}>
+                          {caseEditorBusy ? "…" : "追加"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-[13px] text-stone-600 bg-stone-50 rounded-lg px-3 py-2 mb-3">この案件のオーナーは <span className="font-bold">{ownerEmail}</span> です。編集者の変更はオーナーだけができます。</div>
+                    )}
+                    <div className="text-[12px] font-bold text-stone-500 mb-1.5">メンバー</div>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-[13.5px] px-2 py-1.5 rounded-lg bg-stone-50">
+                        <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] font-bold text-white shrink-0" style={{ background: theme.main }}>{(ownerEmail[0] || "?").toUpperCase()}</span>
+                        <span className="truncate">{ownerEmail}</span>
+                        <span className="ml-auto text-[11px] font-bold text-stone-500 shrink-0">オーナー</span>
+                      </div>
+                      {editors.map((m) => (
+                        <div key={m} className="flex items-center gap-2 text-[13.5px] px-2 py-1.5 rounded-lg border border-stone-100">
+                          <span className="w-5 h-5 rounded-full grid place-items-center text-[11px] font-bold text-white shrink-0 bg-stone-400">{(m[0] || "?").toUpperCase()}</span>
+                          <span className="truncate">{m}</span>
+                          <span className="text-[11px] text-stone-500 shrink-0">編集者</span>
+                          {isOwner && <button onClick={() => removeFromCase(x.id, m)} disabled={caseEditorBusy} className="ml-auto text-[11px] font-bold text-stone-300 hover:text-red-500 shrink-0 disabled:opacity-40">外す</button>}
+                        </div>
+                      ))}
+                      {editors.length === 0 && <p className="text-[12px] text-stone-500 px-2">まだ編集者はいません。</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ===== 動画共有先の選択 ===== */}
       {shareAudience && (
