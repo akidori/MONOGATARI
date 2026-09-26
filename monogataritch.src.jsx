@@ -3497,6 +3497,7 @@ export default function App() {
   const [memberInvite, setMemberInvite] = useState({ email: "", ids: {} }); // メンバー画面の招待フォーム（メール＋付与する案件id）
   const [notifs, setNotifs] = useState(null);          // アプリ内通知 {items, unread}（工程の締切リマインド等。Worker /api/notifications）
   const [showNotifs, setShowNotifs] = useState(false);
+  const [isStaff, setIsStaff] = useState(null);        // AK（管理者）か。Studio OSの業務・ナレッジは管理者だけに見せる（Workerが403を返したらfalse）
   const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
@@ -6678,6 +6679,8 @@ export default function App() {
     if (!user || !MG_SESSION) { setKnowledgeInbox(null); return; }
     try {
       const r = await fetch(SHARE_API + "/api/knowledge/inbox", { headers: { Authorization: "Bearer " + MG_SESSION } });
+      if (r.status === 403) { setIsStaff(false); setKnowledgeInbox(null); return; }
+      if (r.ok) setIsStaff(true);
       const d = await r.json();
       setKnowledgeInbox(d && d.connected ? d.candidates : null);
     } catch (_) { setKnowledgeInbox(null); }
@@ -6690,7 +6693,9 @@ export default function App() {
     try {
       const r = await fetch(SHARE_API + "/api/notifications", { headers: { Authorization: "Bearer " + MG_SESSION } });
       if (!r.ok) return;
-      setNotifs(await r.json());
+      const d = await r.json();
+      if (typeof d.staff === "boolean") setIsStaff(d.staff);
+      setNotifs(d);
     } catch (_) {}
   }, [user]);
   React.useEffect(() => {
@@ -6710,12 +6715,13 @@ export default function App() {
 
   // ナレッジ画面「すべて」タブ：その画面を開いた時だけ取得（会社・クライアントナレッジは件数が増えていくため）
   const loadKnowledgeBase = React.useCallback(async () => {
-    if (!user || !MG_SESSION) { setKnowledgeBase(null); return; }
+    if (!user || !MG_SESSION) { setKnowledgeBase({ failed: true, company: [], client: [] }); return; }
     try {
       const r = await fetch(SHARE_API + "/api/knowledge/base", { headers: { Authorization: "Bearer " + MG_SESSION } });
-      const d = await r.json();
-      setKnowledgeBase(d && d.connected ? d : null);
-    } catch (_) { setKnowledgeBase(null); }
+      const d = await r.json().catch(() => null);
+      // 失敗を null（＝読み込み中）にすると「読み込み中…」のまま止まるので、失敗は failed で区別する
+      setKnowledgeBase(r.ok && d && d.connected ? d : { failed: true, company: [], client: [] });
+    } catch (_) { setKnowledgeBase({ failed: true, company: [], client: [] }); }
   }, [user]);
   React.useEffect(() => { if (((view === "knowledge" && knowledgeTab === "base") || view === "analytics") && !knowledgeBase) loadKnowledgeBase(); }, [view, knowledgeTab, knowledgeBase, loadKnowledgeBase]);
 
@@ -11188,14 +11194,14 @@ export default function App() {
               style={view === "home" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
               <Icon name="home" className="w-4 h-4 shrink-0" />ホーム
             </button>
-            <button onClick={() => setView("knowledge")}
+            {isStaff !== false && <button onClick={() => setView("knowledge")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={view === "knowledge" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
               <Icon name="sparkle" className="w-4 h-4 shrink-0" />ナレッジ
               {!!(knowledgeInbox && knowledgeInbox.length) && (
                 <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{knowledgeInbox.length}</span>
               )}
-            </button>
+            </button>}
             <button onClick={() => setView("analytics")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={{ color: "#57534E" }}>
@@ -11293,9 +11299,9 @@ export default function App() {
             </button>
             </div>
             <div className="lg:hidden flex gap-2 -mt-3 mb-5">
-              <button onClick={() => setView("knowledge")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
+              {isStaff !== false && <button onClick={() => setView("knowledge")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="sparkle" className="w-3.5 h-3.5" />ナレッジ{knowledgeInbox && knowledgeInbox.length ? `（${knowledgeInbox.length}）` : ""}
-              </button>
+              </button>}
               <button onClick={() => setView("analytics")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="chart" className="w-3.5 h-3.5" />アナリティクス
               </button>
@@ -11596,8 +11602,8 @@ export default function App() {
       {view === "analytics" && (() => {
         const a = analytics;
         const active = a.statusCount["企画中"] + a.statusCount["撮影前"] + a.statusCount["編集中"] + a.statusCount["確認中"];
-        const kbApproved = knowledgeBase ? knowledgeBase.company.filter((k) => k.status === "approved").length : null;
-        const kbCandidate = knowledgeBase ? knowledgeBase.company.filter((k) => k.status === "candidate").length : null;
+        const kbApproved = knowledgeBase && !knowledgeBase.failed ? knowledgeBase.company.filter((k) => k.status === "approved").length : null;
+        const kbCandidate = knowledgeBase && !knowledgeBase.failed ? knowledgeBase.company.filter((k) => k.status === "candidate").length : null;
         const firstOf = (st) => index.find((x) => { const d = caseData(x.id); return d && d.status === st; });
         const insights = [];
         if (a.cHighOpen > 0 && a.openByCase[0]) insights.push({ tone: "rose", text: `優先度「高」の修正指摘が${a.cHighOpen}件、未完了のまま残っています。`, action: `「${a.openByCase[0].name}」を開く`, run: () => openCase(a.openByCase[0].id) });
@@ -11746,13 +11752,15 @@ export default function App() {
 
               <section className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm">
                 <h2 className="text-[13px] font-bold text-stone-700 mb-2">ナレッジ</h2>
-                {knowledgeInbox === null && !knowledgeBase ? (
+                {isStaff === false ? (
+                  <p className="text-[12.5px] text-stone-400">ナレッジの集計は管理者（AK）だけが見られます。</p>
+                ) : knowledgeInbox === null && (!knowledgeBase || knowledgeBase.failed) ? (
                   <p className="text-[12.5px] text-stone-400">Studio OSに未接続のため表示できません。</p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2 mb-2">
                     <div><div className="text-[11px] text-stone-500">承認待ち</div><div className="text-[20px] font-black" style={{ color: knowledgeInbox && knowledgeInbox.length ? "#D97706" : "#292524" }}>{knowledgeInbox ? knowledgeInbox.length : "–"}</div></div>
                     <div><div className="text-[11px] text-stone-500">会社ルール</div><div className="text-[20px] font-black text-stone-800">{kbApproved ?? "–"}</div>{kbCandidate ? <div className="text-[10.5px] text-stone-400">候補 {kbCandidate}</div> : null}</div>
-                    <div><div className="text-[11px] text-stone-500">クライアント</div><div className="text-[20px] font-black text-stone-800">{knowledgeBase ? knowledgeBase.client.length : "–"}</div></div>
+                    <div><div className="text-[11px] text-stone-500">クライアント</div><div className="text-[20px] font-black text-stone-800">{knowledgeBase && !knowledgeBase.failed ? knowledgeBase.client.length : "–"}</div></div>
                   </div>
                 )}
                 <button onClick={() => setView("knowledge")} className="text-[12px] font-bold" style={{ color: theme.main }}>ナレッジを開く →</button>
@@ -11798,7 +11806,7 @@ export default function App() {
 
             {knowledgeTab === "inbox" && (
               knowledgeInbox === null ? (
-                <p className="text-[13px] text-stone-500 text-center py-10">Studio OSに接続できませんでした（STUDIO_AGENT_KEY未設定の可能性）。</p>
+                <p className="text-[13px] text-stone-500 text-center py-10">{isStaff === false ? "ナレッジは管理者（AK）だけが見られます。" : "Studio OSに接続できませんでした（STUDIO_AGENT_KEY未設定の可能性）。"}</p>
               ) : knowledgeInbox.length === 0 ? (
                 <p className="text-[13px] text-stone-500 text-center py-10">確認待ちのナレッジ候補はありません。</p>
               ) : (
@@ -11831,6 +11839,11 @@ export default function App() {
             {knowledgeTab === "base" && (
               !knowledgeBase ? (
                 <p className="text-[13px] text-stone-500 text-center py-10">読み込み中…</p>
+              ) : knowledgeBase.failed ? (
+                <div className="text-center py-10">
+                  <p className="text-[13px] text-stone-500">{isStaff === false ? "ナレッジは管理者（AK）だけが見られます。" : "Studio OSに接続できませんでした。"}</p>
+                  {isStaff !== false && <button onClick={() => setKnowledgeBase(null)} className="mt-2 text-[12px] font-bold underline" style={{ color: theme.main }}>もう一度読み込む</button>}
+                </div>
               ) : (
                 <div className="space-y-6">
                   {(() => {

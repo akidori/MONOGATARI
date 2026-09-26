@@ -55,6 +55,12 @@ function redactForNonAdmin(snap) {
 }
 
 const lc = (s) => (s || "").toString().trim().toLowerCase();
+/* 管理者（AK）判定（2026-09-26）。Studio OSの業務・ナレッジを中継するAPIは、ログインしているだけの
+   外部編集者には見せない。ADMIN_EMAILS（カンマ区切り）が無ければ LEGACY_STREAM_OWNER_EMAIL を使う */
+const isStaff = (u, env) => {
+  const list = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean);
+  return !!u && list.includes(lc(u.email));
+};
 const now = () => new Date().toISOString();
 const rid = (n = 8) => {
   const a = "abcdefghijkmnpqrstuvwxyz23456789"; // 紛らわしい文字を除外
@@ -1434,6 +1440,7 @@ ${qList}
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "today" && !parts[2]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
         if (!env.STUDIO_MCP_KEY) return json({ connected: false });
         try {
           const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/mcp", {
@@ -1464,6 +1471,7 @@ ${qList}
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "inbox" && !parts[3]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
         if (!env.STUDIO_AGENT_KEY) return json({ connected: false, candidates: [] });
         try {
           const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/ai/knowledge-candidates", { headers: studioAgentHeaders() });
@@ -1477,6 +1485,7 @@ ${qList}
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "inbox" && parts[3] && parts[4] === "decide" && !parts[5]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
         if (!env.STUDIO_AGENT_KEY) return json({ error: "Studio OS未接続" }, 503);
         let b = {}; try { b = await request.json(); } catch (e) {}
         if (!["adopt", "dismiss"].includes(b.decision)) return json({ error: "decisionはadopt/dismiss" }, 400);
@@ -1494,6 +1503,7 @@ ${qList}
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "base" && !parts[3]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
         if (!env.STUDIO_AGENT_KEY) return json({ connected: false, company: [], client: [] });
         try {
           const [rc, rk, rl] = await Promise.all([
@@ -1517,7 +1527,7 @@ ${qList}
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
         const items = (await env.SNAPS.get("notif:" + lc(u.email), "json")) || [];
-        return json({ items, unread: items.filter((n) => !n.read).length });
+        return json({ items, unread: items.filter((n) => !n.read).length, staff: isStaff(u, env) });
       }
       // POST /api/notifications/read { ids?: [...], all?: true }
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "notifications" && parts[2] === "read" && !parts[3]) {
@@ -1534,8 +1544,8 @@ ${qList}
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "reminders" && parts[2] === "preview" && !parts[3]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
-        if (lc(u.email) !== lc(env.LEGACY_STREAM_OWNER_EMAIL)) return json({ error: "管理者のみ" }, 403);
-        const r = await runDeadlineReminders(env, REMINDER_DOCS, { dryRun: true });
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        const r = await runDeadlineReminders(env, REMINDER_DOCS, { dryRun: true, adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) });
         return json(r);
       }
 
@@ -1544,6 +1554,7 @@ ${qList}
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "company" && parts[3] && parts[4] === "revise" && !parts[5]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
         if (!env.STUDIO_AGENT_KEY) return json({ error: "Studio OS未接続" }, 503);
         let b = {}; try { b = await request.json(); } catch (e) {}
         const text = (b.body || "").toString().trim();
@@ -2604,7 +2615,7 @@ load();
   // ===== 期限切れファイルの自動削除（cron） =====
   async scheduled(event, env, ctx) {
     // 毎朝8:00 JST（23:00 UTC）は工程の締切リマインド。それ以外（03:00 JST）は従来の掃除
-    if (event.cron === "0 23 * * *") { ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS)); return; }
+    if (event.cron === "0 23 * * *") { ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) })); return; }
     ctx.waitUntil(cleanupExpired(env));
     ctx.waitUntil(purgeOldStreamVideos(env));
   },
