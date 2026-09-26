@@ -5560,6 +5560,32 @@ export default function App() {
      永田さん密着が納品済みなのに「確認中」）。AKにはStudio OSの実際の工程（進行・完了）を優先して出す */
   const [studioStatus, setStudioStatus] = useState({}); // {caseId: {status, stepName}}（Worker /api/case-status・管理者のみ）
   const liveStatus = (id, d) => (studioStatus[id] && studioStatus[id].status) || (d ? inferStatus(d) : "未着手");
+  /* 編集者のダッシュボード（2026-09-26 AK「納期と注意事項を出せば、今何をすべきか・早いのか遅れてるのか分かる」）。
+     工程と締切はStudio OS（Worker /api/my-work）、注意事項（NG・規定／クライアントの傾向メモ／未完了の修正指摘）は案件の中身から */
+  const [myWork, setMyWork] = useState(null); // { cases: [...] } | null
+  useEffect(() => {
+    if (!user || !MG_SESSION || view !== "home" || !index.length) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(SHARE_API + "/api/my-work", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION }, body: JSON.stringify({ ids: index.map((x) => x.id) }) });
+        const d = await r.json().catch(() => null);
+        if (!cancelled) setMyWork(r.ok && d && d.connected ? d : null);
+      } catch (_) { if (!cancelled) setMyWork(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [user, view, index.length]);
+  const cautionsFor = (id, channel, serverNotes) => {
+    const d = caseData(id);
+    const out = [];
+    const ng = ((d && d.manuals) || []).filter((m) => (m.title || m.body || "").trim()).slice(0, 3).map((m) => (m.cat ? "［" + m.cat + "］" : "") + (m.title || "").trim() + ((m.body || "").trim() ? "：" + m.body.trim().slice(0, 40) : ""));
+    if (ng.length) out.push({ label: "NG・規定", items: ng });
+    const memo = (((d && d.channelInfo) || {}).clientNotes || (channelInfo[channel] || {}).clientNotes || serverNotes || "").trim();
+    if (memo) out.push({ label: "クライアントの傾向", items: memo.split(/\n+/).map((x) => x.trim()).filter(Boolean).slice(0, 3) });
+    const open = ((d && d.review && d.review.comments) || []).filter((c) => c.status !== "完了");
+    if (open.length) { const high = open.filter((c) => c.priority === "高").length; out.push({ label: "修正指摘", items: ["未完了 " + open.length + "件" + (high ? "（うち優先度「高」" + high + "件）" : "")] }); }
+    return out;
+  };
   const daysLeft = (d) => { if (!d) return null; const t = new Date(d + "T23:59:59").getTime(); if (isNaN(t)) return null; return Math.ceil((t - Date.now()) / 86400000); };
   /* ホームの作業セクション（今日やること/確認待ち/期限近い/最近触った）を算出 */
   const homeSections = useMemo(() => {
@@ -11356,7 +11382,7 @@ export default function App() {
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
             <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
               <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
-              <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              <span className="font-black tracking-[0.04em] sm:tracking-[0.08em] text-[14px] sm:text-[15px] whitespace-nowrap">ものがたりっち！</span>
               <div className="flex-1" />
               {user && (
                 <button onClick={() => setAskOpen(true)} title="AIに質問" className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 mr-1.5 text-[12px] font-bold">
@@ -11493,6 +11519,62 @@ export default function App() {
                 <span><span className="font-bold">ログインすると</span>案件がクラウドに保存され、どの端末でも開けます。<button onClick={() => setShowAccount(true)} className="font-bold underline" style={{ color: theme.main }}>ログイン</button></span>
               </div>
             )}
+
+            {/* ===== あなたの担当（編集者のダッシュボード・2026-09-26）：今やること・締切・早い/遅れ・納期・注意事項 ===== */}
+            {myWork && myWork.cases && myWork.cases.length > 0 && (() => {
+              const PACE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645", o: 0 }, "今日": { bg: "#FCE9D6", fg: "#C2410C", o: 1 }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309", o: 2 }, "締切未設定": { bg: "#F0F0F2", fg: "#57534E", o: 3 }, "余裕": { bg: "#E7F6EC", fg: "#15803D", o: 4 }, "担当工程なし": { bg: "#F0F0F2", fg: "#57534E", o: 5 }, "完了": { bg: "#E7F6EC", fg: "#15803D", o: 6 } };
+              const md = (s) => (s ? s.slice(5).replace("-", "/") : "");
+              const list = [...myWork.cases].sort((a, b) => (PACE[a.pace] || PACE["余裕"]).o - (PACE[b.pace] || PACE["余裕"]).o || ((a.mine && a.mine.days) ?? 99) - ((b.mine && b.mine.days) ?? 99)).slice(0, 8);
+              return (
+              <div className="mb-7">
+                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
+                  <Icon name="clock" className="w-4 h-4" />あなたの担当
+                  <span className="text-[11.5px] font-normal text-stone-500">締切が近い順</span>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                  {list.map((w) => {
+                    const pc = PACE[w.pace] || PACE["余裕"];
+                    const x = index.find((i) => i.id === w.caseId);
+                    const channel = (x && x.channel) || DEFAULT_CHANNEL;
+                    const cautions = cautionsFor(w.caseId, channel, w.clientNotes);
+                    const daysLabel = w.mine && w.mine.days != null ? (w.mine.days < 0 ? -w.mine.days + "日遅れ" : w.mine.days === 0 ? "今日まで" : "あと" + w.mine.days + "日") : "";
+                    return (
+                      <div key={w.caseId} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm" style={w.pace === "遅れ" ? { borderColor: "#F5B5C0" } : undefined}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="shrink-0 text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: pc.bg, color: pc.fg }}>{w.pace}{daysLabel && w.pace !== "今日" ? "・" + daysLabel : ""}</span>
+                          <button onClick={() => openCase(w.caseId)} className="min-w-0 truncate text-[14px] font-bold text-stone-800 hover:underline text-left">{(x && x.name) || w.title}</button>
+                        </div>
+                        <div className="text-[13px] text-stone-800 font-bold leading-snug">今やること：{w.action}</div>
+                        <div className="mt-1 text-[12px] text-stone-600 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
+                          {w.mine && <span>{w.mine.name}の締切 <b className="text-stone-800">{w.mine.deadline ? md(w.mine.deadline) : "未設定"}</b></span>}
+                          {w.finalDeadline && <span>納期 <b className="text-stone-800">{md(w.finalDeadline)}</b></span>}
+                          {w.current && !w.current.isEditor && w.current.deadline && <span>{w.current.name} {md(w.current.deadline)}予定</span>}
+                        </div>
+                        {cautions.length > 0 && (
+                          <div className="mt-2 rounded-lg bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 space-y-0.5">
+                            {cautions.map((c) => (
+                              <div key={c.label} className="text-[12px] text-stone-700 leading-snug"><span className="font-bold text-amber-800">{c.label}：</span>{c.items.join(" ／ ")}</div>
+                            ))}
+                          </div>
+                        )}
+                        {w.guides && w.guides.length > 0 && (
+                          <details className="mt-1.5">
+                            <summary className="text-[12px] font-bold cursor-pointer" style={{ color: theme.main }}>{w.mine ? w.mine.name : "この工程"}で押さえること</summary>
+                            {w.guides.map((g, gi) => (
+                              <div key={gi} className="mt-1">
+                                <div className="text-[11.5px] font-bold text-stone-500">{g.source}</div>
+                                <ul className="mt-0.5 space-y-0.5">{g.points.map((pt, pi) => <li key={pi} className="text-[12px] text-stone-600 leading-snug">・{pt}</li>)}</ul>
+                              </div>
+                            ))}
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              );
+            })()}
 
             {/* ===== 今日の仕事（Studio OS連携・2026-09-23）。件数だけ見せて開くと詳細＝Studio OS自身の
                  「待ちはホームの既定表示にしない」(AK 2026-09-07 §4)に合わせた控えめな表示。

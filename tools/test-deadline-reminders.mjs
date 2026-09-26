@@ -1,7 +1,7 @@
 // 工程の締切リマインド（worker/src/reminders.js）の回帰テスト
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { phaseOf, extractSection, guidesFor, planReminders, composeEmail, runDeadlineReminders, jstDate, isEditorStep } from "../worker/src/reminders.js";
+import { phaseOf, extractSection, guidesFor, planReminders, composeEmail, runDeadlineReminders, jstDate, isEditorStep, workForCase } from "../worker/src/reminders.js";
 
 const root = new URL("..", import.meta.url).pathname;
 const docs = {
@@ -116,6 +116,23 @@ assert.equal(r3.ok, false);
   assert.deepEqual(sentMails.map((m) => m.to).sort(), ["ak@x.com", "b@x.com"]);
   await runDeadlineReminders(e2, docs, { now: Date.parse("2026-10-01T23:00:00Z"), fetchImpl: f2, adminEmails: ["ak@x.com"] });
   assert.equal(sentMails.filter((m) => m.to === "ak@x.com").length, 1); // 翌日もAKへは送らない
+}
+
+// 編集者のダッシュボード：今やること・早い/遅れ
+{
+  const base = { mgProjectId: "p1", title: "山岸さん", finalDeadline: "2026-10-10" };
+  const st = (id, name, role, status, deadline, order) => ({ id, stepName: name, defaultRole: role, status, deadline, stepOrder: order });
+  // 撮影待ち：次は自分の本編集
+  let w = workForCase({ ...base, steps: [st("a", "撮影", "Camera", "pending", "2026-10-05", 1), st("b", "本編集", "Editor", "pending", "2026-10-08", 2)] }, "2026-10-01", docs);
+  assert.equal(w.pace, "余裕"); assert.ok(w.action.startsWith("撮影待ち（10/05予定）")); assert.equal(w.mine.days, 7); assert.equal(w.guides.length, 2);
+  // 自分の工程・遅れ
+  w = workForCase({ ...base, steps: [st("a", "撮影", "Camera", "completed", "2026-09-20", 1), st("b", "本編集", "Editor", "pending", "2026-09-29", 2)] }, "2026-10-01", docs);
+  assert.equal(w.pace, "遅れ"); assert.equal(w.action, "本編集を進める"); assert.equal(w.mine.days, -2);
+  // 今日・もうすぐ・締切未設定・完了
+  assert.equal(workForCase({ ...base, steps: [st("b", "本編集", "Editor", "pending", "2026-10-01", 1)] }, "2026-10-01", docs).pace, "今日");
+  assert.equal(workForCase({ ...base, steps: [st("b", "本編集", "Editor", "pending", "2026-10-03", 1)] }, "2026-10-01", docs).pace, "もうすぐ");
+  assert.equal(workForCase({ ...base, steps: [st("b", "本編集", "Editor", "pending", null, 1)] }, "2026-10-01", docs).pace, "締切未設定");
+  assert.equal(workForCase({ ...base, steps: [st("b", "本編集", "Editor", "completed", "2026-09-01", 1)] }, "2026-10-01", docs).pace, "完了");
 }
 
 console.log("deadline reminder regression tests passed");

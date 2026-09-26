@@ -11,7 +11,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { handleMcp } from "./mcp.js";
-import { runDeadlineReminders } from "./reminders.js";
+import { runDeadlineReminders, workForCase, jstDate } from "./reminders.js";
 // 工程リマインドに添えるマニュアル（正本は knowledge/ と tools/。wrangler.toml の Text ルールで同梱）
 import MANUAL_MD from "../../knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md";
 import REGULATION_MD from "../../knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md";
@@ -1641,6 +1641,53 @@ ${qList}
         if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
         const r = await runDeadlineReminders(env, REMINDER_DOCS, { dryRun: true, adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) });
         return json(r);
+      }
+
+      // POST /api/my-work { ids: [caseId...] } → { today, cases: [workForCase] }（編集者のダッシュボード・2026-09-26）
+      // Studio OS の工程から「今やること・自分の工程の締切・早い/遅れ・納期」を返す。
+      // 編集者には自分が共同編集メンバーの案件だけ（colmember 索引で確認）、管理者は送られた案件すべて。お金などの情報は返さない
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "my-work" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_AGENT_KEY) return json({ connected: false, cases: [] });
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const asked = (Array.isArray(b.ids) ? b.ids : []).slice(0, 500).map(String);
+        let allowed = new Set(asked);
+        if (!isStaff(u, env)) {
+          const mine = new Set((await env.SNAPS.get("colmember:" + lc(u.email), "json")) || []);
+          allowed = new Set(asked.filter((id) => mine.has(id)));
+        }
+        if (!allowed.size) return json({ connected: true, cases: [] });
+        const today = jstDate();
+        const cases = [];
+        try {
+          for (let page = 1; page <= 10; page++) {
+            const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/deliverables?productionStatus=active&expand=detail&limit=200&page=" + page, { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || j.success === false) { if (page === 1) return json({ connected: false, cases: [] }); break; }
+            for (const d of (j.data || [])) if (d && d.mgProjectId && allowed.has(d.mgProjectId)) cases.push(workForCase(d, today, REMINDER_DOCS));
+            const total = (j.meta && j.meta.total) || 0;
+            if (!(j.data || []).length || page * 200 >= total) break;
+          }
+        } catch (e) { return json({ connected: false, cases: [] }); }
+        // 「このクライアントで気をつけること（蓄積メモ）」はオーナー（AK）のチャンネル設定にしか無く、共同編集の編集者には
+        // 届いていなかった。共同編集ドキュメントのオーナーのチャンネル設定から、その案件のチャンネル分だけ添える
+        const chCache = {};
+        for (const c of cases) {
+          try {
+            const doc = await env.SNAPS.get("col:" + c.caseId, "json");
+            if (!doc || !doc.ownerSub) continue;
+            if (!(doc.ownerSub in chCache)) {
+              const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE sub=? AND key='monogataritch-channels-v1'").bind(doc.ownerSub).first();
+              let v = {}; try { v = JSON.parse((row && row.value) || "{}") || {}; } catch (_) {}
+              chCache[doc.ownerSub] = v;
+            }
+            const ch = doc.channel || (doc.project && doc.project.channel) || "";
+            const notes = ((chCache[doc.ownerSub] || {})[ch] || {}).clientNotes;
+            if (notes && typeof notes === "string") c.clientNotes = notes.slice(0, 600);
+          } catch (_) { /* メモが無くても本体は返す */ }
+        }
+        return json({ connected: true, today, cases });
       }
 
       // POST /api/case-status { ids: [caseId...] } → { statuses: { caseId: { status, stepName } } }（管理者のみ）

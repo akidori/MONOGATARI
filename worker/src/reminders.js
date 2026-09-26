@@ -182,3 +182,27 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
   }
   return { ok: true, today, planned: plan.length, sent };
 }
+
+/* ===== 編集者のダッシュボード（2026-09-26 AK「納期と注意事項を出せば、今何をすべきか・早いのか遅れてるのか分かる」）=====
+   Studio OS の案件1件 → 「今やること・自分の工程の締切・早い/遅れ・納期・工程のマニュアル」。副作用なし */
+export function workForCase(d, today, docs) {
+  const steps = (d.steps || []).filter((s) => s && !s.archived).sort((a, b) => (a.stepOrder || 0) - (b.stepOrder || 0));
+  const notDone = steps.filter((s) => !DONE.has(s.status));
+  const cur = notDone[0] || null;
+  const mine = notDone.find((s) => isEditorStep(s)) || null;
+  const days = mine && mine.deadline ? dayDiff(today, mine.deadline.slice(0, 10)) : null;
+  const pace = !cur ? "完了" : !mine ? "担当工程なし" : days == null ? "締切未設定" : days < 0 ? "遅れ" : days === 0 ? "今日" : days <= 2 ? "もうすぐ" : "余裕";
+  let action;
+  if (!cur) action = "全工程が完了しています";
+  else if (mine && cur.id === mine.id) action = mine.stepName + "を進める";
+  else if (mine) action = cur.stepName + "待ち" + (cur.deadline ? "（" + cur.deadline.slice(5, 10).replace("-", "/") + "予定）" : "") + "。次はあなたの" + mine.stepName;
+  else action = cur.stepName + "の段階です（編集の担当工程はありません）";
+  return {
+    caseId: d.mgProjectId, title: d.title || "",
+    finalDeadline: (d.finalDeadline || "").slice(0, 10),
+    current: cur ? { name: cur.stepName, deadline: (cur.deadline || "").slice(0, 10), isEditor: isEditorStep(cur) } : null,
+    mine: mine ? { name: mine.stepName, deadline: (mine.deadline || "").slice(0, 10), days } : null,
+    pace, action,
+    guides: mine ? guidesFor(mine.stepName, docs) : [],
+  };
+}
