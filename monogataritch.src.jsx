@@ -3493,6 +3493,7 @@ export default function App() {
   const [caseEditors, setCaseEditors] = useState(null);     // ホームの案件カードから開く編集者設定 {id}
   const [caseEditorEmail, setCaseEditorEmail] = useState("");
   const [caseEditorBusy, setCaseEditorBusy] = useState(false);
+  const [memberInvite, setMemberInvite] = useState({ email: "", ids: {} }); // メンバー画面の招待フォーム（メール＋付与する案件id）
   const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
@@ -11104,6 +11105,11 @@ export default function App() {
               style={{ color: "#57534E" }}>
               <Icon name="chart" className="w-4 h-4 shrink-0" />アナリティクス
             </button>
+            <button onClick={() => setView("members")}
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
+              style={{ color: "#57534E" }}>
+              <Icon name="user" className="w-4 h-4 shrink-0" />メンバー
+            </button>
             {favoriteCases.length > 0 && (
               <div>
                 <div className="px-2.5 text-[10.5px] font-bold tracking-wide text-stone-400 mb-1">お気に入り</div>
@@ -11196,6 +11202,9 @@ export default function App() {
               </button>
               <button onClick={() => setView("analytics")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="chart" className="w-3.5 h-3.5" />アナリティクス
+              </button>
+              <button onClick={() => setView("members")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
+                <Icon name="user" className="w-3.5 h-3.5" />メンバー
               </button>
             </div>
             {!user && (
@@ -11364,6 +11373,128 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ===== メンバー画面（Phase 3・2026-09-26）。権限は案件ごと（オーナー／編集者）。組織共通の固定ロールは持たない ===== */}
+      {view === "members" && (() => {
+        const me = ((user && user.email) || "").toLowerCase();
+        const ownedCases = index.filter((x) => !x.collab || x.role === "owner");
+        const people = {};
+        for (const x of index) {
+          if (!x.collab) continue;
+          const owner = (x.ownerEmail || "").toLowerCase();
+          const mems = Array.from(new Set([owner, ...(x.members || []).map((m) => (m || "").toLowerCase())])).filter(Boolean);
+          for (const em of mems) {
+            const p = people[em] || (people[em] = { email: em, cases: [] });
+            p.cases.push({ id: x.id, name: x.name, channel: x.channel || DEFAULT_CHANNEL, role: em === owner ? "オーナー" : "編集者", canManage: x.role === "owner" && em !== owner });
+          }
+        }
+        const list = Object.values(people).sort((a, b) => (a.email === me ? -1 : b.email === me ? 1 : b.cases.length - a.cases.length));
+        const pickIds = Object.keys(memberInvite.ids).filter((k) => memberInvite.ids[k]);
+        const runInvite = async (email, ids) => { for (const id of ids) await inviteToCase(id, email); setMemberInvite({ email: "", ids: {} }); };
+        return (
+        <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+          <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
+              <button onClick={() => setView("home")} className="flex items-center gap-2">
+                <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+                <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
+                {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
+                <span className="max-w-[120px] truncate">{user ? user.name : "ログイン"}</span>
+              </button>
+            </div>
+          </header>
+          <main className="max-w-[900px] mx-auto px-5 py-7">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="user" className="w-5 h-5" style={{ color: theme.main }} />メンバー</h1>
+              <button onClick={() => setView("home")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700">← ホームへ</button>
+            </div>
+            <p className="text-[12px] text-stone-500 mb-5">権限は案件ごとに付与します。オーナーは編集者の追加・削除ができ、編集者はその案件だけを編集できます。</p>
+
+            {!user ? (
+              <div className="bg-white border border-stone-200 rounded-xl px-4 py-4 text-[13px] text-stone-600 shadow-sm">
+                メンバーの招待・管理にはログインが必要です。<button onClick={() => setShowAccount(true)} className="font-bold underline" style={{ color: theme.main }}>ログイン</button>
+              </div>
+            ) : (
+              <>
+                <section className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm mb-6">
+                  <h2 className="text-[13px] font-bold text-stone-700 mb-2">編集者を招待</h2>
+                  <input value={memberInvite.email} onChange={(e) => setMemberInvite((m) => ({ ...m, email: e.target.value }))} placeholder="メールアドレス（Googleアカウント）"
+                    className="w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:border-stone-500" />
+                  <div className="text-[11.5px] font-bold text-stone-500 mb-1">編集できる案件（あなたがオーナーの案件）</div>
+                  {ownedCases.length === 0 ? <p className="text-[12px] text-stone-400 mb-2">オーナーの案件がありません</p> : (
+                    <div className="max-h-[200px] overflow-y-auto border border-stone-100 rounded-lg divide-y divide-stone-100 mb-2">
+                      {ownedCases.map((x) => (
+                        <label key={x.id} className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] cursor-pointer hover:bg-stone-50">
+                          <input type="checkbox" checked={!!memberInvite.ids[x.id]} onChange={(e) => setMemberInvite((m) => ({ ...m, ids: { ...m.ids, [x.id]: e.target.checked } }))} />
+                          <span className="flex-1 min-w-0 truncate text-stone-700">{x.name}</span>
+                          <span className="shrink-0 text-[11px] text-stone-400">{x.channel || DEFAULT_CHANNEL}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex justify-end">
+                    <button disabled={caseEditorBusy || !memberInvite.email.includes("@") || pickIds.length === 0} onClick={() => runInvite(memberInvite.email, pickIds)}
+                      className="text-[12.5px] font-bold px-4 py-2 rounded-lg text-white disabled:opacity-40" style={{ background: theme.accent }}>
+                      {caseEditorBusy ? "招待中…" : `${pickIds.length}件の案件に招待`}
+                    </button>
+                  </div>
+                </section>
+
+                <h2 className="text-[13px] font-bold text-stone-600 mb-2">メンバー一覧（{list.length}人）</h2>
+                {list.length === 0 ? (
+                  <div className="bg-white border border-stone-200 rounded-xl px-4 py-4 text-[13px] text-stone-500 shadow-sm">まだ共同編集している案件はありません。上のフォームから編集者を招待できます。</div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {list.map((p) => {
+                      const addable = ownedCases.filter((x) => !p.cases.some((c) => c.id === x.id));
+                      return (
+                        <div key={p.email} className="bg-white border border-stone-200 rounded-xl px-4 py-3 shadow-sm">
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="w-7 h-7 rounded-full grid place-items-center text-[12px] font-bold text-white shrink-0" style={{ background: theme.main }}>{p.email.slice(0, 1).toUpperCase()}</span>
+                            <span className="text-[13px] font-bold text-stone-800 truncate">{p.email}</span>
+                            {p.email === me && <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full bg-stone-100 text-stone-500 shrink-0">自分</span>}
+                            <span className="ml-auto text-[11px] text-stone-400 shrink-0">{p.cases.length}案件</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {p.cases.map((c) => (
+                              <span key={c.id} className="inline-flex items-center gap-1 text-[11.5px] pl-2 pr-1 py-0.5 rounded-full border border-stone-200 bg-stone-50 max-w-full">
+                                <button onClick={() => openCase(c.id)} className="truncate max-w-[180px] text-stone-700 hover:underline" title={c.channel + " / " + c.name}>{c.name}</button>
+                                <span className="shrink-0 text-[10px] font-bold px-1 rounded" style={c.role === "オーナー" ? { background: "#E3EBFC", color: "#2563EB" } : { background: "#E0F2EF", color: "#0D9488" }}>{c.role}</span>
+                                {c.canManage && <button onClick={() => removeFromCase(c.id, p.email)} disabled={caseEditorBusy} title="この案件から外す" className="shrink-0 w-4 h-4 grid place-items-center rounded-full text-stone-400 hover:bg-stone-200 hover:text-stone-700"><Icon name="close" className="w-3 h-3" /></button>}
+                              </span>
+                            ))}
+                          </div>
+                          {p.email !== me && addable.length > 0 && (
+                            <select value="" disabled={caseEditorBusy} onChange={(e) => { if (e.target.value) inviteToCase(e.target.value, p.email); }}
+                              className="mt-2 text-[12px] border border-stone-200 rounded-lg px-2 py-1 bg-white text-stone-600">
+                              <option value="">＋ 案件を追加…</option>
+                              {addable.map((x) => <option key={x.id} value={x.id}>{x.name}（{x.channel || DEFAULT_CHANNEL}）</option>)}
+                            </select>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
+            )}
+
+            <button onClick={() => setShowAccount(true)} className="mt-6 w-full bg-white border border-stone-200 rounded-xl px-4 py-3 shadow-sm flex items-center gap-2 text-left hover:border-stone-300">
+              <Icon name="gear" className="w-4 h-4 text-stone-500" />
+              <span className="flex-1">
+                <span className="block text-[13px] font-bold text-stone-700">アカウント・セキュリティ</span>
+                <span className="block text-[11px] text-stone-400">ログイン情報・連携先・動画の保存先</span>
+              </span>
+              <span className="text-stone-400">→</span>
+            </button>
+          </main>
+        </div>
+        );
+      })()}
 
       {/* ===== アナリティクス画面（Phase 2・2026-09-26）。案件・修正指摘・ナレッジを集計し、気づきと次のアクションをセットで出す ===== */}
       {view === "analytics" && (() => {
