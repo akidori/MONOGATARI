@@ -1445,6 +1445,61 @@ ${qList}
         } catch (e) { return json({ connected: false }); }
       }
 
+      // ===== Studio OS連携: ナレッジ（Brain）（2026-09-26）=====
+      // Studio OS側に既にある「Knowledge Learning Loop」（Evidence→週次AI候補生成→採用/見送り→
+      // Client/Company Knowledgeへ昇格）をそのまま中継する。新しいDBテーブルは追加していない。
+      // 認証はSTUDIO_AGENT_KEY（既存。mg-gate等と共用、system:agent=Owner権限で通る）。
+      // 重要: Company Knowledgeの最終承認（status→approved）はAIアクターからの実行を
+      // Studio OS側が明示的に禁止している（指示書§20）ため、ここでは中継しない。
+      // 承認はStudio OS側の画面で人が行う想定（ものがたりっち側は候補の採用/見送りまで）。
+      const studioAgentHeaders = () => ({ "content-type": "application/json", authorization: "Bearer " + env.STUDIO_AGENT_KEY });
+
+      // GET /api/knowledge/inbox — 承認待ちのナレッジ候補一覧
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "inbox" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_AGENT_KEY) return json({ connected: false, candidates: [] });
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/ai/knowledge-candidates", { headers: studioAgentHeaders() });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || j.success === false) return json({ connected: false, candidates: [] });
+          return json({ connected: true, candidates: (j.data && j.data.candidates) || [] });
+        } catch (e) { return json({ connected: false, candidates: [] }); }
+      }
+
+      // POST /api/knowledge/inbox/{id}/decide { decision: "adopt"|"dismiss" } — 候補を採用/見送り
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "inbox" && parts[3] && parts[4] === "decide" && !parts[5]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_AGENT_KEY) return json({ error: "Studio OS未接続" }, 503);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        if (!["adopt", "dismiss"].includes(b.decision)) return json({ error: "decisionはadopt/dismiss" }, 400);
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/knowledge-candidates/" + encodeURIComponent(parts[3]) + "/decide", {
+            method: "POST", headers: studioAgentHeaders(), body: JSON.stringify({ decision: b.decision }),
+          });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || j.success === false) return json({ error: (j && j.error && j.error.message) || ("Studio OS " + r.status) }, r.status === 404 ? 404 : 502);
+          return json(j.data);
+        } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
+      }
+
+      // GET /api/knowledge/base — 会社ナレッジ・クライアントナレッジの一覧（読み取りのみ）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "base" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_AGENT_KEY) return json({ connected: false, company: [], client: [] });
+        try {
+          const [rc, rk] = await Promise.all([
+            fetch("https://studio-os-5dm.pages.dev/api/v1/company-knowledge?limit=100", { headers: studioAgentHeaders() }),
+            fetch("https://studio-os-5dm.pages.dev/api/v1/client-knowledge?limit=100", { headers: studioAgentHeaders() }),
+          ]);
+          const [jc, jk] = await Promise.all([rc.json().catch(() => null), rk.json().catch(() => null)]);
+          if (!rc.ok || !jc || jc.success === false) return json({ connected: false, company: [], client: [] });
+          return json({ connected: true, company: jc.data || [], client: (rk.ok && jk && jk.success !== false) ? (jk.data || []) : [] });
+        } catch (e) { return json({ connected: false, company: [], client: [] }); }
+      }
+
       // ===== 編集者の入口が用意されているかを Studio OS が一括で確認する（2026-08-23）=====
       // 勇人さんがdl_fb50で「mg案件未紐付け→自力ログイン→個人案件に上げて弾かれる」で詰まった事故の再発防止。
       // Studio OS は deliverables.mg_project_id を持つが「共有/編集者リンクが発行済みか」は mg 側の

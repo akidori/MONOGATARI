@@ -3476,7 +3476,7 @@ export default function App() {
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
   const [chShareMenu, setChShareMenu] = useState(null);    // チャンネル共有の種類選択（読取専用/編集つき）{channel,x,y}
-  const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集)
+  const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集) | "knowledge"(ナレッジ)
   // チャンネル単位の編集者ライブモード（index.html?ch=… ＝ログイン不要で当該クライアントの案件だけ・全タブ直接編集）
   const [chanLive, setChanLive] = useState(null);          // {id,name,channelInfo,cases:[{id,name,format,edit:{liveId,editToken}}]}
   const [chanActiveCase, setChanActiveCase] = useState(null); // chanLive中に開いている案件id（サイドバー強調用）
@@ -3667,6 +3667,10 @@ export default function App() {
   const [sched, setSched] = useState(null);                  // Flip Board(D1正本)から引いた日程スライス＝編集者ビューの進行ストリップ。読み取り専用
   const [todayWork, setTodayWork] = useState(null);          // Studio OS「今日の仕事」(/api/today経由・get_work中継)。ホームの「今日の仕事」でだけ使う
   const [todayWorkOpenKey, setTodayWorkOpenKey] = useState(null); // 展開中のグループキー（既定は畳んでおく＝AK 2026-09-07 §4）
+  const [knowledgeInbox, setKnowledgeInbox] = useState(null);     // Studio OSナレッジ候補一覧(/api/knowledge/inbox)。ホームのBrainとナレッジ画面で共用
+  const [knowledgeBase, setKnowledgeBase] = useState(null);       // 会社・クライアントナレッジ一覧(/api/knowledge/base)。ナレッジ画面「すべて」タブでだけ取得
+  const [knowledgeTab, setKnowledgeTab] = useState("inbox");      // ナレッジ画面のタブ: inbox(要確認) | base(すべて)
+  const [knowledgeBusyId, setKnowledgeBusyId] = useState(null);   // 採用/見送り処理中のcandidate id（二重送信防止）
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("channel"); // global | channel | case（基本はクライアント単位）
 
@@ -6575,6 +6579,47 @@ export default function App() {
     })();
     return () => { live = false; };
   }, [user]);
+
+  // ホーム「Brain」：ナレッジ候補（要確認件数）。ナレッジ画面と共用のため関数化し、採用/見送り後に再取得する。
+  const loadKnowledgeInbox = React.useCallback(async () => {
+    if (!user || !MG_SESSION) { setKnowledgeInbox(null); return; }
+    try {
+      const r = await fetch(SHARE_API + "/api/knowledge/inbox", { headers: { Authorization: "Bearer " + MG_SESSION } });
+      const d = await r.json();
+      setKnowledgeInbox(d && d.connected ? d.candidates : null);
+    } catch (_) { setKnowledgeInbox(null); }
+  }, [user]);
+  React.useEffect(() => { loadKnowledgeInbox(); }, [loadKnowledgeInbox]);
+
+  // ナレッジ画面「すべて」タブ：その画面を開いた時だけ取得（会社・クライアントナレッジは件数が増えていくため）
+  const loadKnowledgeBase = React.useCallback(async () => {
+    if (!user || !MG_SESSION) { setKnowledgeBase(null); return; }
+    try {
+      const r = await fetch(SHARE_API + "/api/knowledge/base", { headers: { Authorization: "Bearer " + MG_SESSION } });
+      const d = await r.json();
+      setKnowledgeBase(d && d.connected ? d : null);
+    } catch (_) { setKnowledgeBase(null); }
+  }, [user]);
+  React.useEffect(() => { if (view === "knowledge" && knowledgeTab === "base" && !knowledgeBase) loadKnowledgeBase(); }, [view, knowledgeTab, knowledgeBase, loadKnowledgeBase]);
+
+  // ナレッジ候補の採用/見送り
+  const decideKnowledge = async (id, decision) => {
+    if (knowledgeBusyId) return;
+    setKnowledgeBusyId(id);
+    try {
+      const r = await fetch(SHARE_API + "/api/knowledge/inbox/" + encodeURIComponent(id) + "/decide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
+        body: JSON.stringify({ decision }),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { showToast("処理できなかった：" + (d.error || "不明")); return; }
+      showToast(decision === "adopt" ? "採用しました（会社ルールの最終承認はStudio OS側で）" : "見送りました");
+      await loadKnowledgeInbox();
+      if (knowledgeBase) await loadKnowledgeBase();
+    } catch (e) { showToast("処理失敗：" + (e.message || e)); }
+    finally { setKnowledgeBusyId(null); }
+  };
 
   // あがり報告：担当編集者のワンタップで ball→AK（Flip Board書き戻し）。phaseは触らずAKが確認して進める。
   const [reportingUp, setReportingUp] = useState(false);
@@ -10955,9 +11000,19 @@ export default function App() {
           </header>
           <div className="max-w-[1320px] mx-auto px-5 flex items-start gap-6">
           <aside className="hidden lg:flex flex-col shrink-0 w-[192px] py-7 sticky top-[64px] gap-4" style={{ maxHeight: "calc(100vh - 64px)", overflowY: "auto" }}>
-            <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold" style={{ background: theme.accent + "14", color: theme.accent }}>
+            <button onClick={() => setView("home")}
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
+              style={view === "home" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
               <Icon name="home" className="w-4 h-4 shrink-0" />ホーム
-            </div>
+            </button>
+            <button onClick={() => setView("knowledge")}
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
+              style={view === "knowledge" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
+              <Icon name="sparkle" className="w-4 h-4 shrink-0" />ナレッジ
+              {!!(knowledgeInbox && knowledgeInbox.length) && (
+                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">{knowledgeInbox.length}</span>
+              )}
+            </button>
             {favoriteCases.length > 0 && (
               <div>
                 <div className="px-2.5 text-[10.5px] font-bold tracking-wide text-stone-400 mb-1">お気に入り</div>
@@ -11083,6 +11138,35 @@ export default function App() {
               </div>
             )}
 
+            {/* ===== Brain（Studio OSナレッジ候補・2026-09-26）。多くても3件だけ表示し、残りは「すべて見る」でナレッジ画面へ ===== */}
+            {knowledgeInbox && knowledgeInbox.length > 0 && (
+              <div className="mb-7">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[13px] font-bold flex items-center gap-2 text-stone-600">
+                    Brain<span className="text-stone-300 font-normal">{knowledgeInbox.length}</span>
+                  </div>
+                  <button onClick={() => setView("knowledge")} className="text-[12px] font-bold" style={{ color: theme.main }}>すべて見る →</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {knowledgeInbox.slice(0, 3).map((c) => (
+                    <div key={c.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">{c.kind === "regulation_rule" ? "ルール候補" : "ナレッジ候補"}</span>
+                        <span className="text-[11px] text-stone-400 truncate">{c.client_name || "全社"}</span>
+                      </div>
+                      <div className="text-[13px] text-stone-800 mb-2 line-clamp-2">{(c.payload && c.payload.content) || ""}</div>
+                      <div className="flex gap-1.5">
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "adopt")}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">採用</button>
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "dismiss")}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40 text-stone-400">見送り</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* ===== 最近触った（クイックアクセス） ===== */}
             {(() => {
               const { recent } = homeSections;
@@ -11133,6 +11217,112 @@ export default function App() {
             <p className="text-[11px] text-stone-500 mt-6 text-center">案件をクリックすると編集画面が開きます。左上ロゴでいつでもここに戻れます。</p>
           </main>
           </div>
+        </div>
+      )}
+
+      {/* ===== ナレッジ画面（Brain・2026-09-26）。Studio OSのKnowledge Learning Loopを表示・採用/見送りするだけの薄いUI ===== */}
+      {view === "knowledge" && (
+        <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+          <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
+              <button onClick={() => setView("home")} className="flex items-center gap-2">
+                <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+                <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
+                {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
+                <span className="max-w-[120px] truncate">{user ? user.name : "ログイン"}</span>
+              </button>
+            </div>
+          </header>
+          <main className="max-w-[900px] mx-auto px-5 py-7">
+            <div className="flex items-center gap-2 mb-5">
+              <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="sparkle" className="w-5 h-5" style={{ color: theme.main }} />ナレッジ</h1>
+              <button onClick={() => setView("home")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700">← ホームへ</button>
+            </div>
+
+            <div className="flex gap-1 mb-5 border-b border-stone-300">
+              {[["inbox", "要確認"], ["base", "すべて"]].map(([k, label]) => (
+                <button key={k} onClick={() => setKnowledgeTab(k)}
+                  className="px-4 py-2 text-[13px] font-bold border-b-2 -mb-px"
+                  style={knowledgeTab === k ? { borderColor: theme.main, color: theme.main } : { borderColor: "transparent", color: "#78716C" }}>
+                  {label}{k === "inbox" && knowledgeInbox && knowledgeInbox.length > 0 ? `（${knowledgeInbox.length}）` : ""}
+                </button>
+              ))}
+            </div>
+
+            {knowledgeTab === "inbox" && (
+              knowledgeInbox === null ? (
+                <p className="text-[13px] text-stone-500 text-center py-10">Studio OSに接続できませんでした（STUDIO_AGENT_KEY未設定の可能性）。</p>
+              ) : knowledgeInbox.length === 0 ? (
+                <p className="text-[13px] text-stone-500 text-center py-10">確認待ちのナレッジ候補はありません。</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {knowledgeInbox.map((c) => (
+                    <div key={c.id} className="bg-white border border-stone-200 rounded-xl px-4 py-3.5 shadow-sm">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">{c.kind === "regulation_rule" ? "ルール候補" : "ナレッジ候補"}</span>
+                        <span className="text-[12px] font-bold text-stone-700">{c.client_name || "全社"}</span>
+                        {c.payload && c.payload.category && <span className="text-[11px] text-stone-400">{c.payload.category}</span>}
+                        <span className="ml-auto text-[10.5px] text-stone-400">根拠 {c.evidence_count ?? "?"}件</span>
+                      </div>
+                      <div className="text-[14px] text-stone-800 mb-3">{(c.payload && c.payload.content) || ""}</div>
+                      <div className="flex gap-2">
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "adopt")}
+                          className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: theme.main }}>採用する</button>
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "dismiss")}
+                          className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40 text-stone-500">見送る</button>
+                      </div>
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-stone-500 pt-2">「採用」は下書き（クライアントナレッジ/会社ナレッジの候補）を作るところまでです。会社ルールとしての最終承認はStudio OS側の画面で行ってください（AIによる自動承認は禁止されています）。</p>
+                </div>
+              )
+            )}
+
+            {knowledgeTab === "base" && (
+              !knowledgeBase ? (
+                <p className="text-[13px] text-stone-500 text-center py-10">読み込み中…</p>
+              ) : (
+                <div className="space-y-6">
+                  <div>
+                    <div className="text-[12px] font-bold text-stone-500 mb-2">会社ナレッジ（{knowledgeBase.company.length}）</div>
+                    <div className="space-y-2">
+                      {knowledgeBase.company.map((k) => (
+                        <div key={k.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[13px] font-bold text-stone-800">{k.title}</span>
+                            <span className="ml-auto text-[10.5px] font-bold px-2 py-0.5 rounded-full" style={k.status === "approved" ? { background: "#E7F6EC", color: "#15803D" } : { background: "#FCF0DC", color: "#D97706" }}>
+                              {k.status === "approved" ? "承認済" : "候補"}
+                            </span>
+                          </div>
+                          <div className="text-[12.5px] text-stone-600">{k.body}</div>
+                        </div>
+                      ))}
+                      {knowledgeBase.company.length === 0 && <p className="text-[12.5px] text-stone-400">まだありません</p>}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[12px] font-bold text-stone-500 mb-2">クライアントナレッジ（{knowledgeBase.client.length}）</div>
+                    <div className="space-y-2">
+                      {knowledgeBase.client.map((k) => (
+                        <div key={k.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{k.category}</span>
+                            <span className="text-[10.5px] text-stone-400 ml-auto">サンプル{k.sampleCount ?? 0}件</span>
+                          </div>
+                          <div className="text-[12.5px] text-stone-600">{k.content}</div>
+                        </div>
+                      ))}
+                      {knowledgeBase.client.length === 0 && <p className="text-[12.5px] text-stone-400">まだありません</p>}
+                    </div>
+                  </div>
+                </div>
+              )
+            )}
+          </main>
         </div>
       )}
 
