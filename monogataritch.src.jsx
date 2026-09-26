@@ -3678,6 +3678,9 @@ export default function App() {
   const [knowledgeBase, setKnowledgeBase] = useState(null);       // 会社・クライアントナレッジ一覧(/api/knowledge/base)。ナレッジ画面「すべて」タブでだけ取得
   const [knowledgeTab, setKnowledgeTab] = useState("inbox");      // ナレッジ画面のタブ: inbox(要確認) | base(すべて)
   const [knowledgeBusyId, setKnowledgeBusyId] = useState(null);   // 採用/見送り処理中のcandidate id（二重送信防止）
+  const [knowledgeKindFilter, setKnowledgeKindFilter] = useState("all");   // 会社ナレッジの種類フィルタ（all|rule|howto|qa|reference）
+  const [knowledgeShowRetired, setKnowledgeShowRetired] = useState(false); // 廃止（旧版）・却下も表示するか
+  const [knowledgeRevise, setKnowledgeRevise] = useState(null);           // 改訂案の編集中 {id, body}
   const [showManual, setShowManual] = useState(false);       // マニュアルモーダル
   const [manualScope, setManualScope] = useState("channel"); // global | channel | case（基本はクライアント単位）
 
@@ -6689,6 +6692,23 @@ export default function App() {
   }, [user]);
   React.useEffect(() => { if (((view === "knowledge" && knowledgeTab === "base") || view === "analytics") && !knowledgeBase) loadKnowledgeBase(); }, [view, knowledgeTab, knowledgeBase, loadKnowledgeBase]);
 
+  // 承認済みの会社ナレッジに改訂案（新しい版の候補）を出す。承認はStudio OSで人が行う（AIは確定しない）
+  const reviseKnowledge = async () => {
+    if (!knowledgeRevise || !MG_SESSION) return;
+    const { id, body } = knowledgeRevise;
+    setKnowledgeBusyId(id);
+    try {
+      const r = await fetch(SHARE_API + "/api/knowledge/company/" + encodeURIComponent(id) + "/revise", {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION }, body: JSON.stringify({ body: body.trim() }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || ("HTTP " + r.status));
+      setKnowledgeRevise(null);
+      showToast("改訂案を出しました。Studio OSで承認すると切り替わります");
+      await loadKnowledgeBase();
+    } catch (e) { showToast("改訂案を出せませんでした：" + (e.message || e)); }
+    finally { setKnowledgeBusyId(null); }
+  };
   // ナレッジ候補の採用/見送り
   const decideKnowledge = async (id, decision) => {
     if (knowledgeBusyId) return;
@@ -11501,7 +11521,7 @@ export default function App() {
         const a = analytics;
         const active = a.statusCount["企画中"] + a.statusCount["撮影前"] + a.statusCount["編集中"] + a.statusCount["確認中"];
         const kbApproved = knowledgeBase ? knowledgeBase.company.filter((k) => k.status === "approved").length : null;
-        const kbCandidate = knowledgeBase ? knowledgeBase.company.length - kbApproved : null;
+        const kbCandidate = knowledgeBase ? knowledgeBase.company.filter((k) => k.status === "candidate").length : null;
         const firstOf = (st) => index.find((x) => { const d = caseData(x.id); return d && d.status === st; });
         const insights = [];
         if (a.cHighOpen > 0 && a.openByCase[0]) insights.push({ tone: "rose", text: `優先度「高」の修正指摘が${a.cHighOpen}件、未完了のまま残っています。`, action: `「${a.openByCase[0].name}」を開く`, run: () => openCase(a.openByCase[0].id) });
@@ -11737,26 +11757,82 @@ export default function App() {
                 <p className="text-[13px] text-stone-500 text-center py-10">読み込み中…</p>
               ) : (
                 <div className="space-y-6">
+                  {(() => {
+                    /* 会社ナレッジ（2026-09-26 Studio OS migration 0099）: 種類・重要度・適用範囲・版。
+                       承認済みの変更は「改訂案」（新しい版の候補）として出し、承認はStudio OSで人が行う。旧版は廃止として残る */
+                    const KIND = { rule: "ルール", howto: "ノウハウ", qa: "Q&A", reference: "参考" };
+                    const IMP = { critical: { label: "必須", bg: "#FBE5EA", fg: "#DC2645" }, high: { label: "重要", bg: "#FCF0DC", fg: "#D97706" } };
+                    const ST = { approved: { label: "承認済", bg: "#E7F6EC", fg: "#15803D" }, candidate: { label: "候補", bg: "#FCF0DC", fg: "#D97706" }, rejected: { label: "却下", bg: "#F0F0F2", fg: "#71717A" }, retired: { label: "廃止（旧版）", bg: "#F0F0F2", fg: "#71717A" } };
+                    const all = knowledgeBase.company;
+                    const byId = Object.fromEntries(all.map((k) => [k.id, k]));
+                    const kinds = Array.from(new Set(all.map((k) => k.kind || "rule")));
+                    const pendingRevisionOf = new Set(all.filter((k) => k.status === "candidate" && k.supersedesId).map((k) => k.supersedesId));
+                    const retiredN = all.filter((k) => k.status === "retired" || k.status === "rejected").length;
+                    const list = all
+                      .filter((k) => knowledgeShowRetired || (k.status !== "retired" && k.status !== "rejected"))
+                      .filter((k) => knowledgeKindFilter === "all" || (k.kind || "rule") === knowledgeKindFilter)
+                      .sort((a, b) => ({ critical: 0, high: 1 }[a.importance] ?? 2) - ({ critical: 0, high: 1 }[b.importance] ?? 2));
+                    return (
                   <div>
-                    <div className="text-[12px] font-bold text-stone-500 mb-2">会社ナレッジ（{knowledgeBase.company.length}）</div>
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                      <span className="text-[12px] font-bold text-stone-500">会社ナレッジ（{list.length}）</span>
+                      {kinds.length > 1 && ["all", ...kinds].map((k) => (
+                        <button key={k} onClick={() => setKnowledgeKindFilter(k)} className="text-[11px] font-bold px-2 py-0.5 rounded-full border"
+                          style={knowledgeKindFilter === k ? { background: theme.main, color: "#fff", borderColor: theme.main } : { background: "#fff", color: "#57534E", borderColor: "#E7E5E4" }}>
+                          {k === "all" ? "すべて" : (KIND[k] || k)}
+                        </button>
+                      ))}
+                      {retiredN > 0 && (
+                        <label className="ml-auto text-[11px] text-stone-500 inline-flex items-center gap-1 cursor-pointer">
+                          <input type="checkbox" checked={knowledgeShowRetired} onChange={(e) => setKnowledgeShowRetired(e.target.checked)} />廃止・却下も表示（{retiredN}）
+                        </label>
+                      )}
+                    </div>
                     <div className="space-y-2">
-                      {knowledgeBase.company.map((k) => (
-                        <div key={k.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[13px] font-bold text-stone-800">{k.title}</span>
-                            <span className="ml-auto text-[10.5px] font-bold px-2 py-0.5 rounded-full" style={k.status === "approved" ? { background: "#E7F6EC", color: "#15803D" } : { background: "#FCF0DC", color: "#D97706" }}>
-                              {k.status === "approved" ? "承認済" : "候補"}
-                            </span>
+                      {list.map((k) => {
+                        const st = ST[k.status] || ST.candidate, imp = IMP[k.importance], prev = k.supersedesId && byId[k.supersedesId];
+                        const editing = knowledgeRevise && knowledgeRevise.id === k.id;
+                        return (
+                        <div key={k.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm" style={k.status === "retired" || k.status === "rejected" ? { opacity: 0.65 } : undefined}>
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">{KIND[k.kind] || "ルール"}</span>
+                            {imp && <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded" style={{ background: imp.bg, color: imp.fg }}>{imp.label}</span>}
+                            {k.scopeLevel === "client" && <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-sky-50 text-sky-700">{k.clientName || "クライアント"}のみ</span>}
+                            {(k.version || 1) > 1 && <span className="text-[10.5px] text-stone-400">第{k.version}版</span>}
+                            <span className="text-[13px] font-bold text-stone-800 min-w-0 truncate">{k.title}</span>
+                            <span className="ml-auto text-[10.5px] font-bold px-2 py-0.5 rounded-full shrink-0" style={{ background: st.bg, color: st.fg }}>{st.label}</span>
                           </div>
-                          <div className="text-[12.5px] text-stone-600">{k.body}</div>
-                          {k.status !== "approved" && (
+                          <div className="text-[12.5px] text-stone-600 whitespace-pre-wrap">{k.body}</div>
+                          {prev && k.status === "candidate" && <div className="text-[11.5px] text-stone-400 mt-1">改訂案（現行の第{prev.version || 1}版：{prev.body}）</div>}
+                          {k.sourceText && k.sourceText !== k.body && (
+                            <details className="mt-1"><summary className="text-[11px] text-stone-400 cursor-pointer">原文を見る</summary><div className="text-[11.5px] text-stone-500 whitespace-pre-wrap mt-0.5">{k.sourceText}</div></details>
+                          )}
+                          {k.status === "candidate" && (
                             <a href={STUDIO_OS_KNOWLEDGE_URL} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline mt-1.5 inline-block" style={{ color: theme.main }}>Studio OSで承認する →</a>
                           )}
+                          {k.status === "approved" && !editing && (pendingRevisionOf.has(k.id)
+                            ? <div className="text-[11px] text-amber-600 mt-1.5">改訂案がStudio OSで承認待ちです</div>
+                            : <button onClick={() => setKnowledgeRevise({ id: k.id, body: k.body || "" })} className="text-[11px] font-bold mt-1.5 text-stone-500 hover:text-stone-700">改訂案を出す</button>)}
+                          {editing && (
+                            <div className="mt-2">
+                              <textarea value={knowledgeRevise.body} onChange={(e) => setKnowledgeRevise((r) => ({ ...r, body: e.target.value }))} rows={3}
+                                className="w-full text-[12.5px] border border-stone-300 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-500" />
+                              <div className="flex items-center gap-2 mt-1.5">
+                                <span className="text-[11px] text-stone-400 flex-1">Studio OSで承認されると、今の版は「廃止（旧版）」として残ります</span>
+                                <button onClick={() => setKnowledgeRevise(null)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-200 text-stone-600">やめる</button>
+                                <button onClick={reviseKnowledge} disabled={knowledgeBusyId === k.id || !knowledgeRevise.body.trim() || knowledgeRevise.body.trim() === (k.body || "").trim()}
+                                  className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-40" style={{ background: theme.accent }}>{knowledgeBusyId === k.id ? "送信中…" : "改訂案を出す"}</button>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      ))}
-                      {knowledgeBase.company.length === 0 && <p className="text-[12.5px] text-stone-400">まだありません</p>}
+                        );
+                      })}
+                      {list.length === 0 && <p className="text-[12.5px] text-stone-400">まだありません</p>}
                     </div>
                   </div>
+                    );
+                  })()}
                   <div>
                     <div className="text-[12px] font-bold text-stone-500 mb-2">クライアントナレッジ（{knowledgeBase.client.length}）</div>
                     <div className="space-y-2">
@@ -11764,6 +11840,7 @@ export default function App() {
                         <div key={k.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{k.category}</span>
+                            {k.clientName && <span className="text-[11.5px] font-bold text-stone-700">{k.clientName}</span>}
                             <span className="text-[10.5px] text-stone-400 ml-auto">サンプル{k.sampleCount ?? 0}件</span>
                           </div>
                           <div className="text-[12.5px] text-stone-600">{k.content}</div>
