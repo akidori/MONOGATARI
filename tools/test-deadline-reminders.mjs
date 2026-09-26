@@ -16,6 +16,8 @@ assert.equal(phaseOf("2026-10-01", "2026-10-01").key, "today");
 assert.equal(phaseOf("2026-09-29", "2026-10-01").days, -2);
 assert.equal(phaseOf("2026-10-05", "2026-10-01"), null);
 assert.equal(phaseOf("", "2026-10-01"), null);
+assert.equal(phaseOf("2026-09-28", "2026-10-01").key, "over"); // 3日目までは編集者へ
+assert.equal(phaseOf("2026-09-27", "2026-10-01").key, "stale"); // 4日目からはAKへ
 assert.equal(jstDate(Date.parse("2026-09-30T23:30:00Z")), "2026-10-01"); // UTC23:30 = JST翌8:30
 
 // 編集者の工程か
@@ -81,5 +83,39 @@ const r2 = await runDeadlineReminders(env, docs, { now, fetchImpl });
 assert.equal(r2.sent.length, 0); assert.equal(mails.length, 2); // 同じ日は送らない
 const r3 = await runDeadlineReminders({ ...env, STUDIO_AGENT_KEY: "" }, docs, { now, fetchImpl });
 assert.equal(r3.ok, false);
+
+// 超過4日以上：編集者には送らずAKに1回だけ／Studio OSの編集担当がいればその人だけ
+{
+  const dl = [{ id: "dl9", title: "E", mgProjectId: "p9", productionStatus: "active",
+    assignments: [{ role: "Editor", memberId: "mb_2" }, { role: "Director", memberId: "mb_1" }],
+    steps: [
+      { id: "t1", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-09-20" },
+      { id: "t2", stepName: "修正", defaultRole: "Editor", status: "pending", deadline: "2026-10-01" },
+    ] }];
+  const kc = { p9: { name: "二人編集", ownerEmail: "ak@x.com", members: ["ak@x.com", "a@x.com", "b@x.com"] } };
+  const pl = await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01", memberEmailById: { mb_2: "B@x.com" }, adminEmails: ["ak@x.com"] });
+  const stale = pl.find((r) => r.stepId === "t1"), cur = pl.find((r) => r.stepId === "t2");
+  assert.deepEqual(stale.to, ["ak@x.com"]); assert.equal(stale.forAdmin, true); assert.equal(stale.key, "p9:t1:stale");
+  assert.ok(composeEmail(stale, "https://app").body.includes("自動の催促は3日で止めました"));
+  assert.deepEqual(cur.to, ["b@x.com"]); // 担当の編集者だけ
+  const pl2 = await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01" });
+  assert.deepEqual(pl2.find((r) => r.stepId === "t2").to, ["a@x.com", "b@x.com"]); // 担当不明なら全編集者
+  assert.equal(pl2.find((r) => r.stepId === "t1"), undefined); // 管理者未設定なら超過4日以上は誰にも送らない
+  // 実行：stale は日をまたいでも2回目は送らない
+  const kv2 = new Map([["col:p9", JSON.stringify(kc.p9)]]);
+  const SN = { get: async (k, t) => (kv2.has(k) ? (t === "json" ? JSON.parse(kv2.get(k)) : kv2.get(k)) : null), put: async (k, v) => { kv2.set(k, v); } };
+  const sentMails = [];
+  const f2 = async (url, opt) => {
+    if (url.includes("/deliverables?")) return new Response(JSON.stringify({ success: true, data: dl, meta: { total: 1 } }));
+    if (url.includes("/members?")) return new Response(JSON.stringify({ success: true, data: [{ id: "mb_2", email: "b@x.com" }] }));
+    if (url.includes("/api/email/send")) { sentMails.push(JSON.parse(opt.body)); return new Response("{}"); }
+    throw new Error("unexpected " + url);
+  };
+  const e2 = { STUDIO_AGENT_KEY: "k", BOT_API_URL: "https://bot", BOT_API_KEY: "b", SNAPS: SN };
+  await runDeadlineReminders(e2, docs, { now: Date.parse("2026-09-30T23:00:00Z"), fetchImpl: f2, adminEmails: ["ak@x.com"] });
+  assert.deepEqual(sentMails.map((m) => m.to).sort(), ["ak@x.com", "b@x.com"]);
+  await runDeadlineReminders(e2, docs, { now: Date.parse("2026-10-01T23:00:00Z"), fetchImpl: f2, adminEmails: ["ak@x.com"] });
+  assert.equal(sentMails.filter((m) => m.to === "ak@x.com").length, 1); // 翌日もAKへは送らない
+}
 
 console.log("deadline reminder regression tests passed");

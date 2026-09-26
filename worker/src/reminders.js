@@ -1,6 +1,7 @@
 /* ===== 工程の締切リマインド＋マニュアル配信（2026-09-26 AK） =====
    Studio OS の工程（deliverable_steps）の締切を毎朝読み、ものがたりっちに登録された編集者
-   （共同編集メンバー）へ「前日・当日・超過（毎朝）」でメールとアプリ内通知を送る。
+   （共同編集メンバー）へ「前日・当日・超過（3日目まで）」でメールとアプリ内通知を送る。
+   超過が3日を過ぎたら編集者への催促は止め、AK（管理者）に1回だけ知らせる。
    催促には、その工程に合うマニュアル（knowledge/ と構成のルール）の要点を添えて、
    マニュアルを受け身でも読んでもらえるようにする。
    - 日程の正本は Studio OS（ここでは読むだけ。ものがたりっち側に日程を持たない）
@@ -18,13 +19,18 @@ const dayDiff = (from, to) => Math.round((Date.parse(to + "T00:00:00Z") - Date.p
 
 export const isEditorStep = (s) => (s.defaultRole ? s.defaultRole === "Editor" : EDITOR_NAME_RE.test(s.stepName || ""));
 
+/* 編集者への超過の催促は何日目まで送るか。これを過ぎたら編集者には送らず、AKに1回だけ知らせる
+   （Studio OSの締切は最終締切からの自動逆算が多く、完了登録漏れのまま毎朝催促が飛び続けるのを防ぐ） */
+export const OVERDUE_EDITOR_DAYS = 3;
+
 /* 締切までの日数から段階を決める。対象外は null */
 export function phaseOf(deadline, today) {
   if (!deadline || !/^\d{4}-\d{2}-\d{2}/.test(deadline)) return null;
   const d = dayDiff(today, deadline.slice(0, 10));
   if (d === 1) return { key: "eve", label: "明日が締切", days: 1 };
   if (d === 0) return { key: "today", label: "今日が締切", days: 0 };
-  if (d < 0) return { key: "over", label: `締切を${-d}日過ぎています`, days: d };
+  if (d < 0 && -d <= OVERDUE_EDITOR_DAYS) return { key: "over", label: `締切を${-d}日過ぎています`, days: d };
+  if (d < 0) return { key: "stale", label: `締切から${-d}日たっても完了になっていません`, days: d };
   return null;
 }
 
@@ -66,7 +72,8 @@ export function guidesFor(stepName, docs) {
 /* ---- 今日送るべきリマインドを組み立てる（副作用なし） ----
    deliverables: Studio OS の GET /deliverables?expand=detail の data
    loadCase(mgId) → { name, ownerEmail, members } | null（ものがたりっちの共同編集ドキュメント） */
-export async function planReminders({ deliverables, loadCase, docs, today }) {
+const EDITOR_ROLES = new Set(["Editor", "編集"]);
+export async function planReminders({ deliverables, loadCase, docs, today, memberEmailById = {}, adminEmails = [] }) {
   const out = [];
   for (const d of deliverables || []) {
     if (!d || !d.mgProjectId || d.archived || (d.productionStatus && d.productionStatus !== "active")) continue;
@@ -77,13 +84,20 @@ export async function planReminders({ deliverables, loadCase, docs, today }) {
     if (!kase) continue;
     const owner = (kase.ownerEmail || "").toLowerCase();
     const editors = Array.from(new Set((kase.members || []).map((m) => (m || "").toLowerCase()).filter((m) => m && m.includes("@") && m !== owner)));
-    if (!editors.length) continue;
+    if (!editors.length) continue; // ものがたりっちに編集者が登録されていない案件は送らない
+    // Studio OSで編集担当（assignments の Editor）が決まっていて、その人がこの案件の編集者なら、その人にだけ送る
+    const assigned = (d.assignments || []).filter((a) => a && !a.archived && EDITOR_ROLES.has(a.role))
+      .map((a) => (memberEmailById[a.memberId] || "").toLowerCase()).filter(Boolean);
+    const narrowed = editors.filter((e) => assigned.includes(e));
+    const to = narrowed.length ? narrowed : editors;
     for (const { s, ph } of due) {
-      out.push({
-        key: `${d.mgProjectId}:${s.id}:${ph.key}:${today}`,
-        caseId: d.mgProjectId, caseName: kase.name || d.title || "案件", stepId: s.id, stepName: s.stepName,
-        deadline: s.deadline.slice(0, 10), phase: ph, to: editors, guides: guidesFor(s.stepName, docs),
-      });
+      const base = { caseId: d.mgProjectId, caseName: kase.name || d.title || "案件", stepId: s.id, stepName: s.stepName, deadline: s.deadline.slice(0, 10), phase: ph };
+      if (ph.key === "stale") {
+        // 編集者にはもう送らない。AKに1回だけ（日付を含めないキー＝以後は送らない）
+        if (adminEmails.length) out.push({ ...base, key: `${d.mgProjectId}:${s.id}:stale`, to: adminEmails, editors: to, guides: [], forAdmin: true });
+        continue;
+      }
+      out.push({ ...base, key: `${d.mgProjectId}:${s.id}:${ph.key}:${today}`, to, guides: guidesFor(s.stepName, docs) });
     }
   }
   return out;
@@ -91,6 +105,12 @@ export async function planReminders({ deliverables, loadCase, docs, today }) {
 
 export function composeEmail(r, appOrigin) {
   const url = `${appOrigin}/?case=${encodeURIComponent(r.caseId)}`;
+  if (r.forAdmin) {
+    return {
+      subject: `【ものがたりっち】超過が続いている工程：${r.caseName}（${r.stepName}）`,
+      body: `「${r.caseName}」の${r.stepName}は、締切（${r.deadline}）から${-r.phase.days}日たってもStudio OSで完了になっていません。\n\n編集者（${(r.editors || []).join("、")}）への自動の催促は${OVERDUE_EDITOR_DAYS}日で止めました。完了の登録漏れか、締切の見直しが必要かを確認してください。\n\n案件を開く：${url}\n\nBird Flip / ものがたりっち！`,
+    };
+  }
   const head = r.phase.key === "over"
     ? `「${r.caseName}」の${r.stepName}は、締切（${r.deadline}）を${-r.phase.days}日過ぎています。状況を教えてください。`
     : `「${r.caseName}」の${r.stepName}は、${r.phase.key === "eve" ? "明日" : "今日"}（${r.deadline}）が締切です。`;
@@ -112,7 +132,7 @@ export function toNotification(r, now = Date.now()) {
 }
 
 /* ---- 実行（Worker の cron から呼ぶ） ---- */
-export async function runDeadlineReminders(env, docs, { dryRun = false, now = Date.now(), fetchImpl = fetch } = {}) {
+export async function runDeadlineReminders(env, docs, { dryRun = false, now = Date.now(), fetchImpl = fetch, adminEmails = [] } = {}) {
   if (!env.STUDIO_AGENT_KEY) return { ok: false, reason: "STUDIO_AGENT_KEY 未設定", sent: [] };
   const headers = { authorization: "Bearer " + env.STUDIO_AGENT_KEY };
   const deliverables = [];
@@ -125,8 +145,15 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
     if (!(j.data || []).length || deliverables.length >= total) break;
   }
   const loadCase = async (id) => { try { return await env.SNAPS.get("col:" + id, "json"); } catch (e) { return null; } };
+  // 編集担当の絞り込み用にStudio OSのメンバーのメールを引く（取れなければ絞り込まずに全編集者へ）
+  const memberEmailById = {};
+  try {
+    const rm = await fetchImpl(`${STUDIO_API}/members?limit=200`, { headers });
+    const jm = await rm.json().catch(() => null);
+    if (rm.ok && jm && jm.success !== false) for (const m of jm.data || []) if (m.email) memberEmailById[m.id] = m.email;
+  } catch (e) { /* 絞り込み無しで続行 */ }
   const today = jstDate(now);
-  const plan = await planReminders({ deliverables, loadCase, docs, today });
+  const plan = await planReminders({ deliverables, loadCase, docs, today, memberEmailById, adminEmails });
   const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
   const sent = [];
   for (const r of plan) {
@@ -150,7 +177,7 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
         await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
       }
     }
-    await env.SNAPS.put(dedupeKey, "1", { expirationTtl: 3 * 86400 });
+    await env.SNAPS.put(dedupeKey, "1", r.forAdmin ? { expirationTtl: 180 * 86400 } : { expirationTtl: 3 * 86400 });
     sent.push(r);
   }
   return { ok: true, today, planned: plan.length, sent };
