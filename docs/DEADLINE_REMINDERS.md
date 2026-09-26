@@ -30,7 +30,7 @@ Studio OS の業務・ナレッジを中継する `/api/today`・`/api/knowledge
 ## 必要な設定
 
 - 既存の Secret だけで動く：`STUDIO_AGENT_KEY`（Studio OS 読み取り）、`BOT_API_URL` / `BOT_API_KEY`（メール）
-- Worker のデプロイ：`cd worker && npx wrangler deploy -c wrangler.toml`（`-c` を付けないとリポジトリ直下の Pages 用設定を拾う）
+- Worker のデプロイ：main に反映されると GitHub Actions（`.github/workflows/deploy-worker.yml`）が自動デプロイする（要：リポジトリの Actions シークレット `CLOUDFLARE_API_TOKEN`。未設定ならスキップ）。手動なら `cd worker && npx wrangler deploy -c wrangler.toml`（`-c` を付けないとリポジトリ直下の Pages 用設定を拾う）
 
 ## 前提・制限
 

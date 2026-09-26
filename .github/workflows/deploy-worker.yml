@@ -1,0 +1,54 @@
+name: Deploy Worker (mg-share)
+# Worker（mg-share）はPagesと違い自動デプロイされないため、mainへの反映で自動デプロイする。
+# 必要なもの: リポジトリの Settings → Secrets and variables → Actions に CLOUDFLARE_API_TOKEN
+# （Cloudflareの「Edit Cloudflare Workers」テンプレートで作成）。未設定ならスキップする。
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker/**'
+      - 'knowledge/**'
+      - 'agent/PROMPT.md'
+      - 'tools/SCRIPT_GEN_PROMPT.md'
+      - 'tools/test-deadline-reminders.mjs'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: fa27b051015cf14d2a1af3acc35c4d0f
+    steps:
+      - name: Check token
+        id: token
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::warning::CLOUDFLARE_API_TOKEN が未設定のため Worker のデプロイをスキップしました（Settings → Secrets and variables → Actions で設定）"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.token.outputs.ok == 'true'
+      - uses: actions/setup-node@v4
+        if: steps.token.outputs.ok == 'true'
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        if: steps.token.outputs.ok == 'true'
+      - name: Test
+        if: steps.token.outputs.ok == 'true'
+        run: npm test
+      - name: Deploy
+        if: steps.token.outputs.ok == 'true'
+        working-directory: worker
+        # -c 必須：付けないとルートの wrangler.jsonc（Pages用）を拾う
+        run: npx wrangler deploy -c wrangler.toml
