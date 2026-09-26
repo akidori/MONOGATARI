@@ -92,7 +92,8 @@ export async function planReminders({ deliverables, loadCase, docs, today, membe
       .map((a) => (memberEmailById[a.memberId] || "").toLowerCase()).filter(Boolean)));
     const caseName = kase.name || d.title || "案件";
     // Studio OSの編集担当のメールが、ものがたりっちの案件メンバーにいない（＝その人には届かない）ことをAKに1回だけ知らせる
-    const missing = assigned.filter((e) => !editors.includes(e)).sort();
+    // オーナー（AK）自身が編集担当のときは「届かない」ではないので除く
+    const missing = assigned.filter((e) => !editors.includes(e) && e !== owner).sort();
     if (missing.length && adminEmails.length) {
       out.push({ caseId: d.mgProjectId, caseName, key: `${d.mgProjectId}:mismatch:${missing.join(",")}`, to: adminEmails, forAdmin: true, kind: "mismatch", missing });
     }

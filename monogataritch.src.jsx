@@ -1381,6 +1381,16 @@ function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80,
   // 親へは合成イベント({target:{value}})で渡す＝呼び出し側のe.target.value流儀を維持
   const [val, set, flush, ime] = useBufferedField(value, (nv) => onChange({ target: { value: nv } }));
   useEffect(() => { resize(ref.current); }, [val]);
+  // 幅が変わると折り返しが変わる（画面回転・サイドバー開閉・フォント読み込み）。高さを測り直さないと
+  // overflow:hidden で文字が切れる（2026-09-26 ロケ名を折り返し表示にしたため）。幅の変化だけで測り直す
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let w = el.clientWidth;
+    const ro = new ResizeObserver(() => { if (el.clientWidth !== w) { w = el.clientWidth; resize(el); } });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <textarea ref={ref} {...ime} value={val} placeholder={placeholder} className={className} title={title} readOnly={readOnly}
       style={{ overflow: "hidden", resize: "none", minHeight, ...(style || {}) }}
@@ -1722,7 +1732,8 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
       // 演出・ト書き（行まるごと（…）か ▶︎ 始まり）＝セリフと見分けがつくよう青灰色（2026-09-26）。回答の頭判定は消費しない
       if (/^\s*[（(][^）)]*[）)]\s*$/.test(l) || /^\s*▶/.test(l)) return "dir";
       // 「ホテル開発中の映像など」「過去写真など」＝句読点の無い短い行で、映像・写真・素材などで終わる行も演出
-      if (l.trim().length <= 30 && !/[、。！？!?「」]/.test(l) && /(映像|写真|素材|カット|インサート|外観|風景|資料|画面|Bロール|B-roll)(など|等)?\s*$/i.test(l)) return "dir";
+      // 「写真」「資料」「画面」「素材」はセリフの語尾にもなる（「これが当時の写真」）ので「など」付きの時だけ
+      if (l.trim().length <= 30 && !/[、。！？!?「」]/.test(l) && (/(映像|カット|インサート|外観|風景|Bロール|B-roll)(など|等)?\s*$/i.test(l) || /(写真|素材|資料|画面)(など|等)\s*$/.test(l))) return "dir";
       if (pendingA && l.trim()) { pendingA = false; return "a"; }
       return null;
     });
@@ -11546,7 +11557,9 @@ export default function App() {
             {myWork && myWork.cases && myWork.cases.length > 0 && (() => {
               const PACE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645", o: 0 }, "今日": { bg: "#FCE9D6", fg: "#C2410C", o: 1 }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309", o: 2 }, "締切未設定": { bg: "#F0F0F2", fg: "#57534E", o: 3 }, "余裕": { bg: "#E7F6EC", fg: "#15803D", o: 4 }, "担当工程なし": { bg: "#F0F0F2", fg: "#57534E", o: 5 }, "完了": { bg: "#E7F6EC", fg: "#15803D", o: 6 } };
               const md = (s) => (s ? s.slice(5).replace("-", "/") : "");
-              const list = [...myWork.cases].sort((a, b) => (PACE[a.pace] || PACE["余裕"]).o - (PACE[b.pace] || PACE["余裕"]).o || ((a.mine && a.mine.days) ?? 99) - ((b.mine && b.mine.days) ?? 99)).slice(0, 8);
+              // 完了した案件は「今やること」が無いので出さない（管理者は紐付いた全案件が返るため、完了が並んでいた）
+              const list = myWork.cases.filter((w) => w.pace !== "完了").sort((a, b) => (PACE[a.pace] || PACE["余裕"]).o - (PACE[b.pace] || PACE["余裕"]).o || ((a.mine && a.mine.days) ?? 99) - ((b.mine && b.mine.days) ?? 99)).slice(0, 8);
+              if (!list.length) return null;
               return (
               <div className="mb-7">
                 <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
