@@ -1490,14 +1490,40 @@ ${qList}
         if (!u) return json({ error: "unauthorized" }, 401);
         if (!env.STUDIO_AGENT_KEY) return json({ connected: false, company: [], client: [] });
         try {
-          const [rc, rk] = await Promise.all([
-            fetch("https://studio-os-5dm.pages.dev/api/v1/company-knowledge?limit=100", { headers: studioAgentHeaders() }),
+          const [rc, rk, rl] = await Promise.all([
+            fetch("https://studio-os-5dm.pages.dev/api/v1/company-knowledge?limit=200", { headers: studioAgentHeaders() }),
             fetch("https://studio-os-5dm.pages.dev/api/v1/client-knowledge?limit=100", { headers: studioAgentHeaders() }),
+            fetch("https://studio-os-5dm.pages.dev/api/v1/clients?limit=200", { headers: studioAgentHeaders() }),
           ]);
-          const [jc, jk] = await Promise.all([rc.json().catch(() => null), rk.json().catch(() => null)]);
+          const [jc, jk, jl] = await Promise.all([rc.json().catch(() => null), rk.json().catch(() => null), rl.json().catch(() => null)]);
           if (!rc.ok || !jc || jc.success === false) return json({ connected: false, company: [], client: [] });
-          return json({ connected: true, company: jc.data || [], client: (rk.ok && jk && jk.success !== false) ? (jk.data || []) : [] });
+          // クライアント名を付けて返す（Studio OSのナレッジはclientIdしか持たない。IDは画面に出さないため）
+          const names = {};
+          if (rl.ok && jl && jl.success !== false) for (const c of (jl.data || [])) names[c.id] = c.displayName || c.name;
+          const withName = (x) => (x && x.clientId ? { ...x, clientName: names[x.clientId] || null } : x);
+          return json({ connected: true, company: (jc.data || []).map(withName), client: ((rk.ok && jk && jk.success !== false) ? (jk.data || []) : []).map(withName) });
         } catch (e) { return json({ connected: false, company: [], client: [] }); }
+      }
+
+      // POST /api/knowledge/company/{id}/revise { body, title? } — 承認済みの会社ナレッジに改訂案（新しい版の候補）を出す。
+      // Studio OS側（migration 0099）は候補を作るだけで、承認（旧版の廃止を含む）は人がStudio OSで行う。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "company" && parts[3] && parts[4] === "revise" && !parts[5]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_AGENT_KEY) return json({ error: "Studio OS未接続" }, 503);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const text = (b.body || "").toString().trim();
+        if (!text) return json({ error: "改訂後の内容が空です" }, 400);
+        const payload = { body: text.slice(0, 4000) };
+        if (b.title) payload.title = b.title.toString().slice(0, 200);
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/company-knowledge/" + encodeURIComponent(parts[3]) + "/revise", {
+            method: "POST", headers: studioAgentHeaders(), body: JSON.stringify(payload),
+          });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || j.success === false) return json({ error: (j && j.error && j.error.message) || ("Studio OS " + r.status) }, r.status === 404 ? 404 : r.status === 422 ? 422 : 502);
+          return json(j.data);
+        } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
       }
 
       // ===== 編集者の入口が用意されているかを Studio OS が一括で確認する（2026-08-23）=====
