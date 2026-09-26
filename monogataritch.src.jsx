@@ -1346,6 +1346,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
     case "down": return (<svg {...c}><path d="M6 10l6 6 6-6" /></svg>);
     case "folder": return (<svg {...c}><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /></svg>);
     case "home": return (<svg {...c}><path d="M4 11.5 12 4l8 7.5" /><path d="M6 10v9a1 1 0 0 0 1 1h3v-5h4v5h3a1 1 0 0 0 1-1v-9" /></svg>);
+    case "bell": return (<svg {...c}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>);
     case "chart": return (<svg {...c}><path d="M4 20h16" /><path d="M7 16v-5" /><path d="M12 16V7" /><path d="M17 16v-8" /></svg>);
     case "star": return (<svg {...c} fill="currentColor" stroke="none"><path d="M12 2.5l2.95 6.32 6.97.68-5.26 4.73 1.56 6.87L12 17.6l-6.22 3.5 1.56-6.87L2.08 9.5l6.97-.68L12 2.5z" /></svg>);
     case "share": return (<svg {...c}><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 13.2l7.6 4.6M15.8 6.2L8.2 10.8" /></svg>);
@@ -3494,6 +3495,8 @@ export default function App() {
   const [caseEditorEmail, setCaseEditorEmail] = useState("");
   const [caseEditorBusy, setCaseEditorBusy] = useState(false);
   const [memberInvite, setMemberInvite] = useState({ email: "", ids: {} }); // メンバー画面の招待フォーム（メール＋付与する案件id）
+  const [notifs, setNotifs] = useState(null);          // アプリ内通知 {items, unread}（工程の締切リマインド等。Worker /api/notifications）
+  const [showNotifs, setShowNotifs] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
@@ -6680,6 +6683,30 @@ export default function App() {
     } catch (_) { setKnowledgeInbox(null); }
   }, [user]);
   React.useEffect(() => { loadKnowledgeInbox(); }, [loadKnowledgeInbox]);
+
+  // アプリ内通知（工程の締切リマインド＋その工程のマニュアル）。起動時・5分ごと・画面に戻った時に取得
+  const loadNotifs = React.useCallback(async () => {
+    if (!user || !MG_SESSION) { setNotifs(null); return; }
+    try {
+      const r = await fetch(SHARE_API + "/api/notifications", { headers: { Authorization: "Bearer " + MG_SESSION } });
+      if (!r.ok) return;
+      setNotifs(await r.json());
+    } catch (_) {}
+  }, [user]);
+  React.useEffect(() => {
+    loadNotifs();
+    const t = setInterval(loadNotifs, 5 * 60 * 1000);
+    const onVis = () => { if (document.visibilityState === "visible") loadNotifs(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [loadNotifs]);
+  const markNotifsRead = async (ids) => {
+    if (!MG_SESSION) return;
+    setNotifs((n) => n && ({ items: n.items.map((x) => (!ids || ids.includes(x.id) ? { ...x, read: true } : x)), unread: ids ? n.items.filter((x) => !x.read && !ids.includes(x.id)).length : 0 }));
+    try {
+      await fetch(SHARE_API + "/api/notifications/read", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION }, body: JSON.stringify(ids ? { ids } : { all: true }) });
+    } catch (_) {}
+  };
 
   // ナレッジ画面「すべて」タブ：その画面を開いた時だけ取得（会社・クライアントナレッジは件数が増えていくため）
   const loadKnowledgeBase = React.useCallback(async () => {
@@ -11090,6 +11117,49 @@ export default function App() {
         </div>
       )}
 
+      {/* ===== 通知パネル（2026-09-26）: 工程の締切リマインド＋その工程のマニュアル ===== */}
+      {showNotifs && (
+        <div className="fixed inset-0 z-[60]" onClick={() => setShowNotifs(false)}>
+          <div className="absolute right-3 top-[56px] w-[min(380px,calc(100vw-24px))] max-h-[75vh] overflow-y-auto bg-white rounded-2xl shadow-2xl border border-stone-200" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white px-4 py-3 border-b border-stone-100 flex items-center gap-2">
+              <span className="text-[14px] font-black text-stone-800">通知</span>
+              {!!(notifs && notifs.unread) && <button onClick={() => markNotifsRead(null)} className="ml-auto text-[11.5px] font-bold text-stone-500 hover:text-stone-700">すべて既読</button>}
+            </div>
+            {!notifs || !notifs.items.length ? (
+              <p className="text-[12.5px] text-stone-500 px-4 py-6 text-center">通知はありません。担当している工程の締切の前日・当日・超過時に、こことメールでお知らせします。</p>
+            ) : notifs.items.map((n) => {
+              const tone = n.phase === "over" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
+              const inIndex = index.some((x) => x.id === n.caseId);
+              return (
+                <div key={n.id} className="px-4 py-3 border-b border-stone-100 last:border-0" style={n.read ? { opacity: 0.6 } : undefined}>
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />}
+                    <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded" style={{ background: tone.bg, color: tone.fg }}>{n.title}</span>
+                    <span className="ml-auto text-[10.5px] text-stone-400 shrink-0">締切 {n.deadline}</span>
+                  </div>
+                  <div className="text-[13px] font-bold text-stone-800 truncate">{n.caseName}</div>
+                  {Array.isArray(n.guides) && n.guides.length > 0 && (
+                    <details className="mt-1">
+                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>この工程で押さえること</summary>
+                      {n.guides.map((g, gi) => (
+                        <div key={gi} className="mt-1.5">
+                          <div className="text-[11px] font-bold text-stone-500">{g.source}</div>
+                          <ul className="mt-0.5 space-y-0.5">{g.points.map((p, pi) => <li key={pi} className="text-[11.5px] text-stone-600 leading-snug">・{p}</li>)}</ul>
+                        </div>
+                      ))}
+                    </details>
+                  )}
+                  <div className="flex gap-2 mt-1.5">
+                    {inIndex && <button onClick={() => { markNotifsRead([n.id]); setShowNotifs(false); openCase(n.caseId); }} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: theme.accent }}>案件を開く</button>}
+                    {!n.read && <button onClick={() => markNotifsRead([n.id])} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600">既読にする</button>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* ===== ホーム画面（入口・チャンネル一覧。中身はここから開かないと出ない） ===== */}
       {view === "home" && (
         <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
@@ -11098,6 +11168,12 @@ export default function App() {
               <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
               <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
               <div className="flex-1" />
+              {user && (
+                <button onClick={() => setShowNotifs((v) => !v)} title="通知" className="relative h-8 w-8 rounded-lg grid place-items-center border border-white/20 hover:bg-white/10 mr-1.5">
+                  <Icon name="bell" className="w-4 h-4" />
+                  {!!(notifs && notifs.unread) && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold grid place-items-center">{notifs.unread}</span>}
+                </button>
+              )}
               <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
                 className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
                 {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}

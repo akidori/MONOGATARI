@@ -46,7 +46,8 @@ bucket_name = "mg-files"
 
 # 期限切れファイルの自動削除（毎日 UTC18:00 = JST3:00）
 [triggers]
-crons = ["0 18 * * *"]
+# 0 18 = 03:00 JST 掃除 ／ 0 23 = 08:00 JST 工程の締切リマインド（src/reminders.js）
+crons = ["0 18 * * *", "0 23 * * *"]
 
 # リアルタイム共同編集（共有リンクの編集モード）。SQLite-backed=無料プラン枠
 [[durable_objects.bindings]]
@@ -56,3 +57,9 @@ class_name = "LiveDoc"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["LiveDoc"]
+
+# 工程リマインドに添えるマニュアル（knowledge/*.md, tools/SCRIPT_GEN_PROMPT.md）を文字列として同梱する
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true

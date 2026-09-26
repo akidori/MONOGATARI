@@ -11,6 +11,12 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { handleMcp } from "./mcp.js";
+import { runDeadlineReminders } from "./reminders.js";
+// 工程リマインドに添えるマニュアル（正本は knowledge/ と tools/。wrangler.toml の Text ルールで同梱）
+import MANUAL_MD from "../../knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md";
+import REGULATION_MD from "../../knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md";
+import SCRIPT_GEN_MD from "../../tools/SCRIPT_GEN_PROMPT.md";
+const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIPT_GEN_MD };
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -1505,6 +1511,34 @@ ${qList}
         } catch (e) { return json({ connected: false, company: [], client: [] }); }
       }
 
+      // ===== アプリ内通知（2026-09-26）: 工程の締切リマインドなど。KV notif:<email> に最新50件 =====
+      // GET /api/notifications → { items, unread }
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "notifications" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const items = (await env.SNAPS.get("notif:" + lc(u.email), "json")) || [];
+        return json({ items, unread: items.filter((n) => !n.read).length });
+      }
+      // POST /api/notifications/read { ids?: [...], all?: true }
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "notifications" && parts[2] === "read" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const key = "notif:" + lc(u.email);
+        const ids = new Set(Array.isArray(b.ids) ? b.ids : []);
+        const items = ((await env.SNAPS.get(key, "json")) || []).map((n) => (b.all || ids.has(n.id) ? { ...n, read: true } : n));
+        await env.SNAPS.put(key, JSON.stringify(items));
+        return json({ items, unread: items.filter((n) => !n.read).length });
+      }
+      // POST /api/reminders/preview — 今朝送る（送った）リマインドの確認用。送信はしない。管理者のみ
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "reminders" && parts[2] === "preview" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (lc(u.email) !== lc(env.LEGACY_STREAM_OWNER_EMAIL)) return json({ error: "管理者のみ" }, 403);
+        const r = await runDeadlineReminders(env, REMINDER_DOCS, { dryRun: true });
+        return json(r);
+      }
+
       // POST /api/knowledge/company/{id}/revise { body, title? } — 承認済みの会社ナレッジに改訂案（新しい版の候補）を出す。
       // Studio OS側（migration 0099）は候補を作るだけで、承認（旧版の廃止を含む）は人がStudio OSで行う。
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "company" && parts[3] && parts[4] === "revise" && !parts[5]) {
@@ -2569,6 +2603,8 @@ load();
 
   // ===== 期限切れファイルの自動削除（cron） =====
   async scheduled(event, env, ctx) {
+    // 毎朝8:00 JST（23:00 UTC）は工程の締切リマインド。それ以外（03:00 JST）は従来の掃除
+    if (event.cron === "0 23 * * *") { ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS)); return; }
     ctx.waitUntil(cleanupExpired(env));
     ctx.waitUntil(purgeOldStreamVideos(env));
   },
