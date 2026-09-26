@@ -1643,6 +1643,33 @@ ${qList}
         return json(r);
       }
 
+      // POST /api/case-status { ids: [caseId...] } → { statuses: { caseId: { status, stepName } } }（管理者のみ）
+      // ものがたりっちの案件ステータスは初回推定のまま固まっていたため（2026-09-26）、Studio OS の実際の工程から求める。
+      // 進行・納品の正本は Studio OS（2026-08-21 AK）。紐付いていない案件は返さない＝画面側で中身から推定。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "case-status" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ statuses: {} });
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const want = new Set((Array.isArray(b.ids) ? b.ids : []).slice(0, 1000).map(String));
+        const statuses = {};
+        try {
+          for (let page = 1; page <= 10; page++) {
+            const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/deliverables?expand=detail&limit=200&page=" + page, { headers: studioAgentHeaders() });
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || j.success === false) break;
+            for (const d of (j.data || [])) {
+              if (!d || !d.mgProjectId || !want.has(d.mgProjectId)) continue;
+              statuses[d.mgProjectId] = caseStatusFromStudio(d);
+            }
+            const total = (j.meta && j.meta.total) || 0;
+            if (!(j.data || []).length || page * 200 >= total) break;
+          }
+        } catch (e) { /* 取れた分だけ返す */ }
+        return json({ statuses });
+      }
+
       // POST /api/knowledge/company/{id}/revise { body, title? } — 承認済みの会社ナレッジに改訂案（新しい版の候補）を出す。
       // Studio OS側（migration 0099）は候補を作るだけで、承認（旧版の廃止を含む）は人がStudio OSで行う。
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "company" && parts[3] && parts[4] === "revise" && !parts[5]) {
@@ -2789,6 +2816,24 @@ async function verifySession(token, secret) {
   if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
   return payload;
 }
+/* Studio OS の案件（deliverable）→ ものがたりっちのステータス（未着手/企画中/撮影前/編集中/確認中/完了）。
+   完了・Archive は「完了」、進行中は今の工程名から。保留などは null（画面側で中身から推定） */
+function caseStatusFromStudio(d) {
+  const ps = d.productionStatus || "";
+  if (ps === "completed" || ps === "archived") return { status: "完了", stepName: "" };
+  const steps = (d.steps || []).filter((s) => s && !s.archived).sort((a, b) => (a.stepOrder || 0) - (b.stepOrder || 0));
+  const cur = steps.find((s) => !["completed", "done", "skipped"].includes(s.status));
+  if (steps.length && !cur) return { status: "完了", stepName: "" };
+  if (ps && ps !== "active") return { status: null, stepName: cur ? cur.stepName : "" };
+  const n = (cur && cur.stepName) || "";
+  const status = /リサーチ|ヒアリング|構成|企画/.test(n) ? "企画中"
+    : /撮影/.test(n) ? "撮影前"
+    : /チェック|確認|納品|投稿/.test(n) ? "確認中"
+    : /編集|修正|素材整理|初稿|粗編/.test(n) ? "編集中"
+    : null;
+  return { status, stepName: n };
+}
+
 async function requireUser(request, env) {
   const m = (request.headers.get("Authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!m) return null;
