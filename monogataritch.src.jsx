@@ -1727,7 +1727,7 @@ const ScriptCell = React.memo(function ScriptCell({ value, onChange, placeholder
     else if (flag === "q") st.color = "#171A1F";
     else if (flag === "warn") st.color = "#B45309";
     else if (flag === "star") st.color = "#5F5138";
-    else if (flag === "shot" && shotChecks && shotChecks[(lineTextAt(li) || "").trim()]) { st.color = "#A3A9B1"; st.textDecoration = "line-through"; }
+    else if (flag === "shot" && shotChecks && shotChecks[(lineTextAt(li) || "").trim()]) { st.color = "#7B828C"; st.textDecoration = "line-through"; }
     if (!focused && r.bold) st.fontWeight = 800;
     else if (!focused && flag === "q") st.fontWeight = 600;
     else if (!focused && flag === "warn") st.fontWeight = 700;
@@ -1893,7 +1893,7 @@ const RichCell = React.memo(function RichCell({ value, onChange, placeholder, cl
         </div>
       )}
       <div aria-hidden className="px-3 py-2 text-stone-800" style={{ ...textStyle, minHeight }}>
-        {val ? nodes : <span className="text-stone-300">{placeholder}</span>}
+        {val ? nodes : <span className="text-stone-400">{placeholder}</span>}
         {"​"}
       </div>
       <textarea ref={taRef} {...ime} value={val}
@@ -2339,7 +2339,7 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
         )}
         <button onClick={enqueue} disabled={!videoKey || busy || running}
           title={!videoKey ? "先に動画確認で完成版をアップしてください" : running ? "既に生成中です" : "納品動画から縦型ショートを自動生成"}
-          className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white disabled:opacity-50" style={{ background: accent }}>
+          className="text-[12px] font-bold px-3 py-1.5 rounded-lg disabled:cursor-not-allowed" style={!videoKey ? { background: "#E7E5E4", color: "#57534E" } : { background: accent, color: "#fff", opacity: busy || running ? 0.7 : 1 }}>
           {busy || running ? "生成中…" : "ショート生成"}
         </button>
       </div>
@@ -7678,6 +7678,8 @@ export default function App() {
     if (!m) return null;
     return (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0));
   };
+  /* <input type="time"> は "HH:MM" しか受け付けず、取り込みで入る "8:50" のような1桁の時は空欄（--:--）に見えていた（2026-09-26）。表示用に0埋めする */
+  const timeInputValue = (t) => { const m = (t || "").trim().match(/^(\d{1,2}):(\d{2})/); return m ? m[1].padStart(2, "0") + ":" + m[2] : ""; };
   /* 一日の経過秒 → "H:MM"（実時計表示） */
   const fmtClock = (sec) => {
     if (sec == null) return "";
@@ -7777,8 +7779,8 @@ export default function App() {
       onChange={(e) => updateRow(r.id, { day: Number(e.target.value) })}
       onClick={(e) => e.stopPropagation()}
       title="このロケの撮影日。日を分けると構成台本・香盤表が1日目/2日目で区切られる（時刻の積み上げ・移動も日ごとにリセット）"
-      className={"shrink-0 self-center rounded-md text-[11px] font-bold px-1.5 py-1 appearance-none cursor-pointer focus:outline-none text-center " + (dark ? "bg-white/10 hover:bg-white/20" : "bg-stone-100 hover:bg-stone-200 text-stone-600")}
-      style={dark ? { color: mainText, fontFamily: mono, opacity: dayOf(r) > 1 || maxDay > 1 ? 1 : 0.55 } : { fontFamily: mono }}>
+      className={"shrink-0 self-center rounded-md text-[12px] font-bold px-1.5 py-1 appearance-none cursor-pointer focus:outline-none text-center " + (dark ? "bg-white/15 hover:bg-white/25" : "bg-stone-100 hover:bg-stone-200 text-stone-600")}
+      style={dark ? { color: mainText, fontFamily: mono, opacity: dayOf(r) > 1 || maxDay > 1 ? 1 : 0.85 } : { fontFamily: mono }}>
       {Array.from({ length: Math.min(9, Math.max(2, maxDay + 1)) }, (_, i) => i + 1).map((d) => (
         <option key={d} value={d} style={{ color: "#1A1A1A" }}>{d}日目</option>
       ))}
@@ -8578,7 +8580,7 @@ export default function App() {
               className="h-8 px-2 sm:px-3 rounded-lg flex items-center gap-1 sm:gap-1.5 text-[12px] font-bold border shadow-sm hover:brightness-110 disabled:opacity-50 whitespace-nowrap" style={{ color: "#FFFFFF", background: "#DC2645", borderColor: "#EF4763" }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" /></svg>
               {sharing ? "発行中…" : "共有"}
-              {!sharing && <span className={"text-[10.5px] px-1.5 py-0.5 rounded-full " + (shareAudit.status === "checking" ? "bg-white/10" : shareAudit.issues.some((issue) => !issue.soft) ? "bg-amber-400/25 text-amber-100" : "bg-emerald-400/25 text-emerald-100")}>
+              {!sharing && <span className={"text-[11px] font-bold px-1.5 py-0.5 rounded-full " + (shareAudit.status === "checking" ? "bg-white/20" : shareAudit.issues.some((issue) => !issue.soft) ? "bg-white text-amber-700" : "bg-white text-emerald-700")}>
                 {shareAudit.status === "checking" ? "確認中" : shareAudit.issues.some((issue) => !issue.soft) ? "要確認" + shareAudit.issues.filter((issue) => !issue.soft).length : "準備OK"}
               </span>}
               <span className="opacity-50 text-[10.5px] hidden sm:inline">▾</span>
@@ -8678,17 +8680,21 @@ export default function App() {
           </div>
         </div>
         {/* タブ：モバイルのみ横スクロールバー（詰め込まずフルラベルで読める。PCは左の縦レールへ移設） */}
-        <div className="sm:hidden overflow-x-auto" style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
-          <div className="flex gap-1 px-2 w-max">
+        {/* 右端がタブの途中で切れて続きがあると気づきにくかった（2026-09-26）→ 右端をぼかし、押したタブは見える位置まで寄せる */}
+        <div className="sm:hidden relative">
+        <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
+          <div className="flex gap-1 px-2 pr-8 w-max">
             {tabItems.map(([k, ic, label]) => (
-              <button key={k} onClick={() => setTab(k)}
-                className={"shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 rounded-t-lg text-[13.5px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-55")}
+              <button key={k} onClick={(e) => { setTab(k); try { e.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); } catch (_) {} }}
+                className={"shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 rounded-t-lg text-[13.5px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-75")}
                 style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
                 <Icon name={ic} className="w-4 h-4 shrink-0" />
                 <span>{label}</span>
               </button>
             ))}
           </div>
+        </div>
+        <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-8" style={{ background: "linear-gradient(to left, " + theme.main + ", transparent)" }} />
         </div>
         <div className="h-[5px] w-full" style={{ background: stripe }} />
 
@@ -8802,11 +8808,14 @@ export default function App() {
         {/* ===== 構成台本の指標（TOTAL尺・字数・字/秒・取り込み）：構成台本タブの中に内包 ===== */}
         {tab === "script" && (
           <div className={(stacked && project.format !== "talk" ? "max-w-[1400px]" : "max-w-[1500px]") + " mx-auto mb-4 rounded-lg border bg-white px-3 sm:px-4 py-2 flex items-center gap-3 flex-wrap text-[13px]"} style={{ borderColor: "rgba(17,24,39,0.06)" }}>
-            <div className="flex items-baseline gap-1.5" style={{ fontFamily: mono }}>
-              <span className="text-[10.5px] tracking-widest text-stone-500">TOTAL</span>
-              <span className="text-base sm:text-xl font-bold tabular-nums leading-none text-stone-800">{fmt(totalEst)}</span>
-              <span className="text-[11px] text-stone-500">{totalChars.toLocaleString()}字</span>
-              <span className="text-[11px] tabular-nums text-stone-500 ml-1 pl-1.5 border-l border-stone-200" title="各シーンの秒数の合計（シーン尺）">シーン {fmt(totalTarget)}</span>
+            {/* 同じ尺が「TOTAL」と「全体」で2回・英字ラベル・小さい灰色で意味が取りにくかった（2026-09-26）→ 1行に日本語ラベルで */}
+            <div className="flex items-baseline gap-x-3 gap-y-1 flex-wrap tabular-nums">
+              <span className="inline-flex items-baseline gap-1.5">
+                <span className="text-[12px] font-bold text-stone-600">尺</span>
+                <span className="text-base sm:text-xl font-bold leading-none text-stone-800" style={{ fontFamily: mono }}>{fmt(totalEst)}</span>
+                <span className="text-[12px] text-stone-600">（{totalChars.toLocaleString()}字）</span>
+              </span>
+              <span className="text-[12px] text-stone-600" title="各シーンに設定した秒数の合計">シーン合計 <b className="text-stone-800" style={{ fontFamily: mono }}>{fmt(totalTarget)}</b></span>
             </div>
             <label className="flex items-center gap-1 text-[12px] text-stone-600">
               <input type="number" min="3" max="8" step="0.5" value={project.rate}
@@ -8820,20 +8829,6 @@ export default function App() {
               className="ml-auto h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-stone-200 hover:bg-stone-50 text-stone-600">
               <Icon name="download" className="w-3.5 h-3.5" />取り込み
             </button>
-            {/* 全体の分数：シーン尺（設定した秒数の合計）と文字数換算（原稿の字数÷字/秒）を並べる */}
-            {project.format !== "talk" && Object.keys(typeStats).length > 0 && (() => {
-              const allChars = Object.values(typeStats).reduce((a, o) => a + o.charSec, 0);
-              const detail = TYPE_KEYS.filter((k) => typeStats[k]).map((k) => k + "：シーン尺 " + fmtDurJP(typeStats[k].target) + "／文字数換算 " + fmtDurJP(typeStats[k].charSec) + "（" + typeStats[k].n + "シーン）").join("\n");
-              return (
-                <div className="basis-full flex flex-wrap items-center gap-x-6 gap-y-1 pt-2 mt-0.5 border-t border-stone-100 text-[12px] tabular-nums" title={detail}>
-                  <span className="inline-flex items-baseline gap-2">
-                    <span className="text-[10px] font-bold text-stone-400">全体</span>
-                    <span className="text-stone-500">シーン尺 <b className="text-stone-800">{fmtDurJP(totalTarget)}</b></span>
-                    <span className="text-stone-500">文字数換算 <b className="text-stone-800">{fmtDurJP(allChars)}</b></span>
-                  </span>
-                </div>
-              );
-            })()}
           </div>
         )}
 
@@ -8925,7 +8920,7 @@ export default function App() {
                   </button>
                   <button onClick={() => publishChannel(curChannel, true)} disabled={chSharing}
                     title="先方がURLから全案件の企画・サムネ・構成台本を直接編集できる共有URLを発行（ログイン不要・リアルタイム反映）"
-                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold shadow disabled:opacity-50 border" style={{ borderColor: theme.accent, color: theme.accent }}>
+                    className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold shadow-sm disabled:opacity-50 border-2 bg-white" style={{ borderColor: theme.accent, color: theme.accent }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                     {chSharing ? "発行中…" : "編集つきで共有"}
                   </button>
@@ -9011,7 +9006,7 @@ export default function App() {
             <section className={cardCls + " mb-4"}>
               <div className="px-4 py-2.5 flex items-center justify-between border-b border-stone-100">
                 <span className="text-[13px] font-bold tracking-wide text-stone-600">競合チャンネル</span>
-                <span className="text-[11px] text-stone-500">URLを貼ると登録者数を自動取得</span>
+                <span className="text-[12px] text-stone-600">URLを貼ると登録者数を自動取得</span>
               </div>
               <div className="p-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
@@ -9053,8 +9048,9 @@ export default function App() {
                         </div>
                       </div>
                   ))}
+                  {/* 空の時に縦長タイルが半分の幅で大きな空白を作っていた（2026-09-26）→ 競合が0件の時は全幅の1段ボタン */}
                   <button onClick={addCompetitor}
-                    className="border border-dashed border-stone-300 rounded-xl aspect-[3/4] grid place-items-center text-stone-500 hover:bg-stone-50 hover:text-stone-600">
+                    className={"border border-dashed border-stone-300 rounded-xl grid place-items-center text-stone-600 hover:bg-stone-50 hover:text-stone-700 " + ((curChannelInfo.competitors || []).length ? "aspect-[3/4]" : "col-span-full h-14")}>
                     <span className="inline-flex flex-col items-center gap-1 text-[12px] font-bold"><Icon name="plus" className="w-5 h-5" />競合を追加</span>
                   </button>
                 </div>
@@ -9153,11 +9149,14 @@ export default function App() {
               <div className="grid sm:grid-cols-2 border-b border-stone-100">
                 <div className="flex sm:border-r border-stone-100">
                   <div className="w-20 shrink-0 px-3 py-2 text-[12px] font-bold text-stone-500">撮影日</div>
-                  <input className={metaInput} value={m.shootDate} placeholder="例：5月16日" onChange={(e) => setMeta("shootDate", e.target.value)} />
+                  {/* 1行inputだと「①6/15 or 18：…」のような長い撮影日が画面外で切れていた（2026-09-26）→ 折り返して全部見せる */}
+                  <AutoTextarea value={m.shootDate || ""} placeholder="例：5月16日" onChange={(e) => setMeta("shootDate", e.target.value)}
+                    minHeight={36} className="flex-1 min-w-0 block bg-transparent text-[13.5px] leading-relaxed px-2 py-1.5 focus:outline-none focus:bg-stone-50 placeholder:text-stone-400" />
                 </div>
                 <div className="flex border-t sm:border-t-0 border-stone-100">
                   <div className="w-20 shrink-0 px-3 py-2 text-[12px] font-bold text-stone-500">撮影場所</div>
-                  <input className={metaInput} value={m.place} onChange={(e) => setMeta("place", e.target.value)} />
+                  <AutoTextarea value={m.place || ""} onChange={(e) => setMeta("place", e.target.value)}
+                    minHeight={36} className="flex-1 min-w-0 block bg-transparent text-[13.5px] leading-relaxed px-2 py-1.5 focus:outline-none focus:bg-stone-50 placeholder:text-stone-400" />
                 </div>
               </div>
               {/* タイトル（企画・サムネタブと連携）＝ラベル下・改行可。中身の行数ぶん自動で伸びる（切れて見えないようにする） */}
@@ -9283,7 +9282,7 @@ export default function App() {
                               {dayPickerEl(r, true)}
                               <input
                                 type="time"
-                                value={r.time || ""}
+                                value={timeInputValue(r.time)}
                                 onChange={(e) => updateRow(r.id, { time: e.target.value })}
                                 onClick={(e) => e.stopPropagation()}
                                 title="到着・開始予定時刻（香盤表と連動／以降のシーンの実時刻の起点）"
@@ -9455,7 +9454,7 @@ export default function App() {
                 const startTimeEl = clocks[r.id] != null ? (
                   <span className="inline-flex items-baseline gap-1 whitespace-nowrap" title="撮影予定時刻（ロケ到着時刻＋尺の積み上げ）">
                     <span className="text-[13px] tabular-nums font-medium" style={{ fontFamily: mono, color: "#59616C" }}>{fmtClock(clocks[r.id]).padStart(5, "0")}</span>
-                    <span className="text-[11px]" style={{ color: "#969CA5" }}>開始</span>
+                    <span className="text-[11px]" style={{ color: "#6B7280" }}>開始</span>
                   </span>
                 ) : (
                   <input
@@ -9469,7 +9468,7 @@ export default function App() {
                     title="動画内の開始位置（TC）。手入力で固定、空欄で自動。撮影時刻はロケ見出しの時刻を入れると出ます" />
                 );
                 const startTimeWrap = clocks[r.id] != null ? startTimeEl : (
-                  <span className="inline-flex items-baseline gap-0.5 whitespace-nowrap">{startTimeEl}<span className="text-[11px]" style={{ color: "#969CA5" }}>TC</span></span>
+                  <span className="inline-flex items-baseline gap-0.5 whitespace-nowrap">{startTimeEl}<span className="text-[11px]" style={{ color: "#6B7280" }}>TC</span></span>
                 );
                 const pillEl = (
                   <span className="relative inline-flex items-center shrink-0 h-[22px] rounded-full border" style={{ background: hexA(t.dot, 0.09), borderColor: hexA(t.dot, 0.22) }}>
@@ -9501,7 +9500,7 @@ export default function App() {
                       </span>
                     )}
                     {!over && scriptDensity === "detail" && chars > 0 && (
-                      <span className="text-[11.5px] px-1 -ml-1 whitespace-nowrap" style={{ color: "#A3A9B1" }}>{chars}字</span>
+                      <span className="text-[11.5px] px-1 -ml-1 whitespace-nowrap" style={{ color: "#7B828C" }}>{chars}字</span>
                     )}
                   </div>
                 );
@@ -9517,7 +9516,7 @@ export default function App() {
                         ⚠{warnCount}
                       </span>
                     )}
-                    <span className="shrink-0 text-[12px] tabular-nums pt-[3px]" style={{ fontFamily: mono, color: "#A3A9B1" }}>#{pad2(sceneNos[r.id])}</span>
+                    <span className="shrink-0 text-[12px] tabular-nums pt-[3px]" style={{ fontFamily: mono, color: "#7B828C" }}>#{pad2(sceneNos[r.id])}</span>
                   </div>
                 );
                 const toggleShot = (line) => { const cur = r.insertChecks || {}; const nx = { ...cur }; if (nx[line]) delete nx[line]; else nx[line] = true; updateRow(r.id, { insertChecks: nx }); };
@@ -9564,7 +9563,7 @@ export default function App() {
                           <span className="text-[10.5px] inline-block transition-transform" style={{ transform: collapsed ? "rotate(-90deg)" : "none" }}>▾</span>
                           インサート（{insertItems.length}）
                         </button>
-                        {doneN > 0 && <span className="text-[11.5px] tabular-nums" style={{ color: doneN === insertItems.length ? "#2E9E5B" : "#8C939D" }}>{doneN}/{insertItems.length} 撮影済</span>}
+                        {doneN > 0 && <span className="text-[11.5px] tabular-nums" style={{ color: doneN === insertItems.length ? "#2E9E5B" : "#6B7280" }}>{doneN}/{insertItems.length} 撮影済</span>}
                         <div className="flex-1" />
                         <button onClick={() => setInsertEdit(r.id)} title="カットの一覧を編集（1行＝1カット）" className="w-6 h-6 grid place-items-center rounded text-stone-300 hover:text-stone-600 hover:bg-stone-100 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="pencil" className="w-3.5 h-3.5" /></button>
                       </div>
@@ -9578,7 +9577,7 @@ export default function App() {
                                   <input type="checkbox" checked={on}
                                     onChange={() => { const nx = { ...checks }; if (on) delete nx[l]; else nx[l] = true; updateRow(r.id, { insertChecks: nx }); }}
                                     className="mt-[3px] w-4 h-4 shrink-0 rounded accent-emerald-600 cursor-pointer" />
-                                  <span className="text-[14.5px] leading-[1.5]" style={{ color: on ? "#A3A9B1" : "#30353C", textDecoration: on ? "line-through" : "none" }}>{stripParen(l)}</span>
+                                  <span className="text-[14.5px] leading-[1.5]" style={{ color: on ? "#7B828C" : "#30353C", textDecoration: on ? "line-through" : "none" }}>{stripParen(l)}</span>
                                 </label>
                               </li>
                             );
@@ -9668,7 +9667,7 @@ export default function App() {
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
                           className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-4 rounded-xl border transition-[filter] duration-150 hover:brightness-[1.12] overflow-hidden scroll-mt-24"
-                          style={{ background: theme.main, borderColor: hexA(mainText, 0.1), "--ac": theme.accent, "--ln": hexA(mainText, 0.25), "--hv": hexA(mainText, 0.12), ...(r.done ? { opacity: 0.6 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
+                          style={{ background: theme.main, borderColor: hexA(mainText, 0.1), "--ac": theme.accent, "--ln": hexA(mainText, 0.25), "--hv": hexA(mainText, 0.12), ...(r.done ? { opacity: 0.8 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px] bg-[var(--ln)] group-focus-within/loc:bg-[var(--ac)] transition-colors duration-150" />
                           <span className="shrink-0 flex items-center gap-4 select-none cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
                             <span className="text-[24px] leading-none font-semibold tabular-nums" style={{ fontFamily: mono, color: mainText }}>{sp.num}</span>
@@ -9692,12 +9691,12 @@ export default function App() {
                             </span>
                             <div className={"flex items-center gap-1.5 transition-opacity " + (isNarrow || r.time || r.done || maxDay > 1 ? "" : "opacity-0 group-hover/loc:opacity-100 focus-within:opacity-100")}>
                             {dayPickerEl(r, true)}
-                            <input type="time" value={r.time || ""} onChange={(e) => updateRow(r.id, { time: e.target.value })} title="到着・開始予定時刻（香盤表と連動）"
+                            <input type="time" value={timeInputValue(r.time)} onChange={(e) => updateRow(r.id, { time: e.target.value })} title="到着・開始予定時刻（香盤表と連動）"
                               className="shrink-0 w-[66px] h-6 bg-transparent text-[12.5px] font-medium tabular-nums text-center rounded focus:outline-none focus:bg-[var(--hv)] appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
-                              style={{ fontFamily: mono, color: r.time ? mainText : hexA(mainText, 0.4) }} />
+                              style={{ fontFamily: mono, color: r.time ? mainText : hexA(mainText, 0.6) }} />
                             <button onClick={() => updateRow(r.id, { done: !r.done })} title={r.done ? "撮影完了を取り消す" : "このロケを撮影完了にする"}
-                              className={"shrink-0 h-6 text-[12px] font-semibold px-2 rounded-md inline-flex items-center gap-1 " + (r.done ? "bg-emerald-400/20 text-emerald-300" : "hover:bg-[var(--hv)]")} style={r.done ? {} : { color: hexA(mainText, 0.7) }}>
-                              <Icon name={r.done ? "checkCircle" : "check"} className="w-3 h-3" />{r.done ? "撮影済" : "完了"}
+                              className={"shrink-0 h-7 text-[12.5px] font-semibold px-2.5 rounded-md inline-flex items-center gap-1 border " + (r.done ? "bg-emerald-400/25 text-emerald-200 border-transparent" : "hover:bg-[var(--hv)]")} style={r.done ? {} : { color: hexA(mainText, 0.92), borderColor: hexA(mainText, 0.25) }}>
+                              <Icon name={r.done ? "checkCircle" : "check"} className="w-3.5 h-3.5" />{r.done ? "撮影済" : "完了"}
                             </button>
                           </div>
                           </div>
@@ -9710,7 +9709,7 @@ export default function App() {
                         </div>
                       )}
                       {r && r.done && g.scenes.length > 0 && visibleScenes.length === 0 && (
-                        <div className="text-[12px] px-3 py-2" style={{ color: "#8C939D" }}>撮影済み・{g.scenes.length}シーンを畳んでいます</div>
+                        <div className="text-[12.5px] px-3 py-2" style={{ color: "#5B626C" }}>撮影済み・{g.scenes.length}シーンを畳んでいます</div>
                       )}
                     </div>
                   );
@@ -9719,25 +9718,26 @@ export default function App() {
                 <div className="flex items-center gap-3 px-3 py-2.5 mt-4 text-[12.5px] tabular-nums border-t" style={{ borderColor: BORDER, color: "#454B54", fontFamily: mono }}>
                   <span className="font-semibold tracking-wider">合計</span>
                   <span className="ml-auto text-[14px] font-semibold" style={{ color: "#171A1F" }}>{fmt(totalEst)}</span>
-                  <span style={{ color: "#8C939D" }}>{totalChars.toLocaleString()}字</span>
+                  <span style={{ color: "#6B7280" }}>{totalChars.toLocaleString()}字</span>
                 </div>
               </section>
               );
             })()}
 
             {/* 追加：巨大CTAにしない。破線の1段 */}
-            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 h-11" style={{ border: "1px dashed rgba(17,24,39,0.12)" }}>
+            {/* 高さ固定（h-11）だとスマホで折り返したチップが枠からはみ出し、下の凡例と重なっていた（2026-09-26）。高さは中身に合わせる */}
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 min-h-11" style={{ border: "1px dashed rgba(17,24,39,0.18)" }}>
               <span className="text-[13px] inline-flex items-center gap-1" style={{ color: "#626A75" }}><Icon name="plus" className="w-3.5 h-3.5" />シーンを追加</span>
               {TYPE_KEYS.map((k) => (
                 <button key={k} onClick={() => setRows((rows) => [...rows, newScene(k)])}
-                  className="inline-flex items-center gap-1.5 h-[22px] px-2.5 rounded-full border text-[12px] font-semibold hover:opacity-80"
+                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full border text-[12.5px] font-semibold hover:opacity-80"
                   style={{ background: hexA(SECTION_TYPES[k].dot, 0.09), borderColor: hexA(SECTION_TYPES[k].dot, 0.22), color: SECTION_TYPES[k].dot }}>
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: SECTION_TYPES[k].dot }} />{k}
                 </button>
               ))}
-              <span className="w-px h-4 bg-stone-200 mx-1" />
+              <span className="hidden sm:inline-block w-px h-4 bg-stone-200 mx-1" />
               <button onClick={() => setRows((rows) => { const lastLoc = [...rows].reverse().find((x) => x.kind === "location"); const d = lastLoc ? dayOf(lastLoc) : 1; return [...rows, { ...newLocation(""), ...(d > 1 ? { day: d } : {}) }]; })}
-                className="text-[13px] inline-flex items-center gap-1 hover:text-stone-800" style={{ color: "#626A75" }}>
+                className="h-7 px-2 text-[13px] inline-flex items-center gap-1 hover:text-stone-800" style={{ color: "#4B5563" }}>
                 <Icon name="pin" className="w-3.5 h-3.5" />場所を追加
               </button>
               <div className="flex-1" />
@@ -9751,13 +9751,14 @@ export default function App() {
             {/* 凡例・操作ヒントはコンパクト時は隠す（撮影前に構成全体を見渡す用途なので、常時出す情報を減らす） */}
             {scriptDensity !== "compact" && (<>
             {/* 凡例：5種別の意味（初見でも分かる） */}
-            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1.5 px-1 text-[11.5px]" style={{ color: "#656C76" }}>
+            <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-1.5 px-1 text-[12px]" style={{ color: "#565D67" }}>
               {[["インサート", "情景・印象を伝えるカット"], ["VLOG", "日常の動き・行動の記録"], ["ブリッジ", "場や流れをつなぐ"], ["解説系", "インタビュー・説明・対話"], ["訴求", "メッセージ・結論・想い"]].map(([k, d]) => (
                 <span key={k} className="inline-flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full" style={{ background: SECTION_TYPES[k].dot }} />{k}：{d}</span>
               ))}
             </div>
 
-            <p className="mt-3 text-[11.5px] leading-relaxed" style={{ color: "#8C939D" }}>
+            {/* キーボード操作の説明はスマホでは使えないのでPCだけに出す */}
+            <p className="hidden sm:block mt-3 text-[11.5px] leading-relaxed" style={{ color: "#737A84" }}>
               原稿：太字 ⌘B／赤文字 ⌘⇧H／行頭に「・」で ◼︎ 質問行（Q.）／行頭に ⚠ で要確認行（先方確定待ちなど・共有前チェックに出ます）　／　行頭の⋮⋮をドラッグで並べ替え（場所は📍をドラッグで配下ごと移動）・右クリックでメニュー　／　尺（動画内の想定）はクリックで秒編集、目安の1.5倍を超えた時だけ実測を赤表示（{project.rate}字/秒換算）　／　インサートは1行＝1カット、チェックで撮影済み　／　場所の時刻＝香盤表と連動、各シーンは到着時刻＋尺の積み上げ　／　自動保存
             </p>
             </>)}
@@ -9774,8 +9775,15 @@ export default function App() {
                   <span className="w-1.5 h-4 rounded-full" style={{ background: theme.accent }} />
                   <h2 className="text-[13px] font-bold tracking-wider text-stone-600">香盤表 — 1日の流れ</h2>
                 </div>
-                <div className="text-[12px] text-stone-500" style={{ fontFamily: mono }}>
-                  {m.shootDate || "撮影日未設定"}{maxDay > 1 && <>・{maxDay}日撮影</>}・{locations.length}ロケーション・本編想定 {fmt(totalEst)}・シーン尺 {fmt(totalTarget)}{totalTravel > 0 && <>・交通費 ¥{totalTravel.toLocaleString()}</>}
+                {/* 長い1段落に数字が埋もれていた（2026-09-26）→ 撮影日は1行、数字はチップに分ける */}
+                <div className="basis-full flex flex-col gap-1.5">
+                  <div className="text-[12.5px] text-stone-700 leading-snug whitespace-pre-wrap break-words">{m.shootDate || "撮影日未設定"}{maxDay > 1 && <>（{maxDay}日撮影）</>}</div>
+                  <div className="flex flex-wrap gap-1.5 text-[12px] tabular-nums">
+                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">{locations.length}ロケ</span>
+                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">本編想定 <b>{fmt(totalEst)}</b></span>
+                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">シーン合計 <b>{fmt(totalTarget)}</b></span>
+                    {totalTravel > 0 && <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">交通費 <b>¥{totalTravel.toLocaleString()}</b></span>}
+                  </div>
                 </div>
               </div>
 
@@ -9794,7 +9802,7 @@ export default function App() {
                     <div className="flex flex-col items-center w-[46px] sm:w-[72px] shrink-0 pt-0.5">
                       <input
                         type="time"
-                        value={loc.time}
+                        value={timeInputValue(loc.time)}
                         onChange={(e) => updateRow(loc.id, { time: e.target.value })}
                         className="bg-transparent text-[12px] sm:text-[14px] font-bold tabular-nums w-full text-center px-0 py-0.5 rounded focus:outline-none focus:bg-stone-100 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-datetime-edit]:text-center [&::-webkit-datetime-edit-fields-wrapper]:justify-center"
                         style={{ fontFamily: mono, color: loc.done ? "#A8A29E" : theme.main, textDecoration: loc.done ? "line-through" : "none" }}
@@ -9819,7 +9827,7 @@ export default function App() {
                     {i > 0 && dayStarts[loc.id] == null && (() => {
                       const prev = locations[i - 1];
                       if (samePlace(prev, loc)) return (
-                        <div className="mb-2 px-2.5 py-1 flex items-center gap-1.5 text-[11px] text-stone-300" title="前のロケと同じ住所のため移動なし（交通費の対象外）">
+                        <div className="mb-2 px-2.5 py-1 flex items-center gap-1.5 text-[11.5px] text-stone-500" title="前のロケと同じ住所のため移動なし（交通費の対象外）">
                           <Icon name="pin" className="w-3 h-3" />同じ場所（移動なし）
                         </div>
                       );
@@ -9832,12 +9840,12 @@ export default function App() {
                         <div className="mb-2 px-2.5 py-1.5 rounded-lg border border-dashed border-stone-200 bg-stone-50 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-stone-600">
                           <span className="inline-flex items-center gap-1 font-bold text-stone-500 shrink-0"><Icon name="map" className="w-3.5 h-3.5" />移動</span>
                           <span className="min-w-0 truncate" title={from + " → " + to}>{from} <span className="text-stone-300">→</span> {to}</span>
-                          <span className="flex items-center gap-1.5 ml-auto">
+                          <span className="flex items-center gap-1.5 ml-auto basis-full sm:basis-auto">
                             <input
                               value={loc.travelBy || ""}
                               onChange={(e) => updateRow(loc.id, { travelBy: e.target.value })}
                               placeholder="電車・車など"
-                              className="w-[84px] bg-white border border-stone-200 rounded px-1.5 py-0.5 text-[12px] focus:outline-none placeholder:text-stone-400"
+                              className="flex-1 sm:flex-none min-w-0 sm:w-[96px] bg-white border border-stone-200 rounded px-1.5 py-1 text-[12px] focus:outline-none placeholder:text-stone-400"
                             />
                             <span className="inline-flex items-center gap-0.5">
                               <span className="text-stone-500">¥</span>
@@ -9981,12 +9989,13 @@ export default function App() {
                 return (
                   <section key={entry.id} data-toc={title || entry.name || ("企画 #" + (pi + 1))} className={"rounded-xl border bg-white overflow-hidden " + (isActive ? "border-stone-400 shadow-sm" : "border-stone-200")}>
                     {/* コンパクト1行ヘッダ：#N ＋ タイトル ＋ サムネ文言 ＋ 操作 */}
-                    <div className="flex items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-stone-50" onClick={() => openBoardCase(entry.id)}>
+                    {/* スマホではタイトルが操作ボタンに押しつぶされて6文字ほどしか見えなかった（2026-09-26）→ タイトルだけ2段目に全幅で出す */}
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-stone-50" onClick={() => openBoardCase(entry.id)}>
                       <div className="shrink-0 flex flex-col -my-1" onClick={(e) => e.stopPropagation()}>
                         <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, -1); }} disabled={pi === 0} title="この企画を上へ"
-                          className="w-4 h-4 grid place-items-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="up" className="w-3 h-3" /></button>
+                          className="w-6 h-5 grid place-items-center rounded text-stone-600 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="up" className="w-3.5 h-3.5" /></button>
                         <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, 1); }} disabled={pi === boardCases.length - 1} title="この企画を下へ"
-                          className="w-4 h-4 grid place-items-center rounded text-stone-500 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="down" className="w-3 h-3" /></button>
+                          className="w-6 h-5 grid place-items-center rounded text-stone-600 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="down" className="w-3.5 h-3.5" /></button>
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); openBoardCase(entry.id); }} title={expanded ? "畳む" : "参考サムネを開く"}
                         className="shrink-0 w-6 h-6 grid place-items-center rounded-lg text-[12px] font-bold tabular-nums"
@@ -9999,10 +10008,10 @@ export default function App() {
                       {data ? (
                         <input value={title} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "title", e.target.value)}
                           placeholder={"タイトル案（例：30歳で会社を捨てた男の末路）"}
-                          className="flex-1 min-w-0 text-[14px] font-bold bg-transparent border-0 border-b border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1" />
+                          className="order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 text-[14px] font-bold bg-transparent border-0 border-b border-stone-100 sm:border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1 placeholder:text-stone-400" />
                       ) : brokenIds[entry.id] ? (
-                        <span className="flex-1 min-w-0 truncate text-[14px] font-bold text-rose-500">{entry.name}（本体データ無し → 右のゴミ箱で削除）</span>
-                      ) : <span className="flex-1 min-w-0 truncate text-[14px] font-bold text-stone-500">{entry.name}（読み込み中…）</span>}
+                        <span className="order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 truncate text-[14px] font-bold text-rose-500">{entry.name}（本体データ無し → 右のゴミ箱で削除）</span>
+                      ) : <span className="order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 truncate text-[14px] font-bold text-stone-500">{entry.name}（読み込み中…）</span>}
                       {data && (
                         <div className="hidden md:flex flex-col gap-1 w-44 shrink-0 -my-0.5" onClick={(e) => e.stopPropagation()}>
                           <input value={thumbText} onChange={(e) => updateBoardTitle(entry.id, "thumbText", e.target.value)}
@@ -10013,6 +10022,7 @@ export default function App() {
                             className="w-full text-[13px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
                         </div>
                       )}
+                      <span className="flex-1 sm:hidden" />
                       <button onClick={(e) => { e.stopPropagation(); goScript(entry.id); }} title="この企画の構成台本を書く"
                         className="shrink-0 text-[12px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white" style={{ background: theme.main }}>
                         <Icon name="file" className="w-3.5 h-3.5" /><span className="hidden sm:inline">構成台本へ</span> →
@@ -10062,6 +10072,8 @@ export default function App() {
                           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                             {pl.refs.map((rf, ri) => {
                               const busy = refBusy[pl.id + ":" + ri];
+                              // 空き枠は最初の1つだけ出す（5枠すべて開くとスマホで1.5画面を占め、企画一覧が埋もれていた）
+                              if (!rf.vid && !busy && ri !== pl.refs.findIndex((x) => !x.vid)) return null;
                               const sc = rf.uploadDate ? scoreVideo(rf, Date.now()) : null;
                               return (
                                 <div key={ri} className="border border-stone-200 rounded-xl overflow-hidden flex flex-col bg-stone-50/50">
@@ -10075,7 +10087,7 @@ export default function App() {
                                       {sc && <span className="absolute top-1 left-1 text-[11px] font-bold text-white px-1.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
                                     </a>
                                   ) : (
-                                    <div className="aspect-video mx-2 my-1 rounded-lg border border-dashed border-stone-300 grid place-items-center text-[10.5px] text-stone-300">URLを貼る</div>
+                                    <div className="aspect-video mx-2 my-1 rounded-lg border border-dashed border-stone-300 grid place-items-center text-[12px] text-stone-500">URLを貼る</div>
                                   )}
                                   {rf.vid && (
                                     <div className="px-2 pt-1">
@@ -10095,7 +10107,7 @@ export default function App() {
                                       placeholder="YouTube URL"
                                       onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== rf.url) fetchPlanRef(pl.id, ri, v); else if (!v && rf.url) updatePlanRef(pl.id, ri, emptyRef()); }}
                                       onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
-                                      className="w-full text-[10.5px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
+                                      className="w-full text-[12px] border border-stone-300 rounded px-1.5 py-1.5 focus:outline-none focus:border-stone-500 placeholder:text-stone-400" />
                                   </div>
                                 </div>
                               );
@@ -10129,24 +10141,26 @@ export default function App() {
                 <Icon name="sparkle" className="w-4 h-4 shrink-0" style={{ color: theme.accent }} />
                 <span className="text-[14px] font-bold text-stone-800">文字起こしから構成を作る</span>
               </div>
-              <p className="text-[12.5px] text-stone-600 mb-2 leading-relaxed">
+              <p className="hidden sm:block text-[12.5px] text-stone-600 mb-2 leading-relaxed">
                 ①でロケ・時刻・シーンの型だけの骨組みを作ります（原稿はまだ空）。構成台本タブで並び順を確認・手直ししたら、②で同じ文字起こしからQ&A原稿を書き込みます。ここまでで8割、仕上げは構成台本タブで。
               </p>
               <BufferedTextarea value={project.transcriptRaw || ""} onChange={setTranscriptRaw}
                 placeholder="ここに文字起こし・取材メモを貼り付け…" rows={6}
                 className="w-full text-[13.5px] leading-relaxed border border-stone-200 rounded-xl p-3 focus:outline-none focus:border-stone-400 resize-y placeholder:text-stone-400" />
               <div className="mt-2.5 flex items-center gap-2 flex-wrap">
+                {/* 押せない時の opacity-40 は文字まで薄くなり読めなかった（2026-09-26）。無効時は灰色の地＋濃い灰の文字にし、理由を横に出す */}
                 <button onClick={runSkeletonGenerate} disabled={!((project.transcriptRaw || "").trim()) || transcriptBusy}
-                  className="text-[13px] font-bold px-3.5 py-2 rounded-lg shadow disabled:opacity-40 inline-flex items-center gap-1.5"
-                  style={{ background: theme.accent, color: accentText }}>
+                  className="text-[13px] font-bold px-3.5 py-2 rounded-lg shadow-sm inline-flex items-center gap-1.5 disabled:cursor-not-allowed"
+                  style={!((project.transcriptRaw || "").trim()) ? { background: "#E7E5E4", color: "#57534E" } : { background: theme.accent, color: accentText }}>
                   {transcriptStep === "skeleton" ? "生成中…" : "① 骨組みを作る"}
                 </button>
                 <button onClick={runFillQa} disabled={!((project.transcriptRaw || "").trim()) || !(project.rows || []).length || transcriptBusy}
                   title={!(project.rows || []).length ? "先に①で骨組みを作ってください" : ""}
-                  className="text-[13px] font-bold px-3.5 py-2 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 disabled:opacity-40 inline-flex items-center gap-1.5">
+                  className="text-[13px] font-bold px-3.5 py-2 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 disabled:bg-stone-100 disabled:text-stone-500 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
                   {transcriptStep === "fillqa" ? "書き込み中…" : "② Q&A原稿を書き込む"}
                 </button>
                 {transcriptBusy && <span className="text-[12px] text-stone-500">少し時間がかかります…</span>}
+                {!transcriptBusy && !((project.transcriptRaw || "").trim()) && <span className="text-[12px] text-stone-600">文字起こしを貼ると押せます</span>}
               </div>
             </div>
           <div className="space-y-5">
@@ -10213,21 +10227,22 @@ export default function App() {
                           <div key={it.id} id={"hearing-item-" + it.id}
                             className="group relative rounded-xl border border-[#E8E8E8] bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.07)] transition-shadow scroll-mt-24 overflow-hidden">
                             {/* 質問 */}
-                            <div className="flex items-start gap-3 px-4 sm:px-5 pt-4 pb-3 border-l-4" style={{ borderLeftColor: "#EF4055" }}>
-                              <span className="shrink-0 w-8 h-8 rounded-lg grid place-items-center text-[15px] font-black leading-none" style={{ background: "#FFF1F3", color: "#EF4055" }}>Q</span>
+                            {/* スマホで1問が150px近くあり1画面4問しか見えなかった（2026-09-26）→ 余白とアイコン列を詰め、回答は白い入力欄に見せる */}
+                            <div className="flex items-start gap-2.5 sm:gap-3 px-3.5 sm:px-5 pt-3 pb-1.5 border-l-4" style={{ borderLeftColor: "#EF4055" }}>
+                              <span className="shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg grid place-items-center text-[14px] sm:text-[15px] font-black leading-none" style={{ background: "#FFF1F3", color: "#EF4055" }}>Q</span>
                               <div className="flex-1 min-w-0 max-w-[760px] pt-1">
                                 <input value={it.label} onChange={(e) => setHearingItemLabel(sec.id, it.id, e.target.value)} placeholder="質問・項目名"
                                   className="w-full text-[15.5px] font-bold text-stone-800 bg-transparent focus:outline-none leading-snug placeholder:text-stone-400" />
                                 {it.hint && <div className="mt-1 text-[13px] text-stone-500 leading-relaxed whitespace-pre-wrap break-words">{it.hint}</div>}
                               </div>
-                              <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 mt-1 opacity-0 group-hover:opacity-100 text-stone-300 hover:text-rose-500 transition-opacity"><Icon name="close" className="w-4 h-4" /></button>
+                              <button onClick={() => removeHearingItem(sec.id, it.id)} title="項目削除" className="shrink-0 mt-1 sm:opacity-0 sm:group-hover:opacity-100 text-stone-400 hover:text-rose-500 transition-opacity"><Icon name="close" className="w-4 h-4" /></button>
                             </div>
                             {/* 回答 */}
-                            <div className="flex items-start gap-3 px-4 sm:px-5 pt-3 pb-4 border-l-4" style={{ borderLeftColor: "#4E9CFB", background: "#FAFCFF" }}>
-                              <span className="shrink-0 w-8 h-8 rounded-lg grid place-items-center" style={{ background: "#EEF6FF", color: "#4E9CFB" }}><Icon name="chat" className="w-4 h-4" /></span>
-                              <div className="flex-1 min-w-0 max-w-[760px] -ml-3 -mt-1.5">
+                            <div className="flex items-start gap-3 px-3.5 sm:px-5 pt-1 pb-3 border-l-4" style={{ borderLeftColor: "#4E9CFB" }}>
+                              <span className="hidden sm:grid shrink-0 w-8 h-8 rounded-lg place-items-center" style={{ background: "#EEF6FF", color: "#4E9CFB" }}><Icon name="chat" className="w-4 h-4" /></span>
+                              <div className="flex-1 min-w-0 max-w-[760px] rounded-lg border border-stone-200 bg-white">
                                 <RichCell value={it.value} onChange={(e) => setHearingItem(sec.id, it.id, e.target.value)}
-                                  placeholder="ここに聞き取った内容を入力…" minHeight={44} fontSize={14.5} lineHeight={1.7}
+                                  placeholder="ここに聞き取った内容を入力…" minHeight={40} fontSize={14.5} lineHeight={1.7}
                                   className="w-full bg-transparent" />
                               </div>
                             </div>
@@ -10291,7 +10306,7 @@ export default function App() {
         {/* ================= 素材管理タブ（assets単一正本） ================= */}
         {tab === "assets" && (
           <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1">
-            <p className="text-[13px] text-stone-600 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="text-stone-500">ファイルやフォルダはFinderから各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でアップできます（フォルダは中身をまとめてアップ）。名前は鉛筆アイコンで変更できます。</span></p>
+            <p className="text-[13px] text-stone-600 mb-3">撮影素材とテンプレ素材を<span className="font-bold">この案件に一元管理</span>。確認用動画は「動画確認」タブで管理します。<span className="hidden sm:inline text-stone-500">ファイルやフォルダはFinderから各枠に<span className="font-bold">ドラッグ＆ドロップ</span>でアップできます（フォルダは中身をまとめてアップ）。名前は鉛筆アイコンで変更できます。</span></p>
             {project.shareId && (
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <button onClick={() => importGuestUploads(false)} title="編集者が共有リンクから上げた素材をここに取り込む"
@@ -10326,12 +10341,12 @@ export default function App() {
                     style={dragCat === cat ? { borderColor: theme.accent, background: "#fafaf8" } : {}}>
                     <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
                       <h3 className="text-[14px] font-bold text-stone-800">{ASSET_CAT_ICON[cat]} {cat} <span className="text-stone-500 font-normal">{items.length}</span></h3>
-                      <label className={"text-[12px] font-bold px-2.5 py-1.5 rounded-lg shadow cursor-pointer " + (project.shareId ? "" : "opacity-40 pointer-events-none")} style={{ background: theme.main, color: "#fff" }}>
+                      <label title={project.shareId ? "ファイルを選んでアップ" : "共有リンクを一度発行するとアップできます"} className={"text-[12px] font-bold px-2.5 py-1.5 rounded-lg shadow-sm cursor-pointer " + (project.shareId ? "" : "pointer-events-none")} style={project.shareId ? { background: theme.main, color: "#fff" } : { background: "#E7E5E4", color: "#57534E" }}>
                         ＋ファイル
                         <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); uploadAssets(fs, cat); e.target.value = ""; }} />
                       </label>
                     </div>
-                    <p className="text-[11px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#a8a29e" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}</p>
+                    <p className="text-[12px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#78716C" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}{!project.shareId && dragCat !== cat && <span className="block text-stone-600 font-bold mt-0.5">共有リンクを一度発行するとアップできます</span>}</p>
                     {uping && (
                       <div className="mb-2 rounded-lg bg-stone-50 border border-stone-200 px-3 py-2">
                         <div className="text-[12px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬆ {assetUp.name}</span><span className="font-bold tabular-nums">{assetUp.pct}%</span></div>
@@ -10435,13 +10450,13 @@ export default function App() {
         {/* ================= 納品完了タブ ================= */}
         {tab === "deliver" && (() => {
           const dv = [
-            ["deliverTitle", "タイトル", "自動生成で埋まります（手直しOK）。構成台本のタイトルと連動", false, true, "title2"],
+            ["deliverTitle", "タイトル", "自動生成（手直しOK）", false, true, "title2"],
             ["deliverThumbImages", "サムネ画像", "", false, false, "image"],
-            ["deliverVideoUrl", "納品完了動画", "動画確認の最新版から自動で入ります（Drive/YouTubeのURLに差し替えOK）", false, true],
-            ["deliverShorts", "切り抜きショート", "たてがた君のショートから自動で入ります（1行に1本・差し替えOK）", true, true],
-            ["deliverDescription", "概要欄", "自動生成で埋まります（手直しOK）", true, true],
-            ["deliverHashtags", "ハッシュタグ", "自動生成で埋まります（手直しOK）", false, true],
-            ["deliverChapters", "目次", "自動生成で埋まります（手直しOK）", true, true],
+            ["deliverVideoUrl", "納品完了動画", "動画確認の最新版から自動（URL差替OK）", false, true],
+            ["deliverShorts", "切り抜きショート", "たてがた君から自動（1行に1本）", true, true],
+            ["deliverDescription", "概要欄", "自動生成（手直しOK）", true, true],
+            ["deliverHashtags", "ハッシュタグ", "自動生成（手直しOK）", false, true],
+            ["deliverChapters", "目次", "自動生成（手直しOK）", true, true],
           ];
           const isFilled = ([key, , , , , kind]) => kind === "image" ? deliverThumbs().length > 0 : !!(m[key] || "").trim();
           const doneCount = dv.filter(isFilled).length;
@@ -10543,11 +10558,11 @@ export default function App() {
                 };
                 return (
                   <div key={key} className={"flex items-start gap-2 px-3 sm:px-4 py-2.5 " + (i === 0 ? "" : "border-t border-stone-100")}>
-                    <span className={"shrink-0 w-5 h-5 mt-1 grid place-items-center rounded-md " + (filled ? "bg-emerald-500 text-white" : "bg-stone-100 text-stone-300")}>
+                    <span className={"shrink-0 w-5 h-5 mt-1 grid place-items-center rounded-md " + (filled ? "bg-emerald-500 text-white" : "bg-white border border-stone-300 text-transparent")}>
                       <Icon name="check" className="w-3 h-3" />
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12px] font-bold text-stone-500 mb-0.5 flex items-center gap-1.5">
+                      <div className="text-[12.5px] font-bold text-stone-600 mb-0.5 flex items-center gap-1.5">
                         {label}
                         {auto && <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500">自動</span>}
                         {lockable && (lockState === "locked" ? (
@@ -10567,7 +10582,7 @@ export default function App() {
                         ) : (
                           <button onClick={() => lockDeliverItem(key, label)} disabled={!filled}
                             title={filled ? "この内容で確定して固定する（誰も触れなくなります）" : "中身が入ると固定できます"}
-                            className="ml-auto shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full border border-stone-200 text-stone-500 hover:border-stone-400 hover:text-stone-700 disabled:opacity-40 disabled:hover:border-stone-200 disabled:hover:text-stone-500">
+                            className="ml-auto shrink-0 inline-flex items-center gap-1 text-[11.5px] font-bold px-2.5 py-1 rounded-full border border-stone-400 text-stone-700 hover:border-stone-600 disabled:border-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed">
                             <Icon name="lock" className="w-2.5 h-2.5" />固定
                           </button>
                         ))}
