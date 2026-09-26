@@ -300,5 +300,8 @@ export function workForCase(d, today, docs) {
     mine: mine ? { name: mine.stepName, deadline: (mine.deadline || "").slice(0, 10), days } : null,
     pace, action,
     guides: mine ? guidesFor(mine.stepName, docs) : [],
+    // 担当と納期の一覧（管理者）用：残りの工程（役割つき）と担当の割り当て。名前への変換は呼び出し側（メンバー一覧が要る）
+    steps: notDone.slice(0, 8).map((s) => ({ name: s.stepName, deadline: (s.deadline || "").slice(0, 10), role: s.defaultRole || (isEditorStep(s) ? "Editor" : null) })),
+    assignments: (d.assignments || []).filter((a) => a && !a.archived && a.role).map((a) => ({ role: a.role, memberId: a.memberId })),
   };
 }

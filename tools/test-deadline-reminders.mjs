@@ -172,6 +172,10 @@ const now = Date.parse("2026-09-30T23:00:00Z"); // JST 10/01 08:00
   // 自分の工程・遅れ
   w = workForCase({ ...base, steps: [st("a", "撮影", "Camera", "completed", "2026-09-20", 1), st("b", "本編集", "Editor", "pending", "2026-09-29", 2)] }, "2026-10-01", docs);
   assert.equal(w.pace, "遅れ"); assert.equal(w.action, "本編集を進める"); assert.equal(w.mine.days, -2);
+  // 担当と納期の一覧用：残りの工程（役割つき）と割り当て
+  w = workForCase({ ...base, assignments: [{ role: "Editor", memberId: "m1" }, { role: "Director", memberId: "m2", archived: true }], steps: [st("a", "撮影", "Camera", "completed", "2026-09-20", 1), st("b", "本編集", "Editor", "pending", "2026-10-05", 2), st("c", "納品", null, "pending", "2026-10-10", 3)] }, "2026-10-01", docs);
+  assert.deepEqual(w.steps, [{ name: "本編集", deadline: "2026-10-05", role: "Editor" }, { name: "納品", deadline: "2026-10-10", role: "Editor" }]);
+  assert.deepEqual(w.assignments, [{ role: "Editor", memberId: "m1" }]);
   // 今日・もうすぐ・締切未設定・完了
   assert.equal(workForCase({ ...base, steps: [st("b", "本編集", "Editor", "pending", "2026-10-01", 1)] }, "2026-10-01", docs).pace, "今日");
   assert.equal(workForCase({ ...base, steps: [st("b", "本編集", "Editor", "pending", "2026-10-03", 1)] }, "2026-10-01", docs).pace, "もうすぐ");

@@ -1671,6 +1671,21 @@ ${qList}
             if (!(j.data || []).length || page * 200 >= total) break;
           }
         } catch (e) { return json({ connected: false, cases: [] }); }
+        // 担当と納期の一覧（2026-09-26 AK「誰がなんの担当で納期はどうなってるか」）：管理者には担当者の名前を付ける。
+        // 編集者には他の人の割り当ては返さない
+        const staff = isStaff(u, env);
+        let memberById = {};
+        if (staff) {
+          try {
+            const rm = await fetch("https://studio-os-5dm.pages.dev/api/v1/members?limit=200", { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+            const jm = await rm.json().catch(() => null);
+            if (rm.ok && jm && jm.success !== false) for (const m of jm.data || []) if (m && m.id) memberById[m.id] = { name: m.name || m.displayName || m.fullName || m.email || "", email: lc(m.email || "") };
+          } catch (_) { /* 名前が無くても役割だけ返す */ }
+        }
+        for (const c of cases) {
+          c.team = staff ? c.assignments.map((a) => ({ role: a.role, name: (memberById[a.memberId] || {}).name || "", email: (memberById[a.memberId] || {}).email || "" })).filter((t) => t.name || t.email) : [];
+          delete c.assignments;
+        }
         // 「このクライアントで気をつけること（蓄積メモ）」はオーナー（AK）のチャンネル設定にしか無く、共同編集の編集者には
         // 届いていなかった。共同編集ドキュメントのオーナーのチャンネル設定から、その案件のチャンネル分だけ添える
         const chCache = {};
