@@ -5307,7 +5307,7 @@ export default function App() {
      レギュレーション一覧のクライアント／チャンネル別グルーピング表示（caseData経由でmanuals件数
      を出す）が全案件のboardCacheを必要とするため。 */
   useEffect(() => {
-    if (!loaded || (view !== "home" && view !== "analytics" && tab !== "regulations")) return;
+    if (!loaded || (view !== "home" && view !== "analytics" && view !== "team" && tab !== "regulations")) return;
     let cancelled = false;
     (async () => {
       for (const x of index) {
@@ -5570,8 +5570,10 @@ export default function App() {
   /* 編集者のダッシュボード（2026-09-26 AK「納期と注意事項を出せば、今何をすべきか・早いのか遅れてるのか分かる」）。
      工程と締切はStudio OS（Worker /api/my-work）、注意事項（NG・規定／クライアントの傾向メモ／未完了の修正指摘）は案件の中身から */
   const [myWork, setMyWork] = useState(null); // { cases: [...] } | null
+  const [teamMode, setTeamMode] = useState("case"); // 担当と納期：案件ごと / 人ごと
+  const [teamShowDone, setTeamShowDone] = useState(false);
   useEffect(() => {
-    if (!user || !MG_SESSION || view !== "home" || !index.length) return;
+    if (!user || !MG_SESSION || (view !== "home" && view !== "team") || !index.length) return;
     let cancelled = false;
     (async () => {
       try {
@@ -5593,7 +5595,9 @@ export default function App() {
     if (open.length) { const high = open.filter((c) => c.priority === "高").length; out.push({ label: "修正指摘", items: ["未完了 " + open.length + "件" + (high ? "（うち優先度「高」" + high + "件）" : "")] }); }
     return out;
   };
-  const daysLeft = (d) => { if (!d) return null; const t = new Date(d + "T23:59:59").getTime(); if (isNaN(t)) return null; return Math.ceil((t - Date.now()) / 86400000); };
+  // 暦日の差（今日=0・明日=1・昨日=-1）。以前は「締切日の23:59までの残り時間」を切り上げていたため、
+  // 2日前の締切が「1日遅れ」、12日後が「あと13日」と1日ずれていた（2026-09-26）
+  const daysLeft = (d) => { if (!d) return null; const t = new Date(String(d).slice(0, 10) + "T00:00:00").getTime(); if (isNaN(t)) return null; const n = new Date(); return Math.round((t - new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime()) / 86400000); };
   /* ホームの作業セクション（今日やること/確認待ち/期限近い/最近触った）を算出 */
   const homeSections = useMemo(() => {
     const rows = index.map((x) => { const d = caseData(x.id); return { id: x.id, name: (d && d.name) || x.name, channel: x.channel || DEFAULT_CHANNEL, collab: x.collab, status: liveStatus(x.id, d), deadline: (d && d.deadline) || "", nextAction: (d && d.nextAction) || "", updatedAt: (d && d.updatedAt) || x.createdAt || 0, dl: daysLeft(d && d.deadline) }; });
@@ -5605,7 +5609,7 @@ export default function App() {
   }, [index, boardCache, project, recentIds, activeId, studioStatus]);
 
   useEffect(() => {
-    if (!isStaff || !MG_SESSION || !index.length || (view !== "home" && view !== "analytics")) return;
+    if (!isStaff || !MG_SESSION || !index.length || (view !== "home" && view !== "analytics" && view !== "team")) return;
     let cancelled = false;
     (async () => {
       try {
@@ -11424,6 +11428,11 @@ export default function App() {
               style={{ color: "#57534E" }}>
               <Icon name="chart" className="w-4 h-4 shrink-0" />アナリティクス
             </button>
+            <button onClick={() => setView("team")}
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
+              style={{ color: "#57534E" }}>
+              <Icon name="clock" className="w-4 h-4 shrink-0" />担当と納期
+            </button>
             <button onClick={() => setView("members")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={{ color: "#57534E" }}>
@@ -11518,6 +11527,9 @@ export default function App() {
             <div className="lg:hidden flex gap-2 -mt-3 mb-5">
               <button onClick={() => setView("analytics")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="chart" className="w-3.5 h-3.5" />アナリティクス
+              </button>
+              <button onClick={() => setView("team")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
+                <Icon name="clock" className="w-3.5 h-3.5" />担当と納期
               </button>
               <button onClick={() => setView("members")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="user" className="w-3.5 h-3.5" />メンバー
@@ -11868,6 +11880,185 @@ export default function App() {
         );
       })()}
 
+      {/* ===== 担当と納期（2026-09-26 AK「誰がなんの担当してて納期はどうなってるか見れるページ」）=====
+          工程・締切・担当は Studio OS（Worker /api/my-work。担当者の名前は管理者だけ）、編集者はものがたりっちの共同編集メンバー、
+          納期は Studio OS の最終締切（無ければ案件の締切欄）。Studio OS とつながっていない時は、ものがたりっち側の情報だけで出す */}
+      {view === "team" && (() => {
+        const lcm = (e) => (e || "").toString().trim().toLowerCase();
+        const md = (x) => (x ? x.slice(5).replace("-", "/") : "");
+        const ROLE = { Editor: "編集", 編集: "編集", Director: "ディレクター", Producer: "プロデューサー", Camera: "撮影", Cameraman: "撮影", Writer: "構成", PM: "進行", Designer: "デザイン", Owner: "オーナー" };
+        const roleLabel = (r) => ROLE[r] || r || "担当";
+        const PACE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645", o: 0 }, "今日": { bg: "#FCE9D6", fg: "#C2410C", o: 1 }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309", o: 2 }, "余裕": { bg: "#E7F6EC", fg: "#15803D", o: 3 }, "締切未設定": { bg: "#F0F0F2", fg: "#57534E", o: 4 }, "完了": { bg: "#E7F6EC", fg: "#15803D", o: 5 } };
+        const connected = !!(myWork && Array.isArray(myWork.cases));
+        const wById = {};
+        for (const w of (connected ? myWork.cases : [])) wById[w.caseId] = w;
+        const short = (em) => (em || "").split("@")[0];
+        const rows = index.map((x) => {
+          const d = caseData(x.id);
+          const w = wById[x.id];
+          const owner = lcm(x.ownerEmail);
+          const editors = Array.from(new Set((x.members || []).map(lcm).filter((m) => m && m !== owner)));
+          const status = liveStatus(x.id, d);
+          const team = (w && w.team) || [];
+          const nameByEmail = {};
+          for (const t of team) if (t.email) nameByEmail[t.email] = t.name;
+          const finalDeadline = (w && w.finalDeadline) || (d && d.deadline) || "";
+          const cur = w && w.current;
+          const steps = (w && w.steps) || [];
+          const curRole = steps[0] && steps[0].role;
+          let curPeople = curRole ? team.filter((t) => t.role === curRole).map((t) => t.name || short(t.email)) : [];
+          if (!curPeople.length && cur && cur.isEditor) curPeople = editors.map((e) => nameByEmail[e] || short(e));
+          const nextDl = (cur && cur.deadline) || finalDeadline;
+          const dl = daysLeft(nextDl);
+          const pace = status === "完了" || (w && !cur) ? "完了" : dl == null ? "締切未設定" : dl < 0 ? "遅れ" : dl === 0 ? "今日" : dl <= 2 ? "もうすぐ" : "余裕";
+          // 人ごとの一覧用：この案件に関わる人（Studio OSの割り当て＋ものがたりっちの編集者）
+          const people = {};
+          for (const t of team) { const k = t.email || t.name; const p = people[k] || (people[k] = { key: k, name: t.name || short(t.email), email: t.email, roles: [] }); if (!p.roles.includes(roleLabel(t.role))) p.roles.push(roleLabel(t.role)); }
+          for (const e of editors) { const p = people[e] || (people[e] = { key: e, name: nameByEmail[e] || short(e), email: e, roles: [] }); if (!p.roles.includes("編集")) p.roles.push("編集"); }
+          return { id: x.id, name: (d && d.name) || x.name, channel: x.channel || DEFAULT_CHANNEL, status, cur, curPeople, steps, finalDeadline, nextDl, dl, pace, team, editors, nameByEmail, people: Object.values(people), linked: !!w };
+        });
+        const shown = rows.filter((r) => teamShowDone || r.pace !== "完了")
+          .sort((a, b) => PACE[a.pace].o - PACE[b.pace].o || (a.dl ?? 999) - (b.dl ?? 999));
+        const count = (k) => rows.filter((r) => r.pace === k).length;
+        const noOwner = rows.filter((r) => r.pace !== "完了" && !r.people.length).length;
+        const daysText = (r) => r.dl == null ? "" : r.dl < 0 ? -r.dl + "日遅れ" : r.dl === 0 ? "今日まで" : "あと" + r.dl + "日";
+        const PaceChip = ({ r }) => { const c = PACE[r.pace]; return <span className="shrink-0 text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: c.bg, color: c.fg }}>{r.pace}{r.pace !== "完了" && r.pace !== "締切未設定" && r.pace !== "今日" ? "・" + daysText(r) : ""}</span>; };
+        // 人ごと
+        const persons = {};
+        for (const r of shown) for (const p of r.people) {
+          const q = persons[p.key] || (persons[p.key] = { key: p.key, name: p.name, email: p.email, items: [], late: 0 });
+          q.items.push({ r, roles: p.roles });
+          if (r.pace === "遅れ") q.late++;
+        }
+        const personList = Object.values(persons).sort((a, b) => b.late - a.late || b.items.length - a.items.length);
+        const unassigned = shown.filter((r) => !r.people.length);
+        const Tile = ({ label, value, color, onClick }) => (
+          <div className="bg-white border border-stone-200 rounded-xl px-3.5 py-2.5 shadow-sm">
+            <div className="text-[11.5px] font-bold text-stone-500">{label}</div>
+            <div className="text-[24px] font-black leading-tight tabular-nums" style={{ color: color || "#292524" }}>{value}</div>
+          </div>
+        );
+        const CaseLine = ({ r, roles }) => (
+          <button onClick={() => openCase(r.id)} className="w-full text-left px-3 py-2 border-t border-stone-100 first:border-t-0 hover:bg-stone-50">
+            <div className="flex items-center gap-2">
+              <PaceChip r={r} />
+              <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-stone-800">{r.name}</span>
+              {roles && <span className="shrink-0 text-[11px] font-bold text-stone-500">{roles.join("・")}</span>}
+            </div>
+            <div className="mt-0.5 text-[12px] text-stone-600 flex flex-wrap gap-x-3 tabular-nums">
+              {r.cur ? <span>今：<b className="text-stone-800">{r.cur.name}</b>{r.cur.deadline ? "（" + md(r.cur.deadline) + "まで）" : "（締切未設定）"}</span> : <span>{r.status}</span>}
+              <span>納期 <b className="text-stone-800">{r.finalDeadline ? md(r.finalDeadline) : "未設定"}</b></span>
+            </div>
+          </button>
+        );
+        return (
+        <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+          <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
+              <button onClick={() => setView("home")} className="flex items-center gap-2">
+                <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+                <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
+                {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
+                <span className="max-w-[120px] truncate">{user ? user.name : "ログイン"}</span>
+              </button>
+            </div>
+          </header>
+          <main className="max-w-[980px] mx-auto px-4 sm:px-5 py-7">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2 whitespace-nowrap"><Icon name="clock" className="w-5 h-5" style={{ color: theme.main }} />担当と納期</h1>
+              <button onClick={() => setView("analytics")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700 whitespace-nowrap">アナリティクス</button>
+              <button onClick={() => setView("home")} className="text-[12px] font-bold text-stone-500 hover:text-stone-700 whitespace-nowrap">← ホームへ</button>
+            </div>
+            <p className="text-[12px] text-stone-500 mb-4">
+              {connected ? "工程・締切・担当はStudio OS、編集者はものがたりっちの招待から。締切が近い順に並べています。" : "Studio OSとつながっていないため、ものがたりっちの編集者と案件の締切だけで表示しています。"}
+            </p>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+              <Tile label="遅れ" value={count("遅れ")} color={count("遅れ") ? "#DC2645" : undefined} />
+              <Tile label="今日〜2日以内" value={count("今日") + count("もうすぐ")} color={count("今日") + count("もうすぐ") ? "#B45309" : undefined} />
+              <Tile label="締切が未設定" value={count("締切未設定")} />
+              <Tile label="担当が未設定" value={noOwner} color={noOwner ? "#DC2645" : undefined} />
+            </div>
+
+            <div className="flex items-center gap-2 mb-3">
+              <div className="inline-flex p-0.5 rounded-lg bg-white border border-stone-200">
+                {[["case", "案件ごと"], ["person", "人ごと"]].map(([k, l]) => (
+                  <button key={k} onClick={() => setTeamMode(k)} className="px-3 h-8 rounded-md text-[12.5px] font-bold"
+                    style={teamMode === k ? { background: theme.main, color: mainText } : { color: "#57534E" }}>{l}</button>
+                ))}
+              </div>
+              <label className="ml-auto inline-flex items-center gap-1.5 text-[12px] font-bold text-stone-600 select-none">
+                <input type="checkbox" checked={teamShowDone} onChange={(e) => setTeamShowDone(e.target.checked)} />完了も表示
+              </label>
+            </div>
+
+            {shown.length === 0 ? (
+              <div className="bg-white border border-stone-200 rounded-xl px-4 py-6 text-center text-[13px] text-stone-500 shadow-sm">表示する案件はありません。</div>
+            ) : teamMode === "case" ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                {shown.map((r) => (
+                  <div key={r.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm" style={r.pace === "遅れ" ? { borderColor: "#F5B5C0" } : undefined}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <PaceChip r={r} />
+                      <button onClick={() => openCase(r.id)} className="min-w-0 flex-1 truncate text-[14px] font-bold text-stone-800 hover:underline text-left">{r.name}</button>
+                      <StatusBadge s={r.status} />
+                    </div>
+                    <div className="text-[11.5px] text-stone-500 mb-1.5 truncate">{r.channel}</div>
+                    <div className="text-[13px] text-stone-800 leading-snug">
+                      {r.cur
+                        ? <>今：<b>{r.cur.name}</b>{r.curPeople.length ? <span className="text-stone-600">（{r.curPeople.join("・")}）</span> : null} <span className="tabular-nums text-stone-600">{r.cur.deadline ? md(r.cur.deadline) + "まで" : "締切未設定"}</span></>
+                        : <span className="text-stone-600">{r.linked ? "全工程が完了" : "工程はStudio OSで未設定"}</span>}
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-stone-600 tabular-nums">納期 <b className="text-stone-800">{r.finalDeadline ? md(r.finalDeadline) : "未設定"}</b></div>
+                    {r.steps.length > 1 && (
+                      <div className="mt-1.5 text-[11.5px] text-stone-500 leading-relaxed">
+                        {r.steps.map((st, i) => <span key={i}>{i > 0 && <span className="text-stone-300"> → </span>}<span className={i === 0 ? "font-bold text-stone-700" : ""}>{st.name}{st.deadline ? " " + md(st.deadline) : ""}</span></span>)}
+                      </div>
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {r.people.length === 0 && <span className="text-[11.5px] font-bold px-2 py-0.5 rounded-md" style={{ background: "#FBE5EA", color: "#DC2645" }}>担当が未設定</span>}
+                      {r.people.map((p) => (
+                        <span key={p.key} title={p.email || ""} className="text-[11.5px] px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 max-w-full truncate">
+                          <b className="text-stone-500 font-bold">{p.roles.join("・")}</b> {p.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                {personList.map((p) => (
+                  <section key={p.key} className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">
+                    <div className="px-3.5 py-2.5 flex items-center gap-2 border-b border-stone-100">
+                      <span className="w-7 h-7 shrink-0 rounded-full grid place-items-center text-[12px] font-black text-white" style={{ background: theme.main }}>{(p.name || "?").slice(0, 1)}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[14px] font-bold text-stone-800 truncate">{p.name}</div>
+                        {p.email && <div className="text-[11px] text-stone-500 truncate">{p.email}</div>}
+                      </div>
+                      <span className="shrink-0 text-[12px] font-bold text-stone-600">{p.items.length}件</span>
+                      {p.late > 0 && <span className="shrink-0 text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: "#FBE5EA", color: "#DC2645" }}>遅れ {p.late}</span>}
+                    </div>
+                    {p.items.map(({ r, roles }) => <CaseLine key={r.id} r={r} roles={roles} />)}
+                  </section>
+                ))}
+                {unassigned.length > 0 && (
+                  <section className="bg-white border rounded-xl shadow-sm overflow-hidden" style={{ borderColor: "#F5B5C0" }}>
+                    <div className="px-3.5 py-2.5 border-b border-stone-100 text-[13px] font-bold" style={{ color: "#DC2645" }}>担当が未設定（{unassigned.length}件）</div>
+                    {unassigned.map((r) => <CaseLine key={r.id} r={r} />)}
+                  </section>
+                )}
+              </div>
+            )}
+          </main>
+        </div>
+        );
+      })()}
+
       {/* ===== アナリティクス画面（Phase 2・2026-09-26）。案件・修正指摘・ナレッジを集計し、気づきと次のアクションをセットで出す ===== */}
       {view === "analytics" && (() => {
         const a = analytics;
@@ -11909,7 +12100,8 @@ export default function App() {
           <main className="max-w-[980px] mx-auto px-5 py-7">
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="chart" className="w-5 h-5" style={{ color: theme.main }} />アナリティクス</h1>
-              <button onClick={() => setView("home")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700">← ホームへ</button>
+              <button onClick={() => setView("team")} className="ml-auto text-[12px] font-bold px-2.5 py-1 rounded-lg bg-white border border-stone-200 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1"><Icon name="clock" className="w-3.5 h-3.5" />担当と納期</button>
+              <button onClick={() => setView("home")} className="text-[12px] font-bold text-stone-500 hover:text-stone-700">← ホームへ</button>
             </div>
             <p className="text-[12px] text-stone-500 mb-5">
               {a.total === 0 ? "まだ案件がありません。" : a.loadedN < a.total ? `案件を読み込み中…（${a.loadedN}/${a.total}件を集計済み）` : `全${a.total}件の案件を集計しています。`}
