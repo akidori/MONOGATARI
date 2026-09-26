@@ -158,6 +158,8 @@ const SHARE_API = (() => {
   return "https://mg-share.aki-surf89315.workers.dev";
 })();
 const shareUrl = (id, r) => location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id + (r ? "&r=" + encodeURIComponent(r) : "");
+/* Studio OSの「Knowledge」画面（会社ナレッジ承認はAIから実行不可＝人がここで行う。2026-09-26） */
+const STUDIO_OS_KNOWLEDGE_URL = "https://studio-os-5dm.pages.dev/#knowledge";
 /* 編集用リンク（?live=）に &tab=script が付いていたら、そのタブだけ触らせる。
    ※UI上の絞り込み＝相手にどこを直してほしいか迷わせないためのもの。トークン自体は文書全体の編集権を持つ */
 const LIVE_ONLY_TABS = (() => {
@@ -11277,7 +11279,10 @@ export default function App() {
                       </div>
                     </div>
                   ))}
-                  <p className="text-[11px] text-stone-500 pt-2">「採用」は下書き（クライアントナレッジ/会社ナレッジの候補）を作るところまでです。会社ルールとしての最終承認はStudio OS側の画面で行ってください（AIによる自動承認は禁止されています）。</p>
+                  <div className="flex items-center gap-2 pt-2 text-[11px] text-stone-500">
+                    <span>「採用」は下書き（クライアントナレッジ/会社ナレッジの候補）を作るところまでです。会社ルールとしての最終承認は、AIには権限がなく人にしかできません。</span>
+                    <a href={STUDIO_OS_KNOWLEDGE_URL} target="_blank" rel="noreferrer" className="font-bold underline shrink-0" style={{ color: theme.main }}>Studio OSで承認する →</a>
+                  </div>
                 </div>
               )
             )}
@@ -11299,6 +11304,9 @@ export default function App() {
                             </span>
                           </div>
                           <div className="text-[12.5px] text-stone-600">{k.body}</div>
+                          {k.status !== "approved" && (
+                            <a href={STUDIO_OS_KNOWLEDGE_URL} target="_blank" rel="noreferrer" className="text-[11px] font-bold underline mt-1.5 inline-block" style={{ color: theme.main }}>Studio OSで承認する →</a>
+                          )}
                         </div>
                       ))}
                       {knowledgeBase.company.length === 0 && <p className="text-[12.5px] text-stone-400">まだありません</p>}
