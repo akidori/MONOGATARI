@@ -250,7 +250,7 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
     if (!Object.keys(memberEmailById).length) warn.push("Studio OSのメンバーのメールが読めません。編集担当に絞れず、案件の編集者全員に送ります");
     for (const to of adminEmails) {
       const prev = ((await env.SNAPS.get("notif:" + to, "json")) || []).find((x) => x.id === "remind-preview");
-      const n = digestNotification("remind-preview", `お試し運転：本番なら今朝メール${mails.length}通`, "リマインドはまだ誰にも送っていません（REMINDERS_MODE=preview）", [
+      const n = digestNotification("remind-preview", `お試し運転：本番なら今朝メール${mails.length}通`, "リマインドはまだ誰にも送っていません（お試し運転中。本番にするには REMINDERS_MODE を on に）", [
         { source: "送る予定だったメール（1人1日1通にまとめ済み）", points: lines.slice(0, 20) },
         { source: "アプリ内だけの通知（前日）", points: inapp.slice(0, 20) },
         { source: "設定の注意", points: warn },
