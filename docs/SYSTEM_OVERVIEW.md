@@ -145,3 +145,4 @@ sequenceDiagram
 - [要件定義書](REQUIREMENTS.md)
 - [共有前の構成監査](../ARCHITECTURE_AUDIT.md)
 - [Cloudflare OAuth設定](../CLOUDFLARE_OAUTH_SETUP.md)
+- [ホーム「今日の仕事」— Studio OS連携](HOME_TODAY_INTEGRATION.md)

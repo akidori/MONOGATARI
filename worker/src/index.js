@@ -11,6 +11,20 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { handleMcp } from "./mcp.js";
+import { runDeadlineReminders, workForCase, jstDate } from "./reminders.js";
+// 工程リマインドに添えるマニュアル（正本は knowledge/ と tools/。wrangler.toml の Text ルールで同梱）
+import MANUAL_MD from "../../knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md";
+import REGULATION_MD from "../../knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md";
+import SCRIPT_GEN_MD from "../../tools/SCRIPT_GEN_PROMPT.md";
+const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIPT_GEN_MD };
+// ものがたりっちAIエージェント（質問に答える）。指示書の正本は agent/PROMPT.md（品質ループで改善中）
+import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
+import QA_MD from "../../knowledge/qa.md";
+const AGENT_SYSTEM = AGENT_PROMPT_MD
+  + "\n\n# 資料（これ以外を根拠にしない）\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD
+  + "\n\n## knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md（公開前チェック）\n\n" + REGULATION_MD
+  + "\n\n## tools/SCRIPT_GEN_PROMPT.md（構成のルールは「構成のルール（厳守）」節）\n\n" + SCRIPT_GEN_MD
+  + "\n\n## knowledge/qa.md（AKの回答ログ）\n\n" + QA_MD;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -49,6 +63,12 @@ function redactForNonAdmin(snap) {
 }
 
 const lc = (s) => (s || "").toString().trim().toLowerCase();
+/* 管理者（AK）判定（2026-09-26）。Studio OSの業務・ナレッジを中継するAPIは、ログインしているだけの
+   外部編集者には見せない。ADMIN_EMAILS（カンマ区切り）が無ければ LEGACY_STREAM_OWNER_EMAIL を使う */
+const isStaff = (u, env) => {
+  const list = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean);
+  return !!u && list.includes(lc(u.email));
+};
 const now = () => new Date().toISOString();
 const rid = (n = 8) => {
   const a = "abcdefghijkmnpqrstuvwxyz23456789"; // 紛らわしい文字を除外
@@ -1438,6 +1458,324 @@ ${qList}
         } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
       }
 
+      // ===== Studio OS連携: ホーム画面「今日の仕事」（2026-09-23）=====
+      // GET /api/today — 認証必須（requireUser）。Studio OSのMCPエンドポイント（POST /api/v1/mcp）を
+      // 1本だけ叩き、get_workツール（今日の仕事ページ＝案件の今の工程・請求・その他の仕事・待ち・保留を
+      // 見出しごとにグループ化したもの）をそのまま中継する。認証はSTUDIO_MCP_KEY（Studio OS側の
+      // MCP_API_KEYと同じ値、事前に両サービスへ設定が必要）。Studio OS側はMCP_MEMBER_ID（本人）で
+      // 動くため、返る内容は常にその1名分（現状ものがたりっちは個人ワークOSとして運用）。
+      // 未設定・Studio OS未応答時は connected:false を返す。ホーム画面はこれを見て静かに非表示にする
+      // （AK 2026-09-07 §4「待ちはホームの既定表示にしない」を踏まえ、詳細は開いた時だけ出す設計）。
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "today" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        if (!env.STUDIO_MCP_KEY) return json({ connected: false });
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/mcp", {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: "Bearer " + env.STUDIO_MCP_KEY },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "get_work", arguments: {} } }),
+          });
+          if (!r.ok) return json({ connected: false });
+          const j = await r.json().catch(() => null);
+          const text = j && j.result && j.result.content && j.result.content[0] && j.result.content[0].text;
+          if (j && j.result && j.result.isError) return json({ connected: false });
+          if (!text) return json({ connected: false });
+          let work; try { work = JSON.parse(text); } catch (e) { return json({ connected: false }); }
+          return json({ connected: true, work });
+        } catch (e) { return json({ connected: false }); }
+      }
+
+      // ===== Studio OS連携: ナレッジ（Brain）（2026-09-26）=====
+      // Studio OS側に既にある「Knowledge Learning Loop」（Evidence→週次AI候補生成→採用/見送り→
+      // Client/Company Knowledgeへ昇格）をそのまま中継する。新しいDBテーブルは追加していない。
+      // 認証はSTUDIO_AGENT_KEY（既存。mg-gate等と共用、system:agent=Owner権限で通る）。
+      // 重要: Company Knowledgeの最終承認（status→approved）はAIアクターからの実行を
+      // Studio OS側が明示的に禁止している（指示書§20）ため、ここでは中継しない。
+      // 承認はStudio OS側の画面で人が行う想定（ものがたりっち側は候補の採用/見送りまで）。
+      const studioAgentHeaders = () => ({ "content-type": "application/json", authorization: "Bearer " + env.STUDIO_AGENT_KEY });
+
+      // GET /api/knowledge/inbox — 承認待ちのナレッジ候補一覧
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "inbox" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ connected: false, candidates: [] });
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/ai/knowledge-candidates", { headers: studioAgentHeaders() });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || j.success === false) return json({ connected: false, candidates: [] });
+          return json({ connected: true, candidates: (j.data && j.data.candidates) || [] });
+        } catch (e) { return json({ connected: false, candidates: [] }); }
+      }
+
+      // POST /api/knowledge/inbox/{id}/decide { decision: "adopt"|"dismiss" } — 候補を採用/見送り
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "inbox" && parts[3] && parts[4] === "decide" && !parts[5]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ error: "Studio OS未接続" }, 503);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        if (!["adopt", "dismiss"].includes(b.decision)) return json({ error: "decisionはadopt/dismiss" }, 400);
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/knowledge-candidates/" + encodeURIComponent(parts[3]) + "/decide", {
+            method: "POST", headers: studioAgentHeaders(), body: JSON.stringify({ decision: b.decision }),
+          });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || j.success === false) return json({ error: (j && j.error && j.error.message) || ("Studio OS " + r.status) }, r.status === 404 ? 404 : 502);
+          return json(j.data);
+        } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
+      }
+
+      // GET /api/knowledge/base — 会社ナレッジ・クライアントナレッジの一覧（読み取りのみ）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "base" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ connected: false, company: [], client: [] });
+        try {
+          const [rc, rk, rl] = await Promise.all([
+            fetch("https://studio-os-5dm.pages.dev/api/v1/company-knowledge?limit=200", { headers: studioAgentHeaders() }),
+            fetch("https://studio-os-5dm.pages.dev/api/v1/client-knowledge?limit=100", { headers: studioAgentHeaders() }),
+            fetch("https://studio-os-5dm.pages.dev/api/v1/clients?limit=200", { headers: studioAgentHeaders() }),
+          ]);
+          const [jc, jk, jl] = await Promise.all([rc.json().catch(() => null), rk.json().catch(() => null), rl.json().catch(() => null)]);
+          if (!rc.ok || !jc || jc.success === false) return json({ connected: false, company: [], client: [] });
+          // クライアント名を付けて返す（Studio OSのナレッジはclientIdしか持たない。IDは画面に出さないため）
+          const names = {};
+          if (rl.ok && jl && jl.success !== false) for (const c of (jl.data || [])) names[c.id] = c.displayName || c.name;
+          const withName = (x) => (x && x.clientId ? { ...x, clientName: names[x.clientId] || null } : x);
+          return json({ connected: true, company: (jc.data || []).map(withName), client: ((rk.ok && jk && jk.success !== false) ? (jk.data || []) : []).map(withName) });
+        } catch (e) { return json({ connected: false, company: [], client: [] }); }
+      }
+
+      // ===== ものがたりっちAIエージェント：質問に答える（2026-09-26 AK「必要な時に質問したら回答してくれる」）=====
+      // POST /api/agent/ask { question, caseId?, caseName?, context? } → { verdict: "回答"|"AKへ", text }
+      // 答える根拠は agent/PROMPT.md の資料と、画面が送ってくる開いている案件の資料だけ。
+      // お金・日程・先方対応・構成変更・センシティブ・資料に無いことは答えずにAKへ回し、AK（管理者）に通知とメールを送る。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "agent" && parts[2] === "ask" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定" }, 500);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const question = (b.question || "").toString().trim();
+        if (!question) return json({ error: "質問が空です" }, 400);
+        if (question.length > 2000) return json({ error: "質問は2000字までにしてください" }, 413);
+        const context = (b.context || "").toString();
+        if (context.length > 40000) return json({ error: "案件の資料が大きすぎます" }, 413);
+        const caseId = (b.caseId || "").toString().slice(0, 80);
+        const caseName = (b.caseName || "").toString().slice(0, 120);
+        const me = lc(u.email);
+        // 1人1日60問まで（コストの上限）
+        const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+        const cntKey = "agentq:cnt:" + me + ":" + today;
+        const cnt = parseInt((await env.SNAPS.get(cntKey)) || "0", 10);
+        if (cnt >= 60) return json({ error: "今日の質問の上限（60問）に達しました。急ぎの場合はAKに直接聞いてください" }, 429);
+        await env.SNAPS.put(cntKey, String(cnt + 1), { expirationTtl: 2 * 86400 });
+
+        const userText = "【案件資料】\n" + (context || "（開いている案件なし）") + "\n\n【質問】\n" + question;
+        let data;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-beta": "server-side-fallback-2026-07-01" },
+            body: JSON.stringify({
+              model: env.AGENT_MODEL || "claude-opus-5",
+              max_tokens: 16000,
+              fallbacks: "default",
+              output_config: { effort: "medium" },
+              // 指示書＋資料は毎回同じなのでキャッシュする（案件資料と質問は messages 側）
+              system: [{ type: "text", text: AGENT_SYSTEM, cache_control: { type: "ephemeral" } }],
+              messages: [{ role: "user", content: userText }],
+            }),
+          });
+          data = await res.json();
+          if (!res.ok) return json({ error: (data && data.error && data.error.message) || ("AI " + res.status) }, 502);
+        } catch (e) { return json({ error: "AIに接続できませんでした" }, 502); }
+
+        let text = "";
+        if (data.stop_reason === "refusal") {
+          text = "判定: AKへ\nAKへの理由: 資料に書いていないこと（AIでは答えられない質問でした）\nAKに渡す質問文: " + (caseName ? "「" + caseName + "」について：" : "") + question;
+        } else {
+          text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n").trim();
+        }
+        if (!text) return json({ error: "AIの回答が空でした。もう一度試してください" }, 502);
+        const verdict = /判定[:：]\s*AKへ/.test(text) ? "AKへ" : "回答";
+
+        if (verdict === "AKへ") {
+          const pick = (label) => { const m = text.match(new RegExp(label + "[:：]\\s*([^\\n]+)")); return m ? m[1].trim() : ""; };
+          const item = {
+            id: "q_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
+            askedBy: me, askedByName: u.name || me, caseId, caseName, question,
+            reason: pick("AKへの理由"), akQuestion: pick("AKに渡す質問文") || question,
+          };
+          const inbox = (await env.SNAPS.get("agentq:inbox", "json")) || [];
+          inbox.unshift(item);
+          await env.SNAPS.put("agentq:inbox", JSON.stringify(inbox.slice(0, 200)));
+          const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean);
+          const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+          for (const ad of admins) {
+            const nk = "notif:" + ad;
+            const list = (await env.SNAPS.get(nk, "json")) || [];
+            list.unshift({ id: item.id, at: item.at, type: "question", read: false, caseId, caseName: caseName || "（案件なし）", phase: "question",
+              title: "確認依頼：" + item.askedByName, deadline: "", guides: [{ source: "AIがAKさんに回した質問", points: [item.akQuestion, item.reason ? "理由：" + item.reason : ""].filter(Boolean) }] });
+            await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
+            if (env.BOT_API_URL && env.BOT_API_KEY) {
+              try {
+                await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
+                  method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
+                  body: JSON.stringify({ to: ad, subject: "【ものがたりっち】確認依頼：" + (caseName || "案件なし") + "（" + item.askedByName + "）",
+                    body: item.askedByName + "さんからの質問を、AIが資料だけでは答えられないためAKさんに回しました。\n\n質問：" + question + "\n\nAIの整理：" + item.akQuestion + (item.reason ? "\n理由：" + item.reason : "") + (caseId ? "\n\n案件を開く：" + appOrigin + "/?case=" + encodeURIComponent(caseId) : "") + "\n\n回答は本人に直接伝えてください。同じ質問が今後も来そうなら knowledge/qa.md に追記すると、次からAIが答えられます。\nBird Flip / ものがたりっち！",
+                    audit_target: "monogataritch:agentq:" + item.id }),
+                });
+              } catch (e) { /* 通知は残る */ }
+            }
+          }
+        }
+        return json({ verdict, text });
+      }
+
+      // ===== アプリ内通知（2026-09-26）: 工程の締切リマインドなど。KV notif:<email> に最新50件 =====
+      // GET /api/notifications → { items, unread }
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "notifications" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        const items = (await env.SNAPS.get("notif:" + lc(u.email), "json")) || [];
+        return json({ items, unread: items.filter((n) => !n.read).length, staff: isStaff(u, env) });
+      }
+      // POST /api/notifications/read { ids?: [...], all?: true }
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "notifications" && parts[2] === "read" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const key = "notif:" + lc(u.email);
+        const ids = new Set(Array.isArray(b.ids) ? b.ids : []);
+        const items = ((await env.SNAPS.get(key, "json")) || []).map((n) => (b.all || ids.has(n.id) ? { ...n, read: true } : n));
+        await env.SNAPS.put(key, JSON.stringify(items));
+        return json({ items, unread: items.filter((n) => !n.read).length });
+      }
+      // POST /api/reminders/preview — 今朝送る（送った）リマインドの確認用。送信はしない。管理者のみ
+      // 返り値の mails が「1人1通にまとめた後」のメール一覧、mode が今の REMINDERS_MODE
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "reminders" && parts[2] === "preview" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        const r = await runDeadlineReminders(env, REMINDER_DOCS, { dryRun: true, adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) });
+        return json(r);
+      }
+
+      // POST /api/my-work { ids: [caseId...] } → { today, cases: [workForCase] }（編集者のダッシュボード・2026-09-26）
+      // Studio OS の工程から「今やること・自分の工程の締切・早い/遅れ・納期」を返す。
+      // 編集者には自分が共同編集メンバーの案件だけ（colmember 索引で確認）、管理者は送られた案件すべて。お金などの情報は返さない
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "my-work" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.STUDIO_AGENT_KEY) return json({ connected: false, cases: [] });
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const asked = (Array.isArray(b.ids) ? b.ids : []).slice(0, 500).map(String);
+        let allowed = new Set(asked);
+        if (!isStaff(u, env)) {
+          const mine = new Set((await env.SNAPS.get("colmember:" + lc(u.email), "json")) || []);
+          allowed = new Set(asked.filter((id) => mine.has(id)));
+        }
+        if (!allowed.size) return json({ connected: true, cases: [] });
+        const today = jstDate();
+        const cases = [];
+        try {
+          for (let page = 1; page <= 10; page++) {
+            const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/deliverables?productionStatus=active&expand=detail&limit=200&page=" + page, { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || j.success === false) { if (page === 1) return json({ connected: false, cases: [] }); break; }
+            for (const d of (j.data || [])) if (d && d.mgProjectId && allowed.has(d.mgProjectId)) cases.push(workForCase(d, today, REMINDER_DOCS));
+            const total = (j.meta && j.meta.total) || 0;
+            if (!(j.data || []).length || page * 200 >= total) break;
+          }
+        } catch (e) { return json({ connected: false, cases: [] }); }
+        // 担当と納期の一覧（2026-09-26 AK「誰がなんの担当で納期はどうなってるか」）：管理者には担当者の名前を付ける。
+        // 編集者には他の人の割り当ては返さない
+        const staff = isStaff(u, env);
+        let memberById = {};
+        if (staff) {
+          try {
+            const rm = await fetch("https://studio-os-5dm.pages.dev/api/v1/members?limit=200", { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+            const jm = await rm.json().catch(() => null);
+            if (rm.ok && jm && jm.success !== false) for (const m of jm.data || []) if (m && m.id) memberById[m.id] = { name: m.name || m.displayName || m.fullName || m.email || "", email: lc(m.email || "") };
+          } catch (_) { /* 名前が無くても役割だけ返す */ }
+        }
+        for (const c of cases) {
+          c.team = staff ? c.assignments.map((a) => ({ role: a.role, name: (memberById[a.memberId] || {}).name || "", email: (memberById[a.memberId] || {}).email || "" })).filter((t) => t.name || t.email) : [];
+          delete c.assignments;
+        }
+        // 「このクライアントで気をつけること（蓄積メモ）」はオーナー（AK）のチャンネル設定にしか無く、共同編集の編集者には
+        // 届いていなかった。共同編集ドキュメントのオーナーのチャンネル設定から、その案件のチャンネル分だけ添える
+        const chCache = {};
+        for (const c of cases) {
+          try {
+            const doc = await env.SNAPS.get("col:" + c.caseId, "json");
+            if (!doc || !doc.ownerSub) continue;
+            if (!(doc.ownerSub in chCache)) {
+              const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE sub=? AND key='monogataritch-channels-v1'").bind(doc.ownerSub).first();
+              let v = {}; try { v = JSON.parse((row && row.value) || "{}") || {}; } catch (_) {}
+              chCache[doc.ownerSub] = v;
+            }
+            const ch = doc.channel || (doc.project && doc.project.channel) || "";
+            const notes = ((chCache[doc.ownerSub] || {})[ch] || {}).clientNotes;
+            if (notes && typeof notes === "string") c.clientNotes = notes.slice(0, 600);
+          } catch (_) { /* メモが無くても本体は返す */ }
+        }
+        return json({ connected: true, today, cases });
+      }
+
+      // POST /api/case-status { ids: [caseId...] } → { statuses: { caseId: { status, stepName } } }（管理者のみ）
+      // ものがたりっちの案件ステータスは初回推定のまま固まっていたため（2026-09-26）、Studio OS の実際の工程から求める。
+      // 進行・納品の正本は Studio OS（2026-08-21 AK）。紐付いていない案件は返さない＝画面側で中身から推定。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "case-status" && !parts[2]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ statuses: {} });
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const want = new Set((Array.isArray(b.ids) ? b.ids : []).slice(0, 1000).map(String));
+        const statuses = {};
+        try {
+          for (let page = 1; page <= 10; page++) {
+            const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/deliverables?expand=detail&limit=200&page=" + page, { headers: studioAgentHeaders() });
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j || j.success === false) break;
+            for (const d of (j.data || [])) {
+              if (!d || !d.mgProjectId || !want.has(d.mgProjectId)) continue;
+              statuses[d.mgProjectId] = caseStatusFromStudio(d);
+            }
+            const total = (j.meta && j.meta.total) || 0;
+            if (!(j.data || []).length || page * 200 >= total) break;
+          }
+        } catch (e) { /* 取れた分だけ返す */ }
+        return json({ statuses });
+      }
+
+      // POST /api/knowledge/company/{id}/revise { body, title? } — 承認済みの会社ナレッジに改訂案（新しい版の候補）を出す。
+      // Studio OS側（migration 0099）は候補を作るだけで、承認（旧版の廃止を含む）は人がStudio OSで行う。
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "knowledge" && parts[2] === "company" && parts[3] && parts[4] === "revise" && !parts[5]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ error: "Studio OS未接続" }, 503);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const text = (b.body || "").toString().trim();
+        if (!text) return json({ error: "改訂後の内容が空です" }, 400);
+        const payload = { body: text.slice(0, 4000) };
+        if (b.title) payload.title = b.title.toString().slice(0, 200);
+        try {
+          const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/company-knowledge/" + encodeURIComponent(parts[3]) + "/revise", {
+            method: "POST", headers: studioAgentHeaders(), body: JSON.stringify(payload),
+          });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || j.success === false) return json({ error: (j && j.error && j.error.message) || ("Studio OS " + r.status) }, r.status === 404 ? 404 : r.status === 422 ? 422 : 502);
+          return json(j.data);
+        } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
+      }
+
       // ===== 編集者の入口が用意されているかを Studio OS が一括で確認する（2026-08-23）=====
       // 勇人さんがdl_fb50で「mg案件未紐付け→自力ログイン→個人案件に上げて弾かれる」で詰まった事故の再発防止。
       // Studio OS は deliverables.mg_project_id を持つが「共有/編集者リンクが発行済みか」は mg 側の
@@ -2481,6 +2819,8 @@ load();
 
   // ===== 期限切れファイルの自動削除（cron） =====
   async scheduled(event, env, ctx) {
+    // 毎朝8:00 JST（23:00 UTC）は工程の締切リマインド。それ以外（03:00 JST）は従来の掃除
+    if (event.cron === "0 23 * * *") { ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) })); return; }
     ctx.waitUntil(cleanupExpired(env));
     ctx.waitUntil(purgeOldStreamVideos(env));
   },
@@ -2560,6 +2900,24 @@ async function verifySession(token, secret) {
   if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
   return payload;
 }
+/* Studio OS の案件（deliverable）→ ものがたりっちのステータス（未着手/企画中/撮影前/編集中/確認中/完了）。
+   完了・Archive は「完了」、進行中は今の工程名から。保留などは null（画面側で中身から推定） */
+function caseStatusFromStudio(d) {
+  const ps = d.productionStatus || "";
+  if (ps === "completed" || ps === "archived") return { status: "完了", stepName: "" };
+  const steps = (d.steps || []).filter((s) => s && !s.archived).sort((a, b) => (a.stepOrder || 0) - (b.stepOrder || 0));
+  const cur = steps.find((s) => !["completed", "done", "skipped"].includes(s.status));
+  if (steps.length && !cur) return { status: "完了", stepName: "" };
+  if (ps && ps !== "active") return { status: null, stepName: cur ? cur.stepName : "" };
+  const n = (cur && cur.stepName) || "";
+  const status = /リサーチ|ヒアリング|構成|企画/.test(n) ? "企画中"
+    : /撮影/.test(n) ? "撮影前"
+    : /チェック|確認|納品|投稿/.test(n) ? "確認中"
+    : /編集|修正|素材整理|初稿|粗編/.test(n) ? "編集中"
+    : null;
+  return { status, stepName: n };
+}
+
 async function requireUser(request, env) {
   const m = (request.headers.get("Authorization") || "").match(/^Bearer\s+(.+)$/i);
   if (!m) return null;

@@ -5,6 +5,9 @@ workers_dev = true
 
 # Googleログイン用：OAuthクライアントID（公開値）。Google Cloud で作成して貼る
 # セッション署名鍵は秘密： wrangler secret put SESSION_SECRET
+# ホーム画面「今日の仕事」用：Studio OSのMCP_API_KEYと同じ値を設定（Studio OS側で
+# MCP_MEMBER_IDも要設定）。未設定でもアプリ自体は動く（ホームのセクションが出ないだけ）：
+# wrangler secret put STUDIO_MCP_KEY
 [vars]
 GOOGLE_CLIENT_ID = "177151250196-ta2k23m2fe1ac9bras75ajk6ia79h88k.apps.googleusercontent.com"
 # Cloudflare Stream（確認用動画の自動トランスコード）。トークンは秘密： wrangler secret put STREAM_API_TOKEN
@@ -20,6 +23,9 @@ CF_OAUTH_REDIRECT_URI = "https://mg-share.aki-surf89315.workers.dev/api/cf/oauth
 CF_OAUTH_SCOPES = ""
 # 既存のAK用R2/Streamへフォールバックできる唯一のアカウント
 LEGACY_STREAM_OWNER_EMAIL = "aki.surf89315@gmail.com"
+# 工程の締切リマインド（毎朝8時）：off＝止める／preview＝誰にも送らず、送る予定をAKのアプリ内通知1件で確認／on＝送る
+# 最初は preview で数日様子を見て、内容に問題が無ければ on にする（メールは1人1日1通まで）
+REMINDERS_MODE = "preview"
 
 # 共有スナップショット＋コメント保存用 KV
 # 初回: wrangler kv namespace create SNAPS で id を発行して下記に貼る
@@ -43,7 +49,8 @@ bucket_name = "mg-files"
 
 # 期限切れファイルの自動削除（毎日 UTC18:00 = JST3:00）
 [triggers]
-crons = ["0 18 * * *"]
+# 0 18 = 03:00 JST 掃除 ／ 0 23 = 08:00 JST 工程の締切リマインド（src/reminders.js）
+crons = ["0 18 * * *", "0 23 * * *"]
 
 # リアルタイム共同編集（共有リンクの編集モード）。SQLite-backed=無料プラン枠
 [[durable_objects.bindings]]
@@ -53,3 +60,9 @@ class_name = "LiveDoc"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["LiveDoc"]
+
+# 工程リマインドに添えるマニュアル（knowledge/*.md, tools/SCRIPT_GEN_PROMPT.md）を文字列として同梱する
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
