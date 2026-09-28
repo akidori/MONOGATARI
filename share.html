@@ -352,7 +352,7 @@ function paneScript(p, accent, main){
     const cs = commentsFor(r.id);
     const open = cs.filter(c=>!c.resolved).length;
     const pc = personOf(r.person || locPerson);
-    const rowStyle = pc ? `border-left:5px solid ${pc.color};background:${pc.color}0D` : `border-left:3px solid ${t.color}`;
+    const rowStyle = pc ? `border-left:5px solid ${pc.color};background:linear-gradient(${pc.color}0D,${pc.color}0D),#fff` : `border-left:3px solid ${t.color}`;
     rowsHtml += `<div class="bg-white border border-stone-200 border-t-0 px-3 py-3 flex gap-3" style="${rowStyle}">
       <div class="w-11 shrink-0 text-center pt-0.5">
         <div class="text-[11px] text-stone-400 mono leading-tight" style="font-variant-numeric:tabular-nums" title="ロケ到着時刻＋尺の積み上げ（時刻未設定なら動画内TC）">${timeLabel}</div>
@@ -379,7 +379,10 @@ function paneScript(p, accent, main){
     </div>`;
     acc += dur; totalTarget += target; totalChars += ch;
   });
-  return `<div>${rowsHtml}</div>
+  // 人物の色の凡例（本体の「人物の色」と同じ）。台本で人物色を使っている時だけ出す
+  const usedP = Object.keys(PERSON_COLORS).filter(k => (p.rows||[]).some(r => r.person === k));
+  const legend = usedP.length ? `<div class="mb-3 flex flex-wrap items-center gap-2"><span class="text-[12px] font-bold text-stone-500 mr-1">人物の色</span>${usedP.map(k=>{ const pc=personOf(k); return `<span class="inline-flex items-center gap-1.5 h-7 px-3 rounded-full text-[12px] font-bold border" style="color:${pc.color};background:${pc.color}14;border-color:${pc.color}40"><span class="w-2.5 h-2.5 rounded-full" style="background:${pc.color}"></span>${esc(pc.name)}</span>`; }).join("")}</div>` : "";
+  return `${legend}<div>${rowsHtml}</div>
     <div class="flex justify-end gap-4 mt-3 pr-1 text-[11px] text-stone-500 mono" style="font-variant-numeric:tabular-nums">
       <span title="原稿がある行は文字数÷${rate}字/秒、無い行は目標秒数で積み上げ">合計（目安） ${fmtT(acc)}</span>
       <span title="各シーンの目標秒数の合計">目標 ${fmtT(totalTarget)}</span>
