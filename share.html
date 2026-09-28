@@ -57,6 +57,8 @@ const SECTION_TYPES = {
   "解説系":     { full: "解説系（30秒~1分）",    target: 60,  color: "#3277D4", bg: "#EAF3FF" },
   "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#348C53", bg: "#EAF8EE" },
 };
+/* 人物色（本体 monogataritch.src.jsx の PERSON_COLORS と同じ）。行の person=p1〜p4、シーン未指定ならロケの色を継ぐ。名前は meta.personNames */
+const PERSON_COLORS = { p1:{color:"#8B5CF6",def:"人物A"}, p2:{color:"#0E9AA7",def:"人物B"}, p3:{color:"#DB4F8E",def:"人物C"}, p4:{color:"#8A6A3B",def:"人物D"} };
 const params = new URLSearchParams(location.search);
 const ID = params.get("id");
 const CHID = params.get("ch");
@@ -307,11 +309,17 @@ function paneScript(p, accent, main){
   const nChars = (s)=>(s||"").replace(/\s/g,"").length;
   const dayD = (r)=>{ const d=Number(r&&r.day); return Number.isFinite(d)&&d>=1?Math.floor(d):1; };
   const maxDay = (p.rows||[]).reduce((a,r)=> r.kind==="location" ? Math.max(a, dayD(r)) : a, 1);
+  const personNames = (p.meta && p.meta.personNames) || {};
+  const personOf = (k)=> PERSON_COLORS[k] ? { color: PERSON_COLORS[k].color, name: String(personNames[k]||"").trim() || PERSON_COLORS[k].def } : null;
+  const personChip = (pc)=> pc ? `<span class="shrink-0 inline-flex items-center h-[18px] px-2 rounded-full text-[10.5px] font-bold" style="background:${pc.color};color:#fff">${esc(pc.name)}</span>` : "";
+  let locPerson = null;
   let sceneNo = 0, rowsHtml = "", prevDay = null;
   let acc = 0, totalTarget = 0, totalChars = 0, anchorClock = null, anchorTcIn = 0;
   (p.rows||[]).forEach(r => {
     if(r.tc != null && r.tc !== "" && !isNaN(Number(r.tc))) acc = Number(r.tc);
     if(r.kind === "location"){
+      locPerson = r.person || null;
+      const locPc = personOf(locPerson);
       const d = dayD(r);
       if(d !== prevDay){
         if(maxDay > 1){ const bg = d===1 ? main : accent; rowsHtml += `<div id="toc-day-${d}" class="mt-6 mb-2 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-md" style="background:${bg};color:${textOn(bg)}"><span class="text-[15px] font-black" style="letter-spacing:.2em">撮影 ${d}日目</span><div class="flex-1 rounded-full" style="height:2px;background:currentColor;opacity:.25"></div></div>`;
@@ -325,6 +333,7 @@ function paneScript(p, accent, main){
       rowsHtml += `<div id="toc-loc-${esc(String(r.id))}" class="mt-4 mb-2 rounded-t-xl overflow-hidden flex items-stretch" style="background:${main};color:#fff">
         <div class="w-4 shrink-0 stripe"></div>
         <div class="px-3 py-2 font-bold tracking-wide text-[14px]">${esc(r.label||"")}</div>
+        ${locPc?`<div class="self-center">${personChip(locPc)}</div>`:""}
         ${r.time?`<div class="ml-auto self-center pr-3 text-[11px] opacity-70 mono">${esc(r.time)}</div>`:""}
       </div>`;
       if(r.address || r.note){
@@ -342,7 +351,9 @@ function paneScript(p, accent, main){
     const timeLabel = anchorClock != null ? fmtClock(anchorClock + (acc - anchorTcIn)) : fmtT(acc);
     const cs = commentsFor(r.id);
     const open = cs.filter(c=>!c.resolved).length;
-    rowsHtml += `<div class="bg-white border border-stone-200 border-t-0 px-3 py-3 flex gap-3" style="border-left:3px solid ${t.color}">
+    const pc = personOf(r.person || locPerson);
+    const rowStyle = pc ? `border-left:5px solid ${pc.color};background:${pc.color}0D` : `border-left:3px solid ${t.color}`;
+    rowsHtml += `<div class="bg-white border border-stone-200 border-t-0 px-3 py-3 flex gap-3" style="${rowStyle}">
       <div class="w-11 shrink-0 text-center pt-0.5">
         <div class="text-[11px] text-stone-400 mono leading-tight" style="font-variant-numeric:tabular-nums" title="ロケ到着時刻＋尺の積み上げ（時刻未設定なら動画内TC）">${timeLabel}</div>
         <div class="text-[10px] text-stone-300 mono">#${sceneNo}</div>
@@ -351,6 +362,7 @@ function paneScript(p, accent, main){
         <div class="flex items-center gap-2 mb-1 flex-wrap">
           <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:${t.bg};color:${t.color}">${esc(t.full)}</span>
           <span class="text-[13px] font-bold">${esc(r.label||"")}</span>
+          ${r.person && r.person !== locPerson ? personChip(pc) : ""}
           <span class="ml-auto shrink-0 inline-flex items-baseline gap-2 text-[10px] text-stone-400 mono" style="font-variant-numeric:tabular-nums">
             <span title="目標秒数">${target}秒</span>
             <span title="所要時間（文字数÷${rate}字/秒）・文字数">${ch>0?fmtT(ch/rate):"—"}・${ch}字</span>

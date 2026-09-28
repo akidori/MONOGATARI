@@ -3137,10 +3137,11 @@ function slim(p) {
     theme: p.theme || { main: "#1F2430", accent: "#E63946" },
     rate: p.rate || 5,
     timeFormat: p.timeFormat || "tc",
+    // 人物色 person(p1〜p4) も載せる（2026-09-28 AK「共有用に色が入ってない」。名前は meta.personNames）
     rows: (p.rows || []).map((r) =>
       r.kind === "location"
-        ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", done: !!r.done, peak: !!r.peak, day: Number(r.day) >= 1 ? Math.floor(Number(r.day)) : 1, travelBy: (r.travelBy || "").slice(0, 40), travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null, lat: typeof r.lat === "number" ? r.lat : null, lng: typeof r.lng === "number" ? r.lng : null, placeId: (r.placeId || "").slice(0, 200) }
-        : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, tc: r.tc ?? null, script: r.script || "" }
+        ? { id: r.id, kind: "location", label: r.label || "", address: r.address || "", time: r.time || "", note: r.note || "", done: !!r.done, peak: !!r.peak, day: Number(r.day) >= 1 ? Math.floor(Number(r.day)) : 1, travelBy: (r.travelBy || "").slice(0, 40), travelCost: r.travelCost === 0 || r.travelCost ? Number(r.travelCost) : null, lat: typeof r.lat === "number" ? r.lat : null, lng: typeof r.lng === "number" ? r.lng : null, placeId: (r.placeId || "").slice(0, 200), person: /^p[1-4]$/.test(r.person || "") ? r.person : "" }
+        : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, tc: r.tc ?? null, script: r.script || "", person: /^p[1-4]$/.test(r.person || "") ? r.person : "" }
     ),
     plans: (p.plans || []).map((pl) => ({
       id: pl.id, title: pl.title || "", thumbText: pl.thumbText || "", thumbText2: pl.thumbText2 || "", note: pl.note || "",
