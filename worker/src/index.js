@@ -1081,6 +1081,12 @@ ${qList}
           status: (b.status || "未対応").toString().slice(0, 8),
           assignee: (b.assignee || "").toString().slice(0, 60),
           versionId: (b.versionId || "").toString().slice(0, 40),
+          // 修正コメントへの画像添付（スクショ・参考画像）。R2キーだけ保持し実体は既存の /api/file/{key} で配信
+          images: (Array.isArray(b.images) ? b.images : []).slice(0, 6).map((im) => ({
+            key: (im && im.key || "").toString().slice(0, 160),
+            name: (im && im.name || "").toString().slice(0, 160),
+            mime: (im && im.mime || "").toString().slice(0, 60),
+          })).filter((im) => im.key),
           replies: [],
           createdAt: new Date().toISOString(),
           resolved: false,
