@@ -1,6 +1,7 @@
 /* ============================================================
    ものがたりっち MCP（POST /mcp・JSON-RPC 2.0 / Streamable HTTP のステートレス版）
    ツール: get_script / update_script / create_script（2026-09-26追加）
+          list_scripts / get_upload_link（2026-09-29追加・Premiereプラグインから上げる先を選ぶ用）
    認証: Authorization: Bearer <key>
      MCP_READ_KEY  … get_script のみ
      MCP_WRITE_KEY … get_script + update_script + create_script
@@ -52,6 +53,18 @@ const TOOLS = [
       required: ["data"],
       additionalProperties: false,
     },
+  },
+  {
+    name: "list_scripts",
+    description: "アプリのサイドバーにある案件の一覧（id=案件ID, name, channel, updatedAt, shared=共有発行済みか）を新しい順に返す。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "get_upload_link",
+    description:
+      "案件へ完成動画を上げるための編集者用リンク（share.html?id=&up=）を返す。書き込みキー専用。" +
+      "共有が未発行の案件は share_missing を返す（案件本体は書き換えない）。",
+    inputSchema: { type: "object", properties: { id: { type: "string", description: "案件ID または 共有ID" } }, required: ["id"], additionalProperties: false },
   },
 ];
 
@@ -293,6 +306,39 @@ async function createScript(env, { data }) {
   });
 }
 
+async function listScripts(env) {
+  const sub = env.MCP_OWNER_SUB;
+  if (!sub) return toolText({ error: "MCP_OWNER_SUB が未設定です" }, true);
+  // サイドバーの一覧(index-v1)に載っているものだけ＝消した案件の残骸を出さない
+  const idxRow = await env.DB.prepare("SELECT value FROM mg_kv WHERE sub=? AND key=?").bind(sub, "monogataritch-index-v1").first();
+  let idx = [];
+  try { idx = idxRow ? JSON.parse(idxRow.value) || [] : []; } catch (e) { idx = []; }
+  const alive = new Set((Array.isArray(idx) ? idx : []).map((x) => x && x.id).filter(Boolean));
+  const { results } = await env.DB.prepare(
+    "SELECT proj_id, name, channel, updated_at, instr(value, '\"shareId\":\"') > 0 AS shared FROM mg_kv " +
+    "WHERE sub=? AND key LIKE 'monogataritch-proj-%' ORDER BY updated_at DESC LIMIT 500"
+  ).bind(sub).all();
+  const list = (results || [])
+    .filter((r) => r.proj_id && (!alive.size || alive.has(r.proj_id)))
+    .map((r) => ({ id: r.proj_id, name: r.name || "", channel: r.channel || "未分類", updatedAt: r.updated_at, shared: !!r.shared }));
+  return toolText({ scripts: list });
+}
+
+async function getUploadLink(env, { id }) {
+  const found = await findProject(env, id);
+  if (!found) return toolText({ error: "not_found", message: "案件が見つかりません" }, true);
+  const shareId = found.project.shareId;
+  if (!shareId) return toolText({ error: "share_missing", message: "この案件はまだ共有されていません。ものがたりっちで一度「共有」を押してください" }, true);
+  const snap = await env.SNAPS.get("snap:" + shareId, "json");
+  if (!snap) return toolText({ error: "snap_missing", message: "共有が見つかりません。ものがたりっちで「共有」を押し直してください" }, true);
+  let up = await env.SNAPS.get("uptok:" + shareId);
+  if (!up) { up = newId() + newId() + newId().slice(0, 4); await env.SNAPS.put("uptok:" + shareId, up); }
+  const r = await env.SNAPS.get("rtok:" + shareId);
+  const url = "https://monogataritch.pages.dev/share.html?id=" + encodeURIComponent(shareId) +
+    (r ? "&r=" + encodeURIComponent(r) : "") + "&up=" + encodeURIComponent(up);
+  return toolText({ id: shareId, projId: found.projId, name: found.project.name || "", up, r: r || null, url });
+}
+
 // ---- JSON-RPC ------------------------------------------------------------
 export async function handleMcp(request, env, { slim }) {
   const H = { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
@@ -332,8 +378,13 @@ export async function handleMcp(request, env, { slim }) {
         if (level !== "write") return reply(rpcOk(id, toolText({ success: false, error: "書き込み権限のキーが必要です" }, true)));
         return reply(rpcOk(id, await createScript(env, args)));
       }
+      if (name === "list_scripts") return reply(rpcOk(id, await listScripts(env)));
       if (typeof args.id !== "string" || !ID_RE.test(args.id)) return reply(rpcOk(id, toolText({ error: "id は英数字4〜32文字の文字列にしてください" }, true)));
       if (name === "get_script") return reply(rpcOk(id, await getScript(env, args)));
+      if (name === "get_upload_link") {
+        if (level !== "write") return reply(rpcOk(id, toolText({ success: false, error: "書き込み権限のキーが必要です" }, true)));
+        return reply(rpcOk(id, await getUploadLink(env, args)));
+      }
       if (name === "update_script") {
         if (level !== "write") return reply(rpcOk(id, toolText({ success: false, error: "書き込み権限のキーが必要です" }, true)));
         return reply(rpcOk(id, await updateScript(env, args, slim)));
