@@ -78,6 +78,11 @@ const TOOLS = [
     inputSchema: { type: "object", properties: { id: { type: "string" }, step: { type: "string" }, minutes: { type: "number" } }, required: ["id", "step", "minutes"], additionalProperties: false },
   },
   {
+    name: "set_edit_state",
+    description: "編集作業（素材インポート〜修正対応）の今の作業と完了済みを保存する。書き込みキー専用。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, current: { type: "string" }, done: { type: "array", items: { type: "string" } } }, required: ["id"], additionalProperties: false },
+  },
+  {
     name: "set_planned",
     description: "工程の予定時間（分）を決める。書き込みキー専用。その工程名の標準がまだ無ければ標準にも入れる。",
     inputSchema: { type: "object", properties: { id: { type: "string" }, step: { type: "string" }, minutes: { type: "number" } }, required: ["id", "step", "minutes"], additionalProperties: false },
@@ -388,11 +393,29 @@ async function getEffort(env, { id }) {
     const planned = e.planned != null ? e.planned : ((std || {})[n] != null ? std[n] : null);
     return { name: n, plannedMin: planned, plannedIsStd: e.planned == null && planned != null, actualMin: e.actual || 0, done: steps.length ? DONE.has((steps.find((s) => s.stepName === n) || {}).status) : false };
   });
+  // 編集作業（プラグインが決める細かい作業）の予定・実績は eff.steps に同じ形で入る。状態は eff.edit
+  const editRows = {};
+  for (const [n, e] of Object.entries(eff.steps || {})) {
+    const planned = e.planned != null ? e.planned : ((std || {})[n] != null ? std[n] : null);
+    editRows[n] = { plannedMin: planned, plannedIsStd: e.planned == null && planned != null, actualMin: e.actual || 0 };
+  }
   return toolText({
+    edit: { current: (eff.edit && eff.edit.current) || null, done: (eff.edit && eff.edit.done) || [], rows: editRows, std: std || {} },
     projId, name: found.project.name || "", linked: !!d,
     currentStep: cur ? { name: cur.stepName, deadline: (cur.deadline || "").slice(0, 10), stepNo: steps.indexOf(cur) + 1, stepTotal: steps.length } : null,
     steps: rows,
   });
+}
+async function setEditState(env, { id, current, done }) {
+  const found = await findProject(env, id);
+  if (!found) return toolText({ error: "not_found" }, true);
+  const eff = await loadEffort(env, found.projId);
+  eff.edit = eff.edit || {};
+  if (current !== undefined) eff.edit.current = current ? String(current).slice(0, 40) : null;
+  if (Array.isArray(done)) eff.edit.done = done.map((x) => String(x).slice(0, 40)).slice(0, 50);
+  eff.updatedAt = Date.now();
+  await env.SNAPS.put("effort:" + found.projId, JSON.stringify(eff));
+  return toolText({ ok: true, edit: eff.edit });
 }
 async function writeEffort(env, { id, step, minutes }, kind) {
   const found = await findProject(env, id);
@@ -459,6 +482,10 @@ export async function handleMcp(request, env, { slim }) {
       if (typeof args.id !== "string" || !ID_RE.test(args.id)) return reply(rpcOk(id, toolText({ error: "id は英数字4〜32文字の文字列にしてください" }, true)));
       if (name === "get_script") return reply(rpcOk(id, await getScript(env, args)));
       if (name === "get_effort") return reply(rpcOk(id, await getEffort(env, args)));
+      if (name === "set_edit_state") {
+        if (level !== "write") return reply(rpcOk(id, toolText({ success: false, error: "書き込み権限のキーが必要です" }, true)));
+        return reply(rpcOk(id, await setEditState(env, args)));
+      }
       if (name === "log_effort" || name === "set_planned") {
         if (level !== "write") return reply(rpcOk(id, toolText({ success: false, error: "書き込み権限のキーが必要です" }, true)));
         return reply(rpcOk(id, await writeEffort(env, args, name === "log_effort" ? "log" : "plan")));
