@@ -49,8 +49,9 @@ bucket_name = "mg-files"
 
 # 期限切れファイルの自動削除（毎日 UTC18:00 = JST3:00）
 [triggers]
-# 0 18 = 03:00 JST 掃除 ／ 0 23 = 08:00 JST 工程の締切リマインド（src/reminders.js）
-crons = ["0 18 * * *", "0 23 * * *"]
+# 0 23 = 08:00 JST に締切リマインド（src/reminders.js）＋期限切れ掃除をまとめて実行
+# （CF無料プランはアカウント全体でcron 5本まで。2026-09-29 に2本→1本へ統合）
+crons = ["0 23 * * *"]
 
 # リアルタイム共同編集（共有リンクの編集モード）。SQLite-backed=無料プラン枠
 [[durable_objects.bindings]]

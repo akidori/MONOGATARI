@@ -2819,8 +2819,9 @@ load();
 
   // ===== 期限切れファイルの自動削除（cron） =====
   async scheduled(event, env, ctx) {
-    // 毎朝8:00 JST（23:00 UTC）は工程の締切リマインド。それ以外（03:00 JST）は従来の掃除
-    if (event.cron === "0 23 * * *") { ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) })); return; }
+    // 毎朝8:00 JST（23:00 UTC）の1本で、締切リマインド＋掃除をまとめて回す。
+    // 2026-09-29: CF無料プランのcron上限（アカウント全体5本）に当たり2本目が登録できなかったため統合。
+    ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) }));
     ctx.waitUntil(cleanupExpired(env));
     ctx.waitUntil(purgeOldStreamVideos(env));
   },
