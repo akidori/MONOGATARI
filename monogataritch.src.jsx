@@ -7,7 +7,7 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
-import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, buildPlan, planToIcs, profileComplete, hoursOn, ymd, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
+import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -3358,7 +3358,7 @@ function WizardPane({ project, setProject, theme, setTab }) {
 const STORE_CREATOR = "creator-profile-v1";
 const DOW_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const LIKERT = [{ v: -2, l: "ちがう" }, { v: -1, l: "やや\nちがう" }, { v: 0, l: "どちらでも" }, { v: 1, l: "やや\nそう" }, { v: 2, l: "そう" }];
-const emptyCreatorProfile = () => ({ v: 1, work: "", skills: [], answers: {}, focusMin: 60, steps: {}, avail: { weekday: "", weekend: "", offDays: [] }, name: "", bio: "", years: "", software: [], contact: "", portfolio: [] });
+const emptyCreatorProfile = () => ({ v: 1, work: "", skills: [], answers: {}, focusMin: 60, steps: {}, avail: { weekday: "", weekend: "", offDays: [] }, name: "", bio: "", years: "", software: [], contact: "", portfolio: [], email: "", line: "", site: "", showContact: true, mbti: "", brain: "" });
 
 // 共有URL（#creator=…）で開いた時の、ログイン不要の読み取り専用ページ
 export function CreatorPublicPage() {
@@ -3405,7 +3405,8 @@ function CreatorProfileCard({ profile: p, theme }) {
         <div className="text-[20px] font-black text-stone-800">{p.name || "（名前未入力）"}</div>
         <div className="flex flex-wrap gap-1.5 mt-1.5 mb-3">
           {p.work && <span className={pill}>{p.work}</span>}{p.years && <span className={pill}>経験 {p.years}</span>}
-          {p.contact && <a href={p.contact} target="_blank" rel="noopener noreferrer nofollow" className={pill + " underline"}>SNS・連絡先</a>}
+          {p.mbti && <span className={pill}>MBTI {p.mbti}</span>}
+          {p.brain && <span className={pill}>{(BRAIN_TYPES.find((b) => b.key === p.brain) || {}).label || p.brain}</span>}
         </div>
         <div className="rounded-lg px-3 py-2.5 mb-3" style={{ background: theme.accent + "10" }}>
           <div className="text-[11px] font-bold text-stone-500">クリエイタータイプ</div>
@@ -3415,22 +3416,31 @@ function CreatorProfileCard({ profile: p, theme }) {
           <div className="text-[12px] text-stone-600"><b className="text-[#B45309]">気をつけたいこと</b> {type.watch}</div>
         </div>
         {p.bio && <p className="text-[13px] text-stone-700 whitespace-pre-wrap mb-3">{p.bio}</p>}
+        {(p.email || p.line || p.contact || p.site) && (
+          <div className="rounded-lg border border-stone-100 px-3 py-2 mb-3 text-[12.5px] flex flex-col gap-1">
+            <div className="text-[11px] font-bold text-stone-500">連絡先</div>
+            {p.email && <div><span className="text-stone-400 mr-2">Gmail</span><a href={"mailto:" + p.email} className="underline text-stone-700 break-all">{p.email}</a></div>}
+            {p.line && <div><span className="text-stone-400 mr-2">LINE ID</span><span className="text-stone-700 select-all">{p.line}</span></div>}
+            {p.site && <div><span className="text-stone-400 mr-2">ポートフォリオサイト</span><a href={p.site} target="_blank" rel="noopener noreferrer nofollow" className="underline text-stone-700 break-all">{p.site}</a></div>}
+            {p.contact && <div><span className="text-stone-400 mr-2">SNS</span><a href={p.contact} target="_blank" rel="noopener noreferrer nofollow" className="underline text-stone-700 break-all">{p.contact}</a></div>}
+          </div>
+        )}
         {(p.skills || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">得意分野</div><div className="flex flex-wrap gap-1.5">{p.skills.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
         {(p.software || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">使えるソフト</div><div className="flex flex-wrap gap-1.5">{p.software.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
-        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+        <div className={"grid gap-2 mt-3 text-center " + (est10.total > 0 ? "grid-cols-3" : "grid-cols-1")}>
           <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{wk}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">1週間に使える時間</div></div>
-          <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{est10.total}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">10分の動画1本</div></div>
-          <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{cap}<span className="text-[11px]">本</span></div><div className="text-[10.5px] text-stone-500">月の目安（10分）</div></div>
+          {est10.total > 0 && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{est10.total}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">10分の動画1本（目安）</div></div>}
+          {est10.total > 0 && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{cap}<span className="text-[11px]">本</span></div><div className="text-[10.5px] text-stone-500">月の目安（10分）</div></div>}
         </div>
       </section>
 
       <section className={card}>
-        <h2 className="text-[14px] font-black text-stone-800 mb-2">工程ごとの好き度合いと時間（10分の動画）</h2>
+        <h2 className="text-[14px] font-black text-stone-800 mb-2">工程ごとの好き度合い{est10.total > 0 ? "と時間の目安（10分の動画）" : ""}</h2>
         {est10.steps.map((s) => { const like = (p.steps[s.key] || {}).like || 0; return (
           <div key={s.key} className="flex items-center gap-2 py-1.5 border-t border-stone-100 first:border-t-0 text-[12.5px]">
             <span className="w-[88px] font-bold text-stone-700">{s.label}</span>
             <span style={{ color: like >= 4 ? "#15803D" : like <= 2 ? "#DC2645" : "#78716C" }}>{"★".repeat(like)}{"☆".repeat(Math.max(0, 5 - like))}</span>
-            <span className="ml-auto text-stone-500">{s.hours}時間</span>
+            {s.hours > 0 && <span className="ml-auto text-stone-500">{s.hours}時間</span>}
           </div>
         ); })}
       </section>
@@ -3469,7 +3479,7 @@ function CreatorProfileCard({ profile: p, theme }) {
   );
 }
 
-function CreatorDiagnosis({ theme, caseOptions }) {
+function CreatorDiagnosis({ theme, userEmail }) {
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState(null);
   const [draft, setDraft] = useState(emptyCreatorProfile);
@@ -3485,7 +3495,6 @@ function CreatorDiagnosis({ theme, caseOptions }) {
       setShareCopied(true); setTimeout(() => setShareCopied(false), 2500);
     } catch (e) { alert("コピーできませんでした：" + (e && e.message || e)); }
   };
-  const [sim, setSim] = useState(() => { const t = new Date(); const due = new Date(t); due.setDate(due.getDate() + 10); return { minutes: 15, start: ymd(t), due: ymd(due), caseId: "", title: "" }; });
 
   useEffect(() => {
     (async () => {
@@ -3504,7 +3513,7 @@ function CreatorDiagnosis({ theme, caseOptions }) {
   const setAvail = (patch) => setDraft((d) => ({ ...d, avail: { ...d.avail, ...patch } }));
   const complete = profileComplete(draft);
   const answeredCount = CREATOR_QUESTIONS.filter((q) => draft.answers[q.id] != null).length
-    + CREATOR_STEPS.filter((s) => draft.steps[s.key] && Number(draft.steps[s.key].hours) > 0 && Number(draft.steps[s.key].like) >= 1).length
+    + CREATOR_STEPS.filter((s) => draft.steps[s.key] && Number(draft.steps[s.key].like) >= 1).length
     + ((Number(draft.avail.weekday) > 0 || Number(draft.avail.weekend) > 0) ? 1 : 0);
   const totalCount = CREATOR_QUESTIONS.length + CREATOR_STEPS.length + 1;
 
@@ -3530,7 +3539,6 @@ function CreatorDiagnosis({ theme, caseOptions }) {
     const slot = peakSlot(type.poles);
     const est10 = estimateHours(saved, 10, type);
     const advice = stepAdvice(saved, type);
-    const plan = buildPlan(saved, sim, type);
     const weekHours = [0, 1, 2, 3, 4, 5, 6].reduce((n, dow) => { const d = new Date(2026, 0, 4 + dow); return n + hoursOn(saved, d); }, 0);
     const axisRow = (k, label) => {
       const [a, b] = CREATOR_AXES[k];
@@ -3544,15 +3552,6 @@ function CreatorDiagnosis({ theme, caseOptions }) {
           </div>
         </div>
       );
-    };
-    const download = () => {
-      const ics = planToIcs(plan, sim.title);
-      const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `作業予定_${sim.due}.ics`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     };
     return (
       <>
@@ -3570,7 +3569,7 @@ function CreatorDiagnosis({ theme, caseOptions }) {
 
         <section className={card}>
           <h2 className={h2}>あなたに合った制作の流れ</h2>
-          <p className={sub}>10分の動画1本で、合計 <b className="text-stone-700">{est10.total}時間</b>{est10.buffer > 0 && <>（回答の合計に、タイプに合わせた余裕 +{Math.round(est10.buffer * 100)}% を足しています）</>}。作業は<b className="text-stone-700">{slot.label}</b>に、1回 <b className="text-stone-700">{blockHours(saved, type)}時間</b>ずつが目安です。1週間で使える時間は {weekHours}時間です。</p>
+          <p className={sub}>作業は<b className="text-stone-700">{slot.label}</b>に、1回 <b className="text-stone-700">{blockHours(saved, type)}時間</b>ずつが向いています。1週間で使える時間は {weekHours}時間です。{est10.total > 0 && <>（工程ごとの時間は本人の目安。実際の時間は案件ごとに変わります）</>}</p>
           <ol className="flex flex-col gap-2">
             {advice.map((a, i) => (
               <li key={a.key} className="flex gap-3 border border-stone-100 rounded-lg px-3 py-2.5">
@@ -3578,7 +3577,7 @@ function CreatorDiagnosis({ theme, caseOptions }) {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <b className="text-[13.5px] text-stone-800">{a.label}</b>
-                    <span className="text-[11.5px] text-stone-500">{est10.steps[i].hours}時間</span>
+                    {est10.steps[i].hours > 0 && <span className="text-[11.5px] text-stone-500">目安 {est10.steps[i].hours}時間</span>}
                     <span className="text-[11.5px]" style={{ color: a.like >= 4 ? "#15803D" : a.like <= 2 ? "#DC2645" : "#78716C" }}>{"★".repeat(a.like)}{"☆".repeat(5 - a.like)}</span>
                   </div>
                   <ul className="mt-1 text-[12px] text-stone-600 list-disc pl-4">{a.tips.map((t) => <li key={t}>{t}</li>)}</ul>
@@ -3589,54 +3588,8 @@ function CreatorDiagnosis({ theme, caseOptions }) {
         </section>
 
         <section className={card}>
-          <h2 className={h2}>納期から作業予定を立てる</h2>
-          <p className={sub}>動画の長さと納期を入れると、使える時間に工程を順番に割り振ります。自分締切は納期の{type.start === "締切" ? "2日前（締切で加速するタイプなので早めに置きます）" : "前日"}です。</p>
-          {caseOptions.length > 0 && (
-            <select value={sim.caseId} onChange={(e) => { const c = caseOptions.find((x) => x.id === e.target.value); setSim((s) => ({ ...s, caseId: e.target.value, title: c ? c.name : "", due: c && c.deadline ? c.deadline.slice(0, 10) : s.due })); }}
-              className="w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2 mb-2 bg-white">
-              <option value="">案件から選ぶ（任意）</option>
-              {caseOptions.map((c) => <option key={c.id} value={c.id}>{c.name}{c.deadline ? `（納期 ${c.deadline.slice(5, 10).replace("-", "/")}）` : ""}</option>)}
-            </select>
-          )}
-          <div className="grid grid-cols-[56px_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)] gap-2 mb-3">
-            <label className="text-[11.5px] font-bold text-stone-500">長さ（分）<input type="number" min="1" value={sim.minutes} onChange={(e) => setSim((s) => ({ ...s, minutes: e.target.value }))} className="mt-1 w-full min-w-0 text-[12.5px] border border-stone-300 rounded-lg px-1.5 py-1.5 bg-white" /></label>
-            <label className="text-[11.5px] font-bold text-stone-500">作業開始<input type="date" value={sim.start} onChange={(e) => setSim((s) => ({ ...s, start: e.target.value }))} className="mt-1 w-full min-w-0 text-[12.5px] border border-stone-300 rounded-lg px-1.5 py-1.5 bg-white" /></label>
-            <label className="text-[11.5px] font-bold text-stone-500">納期<input type="date" value={sim.due} onChange={(e) => setSim((s) => ({ ...s, due: e.target.value }))} className="mt-1 w-full min-w-0 text-[12.5px] border border-stone-300 rounded-lg px-1.5 py-1.5 bg-white" /></label>
-          </div>
-          {plan.error ? <p className="text-[12.5px] text-[#DC2645]">{plan.error}</p> : (
-            <>
-              <div className="rounded-lg px-3 py-2 mb-3 text-[12.5px] font-bold" style={plan.ok ? { background: "#E7F6EC", color: "#15803D" } : { background: "#FBE5EA", color: "#DC2645" }}>
-                {plan.ok ? `自分締切 ${plan.selfDue.slice(5).replace("-", "/")} までに終わる見込みです（合計 ${plan.est.total}時間）`
-                  : `今の作業時間だと ${plan.shortBy}時間 足りません（合計 ${plan.est.total}時間）。開始を早めるか、作業時間を増やすか、分担をAKに相談しましょう`}
-              </div>
-              <div className="border border-stone-100 rounded-lg divide-y divide-stone-100 mb-3">
-                {plan.days.map((d) => {
-                  const dt = new Date(d.date + "T00:00:00");
-                  return (
-                    <div key={d.date} className="flex items-start gap-3 px-3 py-2 text-[12.5px]">
-                      <span className="shrink-0 w-[78px] whitespace-nowrap font-bold text-stone-700">{d.date.slice(5).replace("-", "/")}（{DOW_JA[dt.getDay()]}）</span>
-                      <span className="shrink-0 w-[28px] text-stone-400">{d.slot}</span>
-                      <span className="flex-1 flex flex-wrap gap-1.5">{d.items.map((it, i) => <span key={i} className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">{it.label} {it.hours}h</span>)}</span>
-                    </div>
-                  );
-                })}
-                {plan.days.length === 0 && <div className="px-3 py-2 text-[12.5px] text-stone-400">作業できる日がありません（作業時間・休みの曜日を見直してください）</div>}
-              </div>
-              {plan.days.length > 0 && (
-                <>
-                  <button onClick={download} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white inline-flex items-center gap-1.5" style={{ background: theme.accent }}>
-                    <Icon name="download" className="w-4 h-4" />カレンダー用ファイル（.ics）をダウンロード
-                  </button>
-                  <p className="text-[11px] text-stone-400 mt-1.5">Googleカレンダー（パソコン）→ 右上の歯車 → 設定 → インポート/エクスポート で取り込めます。自動で同期される方式は次の段階で作ります。</p>
-                </>
-              )}
-            </>
-          )}
-        </section>
-
-        <section className={card}>
           <h2 className={h2}>プロフィールを共有する</h2>
-          <p className={sub}>URLを渡すと、相手はログインなしで、あなたのタイプ・作業時間・得意分野・ポートフォリオを見られます。相手が募集文を貼ると、あなたの回答と照らし合わせられます。URLには回答が入っていて、受け取った人は誰でも見られます（作業できる時間も載ります）。</p>
+          <p className={sub}>{`URLを渡すと、相手はログインなしで、あなたのタイプ・得意分野・作業できる時間・ポートフォリオ${saved.showContact !== false && (saved.email || saved.line) ? "・連絡先（Gmail・LINE ID）" : ""}を見られます。相手が募集文を貼ると、あなたの回答と照らし合わせられます。URLには回答が入っていて、受け取った人は誰でも見られます。`}</p>
           <div className="flex flex-wrap gap-2">
             <button onClick={copyShare} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white inline-flex items-center gap-1.5" style={{ background: theme.accent }}><Icon name="copy" className="w-4 h-4" />{shareCopied ? "コピーしました" : "共有URLをコピー"}</button>
             <button onClick={() => setPreview((v) => !v)} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-300 bg-white text-stone-600">{preview ? "見え方を閉じる" : "相手からの見え方"}</button>
@@ -3669,6 +3622,20 @@ function CreatorDiagnosis({ theme, caseOptions }) {
         <div className="flex flex-wrap gap-1.5 mb-4">
           {["本業", "副業", "学生・その他"].map((w) => <button key={w} onClick={() => set({ work: w })} {...chip(draft.work === w)}>{w}</button>)}
         </div>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <label className="text-[12px] font-bold text-stone-600">MBTI（任意・わかれば）
+            <select value={draft.mbti || ""} onChange={(e) => set({ mbti: e.target.value })} className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-2.5 py-2 bg-white">
+              <option value="">わからない・答えない</option>
+              {MBTI_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="text-[12px] font-bold text-stone-600">4脳分類（利き脳・任意）
+            <select value={draft.brain || ""} onChange={(e) => set({ brain: e.target.value })} className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-2.5 py-2 bg-white">
+              <option value="">わからない・答えない</option>
+              {BRAIN_TYPES.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}
+            </select>
+          </label>
+        </div>
         <div className="text-[12px] font-bold text-stone-600 mb-1.5">得意分野（いくつでも）</div>
         <div className="flex flex-wrap gap-1.5">
           {CREATOR_SKILLS.map((k) => { const on = (draft.skills || []).includes(k); return <button key={k} onClick={() => set({ skills: on ? draft.skills.filter((x) => x !== k) : [...(draft.skills || []), k] })} {...chip(on)}>{k}</button>; })}
@@ -3693,8 +3660,8 @@ function CreatorDiagnosis({ theme, caseOptions }) {
       </section>
 
       <section className={card}>
-        <h2 className={h2}>3. 工程ごとの好き度合いと、かかる時間</h2>
-        <p className={sub}>10分の動画1本で、それぞれ何時間くらいかかるか。やったことが無い工程は、想像でOK</p>
+        <h2 className={h2}>3. 工程ごとの好き度合い</h2>
+        <p className={sub}>好き度は必須、かかる時間は任意です（10分の動画でだいたい何時間か。実際の時間は案件ごとに変わるので、参考の目安として使います）</p>
         {CREATOR_STEPS.map((s) => { const st = draft.steps[s.key] || {}; return (
           <div key={s.key} className="border-t border-stone-100 py-3 first:border-t-0 first:pt-0">
             <div className="text-[13.5px] font-bold text-stone-800 mb-2">{s.label}</div>
@@ -3703,7 +3670,7 @@ function CreatorDiagnosis({ theme, caseOptions }) {
                 <span className="text-[11.5px] text-stone-500 mr-1">好き度</span>
                 {[1, 2, 3, 4, 5].map((n) => <button key={n} onClick={() => setStep(s.key, { like: n })} aria-label={`${n}`} className="text-[20px] leading-none" style={{ color: Number(st.like) >= n ? theme.accent : "#D6D3D1" }}>★</button>)}
               </div>
-              <label className="flex items-center gap-1 text-[11.5px] text-stone-500">かかる時間<input type="number" min="0" step="0.5" value={st.hours == null ? "" : st.hours} onChange={(e) => setStep(s.key, { hours: e.target.value })} className="w-[72px] text-[14px] border border-stone-300 rounded-lg px-2 py-1" />時間</label>
+              <label className="flex items-center gap-1 text-[11.5px] text-stone-500">かかる時間（任意）<input type="number" min="0" step="0.5" value={st.hours == null ? "" : st.hours} onChange={(e) => setStep(s.key, { hours: e.target.value })} className="w-[72px] text-[14px] border border-stone-300 rounded-lg px-2 py-1" />時間</label>
             </div>
           </div>
         ); })}
@@ -3735,6 +3702,17 @@ function CreatorDiagnosis({ theme, caseOptions }) {
         <div className="flex flex-wrap gap-1.5 mb-3">{CREATOR_SOFTWARE.map((k) => { const on = (draft.software || []).includes(k); return <button key={k} onClick={() => set({ software: on ? draft.software.filter((x) => x !== k) : [...(draft.software || []), k] })} {...chip(on)}>{k}</button>; })}</div>
         <label className="block text-[12px] font-bold text-stone-600 mb-3">自己紹介<textarea value={draft.bio || ""} onChange={(e) => set({ bio: e.target.value })} rows={3} maxLength={400} placeholder="得意なこと・大事にしていること・どんな案件をやりたいか など" className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
         <label className="block text-[12px] font-bold text-stone-600 mb-3">SNS・連絡先のURL<input value={draft.contact || ""} onChange={(e) => set({ contact: e.target.value })} placeholder="https://x.com/..." className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">ポートフォリオサイト（まとめページがあれば）<input value={draft.site || ""} onChange={(e) => set({ site: e.target.value })} placeholder="https://..." className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <div className="grid sm:grid-cols-2 gap-3 mb-2">
+          <label className="text-[12px] font-bold text-stone-600">Gmailアドレス<input type="email" value={draft.email || ""} onChange={(e) => set({ email: e.target.value })} placeholder={userEmail || "example@gmail.com"} className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" style={draft.email && !safeEmail(draft.email) ? { borderColor: "#DC2645" } : {}} />
+            {!draft.email && userEmail && <button type="button" onClick={() => set({ email: userEmail })} className="mt-1 text-[11px] font-bold underline text-stone-500">ログイン中のアドレス（{userEmail}）を入れる</button>}
+          </label>
+          <label className="text-[12px] font-bold text-stone-600">LINE ID（任意）<input value={draft.line || ""} onChange={(e) => set({ line: e.target.value })} placeholder="LINE ID" className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        </div>
+        <label className="flex items-start gap-2 text-[12px] text-stone-600 mb-4 cursor-pointer">
+          <input type="checkbox" checked={draft.showContact !== false} onChange={(e) => set({ showContact: e.target.checked })} className="mt-0.5" />
+          <span>Gmailアドレス・LINE ID を共有ページに載せる（オフにすると、共有URLを受け取った人には見えません）</span>
+        </label>
         <div className="text-[12px] font-bold text-stone-600 mb-1.5">ポートフォリオ（10件まで）</div>
         {(draft.portfolio || []).map((w, i) => {
           const upd = (patch) => set({ portfolio: draft.portfolio.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
@@ -3757,7 +3735,7 @@ function CreatorDiagnosis({ theme, caseOptions }) {
 
       <div className="flex items-center gap-2 mb-10">
         <button disabled={!complete || saving} onClick={save} className="text-[14px] font-bold px-6 py-2.5 rounded-xl text-white disabled:opacity-40" style={{ background: theme.accent }}>{saving ? "保存中…" : "診断する"}</button>
-        {!complete && <span className="text-[11.5px] text-stone-500">作業できる時間・5工程の好き度と時間・12問に答えると診断できます</span>}
+        {!complete && <span className="text-[11.5px] text-stone-500">作業できる時間・5工程の好き度・12問に答えると診断できます</span>}
         {saved && profileComplete(saved) && <button onClick={() => { setDraft({ ...emptyCreatorProfile(), ...saved }); setMode("result"); }} className="text-[12px] font-bold text-stone-500 underline ml-auto">変えずに結果へ戻る</button>}
       </div>
     </>
@@ -12227,7 +12205,7 @@ export default function App() {
               <button onClick={() => setShowCreator(false)} className="ml-auto text-[12px] font-bold px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-600 hover:bg-stone-50">閉じる</button>
             </div>
             <p className="text-[12px] text-stone-500 mb-4">作業の仕方と工程ごとの時間から、あなたに合った制作の流れと、納期から逆算した作業予定を出します。{!user && "（ログインすると回答がアカウントに保存され、どの端末でも見られます）"}</p>
-            <CreatorDiagnosis theme={theme} caseOptions={index.filter((x) => liveStatus(x.id, caseData(x.id)) !== "完了").map((x) => { const d = caseData(x.id); return { id: x.id, name: (d && d.name) || x.name, deadline: (d && d.deadline) || "" }; })} />
+            <CreatorDiagnosis theme={theme} userEmail={(user && user.email) || ""} />
           </main>
         </div>
       )}
