@@ -80,7 +80,24 @@ export async function planReminders({ deliverables, loadCase, docs, today, membe
   const out = [];
   for (const d of deliverables || []) {
     if (!d || !d.mgProjectId || d.archived || (d.productionStatus && d.productionStatus !== "active")) continue;
-    const steps = (d.steps || []).filter((s) => !s.archived && !DONE.has(s.status) && isEditorStep(s));
+    // 2026-09-29 AK「先方チェックでほとんど止まってるので編集者に送っても意味ない」：
+    // 見るのは「今の工程（一番手前の未完了）」だけ。先の編集工程の締切で編集者を急かさない。
+    const ordered = (d.steps || []).filter((s) => s && !s.archived).sort((a, b) => (a.stepOrder || 0) - (b.stepOrder || 0));
+    const cur = ordered.find((s) => !DONE.has(s.status));
+    if (!cur) continue;
+    const isClientStep = cur.defaultRole === "Client" || /先方/.test(cur.stepName || "");
+    if (isClientStep) {
+      // 先方の確認で止まっている＝催促はAKから先方へ。編集者には送らない
+      const dl = (cur.deadline || "").slice(0, 10);
+      const days = dl && /^\d{4}-\d{2}-\d{2}$/.test(dl) ? Math.round((Date.parse(today + "T00:00:00Z") - Date.parse(dl + "T00:00:00Z")) / 86400000) : null;
+      if (days != null && days >= 0 && adminEmails.length) {
+        const k = (await loadCase(d.mgProjectId)) || {};
+        out.push({ caseId: d.mgProjectId, caseName: k.name || d.title || "案件", stepName: cur.stepName, deadline: dl, days,
+          key: `${d.mgProjectId}:${cur.id}:client:${dl}`, to: adminEmails, forAdmin: true, kind: "client_wait" });
+      }
+      continue;
+    }
+    const steps = isEditorStep(cur) ? [cur] : [];
     const due = steps.map((s) => ({ s, ph: phaseOf(s.deadline, today) })).filter((x) => x.ph);
     if (!due.length) continue;
     // 共同編集に招待されていない案件（個人保存のまま）でも、Studio OSの担当には送る（2026-09-29 AK「担当になったら自動で開ける」）
@@ -146,7 +163,10 @@ export function composeDigest(items, appOrigin, to = "") {
 export function composeAdminDigest(items, appOrigin) {
   const stale = items.filter((r) => r.kind === "stale");
   const mismatch = items.filter((r) => r.kind === "mismatch");
+  const client = items.filter((r) => r.kind === "client_wait");
   const parts = [];
+  if (client.length) parts.push(`■ 先方の確認で止まっている案件（${client.length}件）\n編集者には送っていません。先方への催促をお願いします。\n` +
+    listed(client, (r) => `・${r.caseName}（${r.stepName}）催促日 ${r.deadline}${r.days ? "・" + r.days + "日経過" : "・今日"} ${appOrigin}/?case=${encodeURIComponent(r.caseId)}`));
   if (stale.length) parts.push(`■ 締切から${OVERDUE_EDITOR_DAYS}日以上たっても完了になっていない工程（${stale.length}件）\n編集者への自動の催促は止めました。完了の登録漏れか、締切の見直しが必要かを確認してください。\n` +
     listed(stale, (r) => `・${r.caseName}（${r.stepName}）締切 ${r.deadline}・${-r.phase.days}日超過 ${appOrigin}/?case=${encodeURIComponent(r.caseId)}`));
   if (mismatch.length) parts.push(`■ リマインドが届かない編集担当（${mismatch.length}件）\nStudio OSの編集担当のメールが、ものがたりっちの案件メンバーにいません。案件に招待するか、Studio OSのメールを直してください。\n` +
@@ -284,8 +304,9 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
   for (const [to, g] of byTo) {
     const notifs = g.editor.map((r) => toNotification(r, now));
     if (g.admin.length) {
-      const stale = g.admin.filter((r) => r.kind === "stale"), mis = g.admin.filter((r) => r.kind === "mismatch");
+      const stale = g.admin.filter((r) => r.kind === "stale"), mis = g.admin.filter((r) => r.kind === "mismatch"), cw = g.admin.filter((r) => r.kind === "client_wait");
       notifs.push(digestNotification("admin:" + today, `確認が必要な工程・担当 ${g.admin.length}件`, "Studio OSの確認が必要です", [
+        { source: "先方の確認で止まっている（先方へ催促）", points: cw.map((r) => `${r.caseName}（${r.stepName}）催促日 ${r.deadline}`) },
         { source: `締切から${OVERDUE_EDITOR_DAYS}日以上たっても未完了`, points: stale.map((r) => `${r.caseName}（${r.stepName}）締切 ${r.deadline}`) },
         { source: "リマインドが届かない編集担当（案件に未招待）", points: mis.map((r) => `${r.caseName}：${r.missing.join("、")}`) },
       ], now));
