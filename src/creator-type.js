@@ -210,7 +210,8 @@ export function planToIcs(plan, title) {
 export function profileComplete(p) {
   if (!p) return false;
   const answered = CREATOR_QUESTIONS.every((q) => Number.isFinite(Number((p.answers || {})[q.id])) && (p.answers || {})[q.id] !== "" && (p.answers || {})[q.id] != null);
-  const steps = CREATOR_STEPS.every((s) => p.steps && p.steps[s.key] && Number(p.steps[s.key].hours) > 0 && Number(p.steps[s.key].like) >= 1);
+  // 時間は任意（案件ごとに変わるため。2026-09-29 AK「どれくらい時間がかかるのかは案件によってわかる」）。好き度だけ必須
+  const steps = CREATOR_STEPS.every((s) => p.steps && p.steps[s.key] && Number(p.steps[s.key].like) >= 1);
   const avail = p.avail && (Number(p.avail.weekday) > 0 || Number(p.avail.weekend) > 0);
   return answered && steps && !!avail;
 }
@@ -221,7 +222,21 @@ export function profileComplete(p) {
 
 export const CREATOR_SOFTWARE = ["Premiere Pro", "After Effects", "Final Cut Pro", "DaVinci Resolve", "CapCut", "Photoshop", "Illustrator", "Canva"];
 export const CREATOR_YEARS = ["半年未満", "半年〜1年", "1〜3年", "3年以上"];
+// 本人が別の診断で出た結果を選ぶだけ（設問は持たない。2026-09-29 AK「MBTI・4脳分類も入れられる項目」）
+export const MBTI_TYPES = ["INTJ", "INTP", "ENTJ", "ENTP", "INFJ", "INFP", "ENFJ", "ENFP", "ISTJ", "ISFJ", "ESTJ", "ESFJ", "ISTP", "ISFP", "ESTP", "ESFP"];
+// 4脳分類＝利き脳（情報の入れ方×出し方）
+export const BRAIN_TYPES = [
+  { key: "右右", label: "右右脳（感覚で受け取り、感覚で表す）" },
+  { key: "右左", label: "右左脳（感覚で受け取り、論理で表す）" },
+  { key: "左右", label: "左右脳（論理で受け取り、感覚で表す）" },
+  { key: "左左", label: "左左脳（論理で受け取り、論理で表す）" },
+];
 export const PORTFOLIO_ROLES = ["撮影", "構成", "あら編集", "テロップ", "演出", "最終調整", "サムネ", "全部"];
+
+export function safeEmail(e) {
+  const s = String(e || "").trim();
+  return /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(s) ? s.slice(0, 120) : "";
+}
 
 // http(s) 以外（javascript: 等）は捨てる
 export function safeUrl(u) {
@@ -236,6 +251,13 @@ export function publicProfile(p) {
   return {
     v: 1,
     name: clip(p.name, 40), bio: clip(p.bio, 400), years: clip(p.years, 20), contact: safeUrl(p.contact),
+    site: safeUrl(p.site),
+    // 連絡先（Gmail・LINE ID）は本人が「共有ページに載せる」をオンにした時だけ載せる
+    showContact: p.showContact !== false,
+    email: p.showContact === false ? "" : safeEmail(p.email),
+    line: p.showContact === false ? "" : clip(String(p.line || "").trim(), 40),
+    mbti: MBTI_TYPES.includes(p.mbti) ? p.mbti : "",
+    brain: BRAIN_TYPES.some((b) => b.key === p.brain) ? p.brain : "",
     work: clip(p.work, 20), skills: (p.skills || []).slice(0, 20), software: (p.software || []).slice(0, 12),
     focusMin: Number(p.focusMin) || 60, answers: p.answers || {},
     steps: Object.fromEntries(CREATOR_STEPS.map((s) => { const st = (p.steps || {})[s.key] || {}; return [s.key, { like: Number(st.like) || 0, hours: Number(st.hours) || 0 }]; })),
@@ -305,13 +327,14 @@ export function matchPosting(p, text) {
   }
   const mm = /(\d+(?:\.\d+)?)\s*分/.exec(t);
   const minutes = mm ? Number(mm[1]) : null;
-  if (minutes && minutes <= 180) {
+  const hasHours = estimateHours(p, 10, type).total > 0;
+  if (minutes && minutes <= 180 && hasHours) {
     const per = estimateHours(p, minutes, type).total;
     const wk = weeklyHours(p);
     lines.push({ ok: "・", text: `${minutes}分の動画1本で約${per}時間（本人の申告から）。週${wk}時間使えるので、1本におよそ${wk ? Math.ceil((per / wk) * 7) : "—"}日` });
   }
   const mc = /月\s*(\d+)\s*本/.exec(t);
-  if (mc) {
+  if (mc && hasHours) {
     const need = Number(mc[1]);
     const cap = monthlyCapacity(p, minutes || 10, type);
     lines.push(cap >= need ? { ok: "○", text: `月${need}本に対して、目安は月${cap}本（${minutes || 10}分の動画で計算）` } : { ok: "×", text: `月${need}本に対して、目安は月${cap}本で足りない可能性（${minutes || 10}分の動画で計算）` });
@@ -333,11 +356,16 @@ export function profilePrompt(p, posting) {
   L.push(`- タイプ：${type.name}（${type.catch}）${type.tags.length ? "／" + type.tags.join("・") : ""}`);
   L.push(`- 強み：${type.good}`, `- 気をつけたいこと：${type.watch}`);
   if (p.work) L.push(`- 動画編集は：${p.work}`);
+  if (p.mbti) L.push(`- MBTI（本人申告）：${p.mbti}`);
+  if (p.brain) L.push(`- 4脳分類（利き脳・本人申告）：${(BRAIN_TYPES.find((b) => b.key === p.brain) || {}).label || p.brain}`);
   if (p.years) L.push(`- 経験：${p.years}`);
   if ((p.skills || []).length) L.push(`- 得意分野：${p.skills.join("、")}`);
   if ((p.software || []).length) L.push(`- 使えるソフト：${p.software.join("、")}`);
   L.push(`- 作業できる時間：平日${Number(p.avail.weekday) || 0}時間／土日${Number(p.avail.weekend) || 0}時間${(p.avail.offDays || []).length ? "（作業しない曜日：" + p.avail.offDays.map((d) => "日月火水木金土"[d]).join("") + "）" : ""}、週${weeklyHours(p)}時間`);
-  L.push(`- 10分の動画1本で合計約${est.total}時間：` + est.steps.map((s) => `${s.label}${s.hours}h（好き度${(p.steps[s.key] || {}).like || "-"}/5）`).join("、"));
+  L.push(est.total > 0
+    ? `- 10分の動画1本で合計約${est.total}時間（本人の目安）：` + est.steps.map((s) => `${s.label}${s.hours}h（好き度${(p.steps[s.key] || {}).like || "-"}/5）`).join("、")
+    : "- 工程ごとの好き度：" + est.steps.map((s) => `${s.label}${(p.steps[s.key] || {}).like || "-"}/5`).join("、"));
+  if (p.site) L.push(`- ポートフォリオサイト：${p.site}`);
   if (p.bio) L.push(`- 自己紹介：${p.bio}`);
   if ((p.portfolio || []).length) { L.push("- ポートフォリオ："); for (const w of p.portfolio) L.push(`  - ${w.title || "作品"} ${w.url}${(w.roles || []).length ? "（担当：" + w.roles.join("・") + "）" : ""}${w.note ? "　" + w.note : ""}`); }
   L.push("", "## 募集文", String(posting || "（未入力）").trim());

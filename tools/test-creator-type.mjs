@@ -98,4 +98,23 @@ assert.ok(!matchPosting(back, "Premiere Proで編集できる方").lines.some((l
 const prompt = profilePrompt(back, "募集文です");
 assert.ok(prompt.includes("タイプ：一撃集中型") && prompt.includes("## 募集文\n募集文です") && prompt.includes("https://youtu.be/x"));
 
+// 時間は任意：好き度だけで診断できる
+const noHours = { ...profile, steps: Object.fromEntries(Object.entries(profile.steps).map(([k, v]) => [k, { like: v.like }])) };
+assert.equal(profileComplete(noHours), true);
+assert.ok(!matchPosting(noHours, "尺は10分、月4本").lines.some((l) => /時間|本に対して/.test(l.text)));
+assert.ok(profilePrompt(publicProfile(noHours), "x").includes("工程ごとの好き度："));
+// 連絡先・MBTI・4脳分類
+const withC = publicProfile({ ...full, email: "ak@gmail.com", line: "ak_line", site: "ak.studio", mbti: "INFP", brain: "右左" });
+assert.equal(withC.email, "ak@gmail.com");
+assert.equal(withC.line, "ak_line");
+assert.equal(withC.site, "https://ak.studio/");
+assert.equal(withC.mbti, "INFP");
+assert.equal(withC.brain, "右左");
+assert.equal(publicProfile({ ...full, email: "not-an-email" }).email, "");
+assert.equal(publicProfile({ ...full, mbti: "XXXX", brain: "?" }).mbti, "");
+const hidden = publicProfile({ ...full, email: "ak@gmail.com", line: "ak_line", showContact: false });
+assert.equal(hidden.email, "");
+assert.equal(hidden.line, "");
+assert.ok(profilePrompt(withC, "x").includes("MBTI（本人申告）：INFP"));
+
 console.log("creator profile share tests passed");
