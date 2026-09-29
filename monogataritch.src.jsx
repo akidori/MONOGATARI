@@ -11966,13 +11966,13 @@ export default function App() {
 
             {/* 2026-09-29 AK「ホーム画面さっきのシンプルなものに戻して」：あなたの担当・今日の仕事は「担当と納期」へ移し、続きから開くは外した */}
             <div className="text-[13px] font-bold tracking-wide text-stone-600 mb-2">チャンネル（{channelGroups.length}）</div>
-            <div className="space-y-6">
+            <div className="space-y-2.5">
               {channelGroups.map(({ channel, items }) => {
                 const ci = channelInfo[channel] || {};
                 return (
-                  <div key={channel}
+                  <div key={channel} className="bg-white border border-stone-200 rounded-xl px-4 py-2.5 shadow-sm"
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
-                    <div className="flex items-start gap-2 px-1">
+                    <div className="flex items-start gap-2">
                       <button onClick={() => openChannel(channel)} title="このチャンネルの企画一覧を開く" className="flex items-start gap-2 min-w-0 flex-1 text-left group/cn">
                         {channelIconOf(channel)
                           ? <span className="w-4 h-4 shrink-0 mt-0.5 grid place-items-center text-[14px] leading-none">{channelIconOf(channel)}</span>
@@ -11993,52 +11993,7 @@ export default function App() {
                         )}
                       </div>
                     </div>
-                    {/* 案件カード（2026-09-26 AK「案件ごとにカードで整理・編集者の権限を付与」） */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 mt-2">
-                      {items.slice(0, 9).map((x) => {
-                        const owner = (x.ownerEmail || "").toLowerCase();
-                        const editors = (x.members || []).filter((m) => m !== owner);
-                        const canManage = !x.collab || x.role === "owner";
-                        return (
-                          <div key={x.id} className="bg-white border border-stone-200 rounded-xl shadow-sm hover:shadow-md hover:border-stone-300 transition-all flex flex-col min-w-0">
-                            <button onClick={() => openCase(x.id)} className="text-left px-3.5 pt-3 pb-2 flex-1 min-w-0 group/cc">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                {x.favorite && <Icon name="star" className="w-3.5 h-3.5 shrink-0 text-amber-400" />}
-                                <span className="text-[14px] font-bold text-stone-800 truncate">{x.name || "（無題）"}</span>
-                              </div>
-                              <div className="mt-1 text-[12px] font-semibold opacity-0 group-hover/cc:opacity-100 transition-opacity" style={{ color: theme.main }}>開く →</div>
-                            </button>
-                            <div className="flex items-center gap-1.5 px-3.5 pb-2.5 pt-2 border-t border-stone-100">
-                              {editors.length > 0 && (
-                                <div className="flex -space-x-1.5 shrink-0">
-                                  {editors.slice(0, 4).map((em) => (
-                                    <span key={em} title={em} className="w-6 h-6 rounded-full grid place-items-center text-[10px] font-bold text-white bg-stone-500 border-2 border-white">{em[0].toUpperCase()}</span>
-                                  ))}
-                                </div>
-                              )}
-                              <span className="text-[11px] text-stone-500 truncate">{editors.length ? "編集者 " + editors.length + "人" : "編集者なし"}</span>
-                              {canManage && (
-                                <button onClick={() => { setCaseEditors({ id: x.id }); setCaseEditorEmail(""); }}
-                                  title="この案件の編集者を追加・解除"
-                                  className="ml-auto shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1">
-                                  <Icon name="user" className="w-3 h-3" />編集者
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {items.length > 9 && (
-                        <button onClick={() => openChannelBoard(channel)} className="rounded-xl border border-dashed border-stone-300 text-[12.5px] font-bold text-stone-500 hover:bg-white min-h-[84px]">
-                          すべて（{items.length}）を見る →
-                        </button>
-                      )}
-                      {items.length === 0 && (
-                        <button onClick={(e) => setAddMenu({ channel, x: e.clientX, y: e.clientY })} className="rounded-xl border border-dashed border-stone-300 text-[12.5px] font-bold text-stone-500 hover:bg-white min-h-[84px] inline-flex items-center justify-center gap-1">
-                          <Icon name="plus" className="w-3.5 h-3.5" />案件を追加
-                        </button>
-                      )}
-                    </div>
+                    {/* 2026-09-29 AK：案件カードは外し、9/26昼の折りたたみ（チャンネル1行・押すと中の案件一覧）に戻した */}
                   </div>
                 );
               })}
