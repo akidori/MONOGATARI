@@ -296,7 +296,9 @@ export function workForCase(d, today, docs) {
   else if (mine) action = cur.stepName + "待ち" + (cur.deadline ? "（" + cur.deadline.slice(5, 10).replace("-", "/") + "予定）" : "") + "。次はあなたの" + mine.stepName;
   else action = cur.stepName + "の段階です（編集の担当工程はありません）";
   return {
-    caseId: d.mgProjectId, title: d.title || "",
+    caseId: d.mgProjectId, title: d.title || "", deliverableId: d.id || "",
+    // ゴールまでの距離（何工程目か）。ホームで「今どこまで進んだか」を出す
+    stepNo: cur ? steps.indexOf(cur) + 1 : steps.length, stepTotal: steps.length,
     finalDeadline: (d.finalDeadline || "").slice(0, 10),
     current: cur ? { name: cur.stepName, deadline: (cur.deadline || "").slice(0, 10), isEditor: isEditorStep(cur) } : null,
     mine: mine ? { name: mine.stepName, deadline: (mine.deadline || "").slice(0, 10), days } : null,

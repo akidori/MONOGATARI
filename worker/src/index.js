@@ -1489,6 +1489,8 @@ ${qList}
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
         if (!isStaff(u, env)) return json({ error: "管理者のみ", staff: false }, 403);
+        // get_work は Studio OS の MCP_MEMBER_ID（AK本人）の仕事。他のディレクターが管理者でも見せない
+        if (env.MCP_OWNER_SUB && u.sub !== env.MCP_OWNER_SUB) return json({ connected: false, owner: false });
         if (!env.STUDIO_MCP_KEY) return json({ connected: false });
         try {
           const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/mcp", {
@@ -1502,6 +1504,11 @@ ${qList}
           if (j && j.result && j.result.isError) return json({ connected: false });
           if (!text) return json({ connected: false });
           let work; try { work = JSON.parse(text); } catch (e) { return json({ connected: false }); }
+          // ものがたりっちは制作のツール（2026-09-29 AK）。出すのは「今日やること（案件）」「案件を前に進める」「連絡・返事」だけ。
+          // 請求・入金／待ち／保留／その他の仕事／月のゴールは Studio OS 側で見る
+          const KEEP = { today: (r) => r.kind === "case", go: (r) => r.kind === "case", reply: () => true };
+          work.groups = (work.groups || []).filter((g) => KEEP[g.key]).map((g) => ({ ...g, rows: (g.rows || []).filter(KEEP[g.key]) }));
+          delete work.counts;
           return json({ connected: true, work });
         } catch (e) { return json({ connected: false }); }
       }
