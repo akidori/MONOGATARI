@@ -11882,7 +11882,7 @@ export default function App() {
               </div>
             )}
             {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
-              <button onClick={() => { setTodayWorkOpenKey(null); document.getElementById("home-today-work")?.scrollIntoView({ behavior: "smooth", block: "start" }); }}
+              <button onClick={() => { setTodayWorkOpenKey(null); setView("team"); setTimeout(() => document.getElementById("home-today-work")?.scrollIntoView({ behavior: "smooth", block: "start" }), 300); }}
                 className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12.5px] text-stone-600 hover:bg-white">
                 <Icon name="cloud" className="w-3.5 h-3.5 shrink-0 text-stone-400" />今日の仕事へ
               </button>
@@ -11964,139 +11964,7 @@ export default function App() {
               </div>
             )}
 
-            {/* ===== あなたの担当（編集者のダッシュボード・2026-09-26）：今やること・締切・早い/遅れ・納期・注意事項 ===== */}
-            {myWork && myWork.cases && myWork.cases.length > 0 && (() => {
-              const PACE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645", o: 0 }, "今日": { bg: "#FCE9D6", fg: "#C2410C", o: 1 }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309", o: 2 }, "締切未設定": { bg: "#F0F0F2", fg: "#57534E", o: 3 }, "余裕": { bg: "#E7F6EC", fg: "#15803D", o: 4 }, "担当工程なし": { bg: "#F0F0F2", fg: "#57534E", o: 5 }, "完了": { bg: "#E7F6EC", fg: "#15803D", o: 6 } };
-              const md = (s) => (s ? s.slice(5).replace("-", "/") : "");
-              // 完了した案件は「今やること」が無いので出さない（管理者は紐付いた全案件が返るため、完了が並んでいた）
-              const list = myWork.cases.filter((w) => w.pace !== "完了").sort((a, b) => (PACE[a.pace] || PACE["余裕"]).o - (PACE[b.pace] || PACE["余裕"]).o || ((a.mine && a.mine.days) ?? 99) - ((b.mine && b.mine.days) ?? 99)).slice(0, 8);
-              if (!list.length) return null;
-              return (
-              <div className="mb-7">
-                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
-                  <Icon name="clock" className="w-4 h-4" />あなたの担当
-                  <span className="text-[11.5px] font-normal text-stone-500">締切が近い順</span>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
-                  {list.map((w) => {
-                    const pc = PACE[w.pace] || PACE["余裕"];
-                    const x = index.find((i) => i.id === w.caseId);
-                    const channel = (x && x.channel) || DEFAULT_CHANNEL;
-                    const cautions = cautionsFor(w.caseId, channel, w.clientNotes);
-                    const daysLabel = w.mine && w.mine.days != null ? (w.mine.days < 0 ? -w.mine.days + "日遅れ" : w.mine.days === 0 ? "今日まで" : "あと" + w.mine.days + "日") : "";
-                    return (
-                      <div key={w.caseId} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm" style={w.pace === "遅れ" ? { borderColor: "#F5B5C0" } : undefined}>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="shrink-0 text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: pc.bg, color: pc.fg }}>{w.pace}{daysLabel && w.pace !== "今日" ? "・" + daysLabel : ""}</span>
-                          <button onClick={() => openCase(w.caseId)} className="min-w-0 truncate text-[14px] font-bold text-stone-800 hover:underline text-left">{(x && x.name) || w.title}</button>
-                        </div>
-                        <div className="text-[13px] text-stone-800 font-bold leading-snug">今やること：{w.action}</div>
-                        <div className="mt-1 text-[12px] text-stone-600 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
-                          {w.mine && <span>{w.mine.name}の締切 <b className="text-stone-800">{w.mine.deadline ? md(w.mine.deadline) : "未設定"}</b></span>}
-                          {w.finalDeadline && <span>納期 <b className="text-stone-800">{md(w.finalDeadline)}</b></span>}
-                          {w.current && !w.current.isEditor && w.current.deadline && <span>{w.current.name} {md(w.current.deadline)}予定</span>}
-                        </div>
-                        {cautions.length > 0 && (
-                          <div className="mt-2 rounded-lg bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 space-y-0.5">
-                            {cautions.map((c) => (
-                              <div key={c.label} className="text-[12px] text-stone-700 leading-snug"><span className="font-bold text-amber-800">{c.label}：</span>{c.items.join(" ／ ")}</div>
-                            ))}
-                          </div>
-                        )}
-                        {w.guides && w.guides.length > 0 && (
-                          <details className="mt-1.5">
-                            <summary className="text-[12px] font-bold cursor-pointer" style={{ color: theme.main }}>{w.mine ? w.mine.name : "この工程"}で押さえること</summary>
-                            {w.guides.map((g, gi) => (
-                              <div key={gi} className="mt-1">
-                                <div className="text-[11.5px] font-bold text-stone-500">{g.source}</div>
-                                <ul className="mt-0.5 space-y-0.5">{g.points.map((pt, pi) => <li key={pi} className="text-[12px] text-stone-600 leading-snug">・{pt}</li>)}</ul>
-                              </div>
-                            ))}
-                          </details>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              );
-            })()}
-
-            {/* ===== 今日の仕事（Studio OS連携・2026-09-23）。件数だけ見せて開くと詳細＝Studio OS自身の
-                 「待ちはホームの既定表示にしない」(AK 2026-09-07 §4)に合わせた控えめな表示。
-                 未接続（STUDIO_MCP_KEY未設定・Studio OS未応答）の時は静かに何も出さない ===== */}
-            {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
-              <div className="mb-7" id="home-today-work">
-                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
-                  今日の仕事<span className="text-stone-300 font-normal">Studio OS</span>
-                </div>
-                <div className="flex flex-wrap gap-2.5">
-                  {todayWork.groups.filter((g) => g.rows && g.rows.length).map((g) => (
-                    <div key={g.key} className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden" style={{ minWidth: 176 }}>
-                      <button onClick={() => setTodayWorkOpenKey((k) => (k === g.key ? null : g.key))}
-                        className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-stone-50">
-                        <span className="text-[13px] font-bold text-stone-700">{g.title}</span>
-                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 shrink-0">{g.rows.length}</span>
-                      </button>
-                      {todayWorkOpenKey === g.key && (
-                        <div className="border-t border-stone-100 px-3.5 py-2 space-y-2 max-h-64 overflow-y-auto">
-                          {g.rows.slice(0, 20).map((r, i) => (
-                            <div key={i} className="text-[12px]">
-                              <div className="font-semibold text-stone-700 truncate">{r.label}</div>
-                              {r.due && <div className="text-stone-400 mt-0.5">{r.due}</div>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ===== Brain（Studio OSナレッジ候補・2026-09-26）。多くても3件だけ表示し、残りは「すべて見る」でナレッジ画面へ ===== */}
-            {knowledgeInbox && knowledgeInbox.length > 0 && (
-              <div className="mb-7">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-[13px] font-bold flex items-center gap-2 text-stone-600">
-                    Brain<span className="text-stone-300 font-normal">{knowledgeInbox.length}</span>
-                  </div>
-                  <button onClick={() => setView("knowledge")} className="text-[12px] font-bold" style={{ color: theme.main }}>すべて見る →</button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                  {knowledgeInbox.slice(0, 3).map((c) => (
-                    <div key={c.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">{c.kind === "regulation_rule" ? "ルール候補" : "ナレッジ候補"}</span>
-                        <span className="text-[11px] text-stone-400 truncate">{c.client_name || "全社"}</span>
-                      </div>
-                      <div className="text-[13px] text-stone-800 mb-2 line-clamp-2">{(c.payload && c.payload.content) || ""}</div>
-                      <div className="flex gap-1.5">
-                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "adopt")}
-                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">採用</button>
-                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "dismiss")}
-                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40 text-stone-400">見送り</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* ===== 最近触った（クイックアクセス） ===== */}
-            {(() => {
-              const { recent } = homeSections;
-              if (!index.length || !recent.length) return null;
-              return (
-                <div className="mb-7">
-                  <div className="mb-5">
-                    <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">続きから開く<span className="text-stone-300 font-normal">{recent.length}</span></div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">{recent.map(renderCaseCard)}</div>
-                  </div>
-                </div>
-              );
-            })()}
-
+            {/* 2026-09-29 AK「ホーム画面さっきのシンプルなものに戻して」：あなたの担当・今日の仕事は「担当と納期」へ移し、続きから開くは外した */}
             <div className="text-[13px] font-bold tracking-wide text-stone-600 mb-2">チャンネル（{channelGroups.length}）</div>
             <div className="space-y-6">
               {channelGroups.map(({ channel, items }) => {
@@ -12427,6 +12295,125 @@ export default function App() {
             <p className="text-[12px] text-stone-500 mb-4">
               {connected ? "工程・締切・担当はStudio OS、編集者はものがたりっちの招待から。看板の列の「締切」は今の工程の締切です（無ければ納期）。" : "Studio OSとつながっていないため、ものがたりっちの編集者と案件の締切だけで表示しています。"}
             </p>
+
+            {/* ===== あなたの担当（編集者のダッシュボード・2026-09-26）：今やること・締切・早い/遅れ・納期・注意事項 ===== */}
+            {myWork && myWork.cases && myWork.cases.length > 0 && (() => {
+              const PACE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645", o: 0 }, "今日": { bg: "#FCE9D6", fg: "#C2410C", o: 1 }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309", o: 2 }, "締切未設定": { bg: "#F0F0F2", fg: "#57534E", o: 3 }, "余裕": { bg: "#E7F6EC", fg: "#15803D", o: 4 }, "担当工程なし": { bg: "#F0F0F2", fg: "#57534E", o: 5 }, "完了": { bg: "#E7F6EC", fg: "#15803D", o: 6 } };
+              const md = (s) => (s ? s.slice(5).replace("-", "/") : "");
+              // 完了した案件は「今やること」が無いので出さない（管理者は紐付いた全案件が返るため、完了が並んでいた）
+              const list = myWork.cases.filter((w) => w.pace !== "完了").sort((a, b) => (PACE[a.pace] || PACE["余裕"]).o - (PACE[b.pace] || PACE["余裕"]).o || ((a.mine && a.mine.days) ?? 99) - ((b.mine && b.mine.days) ?? 99)).slice(0, 8);
+              if (!list.length) return null;
+              return (
+              <div className="mb-7">
+                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
+                  <Icon name="clock" className="w-4 h-4" />あなたの担当
+                  <span className="text-[11.5px] font-normal text-stone-500">締切が近い順</span>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                  {list.map((w) => {
+                    const pc = PACE[w.pace] || PACE["余裕"];
+                    const x = index.find((i) => i.id === w.caseId);
+                    const channel = (x && x.channel) || DEFAULT_CHANNEL;
+                    const cautions = cautionsFor(w.caseId, channel, w.clientNotes);
+                    const daysLabel = w.mine && w.mine.days != null ? (w.mine.days < 0 ? -w.mine.days + "日遅れ" : w.mine.days === 0 ? "今日まで" : "あと" + w.mine.days + "日") : "";
+                    return (
+                      <div key={w.caseId} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm" style={w.pace === "遅れ" ? { borderColor: "#F5B5C0" } : undefined}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="shrink-0 text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: pc.bg, color: pc.fg }}>{w.pace}{daysLabel && w.pace !== "今日" ? "・" + daysLabel : ""}</span>
+                          <button onClick={() => openCase(w.caseId)} className="min-w-0 truncate text-[14px] font-bold text-stone-800 hover:underline text-left">{(x && x.name) || w.title}</button>
+                        </div>
+                        <div className="text-[13px] text-stone-800 font-bold leading-snug">今やること：{w.action}</div>
+                        <div className="mt-1 text-[12px] text-stone-600 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
+                          {w.mine && <span>{w.mine.name}の締切 <b className="text-stone-800">{w.mine.deadline ? md(w.mine.deadline) : "未設定"}</b></span>}
+                          {w.finalDeadline && <span>納期 <b className="text-stone-800">{md(w.finalDeadline)}</b></span>}
+                          {w.current && !w.current.isEditor && w.current.deadline && <span>{w.current.name} {md(w.current.deadline)}予定</span>}
+                        </div>
+                        {cautions.length > 0 && (
+                          <div className="mt-2 rounded-lg bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 space-y-0.5">
+                            {cautions.map((c) => (
+                              <div key={c.label} className="text-[12px] text-stone-700 leading-snug"><span className="font-bold text-amber-800">{c.label}：</span>{c.items.join(" ／ ")}</div>
+                            ))}
+                          </div>
+                        )}
+                        {w.guides && w.guides.length > 0 && (
+                          <details className="mt-1.5">
+                            <summary className="text-[12px] font-bold cursor-pointer" style={{ color: theme.main }}>{w.mine ? w.mine.name : "この工程"}で押さえること</summary>
+                            {w.guides.map((g, gi) => (
+                              <div key={gi} className="mt-1">
+                                <div className="text-[11.5px] font-bold text-stone-500">{g.source}</div>
+                                <ul className="mt-0.5 space-y-0.5">{g.points.map((pt, pi) => <li key={pi} className="text-[12px] text-stone-600 leading-snug">・{pt}</li>)}</ul>
+                              </div>
+                            ))}
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              );
+            })()}
+
+            {/* ===== 今日の仕事（Studio OS連携・2026-09-23）。件数だけ見せて開くと詳細＝Studio OS自身の
+                 「待ちはホームの既定表示にしない」(AK 2026-09-07 §4)に合わせた控えめな表示。
+                 未接続（STUDIO_MCP_KEY未設定・Studio OS未応答）の時は静かに何も出さない ===== */}
+            {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
+              <div className="mb-7" id="home-today-work">
+                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
+                  今日の仕事<span className="text-stone-300 font-normal">Studio OS</span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {todayWork.groups.filter((g) => g.rows && g.rows.length).map((g) => (
+                    <div key={g.key} className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden" style={{ minWidth: 176 }}>
+                      <button onClick={() => setTodayWorkOpenKey((k) => (k === g.key ? null : g.key))}
+                        className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-stone-50">
+                        <span className="text-[13px] font-bold text-stone-700">{g.title}</span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 shrink-0">{g.rows.length}</span>
+                      </button>
+                      {todayWorkOpenKey === g.key && (
+                        <div className="border-t border-stone-100 px-3.5 py-2 space-y-2 max-h-64 overflow-y-auto">
+                          {g.rows.slice(0, 20).map((r, i) => (
+                            <div key={i} className="text-[12px]">
+                              <div className="font-semibold text-stone-700 truncate">{r.label}</div>
+                              {r.due && <div className="text-stone-400 mt-0.5">{r.due}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ===== Brain（Studio OSナレッジ候補・2026-09-26）。多くても3件だけ表示し、残りは「すべて見る」でナレッジ画面へ ===== */}
+            {knowledgeInbox && knowledgeInbox.length > 0 && (
+              <div className="mb-7">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[13px] font-bold flex items-center gap-2 text-stone-600">
+                    Brain<span className="text-stone-300 font-normal">{knowledgeInbox.length}</span>
+                  </div>
+                  <button onClick={() => setView("knowledge")} className="text-[12px] font-bold" style={{ color: theme.main }}>すべて見る →</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {knowledgeInbox.slice(0, 3).map((c) => (
+                    <div key={c.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">{c.kind === "regulation_rule" ? "ルール候補" : "ナレッジ候補"}</span>
+                        <span className="text-[11px] text-stone-400 truncate">{c.client_name || "全社"}</span>
+                      </div>
+                      <div className="text-[13px] text-stone-800 mb-2 line-clamp-2">{(c.payload && c.payload.content) || ""}</div>
+                      <div className="flex gap-1.5">
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "adopt")}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">採用</button>
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "dismiss")}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40 text-stone-400">見送り</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
               <Tile label="遅れ" value={count("遅れ")} color={count("遅れ") ? "#DC2645" : undefined} />
