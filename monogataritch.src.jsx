@@ -7,6 +7,8 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
+import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
+import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -24,16 +26,6 @@ const SECTION_TYPES = {
   "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#348C53", bg: "#EAF8EE", borderColor: "#CBEBD5", dot: "#4CAF6B", card: "#F5FBF7" },
 };
 const TYPE_KEYS = Object.keys(SECTION_TYPES);
-/* 人物ごとの色分け（2026-09-25 AK「各人物のパートごとに色を変えたい・4色ぐらい」）。
-   シーン行 r.person / ロケ行 r.person に p1〜p4 を持つ。シーン未指定ならロケの色を継ぐ。名前は meta.personNames。
-   種別色（赤/黄/橙/青/緑）と被らない色相を選ぶ */
-const PERSON_COLORS = [
-  { key: "p1", color: "#8B5CF6", def: "人物A" },
-  { key: "p2", color: "#0E9AA7", def: "人物B" },
-  { key: "p3", color: "#DB4F8E", def: "人物C" },
-  { key: "p4", color: "#8A6A3B", def: "人物D" },
-];
-const personColorOf = (key) => { const p = PERSON_COLORS.find((x) => x.key === key); return p ? p.color : null; };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const newScene = (type = "解説系", label = "") => ({ id: uid(), kind: "scene", label, type, sec: null, tc: null, script: "" });
@@ -157,7 +149,7 @@ const histSnapshot = (p) => {
   });
   return o;
 };
-const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], competitorVideos: [], icon: "", clientNotes: "", manuals: [], promanUrl: "", manualUrl: "", checklistUrl: "" });
+const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], icon: "", clientNotes: "", manuals: [], promanUrl: "", manualUrl: "", checklistUrl: "" });
 /* チャンネルアイコンに選べる絵文字 */
 const CHANNEL_ICONS = ["📁","🎬","🎥","🎙️","🎤","📺","🎮","📷","🎨","💡","🔥","⭐","🚀","💼","🏆","⚽","🏀","🍳","💪","🐦","🐱","🐶","🌸","🌙","🎯","💰","📚","🧠","❤️","✨","🎸","🍜","🧳","👑","🛠️","🌍"];
 const emptyCompetitor = () => ({ url: "", vid: "", name: "", subs: 0, note: "" });
@@ -2448,7 +2440,7 @@ function QaEvidenceAutoSync({ projId, resolvedSig }) {
   return null;
 }
 
-function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare, onUploadImage }) {
+function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
   trashedVersions = trashedVersions || [];
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
@@ -2471,10 +2463,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const [replyText, setReplyText] = React.useState({});
   const vref = React.useRef(null);
   const [rate, setRate] = React.useState(1);
-  // 動画スピーカーだけの音量（OS/システム音量には触れない＝<video>のvolumeプロパティとYT APIのsetVolumeで完結）
-  const [vol, setVol] = React.useState(() => { try { const v = parseFloat(localStorage.getItem("mg_review_vol")); return isFinite(v) && v >= 0 && v <= 1 ? v : 1; } catch (e) { return 1; } });
-  const [img, setImg] = React.useState(null);       // 修正コメントに添付する画像 { file, url }
-  const [imgBusy, setImgBusy] = React.useState(false);
   const [cur, setCur] = React.useState(0);
   const [dur, setDur] = React.useState(0);
   /* シーク/バッファ待ち中の表示。生mp4（軽量版なし）は移動に数秒かかるので「移動中」を出して固まって見えるのを防ぐ */
@@ -2574,19 +2562,11 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
       ytPlayerRef.current = new YT.Player(ytDivRef.current, {
         videoId: ytIdFromUrl(sel.url) || "",
         playerVars: { rel: 0, modestbranding: 1, iv_load_policy: 3, playsinline: 1 },
-        events: { onReady: () => { try { ytPlayerRef.current && ytPlayerRef.current.setVolume && ytPlayerRef.current.setVolume(Math.round(vol * 100)); } catch (e) {} timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) { if (Date.now() > ytSeekGuard.current) setCur(p.getCurrentTime() || 0); if (p.getDuration) setDur(p.getDuration() || 0); } }, 200); } },
+        events: { onReady: () => { timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) { if (Date.now() > ytSeekGuard.current) setCur(p.getCurrentTime() || 0); if (p.getDuration) setDur(p.getDuration() || 0); } }, 200); } },
       });
     });
     return () => { destroyed = true; if (timer) clearInterval(timer); try { ytPlayerRef.current && ytPlayerRef.current.destroy && ytPlayerRef.current.destroy(); } catch (e) {} ytPlayerRef.current = null; };
   }, [sel && sel.id, isYT]);
-  // 音量変更（動画側だけ。OS/システム音量は変えない）。localStorageに覚えて次回も同じ音量から始める
-  const applyVol = (v) => {
-    const cv = Math.max(0, Math.min(1, v));
-    setVol(cv);
-    try { localStorage.setItem("mg_review_vol", String(cv)); } catch (e) {}
-    if (isYT) { try { ytPlayerRef.current && ytPlayerRef.current.setVolume && ytPlayerRef.current.setVolume(Math.round(cv * 100)); } catch (e) {} }
-    else if (vref.current) vref.current.volume = cv;
-  };
   const getTime = () => isYT ? (ytPlayerRef.current && ytPlayerRef.current.getCurrentTime ? ytPlayerRef.current.getCurrentTime() : 0) : (vref.current ? vref.current.currentTime : 0);
   /* スマホ判定＋版履歴の折りたたみ（2026-08-24 AK「スマホで履歴表示がうざい→トグルで最小化」） */
   const [isNarrowRB, setIsNarrowRB] = React.useState(() => { try { return window.matchMedia("(max-width: 640px)").matches; } catch (e) { return false; } });
@@ -2648,20 +2628,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   }, [sel && sel.id, isYT, streamPending]);
   const filtered = verComments.filter((c) => filter === "全部" ? true : filter === "高優先度" ? c.priority === "高" : CMT_STATUSES.includes(filter) ? cstat(c) === filter : CMT_CATEGORIES.includes(filter) ? (c.category || "その他") === filter : true)
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
-  const submit = async () => {
-    const t = text.trim(); if ((!t && !img) || !sel) return;
-    let images = [];
-    if (img) {
-      setImgBusy(true);
-      try {
-        const meta = onUploadImage ? await onUploadImage(img.file) : null;
-        if (meta && meta.key) images = [{ key: meta.key, name: meta.name || "", mime: meta.mime || "" }];
-      } finally { setImgBusy(false); }
-    }
-    onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応", images });
-    setText(""); if (img && img.url) { try { URL.revokeObjectURL(img.url); } catch (e) {} } setImg(null);
-    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
-  };
+  const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} };
   /* 理由チップを押した時点で登録。フォームを埋めさせない＝レビューの手が止まらない（share.html と同じ作法）。 */
   const postClip = (reason) => {
     if (!sel) return;
@@ -2774,7 +2741,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
       </div>
       <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
       </>)}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
         {/* 左：プレイヤー */}
         <div>
           <div className="relative rounded-xl overflow-hidden bg-black grid place-items-center" style={{ aspectRatio: "16/9" }}>
@@ -2786,8 +2753,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 ? <div className="text-center text-white/80 px-4"><div className="text-[14px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[12px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[12px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video key="hls" ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => { setDur(e.target.duration || 0); e.target.volume = vol; }} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
-                  : <video key="raw" ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => { setDur(e.target.duration || 0); e.target.volume = vol; }} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
+                  ? <video key="hls" ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
+                  : <video key="raw" ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
             {/* 左右ダブルタップの±5秒インジケータ */}
             {skipFlash && (
               <div className={"absolute inset-y-0 grid place-items-center pointer-events-none " + (skipFlash.side === "l" ? "left-0 w-1/3" : "right-0 w-1/3")}>
@@ -2859,11 +2826,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               <span className="text-[12px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}{isYT && dur ? " / " + fmtTC(dur) : ""}</span>
               <button onClick={togglePlay} title="再生/停止（Enter）" className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⏯</button>
               <button onClick={() => { const el = isYT ? (ytDivRef.current && ytDivRef.current.querySelector("iframe")) || ytDivRef.current : vref.current; if (el && el.requestFullscreen) el.requestFullscreen(); }} title="全画面" className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⛶</button>
-              {/* 動画の音量だけを下げる（OS全体の音量には触れない）。<video>のvolumeとYT APIのsetVolumeで完結 */}
-              <span className="flex items-center gap-1 px-1.5 py-1 rounded border border-stone-200">
-                <button onClick={() => applyVol(vol > 0 ? 0 : 1)} title={vol > 0 ? "ミュート" : "ミュート解除"} className="text-[12px] leading-none text-stone-600">{vol <= 0 ? "🔇" : vol < 0.5 ? "🔉" : "🔊"}</button>
-                <input type="range" min={0} max={1} step="0.01" value={vol} onChange={(e) => applyVol(+e.target.value)} title="動画の音量" className="w-16 h-2 cursor-pointer accent-current" style={{ color: accent }} />
-              </span>
               <span className="text-[11px] text-stone-500 ml-1 mr-0.5">速度</span>
               {rates.map((r) => (
                 <button key={r} onClick={() => applyRate(r)}
@@ -2888,24 +2850,9 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               {!streamPending && <span className="text-[12px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} に</span>}
               <select value={cat} onChange={(e) => setCat(e.target.value)} className="text-[12px] border border-stone-200 rounded px-1.5 py-1">{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
               <select value={prio} onChange={(e) => setPrio(e.target.value)} className="text-[12px] border border-stone-200 rounded px-1.5 py-1">{CMT_PRIORITIES.map((p) => <option key={p}>優先:{p}</option>)}</select>
-              <label className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 cursor-pointer hover:bg-stone-50 inline-flex items-center gap-1" title="画像を添付（スクショや参考画像）">
-                🖼 画像
-                <input type="file" accept="image/*" className="hidden" onChange={(e) => {
-                  const f = e.target.files && e.target.files[0]; if (!f) return;
-                  if (f.size > 12 * 1024 * 1024) { window.alert("画像は12MBまで"); e.target.value = ""; return; }
-                  if (img && img.url) { try { URL.revokeObjectURL(img.url); } catch (er) {} }
-                  setImg({ file: f, url: URL.createObjectURL(f) }); e.target.value = "";
-                }} />
-              </label>
             </div>
-            {img && (
-              <div className="mb-2 relative inline-block">
-                <img src={img.url} alt="" className="h-16 rounded-lg border border-stone-200 object-cover" />
-                <button onClick={() => { if (img.url) { try { URL.revokeObjectURL(img.url); } catch (e) {} } setImg(null); }} title="画像を外す" className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-stone-700 text-white text-[10px] leading-none flex items-center justify-center">×</button>
-              </div>
-            )}
             <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } }} placeholder="修正内容を入力（⌘+Enterで送信）" className="w-full h-16 text-[13px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
-            <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={(!text.trim() && !img) || imgBusy} className="text-[12px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>{imgBusy ? "画像アップ中…" : "修正を追加"}</button></div>
+            <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={!text.trim()} className="text-[12px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>修正を追加</button></div>
           </div>
           )}
           {/* 切り抜き候補（取れ高マーク）。区間ではなく「点」だけ取る＝尺の前後はたてがた君側に探させる */}
@@ -2980,15 +2927,6 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                     <select value={st} onChange={(e) => onUpdate(c.id, { status: e.target.value })} className="text-[11px] font-bold border-0 rounded px-1.5 py-0.5 ml-auto" style={{ background: CMT_STATUS_COLOR[st].bg, color: CMT_STATUS_COLOR[st].fg }}>{CMT_STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
                   </div>
                   <div className="text-[13px] text-stone-800 leading-snug whitespace-pre-wrap">{c.text}</div>
-                  {Array.isArray(c.images) && c.images.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1.5">
-                      {c.images.map((im, ii) => (
-                        <a key={ii} href={SHARE_API + "/api/file/" + im.key} target="_blank" rel="noreferrer" title="クリックで原寸表示">
-                          <img src={SHARE_API + "/api/file/" + im.key} alt="" className="h-16 w-16 object-cover rounded-lg border border-stone-200 hover:opacity-80" />
-                        </a>
-                      ))}
-                    </div>
-                  )}
                   <div className="text-[11px] text-stone-500 mt-1 flex items-center gap-2"><span>{c.author || "ゲスト"}</span>{c.createdAt && <span>{String(c.createdAt).slice(5, 16).replace("T", " ")}</span>}<button onClick={() => { if (window.confirm("この修正を削除？")) onDelete(c.id); }} className="ml-auto hover:text-rose-500">削除</button></div>
                   {/* 返信スレッド */}
                   {(c.replies || []).length > 0 && (
@@ -3415,6 +3353,507 @@ function WizardPane({ project, setProject, theme, setTab }) {
   );
 }
 
+/* ===== クリエイタータイプ診断（2026-09-29 AK「編集の時間とかを把握するために」）=====
+   回答は window.storage（ログイン中はアカウント別のクラウド保存）の "creator-profile-v1"。
+   計算は src/creator-type.js（テストは tools/test-creator-type.mjs）。 */
+const STORE_CREATOR = "creator-profile-v1";
+const DOW_JA = ["日", "月", "火", "水", "木", "金", "土"];
+const LIKERT = [{ v: -2, l: "ちがう" }, { v: -1, l: "やや\nちがう" }, { v: 0, l: "どちらでも" }, { v: 1, l: "やや\nそう" }, { v: 2, l: "そう" }];
+const emptyCreatorProfile = () => ({ v: 1, work: "", skills: [], answers: {}, focusMin: 60, steps: {}, avail: { weekday: "", weekend: "", offDays: [] }, name: "", bio: "", years: "", software: [], contact: "", portfolio: [], email: "", line: "", site: "", showContact: true, mbti: "", brain: "" });
+
+// 共有URL（#creator=…）で開いた時の、ログイン不要の読み取り専用ページ
+export function CreatorPublicPage() {
+  const [state, setState] = useState({ loading: true, profile: null, error: "" });
+  useEffect(() => {
+    const code = (window.location.hash || "").replace(/^#creator=/, "");
+    decodeProfile(code).then((p) => setState({ loading: false, profile: p, error: "" })).catch(() => setState({ loading: false, profile: null, error: "URLが途中で切れているか、壊れています。もう一度コピーしてもらってください。" }));
+  }, []);
+  const theme = DEFAULT_THEME;
+  return (
+    <div className="min-h-screen" style={{ background: "#E9E8E3" }}>
+      <header className="shadow-sm" style={{ background: theme.main, color: "#fff" }}>
+        <div className="max-w-[760px] mx-auto px-4 py-3 flex items-center gap-2">
+          <a href="./" className="flex items-center gap-2"><img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" /><span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span></a>
+          <span className="ml-auto text-[11.5px] text-white/60">クリエイタープロフィール</span>
+        </div>
+      </header>
+      <main className="max-w-[760px] mx-auto px-4 py-6">
+        {state.loading ? <p className="text-[13px] text-stone-400">読み込み中…</p>
+          : state.error ? <p className="text-[13px] text-[#DC2645] bg-white rounded-xl px-4 py-3">{state.error}</p>
+          : <CreatorProfileCard profile={state.profile} theme={theme} />}
+        <p className="text-[11px] text-stone-400 mt-6 mb-10">このページの内容は、本人が <a href="./" className="underline">ものがたりっち</a> のクリエイタータイプ診断で答えたものです。時間は本人の申告です。</p>
+      </main>
+    </div>
+  );
+}
+
+// プロフィールの表示＋募集文との照らし合わせ（公開ページと、本人の結果画面のプレビューで使う）
+function CreatorProfileCard({ profile: p, theme }) {
+  const [posting, setPosting] = useState("");
+  const [copied, setCopied] = useState(false);
+  const type = creatorType(p.answers);
+  const est10 = estimateHours(p, 10, type);
+  const wk = weeklyHours(p);
+  const cap = monthlyCapacity(p, 10, type);
+  const match = posting.trim() ? matchPosting(p, posting) : null;
+  const card = "bg-white border border-stone-200 rounded-xl px-4 py-4 shadow-sm mb-4";
+  const pill = "text-[11.5px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600";
+  const copyPrompt = async () => { try { await navigator.clipboard.writeText(profilePrompt(p, posting)); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch (e) { alert("コピーできませんでした"); } };
+  const OK = { "○": "#15803D", "×": "#DC2645", "△": "#B45309", "・": "#78716C" };
+  return (
+    <>
+      <section className={card} style={{ borderTop: `4px solid ${theme.accent}` }}>
+        <div className="text-[20px] font-black text-stone-800">{p.name || "（名前未入力）"}</div>
+        <div className="flex flex-wrap gap-1.5 mt-1.5 mb-3">
+          {p.work && <span className={pill}>{p.work}</span>}{p.years && <span className={pill}>経験 {p.years}</span>}
+          {p.mbti && <span className={pill}>MBTI {p.mbti}</span>}
+          {p.brain && <span className={pill}>{(BRAIN_TYPES.find((b) => b.key === p.brain) || {}).label || p.brain}</span>}
+        </div>
+        <div className="rounded-lg px-3 py-2.5 mb-3" style={{ background: theme.accent + "10" }}>
+          <div className="text-[11px] font-bold text-stone-500">クリエイタータイプ</div>
+          <div className="text-[17px] font-black text-stone-800">{type.name}<span className="text-[12px] font-bold text-stone-500 ml-2">{type.tags.join("・")}</span></div>
+          <div className="text-[12.5px] text-stone-600 mt-0.5">{type.catch}</div>
+          <div className="text-[12px] text-stone-600 mt-1.5"><b className="text-[#15803D]">強み</b> {type.good}</div>
+          <div className="text-[12px] text-stone-600"><b className="text-[#B45309]">気をつけたいこと</b> {type.watch}</div>
+        </div>
+        {p.bio && <p className="text-[13px] text-stone-700 whitespace-pre-wrap mb-3">{p.bio}</p>}
+        {(p.email || p.line || p.contact || p.site) && (
+          <div className="rounded-lg border border-stone-100 px-3 py-2 mb-3 text-[12.5px] flex flex-col gap-1">
+            <div className="text-[11px] font-bold text-stone-500">連絡先</div>
+            {p.email && <div><span className="text-stone-400 mr-2">Gmail</span><a href={"mailto:" + p.email} className="underline text-stone-700 break-all">{p.email}</a></div>}
+            {p.line && <div><span className="text-stone-400 mr-2">LINE ID</span><span className="text-stone-700 select-all">{p.line}</span></div>}
+            {p.site && <div><span className="text-stone-400 mr-2">ポートフォリオサイト</span><a href={p.site} target="_blank" rel="noopener noreferrer nofollow" className="underline text-stone-700 break-all">{p.site}</a></div>}
+            {p.contact && <div><span className="text-stone-400 mr-2">SNS</span><a href={p.contact} target="_blank" rel="noopener noreferrer nofollow" className="underline text-stone-700 break-all">{p.contact}</a></div>}
+          </div>
+        )}
+        {(p.skills || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">得意分野</div><div className="flex flex-wrap gap-1.5">{p.skills.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
+        {(p.software || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">使えるソフト</div><div className="flex flex-wrap gap-1.5">{p.software.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
+        <div className={"grid gap-2 mt-3 text-center " + (est10.total > 0 ? "grid-cols-3" : "grid-cols-1")}>
+          <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{wk}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">1週間に使える時間</div></div>
+          {est10.total > 0 && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{est10.total}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">10分の動画1本（目安）</div></div>}
+          {est10.total > 0 && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{cap}<span className="text-[11px]">本</span></div><div className="text-[10.5px] text-stone-500">月の目安（10分）</div></div>}
+        </div>
+      </section>
+
+      <section className={card}>
+        <h2 className="text-[14px] font-black text-stone-800 mb-2">工程ごとの好き度合い{est10.total > 0 ? "と時間の目安（10分の動画）" : ""}</h2>
+        {est10.steps.map((s) => { const like = (p.steps[s.key] || {}).like || 0; return (
+          <div key={s.key} className="flex items-center gap-2 py-1.5 border-t border-stone-100 first:border-t-0 text-[12.5px]">
+            <span className="w-[88px] font-bold text-stone-700">{s.label}</span>
+            <span style={{ color: like >= 4 ? "#15803D" : like <= 2 ? "#DC2645" : "#78716C" }}>{"★".repeat(like)}{"☆".repeat(Math.max(0, 5 - like))}</span>
+            {s.hours > 0 && <span className="ml-auto text-stone-500">{s.hours}時間</span>}
+          </div>
+        ); })}
+      </section>
+
+      {(p.portfolio || []).length > 0 && (
+        <section className={card}>
+          <h2 className="text-[14px] font-black text-stone-800 mb-2">ポートフォリオ</h2>
+          <div className="flex flex-col gap-2">
+            {p.portfolio.map((w, i) => (
+              <a key={i} href={w.url} target="_blank" rel="noopener noreferrer nofollow" className="block border border-stone-100 rounded-lg px-3 py-2.5 hover:border-stone-300">
+                <div className="text-[13px] font-bold text-stone-800 truncate">{w.title || w.url}</div>
+                <div className="text-[11px] text-stone-400 truncate">{w.url}</div>
+                {((w.roles || []).length > 0 || w.note) && <div className="flex flex-wrap gap-1 mt-1">{(w.roles || []).map((r) => <span key={r} className="text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">{r}</span>)}{w.note && <span className="text-[11.5px] text-stone-500">{w.note}</span>}</div>}
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className={card}>
+        <h2 className="text-[14px] font-black text-stone-800 mb-1">募集文と照らし合わせる</h2>
+        <p className="text-[11.5px] text-stone-500 mb-2">募集文を貼ると、この人の回答と機械的に照らし合わせます（キーワードと数字だけ。最終判断は人かAIで）。</p>
+        <textarea value={posting} onChange={(e) => setPosting(e.target.value)} rows={5} placeholder="例）企業の採用動画（インタビュー中心）の編集者を募集。尺は10分、月4本。Premiere Pro使用。"
+          className="w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:border-stone-500" />
+        {match && (
+          <ul className="flex flex-col gap-1 mb-3">
+            {match.lines.length === 0 && <li className="text-[12.5px] text-stone-400">募集文から照らし合わせられる項目（得意分野・ソフト・尺・本数など）が見つかりませんでした</li>}
+            {match.lines.map((l, i) => <li key={i} className="text-[12.5px] text-stone-700 flex gap-2"><b className="shrink-0 w-3" style={{ color: OK[l.ok] }}>{l.ok}</b><span>{l.text}</span></li>)}
+          </ul>
+        )}
+        <button onClick={copyPrompt} className="text-[12.5px] font-bold px-3.5 py-2 rounded-lg text-white inline-flex items-center gap-1.5" style={{ background: theme.main }}>
+          <Icon name="sparkle" className="w-4 h-4" />{copied ? "コピーした！Claudeに貼ってね" : "プロフィール＋募集文をClaudeにコピー"}
+        </button>
+      </section>
+    </>
+  );
+}
+
+function CreatorDiagnosis({ theme, userEmail }) {
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(null);
+  const [draft, setDraft] = useState(emptyCreatorProfile);
+  const [mode, setMode] = useState("form");
+  const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const copyShare = async () => {
+    try {
+      const code = await encodeProfile(saved);
+      const url = window.location.origin + window.location.pathname.replace(/[^/]*$/, "") + "#creator=" + code;
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true); setTimeout(() => setShareCopied(false), 2500);
+    } catch (e) { alert("コピーできませんでした：" + (e && e.message || e)); }
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = window.storage && await window.storage.get(STORE_CREATOR);
+        const p = r && r.value ? JSON.parse(r.value) : null;
+        if (p) { setSaved(p); setDraft({ ...emptyCreatorProfile(), ...p }); if (profileComplete(p)) setMode("result"); }
+      } catch (e) {}
+      setLoaded(true);
+    })();
+  }, []);
+
+  const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  const setAns = (id, v) => setDraft((d) => ({ ...d, answers: { ...d.answers, [id]: v } }));
+  const setStep = (k, patch) => setDraft((d) => ({ ...d, steps: { ...d.steps, [k]: { ...(d.steps[k] || {}), ...patch } } }));
+  const setAvail = (patch) => setDraft((d) => ({ ...d, avail: { ...d.avail, ...patch } }));
+  const complete = profileComplete(draft);
+  const answeredCount = CREATOR_QUESTIONS.filter((q) => draft.answers[q.id] != null).length
+    + CREATOR_STEPS.filter((s) => draft.steps[s.key] && Number(draft.steps[s.key].like) >= 1).length
+    + ((Number(draft.avail.weekday) > 0 || Number(draft.avail.weekend) > 0) ? 1 : 0);
+  const totalCount = CREATOR_QUESTIONS.length + CREATOR_STEPS.length + 1;
+
+  const save = async () => {
+    const p = { ...draft, updatedAt: Date.now() };
+    setSaving(true);
+    try { if (window.storage) await window.storage.set(STORE_CREATOR, JSON.stringify(p)); } catch (e) { alert("保存できませんでした：" + (e && e.message || e)); }
+    setSaving(false);
+    setSaved(p);
+    setMode("result");
+    window.scrollTo && window.scrollTo(0, 0);
+  };
+
+  if (!loaded) return <p className="text-[13px] text-stone-400">読み込み中…</p>;
+
+  const card = "bg-white border border-stone-200 rounded-xl px-4 py-4 shadow-sm mb-4";
+  const h2 = "text-[14px] font-black text-stone-800 mb-1";
+  const sub = "text-[11.5px] text-stone-500 mb-3";
+  const chip = (on) => ({ className: "text-[12px] font-bold px-3 py-1.5 rounded-full border", style: on ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : { background: "#fff", color: "#57534E", borderColor: "#D6D3D1" } });
+
+  if (mode === "result" && saved && profileComplete(saved)) {
+    const type = creatorType(saved.answers);
+    const slot = peakSlot(type.poles);
+    const est10 = estimateHours(saved, 10, type);
+    const advice = stepAdvice(saved, type);
+    const weekHours = [0, 1, 2, 3, 4, 5, 6].reduce((n, dow) => { const d = new Date(2026, 0, 4 + dow); return n + hoursOn(saved, d); }, 0);
+    const axisRow = (k, label) => {
+      const [a, b] = CREATOR_AXES[k];
+      const sc = type.scores[k];
+      const pct = Math.round(((sc + 6) / 12) * 100);
+      return (
+        <div key={k} className="mb-2.5">
+          <div className="flex justify-between text-[11.5px] font-bold text-stone-500 mb-1"><span>{a}</span><span className="text-stone-400 font-normal">{label}</span><span>{b}</span></div>
+          <div className="relative h-2 rounded-full bg-stone-100">
+            <div className="absolute top-1/2 w-3.5 h-3.5 rounded-full border-2 border-white shadow" style={{ left: `calc(${100 - pct}% - 7px)`, transform: "translateY(-50%)", background: theme.accent }} />
+          </div>
+        </div>
+      );
+    };
+    return (
+      <>
+        <section className={card} style={{ borderTop: `4px solid ${theme.accent}` }}>
+          <div className="text-[11.5px] font-bold text-stone-400 mb-1">あなたのクリエイタータイプ</div>
+          <div className="text-[24px] font-black text-stone-800 leading-tight">{type.name}</div>
+          <div className="text-[13px] text-stone-600 mt-1 mb-2">{type.catch}</div>
+          {type.tags.length > 0 && <div className="flex flex-wrap gap-1.5 mb-3">{type.tags.map((t) => <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{t}</span>)}</div>}
+          <div className="grid sm:grid-cols-2 gap-2 text-[12.5px] mb-4">
+            <div className="rounded-lg px-3 py-2" style={{ background: "#E7F6EC" }}><b className="text-[#15803D]">強み</b><div className="text-stone-700 mt-0.5">{type.good}</div></div>
+            <div className="rounded-lg px-3 py-2" style={{ background: "#FCF0DC" }}><b className="text-[#B45309]">気をつけたいこと</b><div className="text-stone-700 mt-0.5">{type.watch}</div></div>
+          </div>
+          {axisRow("time", "時間帯")}{axisRow("focus", "集中の取り方")}{axisRow("start", "着手")}{axisRow("polish", "仕上げ")}
+        </section>
+
+        <section className={card}>
+          <h2 className={h2}>あなたに合った制作の流れ</h2>
+          <p className={sub}>作業は<b className="text-stone-700">{slot.label}</b>に、1回 <b className="text-stone-700">{blockHours(saved, type)}時間</b>ずつが向いています。1週間で使える時間は {weekHours}時間です。{est10.total > 0 && <>（工程ごとの時間は本人の目安。実際の時間は案件ごとに変わります）</>}</p>
+          <ol className="flex flex-col gap-2">
+            {advice.map((a, i) => (
+              <li key={a.key} className="flex gap-3 border border-stone-100 rounded-lg px-3 py-2.5">
+                <span className="shrink-0 w-6 h-6 rounded-full text-[12px] font-black flex items-center justify-center text-white" style={{ background: theme.accent }}>{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <b className="text-[13.5px] text-stone-800">{a.label}</b>
+                    {est10.steps[i].hours > 0 && <span className="text-[11.5px] text-stone-500">目安 {est10.steps[i].hours}時間</span>}
+                    <span className="text-[11.5px]" style={{ color: a.like >= 4 ? "#15803D" : a.like <= 2 ? "#DC2645" : "#78716C" }}>{"★".repeat(a.like)}{"☆".repeat(5 - a.like)}</span>
+                  </div>
+                  <ul className="mt-1 text-[12px] text-stone-600 list-disc pl-4">{a.tips.map((t) => <li key={t}>{t}</li>)}</ul>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className={card}>
+          <h2 className={h2}>プロフィールを共有する</h2>
+          <p className={sub}>{`URLを渡すと、相手はログインなしで、あなたのタイプ・得意分野・作業できる時間・ポートフォリオ${saved.showContact !== false && (saved.email || saved.line) ? "・連絡先（Gmail・LINE ID）" : ""}を見られます。相手が募集文を貼ると、あなたの回答と照らし合わせられます。URLには回答が入っていて、受け取った人は誰でも見られます。`}</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={copyShare} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white inline-flex items-center gap-1.5" style={{ background: theme.accent }}><Icon name="copy" className="w-4 h-4" />{shareCopied ? "コピーしました" : "共有URLをコピー"}</button>
+            <button onClick={() => setPreview((v) => !v)} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-300 bg-white text-stone-600">{preview ? "見え方を閉じる" : "相手からの見え方"}</button>
+          </div>
+          {!saved.name && <p className="text-[11.5px] text-[#B45309] mt-2">表示名・ポートフォリオが空です。「回答を見直す」の5で入れられます。</p>}
+        </section>
+        {preview && <div className="rounded-2xl border-2 border-dashed border-stone-300 p-3 mb-4"><div className="text-[11px] font-bold text-stone-400 mb-2">相手からの見え方</div><CreatorProfileCard profile={publicProfile(saved)} theme={theme} /></div>}
+
+        <div className="flex gap-2 mb-10">
+          <button onClick={() => setMode("form")} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-300 bg-white text-stone-600">回答を見直す</button>
+          <span className="text-[11px] text-stone-400 self-center">回答日 {saved.updatedAt ? new Date(saved.updatedAt).toLocaleDateString("ja-JP") : ""}</span>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="sticky top-[56px] z-[5] -mx-1 px-1 py-2 mb-2" style={{ background: "#E9E8E3" }}>
+        <div className="flex items-center gap-2 text-[11.5px] font-bold text-stone-500">
+          <div className="flex-1 h-1.5 rounded-full bg-white overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.round((answeredCount / totalCount) * 100)}%`, background: theme.accent }} /></div>
+          {answeredCount}/{totalCount}
+        </div>
+      </div>
+
+      <section className={card}>
+        <h2 className={h2}>1. あなたについて</h2>
+        <p className={sub}>生年月日・性別は聞きません。予定づくりに使うのは、作業できる時間と得意なことだけです。</p>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">動画編集は</div>
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {["本業", "副業", "学生・その他"].map((w) => <button key={w} onClick={() => set({ work: w })} {...chip(draft.work === w)}>{w}</button>)}
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 mb-4">
+          <label className="text-[12px] font-bold text-stone-600">MBTI（任意・わかれば）
+            <select value={draft.mbti || ""} onChange={(e) => set({ mbti: e.target.value })} className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-2.5 py-2 bg-white">
+              <option value="">わからない・答えない</option>
+              {MBTI_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </label>
+          <label className="text-[12px] font-bold text-stone-600">4脳分類（利き脳・任意）
+            <select value={draft.brain || ""} onChange={(e) => set({ brain: e.target.value })} className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-2.5 py-2 bg-white">
+              <option value="">わからない・答えない</option>
+              {BRAIN_TYPES.map((b) => <option key={b.key} value={b.key}>{b.label}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">得意分野（いくつでも）</div>
+        <div className="flex flex-wrap gap-1.5">
+          {CREATOR_SKILLS.map((k) => { const on = (draft.skills || []).includes(k); return <button key={k} onClick={() => set({ skills: on ? draft.skills.filter((x) => x !== k) : [...(draft.skills || []), k] })} {...chip(on)}>{k}</button>; })}
+        </div>
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>2. 作業できる時間</h2>
+        <p className={sub}>ふだんの1日で、編集に使える時間（だいたいでOK）</p>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <label className="text-[12px] font-bold text-stone-600">平日<div className="flex items-center gap-1 mt-1"><input type="number" min="0" step="0.5" value={draft.avail.weekday} onChange={(e) => setAvail({ weekday: e.target.value })} className="w-full min-w-0 text-[14px] border border-stone-300 rounded-lg px-2 py-1.5" /><span className="shrink-0">時間</span></div></label>
+          <label className="text-[12px] font-bold text-stone-600">土日<div className="flex items-center gap-1 mt-1"><input type="number" min="0" step="0.5" value={draft.avail.weekend} onChange={(e) => setAvail({ weekend: e.target.value })} className="w-full min-w-0 text-[14px] border border-stone-300 rounded-lg px-2 py-1.5" /><span className="shrink-0">時間</span></div></label>
+        </div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">作業しない曜日</div>
+        <div className="flex gap-1.5 mb-4">
+          {DOW_JA.map((d, i) => { const on = (draft.avail.offDays || []).includes(i); return <button key={d} onClick={() => setAvail({ offDays: on ? draft.avail.offDays.filter((x) => x !== i) : [...(draft.avail.offDays || []), i] })} className="w-9 h-9 rounded-full text-[12.5px] font-bold border" style={on ? { background: "#57534E", color: "#fff", borderColor: "#57534E" } : { background: "#fff", color: "#57534E", borderColor: "#D6D3D1" }}>{d}</button>; })}
+        </div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">集中が続くのは、1回あたり</div>
+        <div className="flex flex-wrap gap-1.5">
+          {[30, 60, 90, 120, 180].map((m) => <button key={m} onClick={() => set({ focusMin: m })} {...chip(Number(draft.focusMin) === m)}>{m < 60 ? `${m}分` : `${m / 60}時間`}{m === 180 ? "以上" : ""}</button>)}
+        </div>
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>3. 工程ごとの好き度合い</h2>
+        <p className={sub}>好き度は必須、かかる時間は任意です（10分の動画でだいたい何時間か。実際の時間は案件ごとに変わるので、参考の目安として使います）</p>
+        {CREATOR_STEPS.map((s) => { const st = draft.steps[s.key] || {}; return (
+          <div key={s.key} className="border-t border-stone-100 py-3 first:border-t-0 first:pt-0">
+            <div className="text-[13.5px] font-bold text-stone-800 mb-2">{s.label}</div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[11.5px] text-stone-500 mr-1">好き度</span>
+                {[1, 2, 3, 4, 5].map((n) => <button key={n} onClick={() => setStep(s.key, { like: n })} aria-label={`${n}`} className="text-[20px] leading-none" style={{ color: Number(st.like) >= n ? theme.accent : "#D6D3D1" }}>★</button>)}
+              </div>
+              <label className="flex items-center gap-1 text-[11.5px] text-stone-500">かかる時間（任意）<input type="number" min="0" step="0.5" value={st.hours == null ? "" : st.hours} onChange={(e) => setStep(s.key, { hours: e.target.value })} className="w-[72px] text-[14px] border border-stone-300 rounded-lg px-2 py-1" />時間</label>
+            </div>
+          </div>
+        ); })}
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>4. 作業のクセ（12問）</h2>
+        <p className={sub}>直感で答えてください。正解はありません</p>
+        {CREATOR_QUESTIONS.map((q, i) => (
+          <div key={q.id} className="border-t border-stone-100 py-3 first:border-t-0 first:pt-0">
+            <div className="text-[13px] text-stone-800 mb-2"><span className="text-stone-400 mr-1">Q{i + 1}</span>{q.text}</div>
+            <div className="grid grid-cols-5 gap-1">
+              {LIKERT.map((o) => { const on = draft.answers[q.id] === o.v; return (
+                <button key={o.v} onClick={() => setAns(q.id, o.v)} className="text-[10.5px] font-bold rounded-lg py-1.5 border whitespace-pre-line leading-tight"
+                  style={on ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : { background: "#fff", color: "#78716C", borderColor: "#E7E5E4" }}>{o.l}</button>
+              ); })}
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>5. プロフィール・ポートフォリオ（共有用・任意）</h2>
+        <p className={sub}>共有URLを渡した相手に見せる内容です。診断だけなら空欄でOK</p>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">表示名<input value={draft.name || ""} onChange={(e) => set({ name: e.target.value })} placeholder="例）中村（Xの名前など）" className="mt-1 w-full text-[13.5px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">動画編集の経験</div>
+        <div className="flex flex-wrap gap-1.5 mb-3">{CREATOR_YEARS.map((y) => <button key={y} onClick={() => set({ years: draft.years === y ? "" : y })} {...chip(draft.years === y)}>{y}</button>)}</div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">使えるソフト</div>
+        <div className="flex flex-wrap gap-1.5 mb-3">{CREATOR_SOFTWARE.map((k) => { const on = (draft.software || []).includes(k); return <button key={k} onClick={() => set({ software: on ? draft.software.filter((x) => x !== k) : [...(draft.software || []), k] })} {...chip(on)}>{k}</button>; })}</div>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">自己紹介<textarea value={draft.bio || ""} onChange={(e) => set({ bio: e.target.value })} rows={3} maxLength={400} placeholder="得意なこと・大事にしていること・どんな案件をやりたいか など" className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">SNS・連絡先のURL<input value={draft.contact || ""} onChange={(e) => set({ contact: e.target.value })} placeholder="https://x.com/..." className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">ポートフォリオサイト（まとめページがあれば）<input value={draft.site || ""} onChange={(e) => set({ site: e.target.value })} placeholder="https://..." className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <div className="grid sm:grid-cols-2 gap-3 mb-2">
+          <label className="text-[12px] font-bold text-stone-600">Gmailアドレス<input type="email" value={draft.email || ""} onChange={(e) => set({ email: e.target.value })} placeholder={userEmail || "example@gmail.com"} className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" style={draft.email && !safeEmail(draft.email) ? { borderColor: "#DC2645" } : {}} />
+            {!draft.email && userEmail && <button type="button" onClick={() => set({ email: userEmail })} className="mt-1 text-[11px] font-bold underline text-stone-500">ログイン中のアドレス（{userEmail}）を入れる</button>}
+          </label>
+          <label className="text-[12px] font-bold text-stone-600">LINE ID（任意）<input value={draft.line || ""} onChange={(e) => set({ line: e.target.value })} placeholder="LINE ID" className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        </div>
+        <label className="flex items-start gap-2 text-[12px] text-stone-600 mb-4 cursor-pointer">
+          <input type="checkbox" checked={draft.showContact !== false} onChange={(e) => set({ showContact: e.target.checked })} className="mt-0.5" />
+          <span>Gmailアドレス・LINE ID を共有ページに載せる（オフにすると、共有URLを受け取った人には見えません）</span>
+        </label>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">ポートフォリオ（10件まで）</div>
+        {(draft.portfolio || []).map((w, i) => {
+          const upd = (patch) => set({ portfolio: draft.portfolio.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+          const bad = w.url && !safeUrl(w.url);
+          return (
+            <div key={i} className="border border-stone-200 rounded-lg px-3 py-2.5 mb-2">
+              <div className="flex gap-2 mb-1.5">
+                <input value={w.url || ""} onChange={(e) => upd({ url: e.target.value })} placeholder="作品のURL（YouTube・Drive など）" className="flex-1 min-w-0 text-[13px] border border-stone-300 rounded-lg px-2.5 py-1.5" style={bad ? { borderColor: "#DC2645" } : {}} />
+                <button onClick={() => set({ portfolio: draft.portfolio.filter((_, j) => j !== i) })} className="shrink-0 text-[12px] font-bold text-stone-400 hover:text-[#DC2645] px-1">削除</button>
+              </div>
+              <input value={w.title || ""} onChange={(e) => upd({ title: e.target.value })} placeholder="作品名（例：町工場の二代目 密着）" className="w-full text-[13px] border border-stone-300 rounded-lg px-2.5 py-1.5 mb-1.5" />
+              <div className="flex flex-wrap gap-1 mb-1.5">{PORTFOLIO_ROLES.map((r) => { const on = (w.roles || []).includes(r); return <button key={r} onClick={() => upd({ roles: on ? w.roles.filter((x) => x !== r) : [...(w.roles || []), r] })} className="text-[11px] font-bold px-2 py-1 rounded-md border" style={on ? { background: "#57534E", color: "#fff", borderColor: "#57534E" } : { background: "#fff", color: "#78716C", borderColor: "#E7E5E4" }}>{r}</button>; })}</div>
+              <input value={w.note || ""} onChange={(e) => upd({ note: e.target.value })} placeholder="ひとこと（任意）" className="w-full text-[12.5px] border border-stone-200 rounded-lg px-2.5 py-1.5" />
+              {bad && <div className="text-[11px] text-[#DC2645] mt-1">http(s) のURLを入れてください</div>}
+            </div>
+          );
+        })}
+        {(draft.portfolio || []).length < 10 && <button onClick={() => set({ portfolio: [...(draft.portfolio || []), { url: "", title: "", roles: [], note: "" }] })} className="text-[12.5px] font-bold px-3 py-1.5 rounded-lg border border-dashed border-stone-300 text-stone-600 bg-white">＋ 作品を追加</button>}
+      </section>
+
+      <div className="flex items-center gap-2 mb-10">
+        <button disabled={!complete || saving} onClick={save} className="text-[14px] font-bold px-6 py-2.5 rounded-xl text-white disabled:opacity-40" style={{ background: theme.accent }}>{saving ? "保存中…" : "診断する"}</button>
+        {!complete && <span className="text-[11.5px] text-stone-500">作業できる時間・5工程の好き度・12問に答えると診断できます</span>}
+        {saved && profileComplete(saved) && <button onClick={() => { setDraft({ ...emptyCreatorProfile(), ...saved }); setMode("result"); }} className="text-[12px] font-bold text-stone-500 underline ml-auto">変えずに結果へ戻る</button>}
+      </div>
+    </>
+  );
+}
+
+/* ===== 今日やること（2026-09-29 AK「アドネス的な今日やるTODOチェックみたいなUI」）=====
+   自動＝自分の番の工程で遅れ・今日締切・あと2日以内（/api/my-work）。手動＝自分で足したTODO（未完了は翌日に持ち越し）。
+   保存は window.storage "today-todo-v1"。判定は src/today-todo.js（テストは tools/test-today-todo.mjs）
+   自動のTODOは工程を手順に分けて「次：〇〇」を出し、開くとチェックリストになる（一番上のTODOは最初から開いておく） */
+const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+function TodayTodo({ theme, cases, onOpenCase }) {
+  const [state, setState] = useState(null);
+  const [text, setText] = useState("");
+  const [showDone, setShowDone] = useState(false);
+  const [openIds, setOpenIds] = useState(null); // null＝まだ触っていない（一番上の自動TODOだけ開く）
+  const today = todayYmd();
+  useEffect(() => {
+    (async () => {
+      let v = null;
+      try { const r = window.storage && await window.storage.get(TODAY_STORE); v = r && r.value ? JSON.parse(r.value) : null; } catch (e) {}
+      setState(todayRollover(v, todayYmd()));
+    })();
+  }, []);
+  const saveRef = useRef(null);
+  const update = (fn) => setState((cur) => {
+    const nx = fn(todayRollover(cur, todayYmd()));
+    clearTimeout(saveRef.current);
+    saveRef.current = setTimeout(() => { try { window.storage && window.storage.set(TODAY_STORE, JSON.stringify(nx)); } catch (e) {} }, 400);
+    return nx;
+  });
+  if (!state) return null;
+  const list = todayList(state.date === today ? state : todayRollover(state, today), cases);
+  const doneN = list.done.length;
+  const pct = list.total ? Math.round((doneN / list.total) * 100) : 0;
+  const d = new Date();
+  const BADGE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645" }, "今日": { bg: "#FCE9D6", fg: "#C2410C" }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309" } };
+  const add = () => { if (!text.trim()) return; update((s) => todayAdd(s, text)); setText(""); };
+  const firstAuto = list.open.find((x) => x.auto);
+  const isOpen = (id) => (openIds ? openIds.has(id) : !!firstAuto && firstAuto.id === id);
+  const toggleOpen = (id) => setOpenIds((cur) => {
+    const nx = new Set(cur || (firstAuto ? [firstAuto.id] : []));
+    if (nx.has(id)) nx.delete(id); else nx.add(id);
+    return nx;
+  });
+  const Row = ({ x }) => (
+    <div className="group flex items-start gap-2.5 px-4 py-2.5 hover:bg-stone-50">
+      <button onClick={() => update((s) => todayToggle(s, x.id))} aria-label={x.done ? "未完了に戻す" : "完了にする"}
+        className="mt-[1px] w-[18px] h-[18px] rounded-full border-2 shrink-0 grid place-items-center transition-colors"
+        style={x.done ? { background: theme.accent, borderColor: theme.accent } : { borderColor: "#C9C5BF" }}>
+        {x.done && <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className={"text-[13.5px] leading-snug break-words " + (x.done ? "line-through text-stone-400" : "text-stone-800")}>
+          {x.auto ? <button onClick={() => onOpenCase(x.caseId)} className="text-left hover:underline">{x.text}</button> : x.text}
+        </div>
+        {(x.auto || x.carried) && !x.done && (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            {x.auto && <span className="text-[10.5px] font-bold px-1.5 py-[1px] rounded" style={{ background: (BADGE[x.pace] || BADGE["もうすぐ"]).bg, color: (BADGE[x.pace] || BADGE["もうすぐ"]).fg }}>{x.badge}</span>}
+            {x.auto && <span className="text-[10.5px] text-stone-400">担当の工程から自動</span>}
+            {x.carried && <span className="text-[10.5px] text-stone-400">前日から持ち越し</span>}
+          </div>
+        )}
+        {x.auto && !x.done && x.next && (
+          <button onClick={() => toggleOpen(x.id)} className="mt-1 flex items-center gap-1.5 text-left max-w-full">
+            <span className="text-[10.5px] font-bold px-1.5 py-[1px] rounded text-white shrink-0" style={{ background: theme.accent }}>次</span>
+            <span className="text-[12.5px] text-stone-700 truncate">{x.next.title}</span>
+            <span className="text-[11px] text-stone-400 shrink-0">{todayFmtSec(x.next.sec)}</span>
+            <span className="text-[11px] text-stone-400 shrink-0 ml-1">手順 {x.stepsDone}/{x.steps.length} {isOpen(x.id) ? "▾" : "▸"}</span>
+          </button>
+        )}
+        {x.auto && !x.done && isOpen(x.id) && (
+          <div className="mt-1.5 mb-0.5">
+            {x.steps.map((st, i) => (
+              <label key={i} className="flex items-center gap-2 py-[3px] cursor-pointer">
+                <input type="checkbox" checked={st.done} onChange={() => update((s) => todayToggleStep(s, x.id, i, x.steps.length))}
+                  className="w-3.5 h-3.5 shrink-0" style={{ accentColor: theme.accent }} />
+                <span className={"text-[12.5px] min-w-0 flex-1 " + (st.done ? "line-through text-stone-400" : st === x.next ? "font-bold text-stone-800" : "text-stone-600")}>{st.title}</span>
+                <span className="text-[11px] text-stone-400 shrink-0">{todayFmtSec(st.sec)}</span>
+              </label>
+            ))}
+            <div className="h-1 bg-stone-100 rounded-full overflow-hidden mt-1.5"><div className="h-full rounded-full transition-all" style={{ width: Math.round((x.stepsDone / x.steps.length) * 100) + "%", background: theme.accent }} /></div>
+          </div>
+        )}
+      </div>
+      {!x.auto && <button onClick={() => update((s) => todayRemove(s, x.id))} title="削除" className="opacity-0 group-hover:opacity-100 text-stone-300 hover:text-[#DC2645] shrink-0 px-1 text-[13px]">×</button>}
+    </div>
+  );
+  return (
+    <section className="bg-white border border-stone-200 rounded-xl shadow-sm mb-6 overflow-hidden">
+      <div className="px-4 pt-3.5 pb-2.5 flex items-center gap-2">
+        <h2 className="text-[14px] font-black text-stone-800">今日やること</h2>
+        <span className="text-[12px] text-stone-400">{d.getMonth() + 1}/{d.getDate()}（{"日月火水木金土"[d.getDay()]}）</span>
+        <span className="ml-auto text-[12px] font-bold text-stone-500">{doneN}/{list.total}</span>
+      </div>
+      <div className="h-1 bg-stone-100 mx-4 rounded-full overflow-hidden mb-1"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: theme.accent }} /></div>
+      <div className="divide-y divide-stone-100">
+        {list.open.map((x) => <Row key={x.id} x={x} />)}
+        {list.total === 0 && <div className="px-4 py-3 text-[12.5px] text-stone-400">今日やることを書き出しておきましょう</div>}
+        {list.total > 0 && list.open.length === 0 && <div className="px-4 py-3 text-[12.5px] font-bold" style={{ color: "#15803D" }}>今日の分はぜんぶ終わりました</div>}
+      </div>
+      <div className="flex items-center gap-2 px-4 py-2.5 border-t border-stone-100">
+        <span className="text-stone-300 text-[16px] leading-none">＋</span>
+        <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) add(); }}
+          placeholder="今日やることを追加（Enter）" className="flex-1 min-w-0 text-[13px] bg-transparent focus:outline-none placeholder:text-stone-400" />
+        {text.trim() && <button onClick={add} className="text-[12px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: theme.accent }}>追加</button>}
+      </div>
+      {doneN > 0 && (
+        <div className="border-t border-stone-100">
+          <button onClick={() => setShowDone((v) => !v)} className="w-full text-left px-4 py-2 text-[12px] font-bold text-stone-400 hover:text-stone-600">完了 {doneN}件 {showDone ? "▾" : "▸"}</button>
+          {showDone && <div className="divide-y divide-stone-100">{list.done.map((x) => <Row key={x.id} x={x} />)}</div>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function App() {
   const [index, setIndex] = useState([]);       // [{id,name,createdAt}]
   const [activeId, setActiveId] = useState(null);
@@ -3495,14 +3934,6 @@ export default function App() {
   const [tab, setTab] = useState(() => { try { return localStorage.getItem("mg:tab") || "overview"; } catch (_) { return "overview"; } }); // overview | plan | script | kouban | assets | review | deliver | concept
   // タブ切替時にmainへ入場フェードを付け直す（remountなし＝状態・スクロール副作用ゼロ）
   const mainRef = useRef(null);
-  // 表示の大きさ（2026-09-25 AK「プラス/マイナスで大きく小さく」）。本文(main)だけ拡大縮小、ヘッダー・サイドバーは据え置き。端末ごとに保存
-  const ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5];
-  const [uiZoom, setUiZoom] = useState(() => { try { const v = parseFloat(localStorage.getItem("mg:uiZoom")); return ZOOM_STEPS.includes(v) ? v : 1; } catch (_) { return 1; } });
-  const stepZoom = (dir) => setUiZoom((z) => {
-    const i = ZOOM_STEPS.indexOf(z); const next = dir === 0 ? 1 : ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, (i < 0 ? 2 : i) + dir))];
-    try { localStorage.setItem("mg:uiZoom", String(next)); } catch (_) {}
-    return next;
-  });
   useEffect(() => {
     const el = mainRef.current; if (!el) return;
     el.classList.remove("mg-tab-in");
@@ -3573,6 +4004,7 @@ export default function App() {
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
   const [chShareMenu, setChShareMenu] = useState(null);    // チャンネル共有の種類選択（読取専用/編集つき）{channel,x,y}
+  const [showCreator, setShowCreator] = useState(false); // クリエイタータイプ診断（どの画面からでも上に重ねて開く）
   const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集) | "knowledge"(ナレッジ)
   // チャンネル単位の編集者ライブモード（index.html?ch=… ＝ログイン不要で当該クライアントの案件だけ・全タブ直接編集）
   const [chanLive, setChanLive] = useState(null);          // {id,name,channelInfo,cases:[{id,name,format,edit:{liveId,editToken}}]}
@@ -3604,11 +4036,6 @@ export default function App() {
   const [secEdit, setSecEdit] = useState(null);             // Scene Row の尺をクリック編集中のシーンid
   const [insertEdit, setInsertEdit] = useState(null);       // インサートカードを原稿編集に切り替えているシーンid
   const [insertCollapsed, setInsertCollapsed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem("mg:insertCollapsed") || "[]")); } catch (e) { return new Set(); } });
-  /* 案件一覧を「進行中（完了以外）」だけに絞る設定。端末ごとに覚える */
-  const [onlyActive, setOnlyActive] = useState(() => { try { return localStorage.getItem("mg:onlyActive") === "1"; } catch (e) { return false; } });
-  /* Studio OSで「納品済み」の案件ID（ものがたりっち案件ID）。「進行中だけ表示」がオンで一覧を開いた時に取得（ログイン時のみ） */
-  const [studioDone, setStudioDone] = useState(() => new Set());
-  const toggleOnlyActive = () => setOnlyActive((v) => { const nx = !v; try { localStorage.setItem("mg:onlyActive", nx ? "1" : "0"); } catch (e) {} return nx; });
   const toggleInsertCollapsed = (id) => setInsertCollapsed((prev) => { const nx = new Set(prev); if (nx.has(id)) nx.delete(id); else nx.add(id); try { localStorage.setItem("mg:insertCollapsed", JSON.stringify([...nx])); } catch (e) {} return nx; });
   // サイドバーのセクション(お気に入り/進行中/保留/完了)折りたたみ。08-24 AK提供モックアップ対応
   const [sectionCollapsed, setSectionCollapsed] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:sectionCollapsed") || "{}"); } catch (_) { return {}; } });
@@ -3618,15 +4045,6 @@ export default function App() {
      チャンネル → 案件 → 案件内ページ を1本のツリーに畳んで、本文の幅も広げる。
      案件切替時は選んだ案件だけ展開。選択ページ・サイドバー幅は端末に記憶する。 */
   const [casePickerOpen, setCasePickerOpen] = useState(false);
-  useEffect(() => {
-    if (!onlyActive || !casePickerOpen || !MG_SESSION) return;
-    let live = true;
-    fetch(SHARE_API + "/api/studio-done", { headers: { Authorization: "Bearer " + MG_SESSION } })
-      .then((r) => r.json())
-      .then((d) => { if (live && d && Array.isArray(d.done)) setStudioDone(new Set(d.done)); })
-      .catch(() => {});
-    return () => { live = false; };
-  }, [onlyActive, casePickerOpen, user]);
   // 作業ページは端末内だけに保存。案件本文や共有データには含めない。
   const resumePages = useRef(null);
   if (resumePages.current === null) {
@@ -4339,41 +4757,6 @@ export default function App() {
   const addCompetitor = () => setCompetitors((cs) => [...(cs || []), emptyCompetitor()]);
   const removeCompetitor = (i) => setCompetitors((cs) => (cs || []).filter((_, k) => k !== i));
   const updateCompetitor = (i, patch) => setCompetitors((cs) => (cs || []).map((c, k) => (k === i ? { ...c, ...patch } : c)));
-  /* 競合動画（チャンネル単位で共有）。ID指定で更新し、非同期の取得中に並びが変わっても取りこぼさない */
-  const mapCompVideos = (fn) => setChannelInfo((ci) => {
-    const cur = { ...emptyChannelInfo(), name: curChannel, ...(ci[curChannel] || {}) };
-    return { ...ci, [curChannel]: { ...cur, competitorVideos: fn(cur.competitorVideos || []) } };
-  });
-  const patchCompVideo = (id, patch) => mapCompVideos((vs) => vs.map((v) => (v.id === id ? { ...v, ...patch } : v)));
-  const removeCompVideo = (id) => mapCompVideos((vs) => vs.filter((v) => v.id !== id));
-  const [compVidBusy, setCompVidBusy] = useState({});
-  const fetchCompVideo = async (id, url) => {
-    const vid = ytIdFromUrl(url);
-    if (!vid) { showToast("YouTubeのURLを入力してね"); return; }
-    setCompVidBusy((b) => ({ ...b, [id]: true }));
-    try {
-      const res = await fetch(SHARE_API + "/api/yt?v=" + encodeURIComponent(vid));
-      const d = await res.json();
-      if (d.needKey) { showToast("YouTube APIキーが未設定（AKに設定を頼んで）"); patchCompVideo(id, { url, vid }); return; }
-      if (!res.ok || d.error) throw new Error(d.error || "取得失敗");
-      patchCompVideo(id, { url, vid, title: d.title, channel: d.channel, views: d.views, subs: d.subs, likes: d.likes, uploadDate: d.uploadDate, duration: parseDur(d.duration) });
-    } catch (e) {
-      showToast("動画取得に失敗：" + (e.message || e));
-      patchCompVideo(id, { url, vid });
-    } finally {
-      setCompVidBusy((b) => { const n = { ...b }; delete n[id]; return n; });
-    }
-  };
-  /* URLを貼って追加。複数URL（改行・スペース区切り）もまとめて追加できる */
-  const addCompVideos = (text) => {
-    const urls = String(text || "").split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
-    if (!urls.length) return;
-    const ok = urls.filter((u) => ytIdFromUrl(u));
-    if (!ok.length) { showToast("YouTubeのURLを入力してね"); return; }
-    const items = ok.map((u) => ({ ...emptyRef(), id: uid(), url: u, note: "" }));
-    mapCompVideos((vs) => [...vs, ...items]);
-    items.forEach((it) => fetchCompVideo(it.id, it.url));
-  };
   const [compBusy, setCompBusy] = useState({});
   const fetchCompetitor = async (i, urlOrName) => {
     const v = (urlOrName || "").trim(); if (!v) return;
@@ -4898,7 +5281,7 @@ export default function App() {
       const data = { ...project, name: project.name || d.project.name || project.name, channel: project.channel || d.project.channel || project.channel, meta, rows: parsed.rows };
       setProject(data);
       try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
-      showToast("骨組みを作ったよ（" + parsed.rows.filter((r) => r.kind === "scene").length + "シーン）。構成台本タブで確認してね");
+      showToast("骨組みを作ったよ（" + parsed.rows.filter((r) => r.kind === "scene").length + "シーン）。マインドマップで確認してね");
     } catch (e) {
       showToast("骨組み生成に失敗：" + (e.message || e));
     } finally { setTranscriptBusy(false); setTranscriptStep(null); }
@@ -5702,8 +6085,6 @@ export default function App() {
   /* 編集者のダッシュボード（2026-09-26 AK「納期と注意事項を出せば、今何をすべきか・早いのか遅れてるのか分かる」）。
      工程と締切はStudio OS（Worker /api/my-work）、注意事項（NG・規定／クライアントの傾向メモ／未完了の修正指摘）は案件の中身から */
   const [myWork, setMyWork] = useState(null); // { cases: [...] } | null
-  const [workOpen, setWorkOpen] = useState(null);           // ホーム「あなたの担当」で展開中の案件ID
-  const [allCasesOpen, setAllCasesOpen] = useState(false);  // ホーム下の「すべての案件」（既定は畳む）
   const [teamMode, setTeamMode] = useState("board"); // 担当と納期：看板 / 表 / 人ごと（2026-09-26 AK「納期は看板と表で」）
   const [teamGroup, setTeamGroup] = useState("due");  // 看板の列：締切の近さ / 今の工程
   const [teamSort, setTeamSort] = useState({ key: "pace", dir: 1 }); // 表の並び替え
@@ -7242,12 +7623,6 @@ export default function App() {
   };
 
   /* ===== 修正管理：コメント投稿（属性付き）／状態変更／返信／削除 ===== */
-  // 修正コメントに添付する画像。既存のR2アップロード(uploadToR2)をそのまま流用して/api/file/{key}で配信する
-  const uploadReviewImage = async (file) => {
-    const sh = await ensureShare(); if (!sh) { showToast("先に確認用URLを発行してね"); return null; }
-    try { return await uploadToR2(file, "", null, sh.id, sh.token); }
-    catch (e) { showToast("画像のアップロードに失敗：" + (e.message || e)); return null; }
-  };
   const postReviewComment = async (body) => {
     const snap = project && project.shareId, token = project && project.shareToken;
     if (!snap) { showToast("先に確認用URLを発行してね"); return false; }
@@ -7542,12 +7917,6 @@ export default function App() {
   const setTheme = (key, val) => setProject((p) => ({ ...p, theme: { ...p.theme, [key]: val } }));
   const setRows = (fn) => setProject((p) => ({ ...p, rows: typeof fn === "function" ? fn(p.rows) : fn }));
   const updateRow = (id, patch) => setRows((rows) => rows.map((x) => (x.id === id ? { ...x, ...patch } : x)));
-  // 人物色：key=null で解除。ロケに付けた色は、色を持たない配下シーンに効く
-  const setPersonFor = (ids, key) => { const set = new Set(ids); setRows((rows) => rows.map((x) => (set.has(x.id) ? { ...x, person: key || null } : x))); };
-  const personNames = (project && project.meta && project.meta.personNames) || {};
-  const personLabel = (key) => { const p = PERSON_COLORS.find((x) => x.key === key); return p ? ((personNames[key] || "").trim() || p.def) : ""; };
-  const personOfRow = {};
-  { let locP = null; ((project && project.rows) || []).forEach((r) => { if (r.kind === "location") { locP = r.person || null; personOfRow[r.id] = locP; } else personOfRow[r.id] = r.person || locP; }); }
   const deleteRow = (id) => setRows((rows) => rows.filter((x) => x.id !== id));
   const moveRow = (idx, dir) => setRows((rows) => {
     const j = idx + dir;
@@ -8220,7 +8589,8 @@ export default function App() {
     <div className="fixed inset-0 overflow-y-auto" style={{ background: "#E9E8E3" }}>
       <header className="sticky top-0 z-10 shadow-sm" style={{ background: DEFAULT_THEME.main, color: "#fff" }}>
         <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
-          <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-8 w-auto" style={{ filter: "brightness(0) invert(1)" }} />
+          <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+          <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
         </div>
       </header>
       <main className="max-w-[1200px] mx-auto px-5 py-7">
@@ -8398,7 +8768,8 @@ export default function App() {
         <div className="px-3 py-2.5 border-b border-white/10">
           <button onClick={() => setView("home")} title="ホーム（チャンネル一覧）へ"
             className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors">
-            <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-9 w-auto shrink-0 -my-1" style={{ filter: mainText === "#FFFFFF" ? "brightness(0) invert(1)" : "none" }} />
+            <img src="logo-header.png" alt="" className="w-7 h-7 rounded-lg shrink-0" />
+            <span className="font-black tracking-[0.08em] text-[14px]" style={{ color: mainText }}>ものがたりっち！</span>
             <svg className="w-4 h-4 ml-auto text-white/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
@@ -8457,10 +8828,6 @@ export default function App() {
                 style={{ color: mainText }} />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-white/30 pointer-events-none">⌘K</span>
             </div>
-            <label className="mt-2 flex items-center gap-2 px-0.5 text-[12px] text-white/70 cursor-pointer select-none" title="Studio OSで納品済みの案件と、保留・完了のチャンネルを一覧から隠します（開いている案件と、検索中の結果は隠しません）">
-              <input type="checkbox" checked={onlyActive} onChange={toggleOnlyActive} className="w-3.5 h-3.5 cursor-pointer" style={{ accentColor: theme.accent }} />
-              進行中の案件だけ表示
-            </label>
           </div>
         )}
 
@@ -8491,12 +8858,8 @@ export default function App() {
             </div>
           ) : (() => {
             const q = caseQuery.trim().toLowerCase();
-            /* 「進行中だけ表示」：Studio OSで納品済みの案件を隠す。開いている案件・検索中は隠さない。Studio OSと紐付いていない案件は隠さない */
-            const isLive = (x) => !onlyActive || !!q || x.id === activeId || !studioDone.has(x.id);
             /* チャンネル1件分のツリー（見出し＋案件＋ページ）。ステータス別セクションから使い回す */
-            const renderChannelGroup = (channel, allItemsRaw) => {
-              const allItems = allItemsRaw.filter(isLive);
-              if (onlyActive && !q && !allItems.length) return null;
+            const renderChannelGroup = (channel, allItems) => {
               const items = q && !channel.toLowerCase().includes(q) ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
               if (q && !items.length && !channel.toLowerCase().includes(q)) return null;
               const hasActive = items.some((x) => x.id === activeId);
@@ -8612,10 +8975,10 @@ export default function App() {
             }
             return (
               <>
-                {favoriteCases.filter(isLive).length > 0 && (
+                {favoriteCases.length > 0 && (
                   <div className="mb-1">
-                    {renderSectionHeader("favorites", "お気に入り", favoriteCases.filter(isLive).length)}
-                    {!isCollapsed("favorites") && favoriteCases.filter(isLive).filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
+                    {renderSectionHeader("favorites", "お気に入り", favoriteCases.length)}
+                    {!isCollapsed("favorites") && favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
                       const active = p.id === activeId;
                       return (
                         <button key={p.id} onClick={() => switchProject(p.id)}
@@ -8630,10 +8993,9 @@ export default function App() {
                   </div>
                 )}
                 {SECTIONS.map(([key, label]) => {
-                  if (onlyActive && !q && key !== "active") return null;
                   const groups = channelGroups.filter((g) => g.status === key);
-                  const caseCount = groups.reduce((n, g) => n + g.items.filter(isLive).length, 0);
-                  if (!groups.length || (onlyActive && !q && caseCount === 0)) return null;
+                  const caseCount = groups.reduce((n, g) => n + g.items.length, 0);
+                  if (!groups.length) return null;
                   return (
                     <div key={key}>
                       {renderSectionHeader(key, label, caseCount)}
@@ -8657,6 +9019,13 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="px-2 pt-2 pb-1 border-t border-white/10">
+          <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断（あなたに合った制作の流れと作業予定）"
+            className="w-full flex items-center gap-2 text-[13px] font-bold px-2.5 py-2 rounded-lg text-left bg-white/10 hover:bg-white/15" style={{ color: mainText }}>
+            <Icon name="sparkle" className="w-4 h-4 shrink-0" />
+            <span>タイプ診断</span>
+          </button>
+        </div>
         <div className="px-2 py-1.5 border-t border-white/10">
           <button onClick={() => setSectionCollapsed((s) => ({ ...s, settings: !s.settings }))}
             className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg hover:bg-white/10">
@@ -8773,14 +9142,6 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
           </span>
           {/* 規定一覧・マニュアルのボタンは撤去（2026-09-26 AK「AIに質問があるのでいらない」）。レギュレーション一覧は左の作業メニューから開ける */}
-          <div className="hidden sm:inline-flex items-center h-8 rounded-lg border border-white/20 overflow-hidden shrink-0" style={{ color: mainText }}>
-            <button onClick={() => stepZoom(-1)} disabled={uiZoom <= ZOOM_STEPS[0]} title="表示を小さく"
-              className="w-8 h-full grid place-items-center text-[16px] font-bold hover:bg-white/10 disabled:opacity-30">−</button>
-            <button onClick={() => stepZoom(0)} title="表示の大きさを100%に戻す"
-              className="h-full px-1.5 text-[12px] font-bold tabular-nums hover:bg-white/10 border-x border-white/20 min-w-[48px]">{Math.round(uiZoom * 100)}%</button>
-            <button onClick={() => stepZoom(1)} disabled={uiZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} title="表示を大きく"
-              className="w-8 h-full grid place-items-center text-[16px] font-bold hover:bg-white/10 disabled:opacity-30">＋</button>
-          </div>
           {/* 先方コメント */}
           {project.shareId && (
             <button onClick={() => { setShowComments(true); fetchComments(); }} title="先方コメント"
@@ -8984,7 +9345,7 @@ export default function App() {
           </div>
         </aside>
       )}
-      <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5" style={uiZoom !== 1 ? { zoom: uiZoom } : undefined}>
+      <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
         {sched && (
@@ -9279,68 +9640,6 @@ export default function App() {
               </div>
             </section>
 
-            <section className={cardCls + " mb-4"}>
-              <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-stone-100">
-                <span className="text-[13px] font-bold tracking-wide text-stone-600">競合動画</span>
-                <span className="text-[11px] text-stone-500">YouTubeのURLを貼ると、サムネ・再生数・バズ倍率を自動取得（複数URLもまとめて貼れます）</span>
-              </div>
-              <div className="p-4">
-                <input
-                  placeholder="競合動画のYouTube URLを貼って Enter"
-                  onKeyDown={(e) => { if (e.key === "Enter") { addCompVideos(e.target.value); e.target.value = ""; } }}
-                  onPaste={(e) => { const t = (e.clipboardData && e.clipboardData.getData("text")) || ""; if (/\s/.test(t.trim())) { e.preventDefault(); addCompVideos(t); } }}
-                  className="w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2.5 mb-3 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
-                {(curChannelInfo.competitorVideos || []).length === 0 ? (
-                  <div className="rounded-xl border border-dashed border-stone-300 px-4 py-8 text-center text-[12.5px] text-stone-400 leading-relaxed">
-                    まだ競合動画がありません。<br />上の欄にURLを貼ると、サムネと再生数・バズ倍率（S/A/B/C）が並びます。
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {(curChannelInfo.competitorVideos || []).map((v) => {
-                      const busy = compVidBusy[v.id];
-                      const sc = v.uploadDate ? scoreVideo(v, Date.now()) : null;
-                      return (
-                        <div key={v.id} className="group/cv border border-stone-200 rounded-2xl overflow-hidden flex flex-col bg-white relative">
-                          {busy ? (
-                            <div className="aspect-video bg-stone-200 animate-pulse" />
-                          ) : v.vid ? (
-                            <a href={"https://www.youtube.com/watch?v=" + v.vid} target="_blank" rel="noreferrer" className="block relative">
-                              <img src={"https://img.youtube.com/vi/" + v.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover" />
-                              {v.duration && <span className="absolute bottom-1.5 right-1.5 text-[11px] font-bold text-white bg-black/75 px-1.5 rounded" style={{ fontFamily: mono }}>{v.duration}</span>}
-                              {sc && <span className="absolute top-1.5 left-1.5 text-[12px] font-bold text-white px-2 py-0.5 rounded-md" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
-                            </a>
-                          ) : (
-                            <div className="aspect-video grid place-items-center bg-stone-50 text-[12px] text-stone-300">URLを確認してください</div>
-                          )}
-                          <button onClick={() => removeCompVideo(v.id)} title="削除"
-                            className="absolute top-1.5 right-1.5 w-7 h-7 rounded-lg grid place-items-center bg-white/90 text-stone-500 hover:text-red-500 shadow-sm opacity-0 group-hover/cv:opacity-100 transition-opacity"><Icon name="trash" className="w-3.5 h-3.5" /></button>
-                          <div className="px-3 pt-2.5 pb-3 flex flex-col gap-1.5 flex-1">
-                            {v.title ? (
-                              <div className="text-[13.5px] font-bold text-stone-800 leading-snug line-clamp-2" title={v.title}>{v.title}</div>
-                            ) : (
-                              <div className="text-[12px] text-stone-300">{busy ? "取得中…" : "タイトル未取得"}</div>
-                            )}
-                            {v.channel && <div className="text-[12px] text-stone-500 truncate" title={v.channel}>{v.channel}</div>}
-                            {(v.views > 0 || v.subs > 0) && (
-                              <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12px] text-stone-600" style={{ fontFamily: mono }}>
-                                <span title="再生数">▶ {fmtNum(v.views)}</span>
-                                <span title="登録者数">👤 {fmtNum(v.subs)}</span>
-                                {sc && <span className="font-bold" style={{ color: GRADE_COLOR[sc.grade] }} title="再生数÷登録者数（バズ倍率）">{sc.ratioStr}</span>}
-                                {v.uploadDate && <span className="text-stone-400" title="投稿日">{String(v.uploadDate).slice(0, 10)}</span>}
-                              </div>
-                            )}
-                            <textarea value={v.note || ""} onChange={(e) => patchCompVideo(v.id, { note: e.target.value })} rows={2}
-                              placeholder="メモ（この動画のどこを参考にする？）"
-                              className="w-full mt-auto text-[12.5px] leading-relaxed border border-stone-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-stone-400 resize-y" />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </section>
-
             <p className="text-[12px] text-stone-500 leading-relaxed">
               ここで決めたコンセプト・ターゲット・競合は、このチャンネルの全案件で共有されます。企画やタイトルを考えるときの土台にしてください。
             </p>
@@ -9468,39 +9767,20 @@ export default function App() {
             </section>
 
             {/* ハイライト（独立カード） */}
-            {/* 章ヘッダーと同じ見た目（濃い背景・明るい文字）のヘッダー ＋ 本文カード */}
-            <div className="relative flex items-center gap-4 pl-5 pr-3 py-3 min-h-[66px] rounded-t-xl border border-b-0 overflow-hidden" style={{ background: theme.main, borderColor: hexA(mainText, 0.1) }}>
-              <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px]" style={{ background: hexA(mainText, 0.25) }} />
-              <span className="shrink-0 flex items-center gap-4 select-none">
-                <Icon name="star" className="w-6 h-6" style={{ color: theme.accent }} />
-                <span className="w-px h-8" style={{ background: hexA(mainText, 0.2) }} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="text-[17px] leading-snug" style={{ fontWeight: 700, color: mainText }}>ハイライト</div>
-                <div className="text-[12px] leading-snug" style={{ color: hexA(mainText, 0.6) }}>冒頭フック</div>
-              </div>
-            </div>
-            <section className={cardCls + " mb-4 !rounded-t-none border-t-0"}>
+            <section className={cardCls + " mb-4"}>
+              {cardHead("ハイライト（冒頭フック）")}
               <ScriptCell value={m.highlight} onChange={(v) => setMeta("highlight", v)} accent={theme.accent} placeholder="冒頭フックの原稿・テロップ案など（行頭に「・」で ◼︎ 質問行）" />
             </section>
             </>)}
 
-            {/* マインドマップの切替ボタンは廃止（2026-09-25 AK指示）。代わりに人物色の凡例（名前はここで編集） */}
-            <div className="flex justify-end items-center gap-x-2 gap-y-1.5 -mt-1 mb-3 flex-wrap">
-              <div className="flex items-center gap-1.5 mr-auto flex-wrap" title="人物ごとの色。行を右クリック（または複数選択）で色を付けます。ロケに付けると配下のシーンすべてに効きます">
-                <span className="text-[11.5px] text-stone-500 mr-0.5">人物の色</span>
-                {PERSON_COLORS.map((pc) => (
-                  <span key={pc.key} className="inline-flex items-center gap-1 h-[24px] pl-2 pr-1 rounded-full border" style={{ borderColor: hexA(pc.color, 0.35), background: hexA(pc.color, 0.08) }}>
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: pc.color }} />
-                    <BufferedInput
-                      value={personNames[pc.key] || ""}
-                      onChange={(v) => setMeta("personNames", { ...personNames, [pc.key]: v })}
-                      placeholder={pc.def}
-                      className="bg-transparent text-[12px] font-semibold leading-none focus:outline-none placeholder:text-stone-400"
-                      style={{ color: pc.color, width: "calc(" + Math.min(10, Math.max(2, ((personNames[pc.key] || "").trim() || pc.def).length)) + "em + 6px)" }} />
-                  </span>
-                ))}
-              </div>
+            {/* 台本編集／マインドマップの表示切替（Phase3） */}
+            <div className="flex justify-end items-center gap-2 -mt-2 -mb-1">
+              <button onClick={() => setScriptView((v) => v === "mindmap" ? "table" : "mindmap")}
+                title={scriptView === "mindmap" ? "台本の編集画面に戻す" : "マインドマップで見る"}
+                className={"text-[12px] font-bold px-2.5 py-1 rounded-lg border transition-colors " + (scriptView === "mindmap" ? "text-white border-transparent" : "border-stone-200 text-stone-600 hover:bg-stone-50")}
+                style={scriptView === "mindmap" ? { background: theme.main } : {}}>
+                {scriptView === "mindmap" ? "◂ 台本に戻る" : "マインドマップで見る"}
+              </button>
               {/* 構成テーブル（PC：横並びテーブル）。overflow-clip＝角丸クリップは維持しつつ
                   スクロールコンテナ化しない→theadのstickyが効く（列名がスクロールで消えない） */}
               {/* 見せ方の切替（PCのみ）。スマホは上下積み固定なので出さない */}
@@ -9520,7 +9800,17 @@ export default function App() {
                 </button>
               )}
             </div>
-            {(<>
+            {scriptView === "mindmap" ? (
+              <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
+                {(() => {
+                  const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
+                  const posPrefix = spineFw + ":";
+                  const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
+                  const widthMap = {}; Object.keys(project.mindmapWidth || {}).forEach((k) => { if (k.startsWith(posPrefix)) widthMap[k.slice(posPrefix.length)] = project.mindmapWidth[k]; });
+                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} onEditAnswer={patchAnswer} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />;
+                })()}
+              </section>
+            ) : (<>
 
             {!stacked && (
             <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-clip">
@@ -9538,7 +9828,7 @@ export default function App() {
                   <tr style={{ background: theme.main, color: mainText }}>
                     {["時間", "内容", "シーン", "秒数", "所要時間", "原稿"].map((h, i) => (
                       <th key={i} className="sticky z-[5] px-3 py-2 text-left text-[11px] font-bold tracking-wide whitespace-nowrap"
-                        style={{ top: headerH / uiZoom, background: theme.main }}>
+                        style={{ top: headerH, background: theme.main }}>
                         <span style={{ opacity: 0.9 }}>{h}</span>
                       </th>
                     ))}
@@ -9572,9 +9862,6 @@ export default function App() {
                                 className="flex-1 min-w-0 self-center block bg-transparent text-[14px] leading-snug font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
                                 style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                               />
-                              {r.person && personColorOf(r.person) && (
-                                <span className="shrink-0 self-center mr-2 inline-flex items-center gap-1 h-[20px] px-2 rounded-full text-[11.5px] font-bold" style={{ background: personColorOf(r.person), color: "#fff" }} title="このロケのシーンの人物色">{personLabel(r.person)}</span>
-                              )}
                               {dayPickerEl(r, true)}
                               <input
                                 type="time"
@@ -9618,18 +9905,17 @@ export default function App() {
                     const locDone = sceneLocDone[r.id];
                     if (locDone) return null; // 所属ロケが撮影完了 → 畳んで非表示
                     const sceneDone = !!r.done;
-                    const pColor = personColorOf(personOfRow[r.id]);
                     return (
                       <tr key={r.id} id={"row-" + r.id}
                         {...dropZoneProps(idx)}
                         onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: e.clientX, y: e.clientY }); }}
                         className="border-b border-stone-100 transition-colors"
                         style={{
-                          ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : { background: pColor ? hexA(pColor, 0.07) : t.color + "0e" }), // 人物色があればそれ、無ければシーン種別ごとの極薄トーン
+                          ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : { background: t.color + "0e" }), // シーン種別ごとに極薄トーンで色分け（見分けやすく）
                           ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
                           ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}),
                         }}>
-                        <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: pColor ? "6px solid " + pColor : "3px solid " + t.color }} title={pColor ? "人物：" + personLabel(personOfRow[r.id]) : undefined}>
+                        <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: "3px solid " + t.color }}>
                           <div className="flex flex-col items-center gap-1">
                             <button
                               onClick={(e) => { e.stopPropagation(); updateRow(r.id, { done: !r.done }); }}
@@ -9907,7 +10193,7 @@ export default function App() {
                   ...dropZoneProps(idx),
                   onContextMenu: (e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: e.clientX, y: e.clientY }); },
                   className: "group relative transition-colors hover:bg-[#FCFCFD] scroll-mt-24" + (last ? "" : " border-b"),
-                  style: { borderColor: BORDER, ...(personColorOf(personOfRow[r.id]) ? { boxShadow: "inset 5px 0 0 0 " + personColorOf(personOfRow[r.id]), background: hexA(personColorOf(personOfRow[r.id]), 0.05) } : {}), ...(sceneDone ? { opacity: 0.5 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) },
+                  style: { borderColor: BORDER, ...(sceneDone ? { opacity: 0.5 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) },
                 };
                 if (isNarrow) {
                   return (
@@ -9963,7 +10249,7 @@ export default function App() {
                         return (
                         <div id={"row-" + r.id} data-toc={r.label || "（ロケ名未入力）"} {...dropZoneProps(g.idx)}
                           onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx: g.idx, kind: "location", x: e.clientX, y: e.clientY }); }}
-                          className={"group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 border transition-[filter] duration-150 hover:brightness-[1.12] overflow-hidden scroll-mt-24 " + (visibleScenes.length > 0 ? "rounded-t-xl border-b-0" : "mb-4 rounded-xl")}
+                          className="group/loc relative flex flex-wrap items-center gap-x-4 gap-y-2 pl-5 pr-3 py-3 mb-4 rounded-xl border transition-[filter] duration-150 hover:brightness-[1.12] overflow-hidden scroll-mt-24"
                           style={{ background: theme.main, borderColor: hexA(mainText, 0.1), "--ac": theme.accent, "--ln": hexA(mainText, 0.25), "--hv": hexA(mainText, 0.12), ...(r.done ? { opacity: 0.8 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) }}>
                           <span aria-hidden="true" className="absolute left-0 inset-y-0 w-[3px] bg-[var(--ln)] group-focus-within/loc:bg-[var(--ac)] transition-colors duration-150" />
                           <span className="shrink-0 flex items-center gap-4 select-none cursor-grab active:cursor-grabbing" {...rowDragProps(g.idx, r.id)} title="ドラッグで移動（配下のシーンごと）">
@@ -10001,7 +10287,7 @@ export default function App() {
                         );
                       })()}
                       {visibleScenes.length > 0 && (
-                        <div className={"border bg-white " + (r ? "rounded-b-xl rounded-t-none border-t-0" : "rounded-lg")} style={{ borderColor: BORDER }}>
+                        <div className="rounded-lg border bg-white" style={{ borderColor: BORDER }}>
                           {visibleScenes.map(renderScene)}
                         </div>
                       )}
@@ -10739,7 +11025,7 @@ export default function App() {
               shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare}
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
               onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)} onRestoreVersion={(id) => restoreVersion(id)}
-              onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} onUploadImage={(f) => uploadReviewImage(f)} />
+              onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />
             <QaEvidenceAutoSync projId={project.id} resolvedSig={comments.filter((c) => c && c.status === "完了").map((c) => c.id).sort().join(",")} />
           </div>
           );
@@ -11633,7 +11919,8 @@ export default function App() {
         <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
             <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
-              <img src="logo-wordmark.png" alt="ものがたりっち！" className="h-8 w-auto" style={{ filter: mainText === "#FFFFFF" ? "brightness(0) invert(1)" : "none" }} />
+              <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+              <span className="font-black tracking-[0.04em] sm:tracking-[0.08em] text-[14px] sm:text-[15px] whitespace-nowrap">ものがたりっち！</span>
               <div className="flex-1" />
               {user && (
                 <button onClick={() => setAskOpen(true)} title="AIに質問" className="h-8 px-2.5 rounded-lg inline-flex items-center gap-1 border border-white/20 hover:bg-white/10 mr-1.5 text-[12px] font-bold">
@@ -11654,7 +11941,7 @@ export default function App() {
             </div>
           </header>
           <div className="max-w-[1320px] mx-auto px-5 flex items-start gap-6">
-          <aside className="hidden lg:flex flex-col shrink-0 w-[192px] py-7 sticky top-[64px] gap-4" style={{ maxHeight: "calc(100vh - 64px)", overflowY: "auto" }}>
+          <aside className="hidden lg:flex flex-col shrink-0 w-[192px] pt-7 pb-4 sticky top-[64px] gap-4" style={{ height: "calc(100vh - 64px)", overflowY: "auto" }}>
             <button onClick={() => setView("home")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={view === "home" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
@@ -11706,11 +11993,27 @@ export default function App() {
                 </div>
               </div>
             )}
+            {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
+              <button onClick={() => { setTodayWorkOpenKey(null); setView("team"); setTimeout(() => document.getElementById("home-today-work")?.scrollIntoView({ behavior: "smooth", block: "start" }), 300); }}
+                className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12.5px] text-stone-600 hover:bg-white">
+                <Icon name="cloud" className="w-3.5 h-3.5 shrink-0 text-stone-400" />今日の仕事へ
+              </button>
+            )}
             <div className="mt-auto px-2.5 py-2 rounded-lg text-[11px] flex items-center gap-1.5" style={{ background: todayWork ? "#E7F6EC" : "transparent", color: todayWork ? "#15803D" : "#A8A29E" }}>
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: todayWork ? "#22C55E" : "#D6D3D1" }} />
               Studio OS {todayWork ? "連携中" : "未接続"}
             </div>
+            {/* 左下：クリエイタータイプ診断（2026-09-29 AK「左下とかに診断の項目作って、開くと診断できるように」） */}
+            <button onClick={() => setShowCreator(true)}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left bg-white border border-stone-200 shadow-sm hover:border-stone-300">
+              <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0 text-white" style={{ background: theme.accent }}><Icon name="sparkle" className="w-4 h-4" /></span>
+              <span className="min-w-0"><span className="block text-[12.5px] font-black text-stone-700">タイプ診断</span><span className="block text-[10.5px] text-stone-400 leading-tight">あなたに合った制作の流れ</span></span>
+            </button>
           </aside>
+          <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断"
+            className="lg:hidden fixed bottom-5 left-4 z-40 h-11 pl-3 pr-4 rounded-full shadow-lg inline-flex items-center gap-1.5 text-[12.5px] font-bold text-white" style={{ background: theme.accent }}>
+            <Icon name="sparkle" className="w-4 h-4" />タイプ診断
+          </button>
           <main className="flex-1 min-w-0 py-7">
             {/* 全案件 横断検索＋新規（1行に統合） */}
             <div className="flex items-center gap-2 mb-6">
@@ -11773,160 +12076,16 @@ export default function App() {
               </div>
             )}
 
-            {/* ===== ホーム（2026-09-29 AK「制作を前に進めるためのゴールシーク＆管理ツール」）=====
-                 mainは3つだけ：今日やること／案件を前に進める／連絡・返事。制作以外の業務（請求・Brain等）は出さない。
-                 myWork＝Studio OSの工程（/api/my-work・本人の担当だけ）、todayWork＝Studio OS get_work（AK本人だけ。他のD・編集者には来ない）。
-                 1行＝状態・案件名・次の一手・締切（＋進捗バー）。修正コメント数・最新版・注意事項・押さえることは行を開いた時だけ */}
-            {(() => {
-              const md = (s) => (s ? String(s).slice(5, 10).replace("-", "/") : "");
-              const cases = ((myWork && myWork.cases) || []).filter((w) => w.pace !== "完了");
-              const groupRows = (key) => (((todayWork && todayWork.groups) || []).find((g) => g.key === key) || {}).rows || [];
-              const tToday = groupRows("today").filter((r) => !r.kind || r.kind === "case");
-              const tGo = groupRows("go").filter((r) => !r.kind || r.kind === "case");
-              const tReply = groupRows("reply");
-              const byDl = {};
-              cases.forEach((w) => { if (w.deliverableId) byDl[w.deliverableId] = w; });
-              const used = new Set();
-              // Studio OSの行を myWork と突き合わせて1行に。Studio OSの文言(label)を「次の一手」に優先
-              const fromStudio = (r) => {
-                const w = r.deliverable_id && byDl[r.deliverable_id];
-                if (w) used.add(w.caseId);
-                return { key: "s:" + (r.deliverable_id || r.label), w, label: r.label, due: r.due, step: r.step };
-              };
-              const todayList = [
-                ...tToday.map(fromStudio),
-                ...cases.filter((w) => (w.pace === "遅れ" || w.pace === "今日") && !used.has(w.caseId)).map((w) => { used.add(w.caseId); return { key: "w:" + w.caseId, w }; }),
-              ];
-              todayList.forEach((it) => { if (it.w) used.add(it.w.caseId); });
-              const goList = [
-                ...tGo.map(fromStudio).filter((it) => !(it.w && todayList.some((t) => t.w && t.w.caseId === it.w.caseId))),
-                ...cases.filter((w) => !used.has(w.caseId)).map((w) => ({ key: "w:" + w.caseId, w })),
-              ].sort((a, b) => ((a.w && a.w.mine && a.w.mine.days) ?? 99) - ((b.w && b.w.mine && b.w.mine.days) ?? 99));
-              const STATE = { "遅れ": ["#FBE5EA", "#DC2645"], "今日": ["#FCE9D6", "#C2410C"], "もうすぐ": ["#FCF0DC", "#B45309"] };
-              const openComments = (id) => { const d = caseData(id); return ((d && d.review && d.review.comments) || []).filter((c) => c.status !== "完了").length; };
-              const latestVer = (id) => {
-                const d = caseData(id);
-                const vs = ((d && d.review && d.review.versions) || []).filter((v) => v && !v.trashedAt);
-                const v = vs[vs.length - 1]; if (!v) return null;
-                const t = v.createdAt ? new Date(v.createdAt) : null;
-                return (v.label || "v" + vs.length) + (t && !isNaN(t) ? " " + (t.getMonth() + 1) + "/" + t.getDate() : "");
-              };
-              const Row = ({ it, progress }) => {
-                const w = it.w;
-                const x = w ? index.find((i) => i.id === w.caseId) : null;
-                const name = (x && x.name) || (w && w.title) || it.label || "（無題）";
-                const next = w ? (it.label || w.action) : (it.step || "");
-                const deadline = (w && w.mine && w.mine.deadline) || (it.due && /^\d{4}-/.test(it.due) ? it.due : "");
-                const days = w && w.mine ? w.mine.days : null;
-                const st = w && STATE[w.pace];
-                const chip = !w ? null : w.pace === "遅れ" ? (days != null ? -days + "日遅れ" : "遅れ") : w.pace === "今日" ? "今日まで" : w.pace === "もうすぐ" ? "あと" + days + "日" : null;
-                const waiting = !!(w && w.current && !w.current.isEditor);
-                const unset = !!(w && w.pace === "締切未設定");
-                const open = workOpen === it.key;
-                const canOpen = !!(w && (x || w.openUrl));
-                const go = () => { if (!w) return; if (!x && w.openUrl) window.open(w.openUrl, "_blank", "noopener"); else openCase(w.caseId); };
-                const stepNo = w && w.stepNo, stepTotal = w && w.stepTotal;
-                const cautions = open && x ? cautionsFor(w.caseId, x.channel || DEFAULT_CHANNEL, w.clientNotes) : [];
-                return (
-                  <div className="border-t border-stone-100 first:border-t-0">
-                    <div className="flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-stone-50 min-w-0">
-                      <button onClick={() => setWorkOpen(open ? null : it.key)} title="詳しく見る"
-                        className="shrink-0 w-5 h-5 grid place-items-center rounded text-stone-400 hover:bg-stone-200/60">
-                        <Icon name="down" className={"w-3.5 h-3.5 transition-transform " + (open ? "" : "-rotate-90")} />
-                      </button>
-                      {chip && <span className="shrink-0 text-[12px] font-bold px-2 py-0.5 rounded-full tabular-nums" style={{ background: st[0], color: st[1] }}>{chip}</span>}
-                      <button onClick={go} disabled={!canOpen} className="min-w-0 flex-1 text-left group/hr">
-                        <div className="flex items-baseline gap-2 min-w-0">
-                          <span className="shrink-0 max-w-[45%] truncate text-[13.5px] font-bold text-stone-800 group-hover/hr:underline">{name}</span>
-                          <span className="min-w-0 truncate text-[12.5px] text-stone-600">{next}</span>
-                        </div>
-                        {progress && stepTotal > 0 && (
-                          <div className="mt-1.5 flex items-center gap-2">
-                            <div className="h-1 w-28 rounded-full bg-stone-100 overflow-hidden shrink-0">
-                              <div className="h-full rounded-full" style={{ width: Math.min(100, Math.round(((stepNo || 1) - 1) / stepTotal * 100)) + "%", background: theme.main }} />
-                            </div>
-                            <span className="text-[12px] text-stone-500 tabular-nums truncate">{stepNo}/{stepTotal} {w.current ? w.current.name : ""}</span>
-                          </div>
-                        )}
-                      </button>
-                      {waiting && <span className="shrink-0 text-[12px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600" title="今は他の人の工程">待ち</span>}
-                      {unset && <span className="shrink-0 text-[12px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">締切未設定</span>}
-                      {w && !x && w.openUrl && <span className="shrink-0 text-[12px] font-bold px-1.5 py-0.5 rounded bg-violet-50 text-violet-600" title="Studio OSで担当になっている案件（編集者用リンクで開きます）">Studio OS</span>}
-                      <span className="shrink-0 w-[92px] text-right text-[12px] text-stone-500 tabular-nums whitespace-nowrap">
-                        {deadline ? <>締切 <b className="text-stone-700">{md(deadline)}</b></> : it.due && !w ? it.due : (w && w.finalDeadline ? <>納期 <b className="text-stone-700">{md(w.finalDeadline)}</b></> : <span className="text-stone-300">--</span>)}
-                      </span>
-                    </div>
-                    {open && (
-                      <div className="px-3.5 pb-3 pl-[46px] space-y-1.5 text-[12px] text-stone-600">
-                        <div className="flex flex-wrap gap-x-4 gap-y-0.5 tabular-nums">
-                          {w && w.current && <span>今の工程 <b className="text-stone-700">{w.current.name}</b>{w.current.deadline ? " " + md(w.current.deadline) + "予定" : ""}</span>}
-                          {w && w.finalDeadline && <span>納期 <b className="text-stone-700">{md(w.finalDeadline)}</b></span>}
-                          {x && <span>未完了の修正コメント <b className={openComments(w.caseId) ? "text-rose-600" : "text-stone-700"}>{openComments(w.caseId)}</b></span>}
-                          {x && <span>最新版 <b className="text-stone-700">{latestVer(w.caseId) || "なし"}</b></span>}
-                          {!w && it.step && <span>{it.step}</span>}
-                        </div>
-                        {cautions.length > 0 && (
-                          <div className="rounded-lg bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 space-y-0.5">
-                            {cautions.map((c) => <div key={c.label} className="leading-snug"><span className="font-bold text-amber-800">{c.label}：</span>{c.items.join(" ／ ")}</div>)}
-                          </div>
-                        )}
-                        {w && w.guides && w.guides.length > 0 && (
-                          <div>
-                            <div className="font-bold" style={{ color: theme.main }}>{w.mine ? w.mine.name : "この工程"}で押さえること</div>
-                            {w.guides.map((gd, gi) => <ul key={gi} className="mt-0.5 space-y-0.5">{gd.points.map((pt, pi) => <li key={pi} className="leading-snug">・{pt}</li>)}</ul>)}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              };
-              const Section = ({ icon, title, count, empty, children }) => (
-                <div className="mb-7">
-                  <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-700">
-                    <Icon name={icon} className="w-4 h-4 text-stone-500" />{title}
-                    {count > 0 && <span className="text-[12px] font-normal text-stone-400 tabular-nums">{count}</span>}
-                  </div>
-                  {count > 0
-                    ? <div className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden">{children}</div>
-                    : <div className="text-[12.5px] text-stone-400 px-1">{empty}</div>}
-                </div>
-              );
-              return (
-                <>
-                  <Section icon="target" title="今日やること" count={todayList.length} empty="今日やることはありません">
-                    {todayList.map((it) => <React.Fragment key={it.key}>{Row({ it })}</React.Fragment>)}
-                  </Section>
-                  <Section icon="flag" title="案件を前に進める" count={goList.length} empty="進行中の担当案件はありません">
-                    {goList.map((it) => <React.Fragment key={it.key}>{Row({ it, progress: true })}</React.Fragment>)}
-                  </Section>
-                  {tReply.length > 0 && (
-                    <Section icon="chat" title="連絡・返事" count={tReply.length}>
-                      {tReply.map((r, i) => (
-                        <div key={i} className="border-t border-stone-100 first:border-t-0 flex items-center gap-2.5 px-3.5 py-2.5 min-w-0">
-                          <span className="min-w-0 flex-1 truncate text-[13px] text-stone-800">{r.label}</span>
-                          {r.due && <span className="shrink-0 text-[12px] text-stone-500 tabular-nums">{r.due}</span>}
-                        </div>
-                      ))}
-                    </Section>
-                  )}
-                </>
-              );
-            })()}
-
-            {/* 案件の一覧はふだん畳む（サイドバーのチャンネルから開ける）。編集者の追加・解除はここのカードから */}
-            <button onClick={() => setAllCasesOpen((v) => !v)} className="mb-3 inline-flex items-center gap-1.5 text-[12.5px] font-bold text-stone-500 hover:text-stone-700">
-              <Icon name="down" className={"w-3.5 h-3.5 transition-transform " + (allCasesOpen ? "" : "-rotate-90")} />すべての案件（チャンネル別・編集者の追加）
-            </button>
-            {allCasesOpen && (<>
+            {/* 2026-09-29 AK「ホーム画面さっきのシンプルなものに戻して」：あなたの担当・今日の仕事は「担当と納期」へ移し、続きから開くは外した */}
+            {user && <TodayTodo theme={theme} cases={(myWork && myWork.cases) || []} onOpenCase={(id) => openCase(id)} />}
             <div className="text-[13px] font-bold tracking-wide text-stone-600 mb-2">チャンネル（{channelGroups.length}）</div>
-            <div className="space-y-6">
+            <div className="space-y-2.5">
               {channelGroups.map(({ channel, items }) => {
                 const ci = channelInfo[channel] || {};
                 return (
-                  <div key={channel}
+                  <div key={channel} className="bg-white border border-stone-200 rounded-xl px-4 py-2.5 shadow-sm"
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
-                    <div className="flex items-start gap-2 px-1">
+                    <div className="flex items-start gap-2">
                       <button onClick={() => openChannel(channel)} title="このチャンネルの企画一覧を開く" className="flex items-start gap-2 min-w-0 flex-1 text-left group/cn">
                         {channelIconOf(channel)
                           ? <span className="w-4 h-4 shrink-0 mt-0.5 grid place-items-center text-[14px] leading-none">{channelIconOf(channel)}</span>
@@ -11947,64 +12106,46 @@ export default function App() {
                         )}
                       </div>
                     </div>
-                    {/* 案件カード（2026-09-26 AK「案件ごとにカードで整理・編集者の権限を付与」） */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5 mt-2">
-                      {items.slice(0, 9).map((x) => {
-                        const owner = (x.ownerEmail || "").toLowerCase();
-                        const editors = (x.members || []).filter((m) => m !== owner);
-                        const canManage = !x.collab || x.role === "owner";
-                        return (
-                          <div key={x.id} className="bg-white border border-stone-200 rounded-xl shadow-sm hover:shadow-md hover:border-stone-300 transition-all flex flex-col min-w-0">
-                            <button onClick={() => openCase(x.id)} className="text-left px-3.5 pt-3 pb-2 flex-1 min-w-0 group/cc">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                {x.favorite && <Icon name="star" className="w-3.5 h-3.5 shrink-0 text-amber-400" />}
-                                <span className="text-[14px] font-bold text-stone-800 truncate">{x.name || "（無題）"}</span>
-                              </div>
-                              <div className="mt-1 text-[12px] font-semibold opacity-0 group-hover/cc:opacity-100 transition-opacity" style={{ color: theme.main }}>開く →</div>
-                            </button>
-                            <div className="flex items-center gap-1.5 px-3.5 pb-2.5 pt-2 border-t border-stone-100">
-                              {editors.length > 0 && (
-                                <div className="flex -space-x-1.5 shrink-0">
-                                  {editors.slice(0, 4).map((em) => (
-                                    <span key={em} title={em} className="w-6 h-6 rounded-full grid place-items-center text-[10px] font-bold text-white bg-stone-500 border-2 border-white">{em[0].toUpperCase()}</span>
-                                  ))}
-                                </div>
-                              )}
-                              <span className="text-[11px] text-stone-500 truncate">{editors.length ? "編集者 " + editors.length + "人" : "編集者なし"}</span>
-                              {canManage && (
-                                <button onClick={() => { setCaseEditors({ id: x.id }); setCaseEditorEmail(""); }}
-                                  title="この案件の編集者を追加・解除"
-                                  className="ml-auto shrink-0 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 inline-flex items-center gap-1">
-                                  <Icon name="user" className="w-3 h-3" />編集者
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {items.length > 9 && (
-                        <button onClick={() => openChannelBoard(channel)} className="rounded-xl border border-dashed border-stone-300 text-[12.5px] font-bold text-stone-500 hover:bg-white min-h-[84px]">
-                          すべて（{items.length}）を見る →
-                        </button>
-                      )}
-                      {items.length === 0 && (
-                        <button onClick={(e) => setAddMenu({ channel, x: e.clientX, y: e.clientY })} className="rounded-xl border border-dashed border-stone-300 text-[12.5px] font-bold text-stone-500 hover:bg-white min-h-[84px] inline-flex items-center justify-center gap-1">
-                          <Icon name="plus" className="w-3.5 h-3.5" />案件を追加
-                        </button>
-                      )}
-                    </div>
+                    {/* 2026-09-29 AK：案件カードは外し、9/26昼の折りたたみ（チャンネル1行・押すと中の案件一覧）に戻した */}
                   </div>
                 );
               })}
               {channelGroups.length === 0 && <p className="text-[13px] text-stone-500 text-center py-8">まだ案件がありません。上のボタンから作成してください。</p>}
             </div>
-            </>)}
+            <p className="text-[11px] text-stone-500 mt-6 text-center">案件をクリックすると編集画面が開きます。左上ロゴでいつでもここに戻れます。</p>
           </main>
           </div>
         </div>
       )}
 
       {/* ===== メンバー画面（Phase 3・2026-09-26）。権限は案件ごと（オーナー／編集者）。組織共通の固定ロールは持たない ===== */}
+      {showCreator && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+          <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
+              <button onClick={() => { setShowCreator(false); setView("home"); }} className="flex items-center gap-2">
+                <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+                <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
+                {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
+                <span className="max-w-[120px] truncate">{user ? user.name : "ログイン"}</span>
+              </button>
+            </div>
+          </header>
+          <main className="max-w-[760px] mx-auto px-4 sm:px-5 py-7">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="sparkle" className="w-5 h-5" style={{ color: theme.main }} />クリエイタータイプ診断</h1>
+              <button onClick={() => setShowCreator(false)} className="ml-auto text-[12px] font-bold px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-600 hover:bg-stone-50">閉じる</button>
+            </div>
+            <p className="text-[12px] text-stone-500 mb-4">作業の仕方と工程ごとの時間から、あなたに合った制作の流れと、納期から逆算した作業予定を出します。{!user && "（ログインすると回答がアカウントに保存され、どの端末でも見られます）"}</p>
+            <CreatorDiagnosis theme={theme} userEmail={(user && user.email) || ""} />
+          </main>
+        </div>
+      )}
+
       {view === "members" && (() => {
         const me = ((user && user.email) || "").toLowerCase();
         const ownedCases = index.filter((x) => !x.collab || x.role === "owner");
@@ -12222,6 +12363,125 @@ export default function App() {
             <p className="text-[12px] text-stone-500 mb-4">
               {connected ? "工程・締切・担当はStudio OS、編集者はものがたりっちの招待から。看板の列の「締切」は今の工程の締切です（無ければ納期）。" : "Studio OSとつながっていないため、ものがたりっちの編集者と案件の締切だけで表示しています。"}
             </p>
+
+            {/* ===== あなたの担当（編集者のダッシュボード・2026-09-26）：今やること・締切・早い/遅れ・納期・注意事項 ===== */}
+            {myWork && myWork.cases && myWork.cases.length > 0 && (() => {
+              const PACE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645", o: 0 }, "今日": { bg: "#FCE9D6", fg: "#C2410C", o: 1 }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309", o: 2 }, "締切未設定": { bg: "#F0F0F2", fg: "#57534E", o: 3 }, "余裕": { bg: "#E7F6EC", fg: "#15803D", o: 4 }, "担当工程なし": { bg: "#F0F0F2", fg: "#57534E", o: 5 }, "完了": { bg: "#E7F6EC", fg: "#15803D", o: 6 } };
+              const md = (s) => (s ? s.slice(5).replace("-", "/") : "");
+              // 完了した案件は「今やること」が無いので出さない（管理者は紐付いた全案件が返るため、完了が並んでいた）
+              const list = myWork.cases.filter((w) => w.pace !== "完了").sort((a, b) => (PACE[a.pace] || PACE["余裕"]).o - (PACE[b.pace] || PACE["余裕"]).o || ((a.mine && a.mine.days) ?? 99) - ((b.mine && b.mine.days) ?? 99)).slice(0, 8);
+              if (!list.length) return null;
+              return (
+              <div className="mb-7">
+                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
+                  <Icon name="clock" className="w-4 h-4" />あなたの担当
+                  <span className="text-[11.5px] font-normal text-stone-500">締切が近い順</span>
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                  {list.map((w) => {
+                    const pc = PACE[w.pace] || PACE["余裕"];
+                    const x = index.find((i) => i.id === w.caseId);
+                    const channel = (x && x.channel) || DEFAULT_CHANNEL;
+                    const cautions = cautionsFor(w.caseId, channel, w.clientNotes);
+                    const daysLabel = w.mine && w.mine.days != null ? (w.mine.days < 0 ? -w.mine.days + "日遅れ" : w.mine.days === 0 ? "今日まで" : "あと" + w.mine.days + "日") : "";
+                    return (
+                      <div key={w.caseId} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm" style={w.pace === "遅れ" ? { borderColor: "#F5B5C0" } : undefined}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="shrink-0 text-[11.5px] font-bold px-2 py-0.5 rounded-full" style={{ background: pc.bg, color: pc.fg }}>{w.pace}{daysLabel && w.pace !== "今日" ? "・" + daysLabel : ""}</span>
+                          <button onClick={() => openCase(w.caseId)} className="min-w-0 truncate text-[14px] font-bold text-stone-800 hover:underline text-left">{(x && x.name) || w.title}</button>
+                        </div>
+                        <div className="text-[13px] text-stone-800 font-bold leading-snug">今やること：{w.action}</div>
+                        <div className="mt-1 text-[12px] text-stone-600 flex flex-wrap gap-x-3 gap-y-0.5 tabular-nums">
+                          {w.mine && <span>{w.mine.name}の締切 <b className="text-stone-800">{w.mine.deadline ? md(w.mine.deadline) : "未設定"}</b></span>}
+                          {w.finalDeadline && <span>納期 <b className="text-stone-800">{md(w.finalDeadline)}</b></span>}
+                          {w.current && !w.current.isEditor && w.current.deadline && <span>{w.current.name} {md(w.current.deadline)}予定</span>}
+                        </div>
+                        {cautions.length > 0 && (
+                          <div className="mt-2 rounded-lg bg-amber-50/70 border border-amber-100 px-2.5 py-1.5 space-y-0.5">
+                            {cautions.map((c) => (
+                              <div key={c.label} className="text-[12px] text-stone-700 leading-snug"><span className="font-bold text-amber-800">{c.label}：</span>{c.items.join(" ／ ")}</div>
+                            ))}
+                          </div>
+                        )}
+                        {w.guides && w.guides.length > 0 && (
+                          <details className="mt-1.5">
+                            <summary className="text-[12px] font-bold cursor-pointer" style={{ color: theme.main }}>{w.mine ? w.mine.name : "この工程"}で押さえること</summary>
+                            {w.guides.map((g, gi) => (
+                              <div key={gi} className="mt-1">
+                                <div className="text-[11.5px] font-bold text-stone-500">{g.source}</div>
+                                <ul className="mt-0.5 space-y-0.5">{g.points.map((pt, pi) => <li key={pi} className="text-[12px] text-stone-600 leading-snug">・{pt}</li>)}</ul>
+                              </div>
+                            ))}
+                          </details>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              );
+            })()}
+
+            {/* ===== 今日の仕事（Studio OS連携・2026-09-23）。件数だけ見せて開くと詳細＝Studio OS自身の
+                 「待ちはホームの既定表示にしない」(AK 2026-09-07 §4)に合わせた控えめな表示。
+                 未接続（STUDIO_MCP_KEY未設定・Studio OS未応答）の時は静かに何も出さない ===== */}
+            {todayWork && todayWork.groups && todayWork.groups.some((g) => g.rows && g.rows.length) && (
+              <div className="mb-7" id="home-today-work">
+                <div className="text-[13px] font-bold mb-2 flex items-center gap-2 text-stone-600">
+                  今日の仕事<span className="text-stone-300 font-normal">Studio OS</span>
+                </div>
+                <div className="flex flex-wrap gap-2.5">
+                  {todayWork.groups.filter((g) => g.rows && g.rows.length).map((g) => (
+                    <div key={g.key} className="bg-white border border-stone-200 rounded-xl shadow-sm overflow-hidden" style={{ minWidth: 176 }}>
+                      <button onClick={() => setTodayWorkOpenKey((k) => (k === g.key ? null : g.key))}
+                        className="w-full flex items-center justify-between gap-3 px-3.5 py-2.5 text-left hover:bg-stone-50">
+                        <span className="text-[13px] font-bold text-stone-700">{g.title}</span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500 shrink-0">{g.rows.length}</span>
+                      </button>
+                      {todayWorkOpenKey === g.key && (
+                        <div className="border-t border-stone-100 px-3.5 py-2 space-y-2 max-h-64 overflow-y-auto">
+                          {g.rows.slice(0, 20).map((r, i) => (
+                            <div key={i} className="text-[12px]">
+                              <div className="font-semibold text-stone-700 truncate">{r.label}</div>
+                              {r.due && <div className="text-stone-400 mt-0.5">{r.due}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ===== Brain（Studio OSナレッジ候補・2026-09-26）。多くても3件だけ表示し、残りは「すべて見る」でナレッジ画面へ ===== */}
+            {knowledgeInbox && knowledgeInbox.length > 0 && (
+              <div className="mb-7">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[13px] font-bold flex items-center gap-2 text-stone-600">
+                    Brain<span className="text-stone-300 font-normal">{knowledgeInbox.length}</span>
+                  </div>
+                  <button onClick={() => setView("knowledge")} className="text-[12px] font-bold" style={{ color: theme.main }}>すべて見る →</button>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {knowledgeInbox.slice(0, 3).map((c) => (
+                    <div key={c.id} className="bg-white border border-stone-200 rounded-xl px-3.5 py-3 shadow-sm">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[10.5px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-600">{c.kind === "regulation_rule" ? "ルール候補" : "ナレッジ候補"}</span>
+                        <span className="text-[11px] text-stone-400 truncate">{c.client_name || "全社"}</span>
+                      </div>
+                      <div className="text-[13px] text-stone-800 mb-2 line-clamp-2">{(c.payload && c.payload.content) || ""}</div>
+                      <div className="flex gap-1.5">
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "adopt")}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40">採用</button>
+                        <button disabled={knowledgeBusyId === c.id} onClick={() => decideKnowledge(c.id, "dismiss")}
+                          className="text-[11px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 hover:bg-stone-50 disabled:opacity-40 text-stone-400">見送り</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
               <Tile label="遅れ" value={count("遅れ")} color={count("遅れ") ? "#DC2645" : undefined} />
@@ -12847,24 +13107,10 @@ export default function App() {
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setRowMenu(null)} onContextMenu={(e) => { e.preventDefault(); setRowMenu(null); }} />
           <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
-            style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 290) }}>
+            style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 200) }}>
             <div className="flex border-b border-stone-100">
               <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
               <button onClick={() => { moveRow(rowMenu.idx, 1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
-            </div>
-            <div className="px-3 py-2 border-b border-stone-100">
-              <div className="text-[11px] text-stone-500 mb-1.5">{rowMenu.kind === "location" ? "人物の色（このロケ全体）" : "人物の色"}</div>
-              <div className="flex items-center gap-1.5">
-                {PERSON_COLORS.map((pc) => {
-                  const cur = ((project.rows || []).find((x) => x.id === rowMenu.id) || {}).person;
-                  return (
-                    <button key={pc.key} onClick={() => { setPersonFor([rowMenu.id], pc.key); setRowMenu(null); }} title={personLabel(pc.key)}
-                      className="w-6 h-6 rounded-full grid place-items-center hover:scale-110 transition-transform" style={{ background: pc.color, boxShadow: cur === pc.key ? "0 0 0 2px #fff, 0 0 0 4px " + pc.color : "none" }} />
-                  );
-                })}
-                <button onClick={() => { setPersonFor([rowMenu.id], null); setRowMenu(null); }} title="色を外す"
-                  className="ml-1 text-[11.5px] text-stone-500 hover:text-stone-800 px-1.5 py-0.5 rounded hover:bg-stone-100">なし</button>
-              </div>
             </div>
             <button onClick={() => { const idx = rowMenu.idx, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(rowMenu.kind === "location" ? "解説系" : (sceneType || "解説系"))); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-500" />下にシーンを追加</button>
             <button onClick={() => { const idx = rowMenu.idx; setRowMenu(null); insertBelow(idx, newLocation("")); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="folder" className="w-3.5 h-3.5 text-stone-500" />下にロケ（セクション）を追加</button>
@@ -13492,13 +13738,6 @@ export default function App() {
           style={{ background: theme.main, color: mainText }}>
           <span className="text-[13px] font-bold mr-1">{selectedIds.length}件 選択中</span>
           <span className="text-[12px] opacity-70 mr-2 hidden sm:inline">左の番号をドラッグでまとめて移動</span>
-          <span className="inline-flex items-center gap-1 mx-1" title="選択した行に人物の色を付ける">
-            {PERSON_COLORS.map((pc) => (
-              <button key={pc.key} onClick={() => setPersonFor(selectedIds, pc.key)} title={personLabel(pc.key)}
-                className="w-5 h-5 rounded-full border-2 border-white/70 hover:scale-110 transition-transform" style={{ background: pc.color }} />
-            ))}
-            <button onClick={() => setPersonFor(selectedIds, null)} title="色を外す" className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/15 hover:bg-white/25">色なし</button>
-          </span>
           <button onClick={copySelectedScripts}
             className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">⧉ 原稿をコピー</button>
           <button onClick={downloadSelectedScripts} title="選択した原稿を.txtで保存（Claudeにファイルとしてドラッグ＝空にならない）"

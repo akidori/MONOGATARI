@@ -2,6 +2,7 @@
    ものがたりっち MCP（POST /mcp・JSON-RPC 2.0 / Streamable HTTP のステートレス版）
    ツール: get_script / update_script / create_script（2026-09-26追加）
           list_scripts / get_upload_link（2026-09-29追加・Premiereプラグインから上げる先を選ぶ用）
+          get_effort / log_effort / set_planned（2026-09-29追加・工数表。Premiereプラグインの砂時計用）
    認証: Authorization: Bearer <key>
      MCP_READ_KEY  … get_script のみ
      MCP_WRITE_KEY … get_script + update_script + create_script
@@ -65,6 +66,21 @@ const TOOLS = [
       "案件へ完成動画を上げるための編集者用リンク（share.html?id=&up=）を返す。書き込みキー専用。" +
       "共有が未発行の案件は share_missing を返す（案件本体は書き換えない）。",
     inputSchema: { type: "object", properties: { id: { type: "string", description: "案件ID または 共有ID" } }, required: ["id"], additionalProperties: false },
+  },
+  {
+    name: "get_effort",
+    description: "案件の工数表（工程ごとの予定分・実績分）と、Studio OS上の今の工程を返す。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+  },
+  {
+    name: "log_effort",
+    description: "工程の実績時間を足す（分）。書き込みキー専用。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, step: { type: "string" }, minutes: { type: "number" } }, required: ["id", "step", "minutes"], additionalProperties: false },
+  },
+  {
+    name: "set_planned",
+    description: "工程の予定時間（分）を決める。書き込みキー専用。その工程名の標準がまだ無ければ標準にも入れる。",
+    inputSchema: { type: "object", properties: { id: { type: "string" }, step: { type: "string" }, minutes: { type: "number" } }, required: ["id", "step", "minutes"], additionalProperties: false },
   },
 ];
 
@@ -339,6 +355,67 @@ async function getUploadLink(env, { id }) {
   return toolText({ id: shareId, projId: found.projId, name: found.project.name || "", up, r: r || null, url });
 }
 
+/* ---- 工数表（2026-09-29 AK「工数チェック表をものがたりっちと連動、砂時計で今の工程にどれだけ時間をかけるか」） ----
+   工程の並び・今の工程は Studio OS（正本）から読むだけ。予定・実績の分数だけを KV effort:<案件ID> に持つ。
+   予定は推測で埋めない（未設定は未設定のまま返す）。標準は effort:std（工程名→分）で、人が決めた値だけが入る。
+   KVの書き込み上限（1日1000）があるので、プラグインは停止時と10分ごとにまとめて送る。 */
+const EFFORT_MAX_LOG = 600; // 1回に足せる実績の上限（分）。付けっぱなしの暴走を防ぐ
+async function loadEffort(env, projId) { return (await env.SNAPS.get("effort:" + projId, "json")) || { steps: {} }; }
+async function studioStepsFor(env, projId) {
+  if (!env.STUDIO_AGENT_KEY) return null;
+  for (let page = 1; page <= 10; page++) {
+    const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/deliverables?productionStatus=active&expand=detail&limit=200&page=" + page, { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || j.success === false) return null;
+    const d = (j.data || []).find((x) => x && x.mgProjectId === projId);
+    if (d) return d;
+    const total = (j.meta && j.meta.total) || 0;
+    if (!(j.data || []).length || page * 200 >= total) break;
+  }
+  return null;
+}
+async function getEffort(env, { id }) {
+  const found = await findProject(env, id);
+  if (!found) return toolText({ error: "not_found", message: "案件が見つかりません" }, true);
+  const projId = found.projId;
+  const [eff, std, d] = await Promise.all([loadEffort(env, projId), env.SNAPS.get("effort:std", "json"), studioStepsFor(env, projId).catch(() => null)]);
+  const DONE = new Set(["completed", "done", "skipped"]);
+  const steps = d ? (d.steps || []).filter((s) => s && !s.archived).sort((a, b) => (a.stepOrder || 0) - (b.stepOrder || 0)) : [];
+  const cur = steps.find((s) => !DONE.has(s.status)) || null;
+  const names = steps.length ? steps.map((s) => s.stepName) : Object.keys(eff.steps || {});
+  const rows = names.map((n) => {
+    const e = (eff.steps || {})[n] || {};
+    const planned = e.planned != null ? e.planned : ((std || {})[n] != null ? std[n] : null);
+    return { name: n, plannedMin: planned, plannedIsStd: e.planned == null && planned != null, actualMin: e.actual || 0, done: steps.length ? DONE.has((steps.find((s) => s.stepName === n) || {}).status) : false };
+  });
+  return toolText({
+    projId, name: found.project.name || "", linked: !!d,
+    currentStep: cur ? { name: cur.stepName, deadline: (cur.deadline || "").slice(0, 10), stepNo: steps.indexOf(cur) + 1, stepTotal: steps.length } : null,
+    steps: rows,
+  });
+}
+async function writeEffort(env, { id, step, minutes }, kind) {
+  const found = await findProject(env, id);
+  if (!found) return toolText({ error: "not_found" }, true);
+  const name = String(step || "").trim().slice(0, 40);
+  const m = Math.round(Number(minutes));
+  if (!name || !Number.isFinite(m) || m < 0) return toolText({ error: "step と minutes（0以上の分）を指定してください" }, true);
+  const eff = await loadEffort(env, found.projId);
+  eff.steps = eff.steps || {};
+  const row = eff.steps[name] || (eff.steps[name] = {});
+  if (kind === "log") {
+    if (m > EFFORT_MAX_LOG) return toolText({ error: "1回に足せるのは" + EFFORT_MAX_LOG + "分までです" }, true);
+    row.actual = (row.actual || 0) + m;
+  } else {
+    row.planned = m;
+    const std = (await env.SNAPS.get("effort:std", "json")) || {};
+    if (std[name] == null) { std[name] = m; await env.SNAPS.put("effort:std", JSON.stringify(std)); }
+  }
+  eff.updatedAt = Date.now();
+  await env.SNAPS.put("effort:" + found.projId, JSON.stringify(eff));
+  return toolText({ ok: true, step: name, plannedMin: row.planned ?? null, actualMin: row.actual || 0 });
+}
+
 // ---- JSON-RPC ------------------------------------------------------------
 export async function handleMcp(request, env, { slim }) {
   const H = { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" };
@@ -381,6 +458,11 @@ export async function handleMcp(request, env, { slim }) {
       if (name === "list_scripts") return reply(rpcOk(id, await listScripts(env)));
       if (typeof args.id !== "string" || !ID_RE.test(args.id)) return reply(rpcOk(id, toolText({ error: "id は英数字4〜32文字の文字列にしてください" }, true)));
       if (name === "get_script") return reply(rpcOk(id, await getScript(env, args)));
+      if (name === "get_effort") return reply(rpcOk(id, await getEffort(env, args)));
+      if (name === "log_effort" || name === "set_planned") {
+        if (level !== "write") return reply(rpcOk(id, toolText({ success: false, error: "書き込み権限のキーが必要です" }, true)));
+        return reply(rpcOk(id, await writeEffort(env, args, name === "log_effort" ? "log" : "plan")));
+      }
       if (name === "get_upload_link") {
         if (level !== "write") return reply(rpcOk(id, toolText({ success: false, error: "書き込み権限のキーが必要です" }, true)));
         return reply(rpcOk(id, await getUploadLink(env, args)));
