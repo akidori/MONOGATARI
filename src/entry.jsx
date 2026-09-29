@@ -1,5 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import App from "../monogataritch.src.jsx";
+import App, { CreatorPublicPage } from "../monogataritch.src.jsx";
 
-createRoot(document.getElementById("root")).render(<App />);
+// 共有URL（#creator=…）はログイン不要のプロフィールページだけを出す（クリエイタータイプ診断）
+const isCreatorProfile = (window.location.hash || "").startsWith("#creator=");
+createRoot(document.getElementById("root")).render(isCreatorProfile ? <CreatorPublicPage /> : <App />);

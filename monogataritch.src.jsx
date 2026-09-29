@@ -7,7 +7,7 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
-import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, buildPlan, planToIcs, profileComplete, hoursOn, ymd } from "./src/creator-type.js";
+import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, buildPlan, planToIcs, profileComplete, hoursOn, ymd, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -3358,7 +3358,116 @@ function WizardPane({ project, setProject, theme, setTab }) {
 const STORE_CREATOR = "creator-profile-v1";
 const DOW_JA = ["日", "月", "火", "水", "木", "金", "土"];
 const LIKERT = [{ v: -2, l: "ちがう" }, { v: -1, l: "やや\nちがう" }, { v: 0, l: "どちらでも" }, { v: 1, l: "やや\nそう" }, { v: 2, l: "そう" }];
-const emptyCreatorProfile = () => ({ v: 1, work: "", skills: [], answers: {}, focusMin: 60, steps: {}, avail: { weekday: "", weekend: "", offDays: [] } });
+const emptyCreatorProfile = () => ({ v: 1, work: "", skills: [], answers: {}, focusMin: 60, steps: {}, avail: { weekday: "", weekend: "", offDays: [] }, name: "", bio: "", years: "", software: [], contact: "", portfolio: [] });
+
+// 共有URL（#creator=…）で開いた時の、ログイン不要の読み取り専用ページ
+export function CreatorPublicPage() {
+  const [state, setState] = useState({ loading: true, profile: null, error: "" });
+  useEffect(() => {
+    const code = (window.location.hash || "").replace(/^#creator=/, "");
+    decodeProfile(code).then((p) => setState({ loading: false, profile: p, error: "" })).catch(() => setState({ loading: false, profile: null, error: "URLが途中で切れているか、壊れています。もう一度コピーしてもらってください。" }));
+  }, []);
+  const theme = DEFAULT_THEME;
+  return (
+    <div className="min-h-screen" style={{ background: "#E9E8E3" }}>
+      <header className="shadow-sm" style={{ background: theme.main, color: "#fff" }}>
+        <div className="max-w-[760px] mx-auto px-4 py-3 flex items-center gap-2">
+          <a href="./" className="flex items-center gap-2"><img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" /><span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span></a>
+          <span className="ml-auto text-[11.5px] text-white/60">クリエイタープロフィール</span>
+        </div>
+      </header>
+      <main className="max-w-[760px] mx-auto px-4 py-6">
+        {state.loading ? <p className="text-[13px] text-stone-400">読み込み中…</p>
+          : state.error ? <p className="text-[13px] text-[#DC2645] bg-white rounded-xl px-4 py-3">{state.error}</p>
+          : <CreatorProfileCard profile={state.profile} theme={theme} />}
+        <p className="text-[11px] text-stone-400 mt-6 mb-10">このページの内容は、本人が <a href="./" className="underline">ものがたりっち</a> のクリエイタータイプ診断で答えたものです。時間は本人の申告です。</p>
+      </main>
+    </div>
+  );
+}
+
+// プロフィールの表示＋募集文との照らし合わせ（公開ページと、本人の結果画面のプレビューで使う）
+function CreatorProfileCard({ profile: p, theme }) {
+  const [posting, setPosting] = useState("");
+  const [copied, setCopied] = useState(false);
+  const type = creatorType(p.answers);
+  const est10 = estimateHours(p, 10, type);
+  const wk = weeklyHours(p);
+  const cap = monthlyCapacity(p, 10, type);
+  const match = posting.trim() ? matchPosting(p, posting) : null;
+  const card = "bg-white border border-stone-200 rounded-xl px-4 py-4 shadow-sm mb-4";
+  const pill = "text-[11.5px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600";
+  const copyPrompt = async () => { try { await navigator.clipboard.writeText(profilePrompt(p, posting)); setCopied(true); setTimeout(() => setCopied(false), 2500); } catch (e) { alert("コピーできませんでした"); } };
+  const OK = { "○": "#15803D", "×": "#DC2645", "△": "#B45309", "・": "#78716C" };
+  return (
+    <>
+      <section className={card} style={{ borderTop: `4px solid ${theme.accent}` }}>
+        <div className="text-[20px] font-black text-stone-800">{p.name || "（名前未入力）"}</div>
+        <div className="flex flex-wrap gap-1.5 mt-1.5 mb-3">
+          {p.work && <span className={pill}>{p.work}</span>}{p.years && <span className={pill}>経験 {p.years}</span>}
+          {p.contact && <a href={p.contact} target="_blank" rel="noopener noreferrer nofollow" className={pill + " underline"}>SNS・連絡先</a>}
+        </div>
+        <div className="rounded-lg px-3 py-2.5 mb-3" style={{ background: theme.accent + "10" }}>
+          <div className="text-[11px] font-bold text-stone-500">クリエイタータイプ</div>
+          <div className="text-[17px] font-black text-stone-800">{type.name}<span className="text-[12px] font-bold text-stone-500 ml-2">{type.tags.join("・")}</span></div>
+          <div className="text-[12.5px] text-stone-600 mt-0.5">{type.catch}</div>
+          <div className="text-[12px] text-stone-600 mt-1.5"><b className="text-[#15803D]">強み</b> {type.good}</div>
+          <div className="text-[12px] text-stone-600"><b className="text-[#B45309]">気をつけたいこと</b> {type.watch}</div>
+        </div>
+        {p.bio && <p className="text-[13px] text-stone-700 whitespace-pre-wrap mb-3">{p.bio}</p>}
+        {(p.skills || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">得意分野</div><div className="flex flex-wrap gap-1.5">{p.skills.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
+        {(p.software || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">使えるソフト</div><div className="flex flex-wrap gap-1.5">{p.software.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
+        <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{wk}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">1週間に使える時間</div></div>
+          <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{est10.total}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">10分の動画1本</div></div>
+          <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{cap}<span className="text-[11px]">本</span></div><div className="text-[10.5px] text-stone-500">月の目安（10分）</div></div>
+        </div>
+      </section>
+
+      <section className={card}>
+        <h2 className="text-[14px] font-black text-stone-800 mb-2">工程ごとの好き度合いと時間（10分の動画）</h2>
+        {est10.steps.map((s) => { const like = (p.steps[s.key] || {}).like || 0; return (
+          <div key={s.key} className="flex items-center gap-2 py-1.5 border-t border-stone-100 first:border-t-0 text-[12.5px]">
+            <span className="w-[88px] font-bold text-stone-700">{s.label}</span>
+            <span style={{ color: like >= 4 ? "#15803D" : like <= 2 ? "#DC2645" : "#78716C" }}>{"★".repeat(like)}{"☆".repeat(Math.max(0, 5 - like))}</span>
+            <span className="ml-auto text-stone-500">{s.hours}時間</span>
+          </div>
+        ); })}
+      </section>
+
+      {(p.portfolio || []).length > 0 && (
+        <section className={card}>
+          <h2 className="text-[14px] font-black text-stone-800 mb-2">ポートフォリオ</h2>
+          <div className="flex flex-col gap-2">
+            {p.portfolio.map((w, i) => (
+              <a key={i} href={w.url} target="_blank" rel="noopener noreferrer nofollow" className="block border border-stone-100 rounded-lg px-3 py-2.5 hover:border-stone-300">
+                <div className="text-[13px] font-bold text-stone-800 truncate">{w.title || w.url}</div>
+                <div className="text-[11px] text-stone-400 truncate">{w.url}</div>
+                {((w.roles || []).length > 0 || w.note) && <div className="flex flex-wrap gap-1 mt-1">{(w.roles || []).map((r) => <span key={r} className="text-[10.5px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">{r}</span>)}{w.note && <span className="text-[11.5px] text-stone-500">{w.note}</span>}</div>}
+              </a>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className={card}>
+        <h2 className="text-[14px] font-black text-stone-800 mb-1">募集文と照らし合わせる</h2>
+        <p className="text-[11.5px] text-stone-500 mb-2">募集文を貼ると、この人の回答と機械的に照らし合わせます（キーワードと数字だけ。最終判断は人かAIで）。</p>
+        <textarea value={posting} onChange={(e) => setPosting(e.target.value)} rows={5} placeholder="例）企業の採用動画（インタビュー中心）の編集者を募集。尺は10分、月4本。Premiere Pro使用。"
+          className="w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:border-stone-500" />
+        {match && (
+          <ul className="flex flex-col gap-1 mb-3">
+            {match.lines.length === 0 && <li className="text-[12.5px] text-stone-400">募集文から照らし合わせられる項目（得意分野・ソフト・尺・本数など）が見つかりませんでした</li>}
+            {match.lines.map((l, i) => <li key={i} className="text-[12.5px] text-stone-700 flex gap-2"><b className="shrink-0 w-3" style={{ color: OK[l.ok] }}>{l.ok}</b><span>{l.text}</span></li>)}
+          </ul>
+        )}
+        <button onClick={copyPrompt} className="text-[12.5px] font-bold px-3.5 py-2 rounded-lg text-white inline-flex items-center gap-1.5" style={{ background: theme.main }}>
+          <Icon name="sparkle" className="w-4 h-4" />{copied ? "コピーした！Claudeに貼ってね" : "プロフィール＋募集文をClaudeにコピー"}
+        </button>
+      </section>
+    </>
+  );
+}
 
 function CreatorDiagnosis({ theme, caseOptions }) {
   const [loaded, setLoaded] = useState(false);
@@ -3366,6 +3475,16 @@ function CreatorDiagnosis({ theme, caseOptions }) {
   const [draft, setDraft] = useState(emptyCreatorProfile);
   const [mode, setMode] = useState("form");
   const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  const copyShare = async () => {
+    try {
+      const code = await encodeProfile(saved);
+      const url = window.location.origin + window.location.pathname.replace(/[^/]*$/, "") + "#creator=" + code;
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true); setTimeout(() => setShareCopied(false), 2500);
+    } catch (e) { alert("コピーできませんでした：" + (e && e.message || e)); }
+  };
   const [sim, setSim] = useState(() => { const t = new Date(); const due = new Date(t); due.setDate(due.getDate() + 10); return { minutes: 15, start: ymd(t), due: ymd(due), caseId: "", title: "" }; });
 
   useEffect(() => {
@@ -3515,6 +3634,17 @@ function CreatorDiagnosis({ theme, caseOptions }) {
           )}
         </section>
 
+        <section className={card}>
+          <h2 className={h2}>プロフィールを共有する</h2>
+          <p className={sub}>URLを渡すと、相手はログインなしで、あなたのタイプ・作業時間・得意分野・ポートフォリオを見られます。相手が募集文を貼ると、あなたの回答と照らし合わせられます。URLには回答が入っていて、受け取った人は誰でも見られます（作業できる時間も載ります）。</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={copyShare} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white inline-flex items-center gap-1.5" style={{ background: theme.accent }}><Icon name="copy" className="w-4 h-4" />{shareCopied ? "コピーしました" : "共有URLをコピー"}</button>
+            <button onClick={() => setPreview((v) => !v)} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-300 bg-white text-stone-600">{preview ? "見え方を閉じる" : "相手からの見え方"}</button>
+          </div>
+          {!saved.name && <p className="text-[11.5px] text-[#B45309] mt-2">表示名・ポートフォリオが空です。「回答を見直す」の5で入れられます。</p>}
+        </section>
+        {preview && <div className="rounded-2xl border-2 border-dashed border-stone-300 p-3 mb-4"><div className="text-[11px] font-bold text-stone-400 mb-2">相手からの見え方</div><CreatorProfileCard profile={publicProfile(saved)} theme={theme} /></div>}
+
         <div className="flex gap-2 mb-10">
           <button onClick={() => setMode("form")} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-300 bg-white text-stone-600">回答を見直す</button>
           <span className="text-[11px] text-stone-400 self-center">回答日 {saved.updatedAt ? new Date(saved.updatedAt).toLocaleDateString("ja-JP") : ""}</span>
@@ -3593,6 +3723,36 @@ function CreatorDiagnosis({ theme, caseOptions }) {
             </div>
           </div>
         ))}
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>5. プロフィール・ポートフォリオ（共有用・任意）</h2>
+        <p className={sub}>共有URLを渡した相手に見せる内容です。診断だけなら空欄でOK</p>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">表示名<input value={draft.name || ""} onChange={(e) => set({ name: e.target.value })} placeholder="例）中村（Xの名前など）" className="mt-1 w-full text-[13.5px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">動画編集の経験</div>
+        <div className="flex flex-wrap gap-1.5 mb-3">{CREATOR_YEARS.map((y) => <button key={y} onClick={() => set({ years: draft.years === y ? "" : y })} {...chip(draft.years === y)}>{y}</button>)}</div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">使えるソフト</div>
+        <div className="flex flex-wrap gap-1.5 mb-3">{CREATOR_SOFTWARE.map((k) => { const on = (draft.software || []).includes(k); return <button key={k} onClick={() => set({ software: on ? draft.software.filter((x) => x !== k) : [...(draft.software || []), k] })} {...chip(on)}>{k}</button>; })}</div>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">自己紹介<textarea value={draft.bio || ""} onChange={(e) => set({ bio: e.target.value })} rows={3} maxLength={400} placeholder="得意なこと・大事にしていること・どんな案件をやりたいか など" className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <label className="block text-[12px] font-bold text-stone-600 mb-3">SNS・連絡先のURL<input value={draft.contact || ""} onChange={(e) => set({ contact: e.target.value })} placeholder="https://x.com/..." className="mt-1 w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2" /></label>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">ポートフォリオ（10件まで）</div>
+        {(draft.portfolio || []).map((w, i) => {
+          const upd = (patch) => set({ portfolio: draft.portfolio.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+          const bad = w.url && !safeUrl(w.url);
+          return (
+            <div key={i} className="border border-stone-200 rounded-lg px-3 py-2.5 mb-2">
+              <div className="flex gap-2 mb-1.5">
+                <input value={w.url || ""} onChange={(e) => upd({ url: e.target.value })} placeholder="作品のURL（YouTube・Drive など）" className="flex-1 min-w-0 text-[13px] border border-stone-300 rounded-lg px-2.5 py-1.5" style={bad ? { borderColor: "#DC2645" } : {}} />
+                <button onClick={() => set({ portfolio: draft.portfolio.filter((_, j) => j !== i) })} className="shrink-0 text-[12px] font-bold text-stone-400 hover:text-[#DC2645] px-1">削除</button>
+              </div>
+              <input value={w.title || ""} onChange={(e) => upd({ title: e.target.value })} placeholder="作品名（例：町工場の二代目 密着）" className="w-full text-[13px] border border-stone-300 rounded-lg px-2.5 py-1.5 mb-1.5" />
+              <div className="flex flex-wrap gap-1 mb-1.5">{PORTFOLIO_ROLES.map((r) => { const on = (w.roles || []).includes(r); return <button key={r} onClick={() => upd({ roles: on ? w.roles.filter((x) => x !== r) : [...(w.roles || []), r] })} className="text-[11px] font-bold px-2 py-1 rounded-md border" style={on ? { background: "#57534E", color: "#fff", borderColor: "#57534E" } : { background: "#fff", color: "#78716C", borderColor: "#E7E5E4" }}>{r}</button>; })}</div>
+              <input value={w.note || ""} onChange={(e) => upd({ note: e.target.value })} placeholder="ひとこと（任意）" className="w-full text-[12.5px] border border-stone-200 rounded-lg px-2.5 py-1.5" />
+              {bad && <div className="text-[11px] text-[#DC2645] mt-1">http(s) のURLを入れてください</div>}
+            </div>
+          );
+        })}
+        {(draft.portfolio || []).length < 10 && <button onClick={() => set({ portfolio: [...(draft.portfolio || []), { url: "", title: "", roles: [], note: "" }] })} className="text-[12.5px] font-bold px-3 py-1.5 rounded-lg border border-dashed border-stone-300 text-stone-600 bg-white">＋ 作品を追加</button>}
       </section>
 
       <div className="flex items-center gap-2 mb-10">

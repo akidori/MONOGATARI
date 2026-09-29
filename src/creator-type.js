@@ -214,3 +214,132 @@ export function profileComplete(p) {
   const avail = p.avail && (Number(p.avail.weekday) > 0 || Number(p.avail.weekend) > 0);
   return answered && steps && !!avail;
 }
+
+// ===== プロフィール共有・ポートフォリオ（2026-09-29 AK「ポートフォリオとかも回答してもらって、このURLと募集文を渡したらこの人のことがわかるように」）=====
+// 共有URLは回答を圧縮して URL の # 以降に入れる（# 以降はサーバーに送られない＝ものがたりっち側に保存しない）。
+// Worker の再デプロイ後は短いURL（サーバー保存・AIがそのまま読める形）に切り替える予定。
+
+export const CREATOR_SOFTWARE = ["Premiere Pro", "After Effects", "Final Cut Pro", "DaVinci Resolve", "CapCut", "Photoshop", "Illustrator", "Canva"];
+export const CREATOR_YEARS = ["半年未満", "半年〜1年", "1〜3年", "3年以上"];
+export const PORTFOLIO_ROLES = ["撮影", "構成", "あら編集", "テロップ", "演出", "最終調整", "サムネ", "全部"];
+
+// http(s) 以外（javascript: 等）は捨てる
+export function safeUrl(u) {
+  const s = String(u || "").trim();
+  if (!s) return "";
+  try { const x = new URL(/^https?:\/\//i.test(s) ? s : "https://" + s); return x.protocol === "https:" || x.protocol === "http:" ? x.href : ""; } catch (e) { return ""; }
+}
+
+// 共有に載せる項目だけを抜き出す（作業しない曜日などもそのまま。回答12問は結果を再計算するため載せる）
+export function publicProfile(p) {
+  const clip = (s, n) => String(s || "").slice(0, n);
+  return {
+    v: 1,
+    name: clip(p.name, 40), bio: clip(p.bio, 400), years: clip(p.years, 20), contact: safeUrl(p.contact),
+    work: clip(p.work, 20), skills: (p.skills || []).slice(0, 20), software: (p.software || []).slice(0, 12),
+    focusMin: Number(p.focusMin) || 60, answers: p.answers || {},
+    steps: Object.fromEntries(CREATOR_STEPS.map((s) => { const st = (p.steps || {})[s.key] || {}; return [s.key, { like: Number(st.like) || 0, hours: Number(st.hours) || 0 }]; })),
+    avail: { weekday: Number(p.avail && p.avail.weekday) || 0, weekend: Number(p.avail && p.avail.weekend) || 0, offDays: (p.avail && p.avail.offDays) || [] },
+    portfolio: (p.portfolio || []).map((w) => ({ url: safeUrl(w.url), title: clip(w.title, 60), roles: (w.roles || []).slice(0, 8), note: clip(w.note, 120) })).filter((w) => w.url).slice(0, 10),
+    updatedAt: p.updatedAt || Date.now(),
+  };
+}
+
+const b64u = {
+  enc: (bytes) => { let s = ""; for (const b of bytes) s += String.fromCharCode(b); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); },
+  dec: (str) => { const s = atob(str.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((str.length + 3) % 4)); const out = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i); return out; },
+};
+async function pipe(bytes, stream) {
+  const res = new Response(new Blob([bytes]).stream().pipeThrough(stream));
+  return new Uint8Array(await res.arrayBuffer());
+}
+export async function encodeProfile(p) {
+  const json = new TextEncoder().encode(JSON.stringify(publicProfile(p)));
+  return b64u.enc(await pipe(json, new CompressionStream("deflate-raw")));
+}
+export async function decodeProfile(code) {
+  const bytes = await pipe(b64u.dec(String(code || "")), new DecompressionStream("deflate-raw"));
+  return publicProfile(JSON.parse(new TextDecoder().decode(bytes)));
+}
+
+// 1か月（4.3週）で作れる本数の目安
+export function weeklyHours(p) {
+  let n = 0;
+  for (let dow = 0; dow < 7; dow++) n += hoursOn(p, new Date(2026, 0, 4 + dow));
+  return n;
+}
+export function monthlyCapacity(p, minutes, type) {
+  const per = estimateHours(p, minutes, type).total;
+  if (!per) return 0;
+  return Math.floor(((weeklyHours(p) * 4.3) / per) * 10) / 10;
+}
+
+const SKILL_WORDS = {
+  "インタビュー・密着": ["インタビュー", "密着", "ドキュメンタリー", "対談"],
+  "VLOG": ["vlog", "ブイログ", "日常"],
+  "解説・教育": ["解説", "教育", "ノウハウ", "セミナー", "講座"],
+  "エンタメ・バラエティ": ["エンタメ", "バラエティ", "企画"],
+  "広告・PR": ["広告", "pr", "cm", "プロモーション", "採用動画", "企業"],
+  "ショート動画": ["ショート", "shorts", "リール", "tiktok", "縦型"],
+  "テロップデザイン": ["テロップ", "字幕"],
+  "モーション・アニメ": ["モーション", "アニメーション", "motion"],
+  "カラー・色味": ["カラー", "色調", "グレーディング", "色味"],
+  "音・BGM選び": ["bgm", "音響", "効果音", "ミックス", "se"],
+  "サムネ": ["サムネ", "サムネイル"],
+};
+
+// 募集文との照らし合わせ（キーワードと数字だけの機械的な判定。最終判断は人かAI）
+export function matchPosting(p, text) {
+  const t = String(text || "");
+  const low = t.toLowerCase();
+  const type = creatorType(p.answers);
+  const lines = [];
+  const hit = (words) => words.some((w) => (/^[a-z]+$/.test(w) ? new RegExp("(^|[^a-z])" + w + "([^a-z]|$)").test(low) : low.includes(w.toLowerCase())));
+  for (const [skill, words] of Object.entries(SKILL_WORDS)) {
+    if (!hit(words)) continue;
+    lines.push((p.skills || []).includes(skill) ? { ok: "○", text: `募集に「${skill}」の要素があり、得意分野に入っています` } : { ok: "△", text: `募集に「${skill}」の要素がありますが、得意分野には入っていません` });
+  }
+  for (const sw of CREATOR_SOFTWARE) {
+    if (!low.includes(sw.toLowerCase())) continue;
+    lines.push((p.software || []).includes(sw) ? { ok: "○", text: `${sw} を使えます` } : { ok: "×", text: `募集に ${sw} とありますが、使えるソフトに入っていません` });
+  }
+  const mm = /(\d+(?:\.\d+)?)\s*分/.exec(t);
+  const minutes = mm ? Number(mm[1]) : null;
+  if (minutes && minutes <= 180) {
+    const per = estimateHours(p, minutes, type).total;
+    const wk = weeklyHours(p);
+    lines.push({ ok: "・", text: `${minutes}分の動画1本で約${per}時間（本人の申告から）。週${wk}時間使えるので、1本におよそ${wk ? Math.ceil((per / wk) * 7) : "—"}日` });
+  }
+  const mc = /月\s*(\d+)\s*本/.exec(t);
+  if (mc) {
+    const need = Number(mc[1]);
+    const cap = monthlyCapacity(p, minutes || 10, type);
+    lines.push(cap >= need ? { ok: "○", text: `月${need}本に対して、目安は月${cap}本（${minutes || 10}分の動画で計算）` } : { ok: "×", text: `月${need}本に対して、目安は月${cap}本で足りない可能性（${minutes || 10}分の動画で計算）` });
+  }
+  if (/(急ぎ|短納期|即日|翌日納品|スピード)/.test(t)) lines.push(type.start === "締切" || type.poles.polish === "スピード" ? { ok: "○", text: "急ぎ・短納期の募集で、締切で加速する／スピード重視のタイプ" } : { ok: "△", text: "急ぎ・短納期の募集。前倒しで進めるタイプなので、素材が早く届けば対応しやすい" });
+  if (/(丁寧|クオリティ|高品質|こだわ)/.test(t)) lines.push(type.poles.polish === "こだわり" ? { ok: "○", text: "品質重視の募集で、仕上げにこだわるタイプ" } : { ok: "・", text: "品質重視の募集。仕上げはスピード寄りのタイプなので、確認の回数を決めておくと安心" });
+  if (/(平日|日中|昼間)/.test(t) && Number(p.avail && p.avail.weekday) < 3) lines.push({ ok: "△", text: `募集に平日・日中の記述があります。平日の作業時間は1日${Number(p.avail && p.avail.weekday) || 0}時間` });
+  return { lines, minutes, type };
+}
+
+// Claude などに貼る文（プロフィール＋募集文）
+export function profilePrompt(p, posting) {
+  const type = creatorType(p.answers);
+  const est = estimateHours(p, 10, type);
+  const L = [];
+  L.push("次の動画編集者のプロフィールと募集文を読んで、この人が募集に合うか・強み・確認したほうがいい点を、根拠つきで短くまとめてください。プロフィールに無いことは推測で埋めないでください。", "");
+  L.push("## プロフィール（ものがたりっち クリエイタータイプ診断）");
+  if (p.name) L.push(`- 名前：${p.name}`);
+  L.push(`- タイプ：${type.name}（${type.catch}）${type.tags.length ? "／" + type.tags.join("・") : ""}`);
+  L.push(`- 強み：${type.good}`, `- 気をつけたいこと：${type.watch}`);
+  if (p.work) L.push(`- 動画編集は：${p.work}`);
+  if (p.years) L.push(`- 経験：${p.years}`);
+  if ((p.skills || []).length) L.push(`- 得意分野：${p.skills.join("、")}`);
+  if ((p.software || []).length) L.push(`- 使えるソフト：${p.software.join("、")}`);
+  L.push(`- 作業できる時間：平日${Number(p.avail.weekday) || 0}時間／土日${Number(p.avail.weekend) || 0}時間${(p.avail.offDays || []).length ? "（作業しない曜日：" + p.avail.offDays.map((d) => "日月火水木金土"[d]).join("") + "）" : ""}、週${weeklyHours(p)}時間`);
+  L.push(`- 10分の動画1本で合計約${est.total}時間：` + est.steps.map((s) => `${s.label}${s.hours}h（好き度${(p.steps[s.key] || {}).like || "-"}/5）`).join("、"));
+  if (p.bio) L.push(`- 自己紹介：${p.bio}`);
+  if ((p.portfolio || []).length) { L.push("- ポートフォリオ："); for (const w of p.portfolio) L.push(`  - ${w.title || "作品"} ${w.url}${(w.roles || []).length ? "（担当：" + w.roles.join("・") + "）" : ""}${w.note ? "　" + w.note : ""}`); }
+  L.push("", "## 募集文", String(posting || "（未入力）").trim());
+  return L.join("\n");
+}

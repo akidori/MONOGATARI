@@ -67,3 +67,35 @@ assert.ok(ics.includes("SUMMARY:山岸さん密着｜構成"));
 assert.equal((ics.match(/BEGIN:VEVENT/g) || []).length, plan2.days.reduce((n, d) => n + d.items.length, 0));
 
 console.log("creator type tests passed");
+
+// ===== プロフィール共有 =====
+const { safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } = await import("../src/creator-type.js");
+assert.equal(safeUrl("javascript:alert(1)"), "");
+assert.equal(safeUrl("youtu.be/abc"), "https://youtu.be/abc");
+const full = { ...profile, name: "中村", bio: "密着が好き", years: "1〜3年", software: ["Premiere Pro"], skills: ["インタビュー・密着", "テロップデザイン"], work: "副業",
+  portfolio: [{ url: "https://youtu.be/x", title: "山岸さん密着", roles: ["あら編集", "テロップ"], note: "" }, { url: "javascript:x", title: "悪い" }], contact: "x.com/ak", secret: "載せない" };
+const pub = publicProfile(full);
+assert.equal(pub.portfolio.length, 1);
+assert.equal(pub.secret, undefined);
+const code = await encodeProfile(full);
+assert.ok(/^[A-Za-z0-9_-]+$/.test(code) && code.length < 1500, String(code.length));
+const back = await decodeProfile(code);
+assert.equal(back.name, "中村");
+assert.equal(back.portfolio[0].title, "山岸さん密着");
+assert.equal(creatorType(back.answers).name, "一撃集中型");
+assert.equal(weeklyHours(back), 2 * 4 + 6 * 2); // 水曜休み：平日4日×2＋土日×6
+assert.ok(monthlyCapacity(back, 10, creatorType(back.answers)) > 0);
+const m = matchPosting(back, "企業の採用動画（インタビュー中心）の編集者募集。尺は10分、月4本。Premiere Pro と After Effects 使用。テロップ多め。");
+const txt = m.lines.map((l) => l.ok + l.text).join("\n");
+assert.ok(txt.includes("○募集に「インタビュー・密着」"), txt);
+assert.ok(txt.includes("×募集に After Effects"), txt);
+assert.ok(txt.includes("○Premiere Pro を使えます"), txt);
+assert.ok(/月4本/.test(txt), txt);
+assert.ok(/10分の動画1本で約/.test(txt), txt);
+// "pr" は単語としてだけ拾う（Premiere の中の pr で広告扱いにしない）
+assert.ok(txt.includes("広告・PR"), txt); // 採用動画・企業は広告・PRとして拾う
+assert.ok(!matchPosting(back, "Premiere Proで編集できる方").lines.some((l) => l.text.includes("広告・PR")));
+const prompt = profilePrompt(back, "募集文です");
+assert.ok(prompt.includes("タイプ：一撃集中型") && prompt.includes("## 募集文\n募集文です") && prompt.includes("https://youtu.be/x"));
+
+console.log("creator profile share tests passed");
