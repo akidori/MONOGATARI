@@ -3754,6 +3754,7 @@ export default function App() {
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
   const [chShareMenu, setChShareMenu] = useState(null);    // チャンネル共有の種類選択（読取専用/編集つき）{channel,x,y}
+  const [showCreator, setShowCreator] = useState(false); // クリエイタータイプ診断（どの画面からでも上に重ねて開く）
   const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集) | "knowledge"(ナレッジ)
   // チャンネル単位の編集者ライブモード（index.html?ch=… ＝ログイン不要で当該クライアントの案件だけ・全タブ直接編集）
   const [chanLive, setChanLive] = useState(null);          // {id,name,channelInfo,cases:[{id,name,format,edit:{liveId,editToken}}]}
@@ -8768,6 +8769,13 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="px-2 pt-2 pb-1 border-t border-white/10">
+          <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断（あなたに合った制作の流れと作業予定）"
+            className="w-full flex items-center gap-2 text-[13px] font-bold px-2.5 py-2 rounded-lg text-left bg-white/10 hover:bg-white/15" style={{ color: mainText }}>
+            <Icon name="sparkle" className="w-4 h-4 shrink-0" />
+            <span>タイプ診断</span>
+          </button>
+        </div>
         <div className="px-2 py-1.5 border-t border-white/10">
           <button onClick={() => setSectionCollapsed((s) => ({ ...s, settings: !s.settings }))}
             className="w-full flex items-center gap-1.5 px-1.5 py-1.5 rounded-lg hover:bg-white/10">
@@ -11683,7 +11691,7 @@ export default function App() {
             </div>
           </header>
           <div className="max-w-[1320px] mx-auto px-5 flex items-start gap-6">
-          <aside className="hidden lg:flex flex-col shrink-0 w-[192px] py-7 sticky top-[64px] gap-4" style={{ maxHeight: "calc(100vh - 64px)", overflowY: "auto" }}>
+          <aside className="hidden lg:flex flex-col shrink-0 w-[192px] pt-7 pb-4 sticky top-[64px] gap-4" style={{ height: "calc(100vh - 64px)", overflowY: "auto" }}>
             <button onClick={() => setView("home")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={view === "home" ? { background: theme.accent + "14", color: theme.accent } : { color: "#57534E" }}>
@@ -11698,11 +11706,6 @@ export default function App() {
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={{ color: "#57534E" }}>
               <Icon name="clock" className="w-4 h-4 shrink-0" />担当と納期
-            </button>
-            <button onClick={() => setView("creator")}
-              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
-              style={{ color: "#57534E" }}>
-              <Icon name="sparkle" className="w-4 h-4 shrink-0" />タイプ診断
             </button>
             <button onClick={() => setView("members")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
@@ -11750,7 +11753,17 @@ export default function App() {
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: todayWork ? "#22C55E" : "#D6D3D1" }} />
               Studio OS {todayWork ? "連携中" : "未接続"}
             </div>
+            {/* 左下：クリエイタータイプ診断（2026-09-29 AK「左下とかに診断の項目作って、開くと診断できるように」） */}
+            <button onClick={() => setShowCreator(true)}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left bg-white border border-stone-200 shadow-sm hover:border-stone-300">
+              <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0 text-white" style={{ background: theme.accent }}><Icon name="sparkle" className="w-4 h-4" /></span>
+              <span className="min-w-0"><span className="block text-[12.5px] font-black text-stone-700">タイプ診断</span><span className="block text-[10.5px] text-stone-400 leading-tight">あなたに合った制作の流れ</span></span>
+            </button>
           </aside>
+          <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断"
+            className="lg:hidden fixed bottom-5 left-4 z-40 h-11 pl-3 pr-4 rounded-full shadow-lg inline-flex items-center gap-1.5 text-[12.5px] font-bold text-white" style={{ background: theme.accent }}>
+            <Icon name="sparkle" className="w-4 h-4" />タイプ診断
+          </button>
           <main className="flex-1 min-w-0 py-7">
             {/* 全案件 横断検索＋新規（1行に統合） */}
             <div className="flex items-center gap-2 mb-6">
@@ -11801,9 +11814,6 @@ export default function App() {
               </button>
               <button onClick={() => setView("team")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="clock" className="w-3.5 h-3.5" />担当と納期
-              </button>
-              <button onClick={() => setView("creator")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
-                <Icon name="sparkle" className="w-3.5 h-3.5" />タイプ診断
               </button>
               <button onClick={() => setView("members")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="user" className="w-3.5 h-3.5" />メンバー
@@ -12035,11 +12045,11 @@ export default function App() {
       )}
 
       {/* ===== メンバー画面（Phase 3・2026-09-26）。権限は案件ごと（オーナー／編集者）。組織共通の固定ロールは持たない ===== */}
-      {view === "creator" && (
-        <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+      {showCreator && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto" style={{ background: "#E9E8E3" }}>
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
             <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
-              <button onClick={() => setView("home")} className="flex items-center gap-2">
+              <button onClick={() => { setShowCreator(false); setView("home"); }} className="flex items-center gap-2">
                 <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
                 <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
               </button>
@@ -12054,7 +12064,7 @@ export default function App() {
           <main className="max-w-[760px] mx-auto px-4 sm:px-5 py-7">
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="sparkle" className="w-5 h-5" style={{ color: theme.main }} />クリエイタータイプ診断</h1>
-              <button onClick={() => setView("home")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700">← ホームへ</button>
+              <button onClick={() => setShowCreator(false)} className="ml-auto text-[12px] font-bold px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-600 hover:bg-stone-50">閉じる</button>
             </div>
             <p className="text-[12px] text-stone-500 mb-4">作業の仕方と工程ごとの時間から、あなたに合った制作の流れと、納期から逆算した作業予定を出します。{!user && "（ログインすると回答がアカウントに保存され、どの端末でも見られます）"}</p>
             <CreatorDiagnosis theme={theme} caseOptions={index.filter((x) => liveStatus(x.id, caseData(x.id)) !== "完了").map((x) => { const d = caseData(x.id); return { id: x.id, name: (d && d.name) || x.name, deadline: (d && d.deadline) || "" }; })} />
