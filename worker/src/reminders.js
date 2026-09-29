@@ -198,7 +198,8 @@ async function sendMail(env, fetchImpl, to, mail, audit) {
 
 export const reminderMode = (env) => {
   const m = String((env && env.REMINDERS_MODE) || "").trim().toLowerCase();
-  return m === "on" || m === "off" ? m : "preview";
+  // admin＝本来の宛先の内容を、AK（ADMIN_EMAILS）にだけ1通にまとめて送る（2026-09-29 AK「送るのは俺だけにしといて」）
+  return m === "on" || m === "off" || m === "admin" ? m : "preview";
 };
 
 /* ---- 実行（Worker の cron から呼ぶ） ---- */
@@ -229,7 +230,9 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
   const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
   // まだ送っていないものだけ
   const fresh = [];
-  for (const r of plan) if (!(await env.SNAPS.get("remind:" + r.key))) fresh.push(r);
+  // admin モードの送信済み記録は別に持つ（あとで on にした時、AKにだけ送った分が編集者に届かなくなるのを防ぐ）
+  const sentPrefix = mode === "admin" ? "remindak:" : "remind:";
+  for (const r of plan) if (!(await env.SNAPS.get(sentPrefix + r.key))) fresh.push(r);
   // 宛先ごとにまとめる
   const byTo = new Map();
   for (const r of fresh) for (const to of r.to) { if (!byTo.has(to)) byTo.set(to, { editor: [], admin: [] }); byTo.get(to)[r.forAdmin ? "admin" : "editor"].push(r); }
@@ -262,6 +265,18 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
       await pushNotifs(env, to, [n]);
     }
     return { ...summary, sent: [] };
+  }
+
+  if (mode === "admin") {
+    // 本来の宛先ごとの内容を区切って、AKにだけ1通で送る。編集者にはメールもアプリ内通知も出さない
+    if (mails.length && adminEmails.length) {
+      const body = "（いまは確認モードです。編集者には送っていません。本来はそれぞれの宛先に届く内容です）\n\n" +
+        mails.map((m) => `■ ${m.to} 宛て（${m.items}件）\n件名：${m.subject}\n\n${m.body}`).join("\n\n──────────\n\n");
+      const digest = { subject: `【ものがたりっち】締切の確認（本来は${mails.length}通・AKさんだけに送信）`, body };
+      for (const to of adminEmails) await sendMail(env, fetchImpl, to, digest, "monogataritch:remind-admin:" + today);
+    }
+    for (const r of fresh) await env.SNAPS.put(sentPrefix + r.key, "1", { expirationTtl: (r.forAdmin ? 180 : 30) * 86400 });
+    return { ...summary, sent: fresh };
   }
 
   // mode === "on"：メール（1人1通）→ アプリ内通知 → 重複防止の記録
