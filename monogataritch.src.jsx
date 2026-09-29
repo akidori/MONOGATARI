@@ -7,6 +7,7 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
+import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, buildPlan, planToIcs, profileComplete, hoursOn, ymd } from "./src/creator-type.js";
 
 /* ============================================================
    ものがたりっち！ — 一日密着ドキュメンタリー構成ツール
@@ -3348,6 +3349,258 @@ function WizardPane({ project, setProject, theme, setTab }) {
         </>
       )}
     </div>
+  );
+}
+
+/* ===== クリエイタータイプ診断（2026-09-29 AK「編集の時間とかを把握するために」）=====
+   回答は window.storage（ログイン中はアカウント別のクラウド保存）の "creator-profile-v1"。
+   計算は src/creator-type.js（テストは tools/test-creator-type.mjs）。 */
+const STORE_CREATOR = "creator-profile-v1";
+const DOW_JA = ["日", "月", "火", "水", "木", "金", "土"];
+const LIKERT = [{ v: -2, l: "ちがう" }, { v: -1, l: "やや\nちがう" }, { v: 0, l: "どちらでも" }, { v: 1, l: "やや\nそう" }, { v: 2, l: "そう" }];
+const emptyCreatorProfile = () => ({ v: 1, work: "", skills: [], answers: {}, focusMin: 60, steps: {}, avail: { weekday: "", weekend: "", offDays: [] } });
+
+function CreatorDiagnosis({ theme, caseOptions }) {
+  const [loaded, setLoaded] = useState(false);
+  const [saved, setSaved] = useState(null);
+  const [draft, setDraft] = useState(emptyCreatorProfile);
+  const [mode, setMode] = useState("form");
+  const [saving, setSaving] = useState(false);
+  const [sim, setSim] = useState(() => { const t = new Date(); const due = new Date(t); due.setDate(due.getDate() + 10); return { minutes: 15, start: ymd(t), due: ymd(due), caseId: "", title: "" }; });
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = window.storage && await window.storage.get(STORE_CREATOR);
+        const p = r && r.value ? JSON.parse(r.value) : null;
+        if (p) { setSaved(p); setDraft({ ...emptyCreatorProfile(), ...p }); if (profileComplete(p)) setMode("result"); }
+      } catch (e) {}
+      setLoaded(true);
+    })();
+  }, []);
+
+  const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
+  const setAns = (id, v) => setDraft((d) => ({ ...d, answers: { ...d.answers, [id]: v } }));
+  const setStep = (k, patch) => setDraft((d) => ({ ...d, steps: { ...d.steps, [k]: { ...(d.steps[k] || {}), ...patch } } }));
+  const setAvail = (patch) => setDraft((d) => ({ ...d, avail: { ...d.avail, ...patch } }));
+  const complete = profileComplete(draft);
+  const answeredCount = CREATOR_QUESTIONS.filter((q) => draft.answers[q.id] != null).length
+    + CREATOR_STEPS.filter((s) => draft.steps[s.key] && Number(draft.steps[s.key].hours) > 0 && Number(draft.steps[s.key].like) >= 1).length
+    + ((Number(draft.avail.weekday) > 0 || Number(draft.avail.weekend) > 0) ? 1 : 0);
+  const totalCount = CREATOR_QUESTIONS.length + CREATOR_STEPS.length + 1;
+
+  const save = async () => {
+    const p = { ...draft, updatedAt: Date.now() };
+    setSaving(true);
+    try { if (window.storage) await window.storage.set(STORE_CREATOR, JSON.stringify(p)); } catch (e) { alert("保存できませんでした：" + (e && e.message || e)); }
+    setSaving(false);
+    setSaved(p);
+    setMode("result");
+    window.scrollTo && window.scrollTo(0, 0);
+  };
+
+  if (!loaded) return <p className="text-[13px] text-stone-400">読み込み中…</p>;
+
+  const card = "bg-white border border-stone-200 rounded-xl px-4 py-4 shadow-sm mb-4";
+  const h2 = "text-[14px] font-black text-stone-800 mb-1";
+  const sub = "text-[11.5px] text-stone-500 mb-3";
+  const chip = (on) => ({ className: "text-[12px] font-bold px-3 py-1.5 rounded-full border", style: on ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : { background: "#fff", color: "#57534E", borderColor: "#D6D3D1" } });
+
+  if (mode === "result" && saved && profileComplete(saved)) {
+    const type = creatorType(saved.answers);
+    const slot = peakSlot(type.poles);
+    const est10 = estimateHours(saved, 10, type);
+    const advice = stepAdvice(saved, type);
+    const plan = buildPlan(saved, sim, type);
+    const weekHours = [0, 1, 2, 3, 4, 5, 6].reduce((n, dow) => { const d = new Date(2026, 0, 4 + dow); return n + hoursOn(saved, d); }, 0);
+    const axisRow = (k, label) => {
+      const [a, b] = CREATOR_AXES[k];
+      const sc = type.scores[k];
+      const pct = Math.round(((sc + 6) / 12) * 100);
+      return (
+        <div key={k} className="mb-2.5">
+          <div className="flex justify-between text-[11.5px] font-bold text-stone-500 mb-1"><span>{a}</span><span className="text-stone-400 font-normal">{label}</span><span>{b}</span></div>
+          <div className="relative h-2 rounded-full bg-stone-100">
+            <div className="absolute top-1/2 w-3.5 h-3.5 rounded-full border-2 border-white shadow" style={{ left: `calc(${100 - pct}% - 7px)`, transform: "translateY(-50%)", background: theme.accent }} />
+          </div>
+        </div>
+      );
+    };
+    const download = () => {
+      const ics = planToIcs(plan, sim.title);
+      const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `作業予定_${sim.due}.ics`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    };
+    return (
+      <>
+        <section className={card} style={{ borderTop: `4px solid ${theme.accent}` }}>
+          <div className="text-[11.5px] font-bold text-stone-400 mb-1">あなたのクリエイタータイプ</div>
+          <div className="text-[24px] font-black text-stone-800 leading-tight">{type.name}</div>
+          <div className="text-[13px] text-stone-600 mt-1 mb-2">{type.catch}</div>
+          {type.tags.length > 0 && <div className="flex flex-wrap gap-1.5 mb-3">{type.tags.map((t) => <span key={t} className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">{t}</span>)}</div>}
+          <div className="grid sm:grid-cols-2 gap-2 text-[12.5px] mb-4">
+            <div className="rounded-lg px-3 py-2" style={{ background: "#E7F6EC" }}><b className="text-[#15803D]">強み</b><div className="text-stone-700 mt-0.5">{type.good}</div></div>
+            <div className="rounded-lg px-3 py-2" style={{ background: "#FCF0DC" }}><b className="text-[#B45309]">気をつけたいこと</b><div className="text-stone-700 mt-0.5">{type.watch}</div></div>
+          </div>
+          {axisRow("time", "時間帯")}{axisRow("focus", "集中の取り方")}{axisRow("start", "着手")}{axisRow("polish", "仕上げ")}
+        </section>
+
+        <section className={card}>
+          <h2 className={h2}>あなたに合った制作の流れ</h2>
+          <p className={sub}>10分の動画1本で、合計 <b className="text-stone-700">{est10.total}時間</b>{est10.buffer > 0 && <>（回答の合計に、タイプに合わせた余裕 +{Math.round(est10.buffer * 100)}% を足しています）</>}。作業は<b className="text-stone-700">{slot.label}</b>に、1回 <b className="text-stone-700">{blockHours(saved, type)}時間</b>ずつが目安です。1週間で使える時間は {weekHours}時間です。</p>
+          <ol className="flex flex-col gap-2">
+            {advice.map((a, i) => (
+              <li key={a.key} className="flex gap-3 border border-stone-100 rounded-lg px-3 py-2.5">
+                <span className="shrink-0 w-6 h-6 rounded-full text-[12px] font-black flex items-center justify-center text-white" style={{ background: theme.accent }}>{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <b className="text-[13.5px] text-stone-800">{a.label}</b>
+                    <span className="text-[11.5px] text-stone-500">{est10.steps[i].hours}時間</span>
+                    <span className="text-[11.5px]" style={{ color: a.like >= 4 ? "#15803D" : a.like <= 2 ? "#DC2645" : "#78716C" }}>{"★".repeat(a.like)}{"☆".repeat(5 - a.like)}</span>
+                  </div>
+                  <ul className="mt-1 text-[12px] text-stone-600 list-disc pl-4">{a.tips.map((t) => <li key={t}>{t}</li>)}</ul>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </section>
+
+        <section className={card}>
+          <h2 className={h2}>納期から作業予定を立てる</h2>
+          <p className={sub}>動画の長さと納期を入れると、使える時間に工程を順番に割り振ります。自分締切は納期の{type.start === "締切" ? "2日前（締切で加速するタイプなので早めに置きます）" : "前日"}です。</p>
+          {caseOptions.length > 0 && (
+            <select value={sim.caseId} onChange={(e) => { const c = caseOptions.find((x) => x.id === e.target.value); setSim((s) => ({ ...s, caseId: e.target.value, title: c ? c.name : "", due: c && c.deadline ? c.deadline.slice(0, 10) : s.due })); }}
+              className="w-full text-[13px] border border-stone-300 rounded-lg px-3 py-2 mb-2 bg-white">
+              <option value="">案件から選ぶ（任意）</option>
+              {caseOptions.map((c) => <option key={c.id} value={c.id}>{c.name}{c.deadline ? `（納期 ${c.deadline.slice(5, 10).replace("-", "/")}）` : ""}</option>)}
+            </select>
+          )}
+          <div className="grid grid-cols-[56px_minmax(0,1fr)_minmax(0,1fr)] sm:grid-cols-[110px_minmax(0,1fr)_minmax(0,1fr)] gap-2 mb-3">
+            <label className="text-[11.5px] font-bold text-stone-500">長さ（分）<input type="number" min="1" value={sim.minutes} onChange={(e) => setSim((s) => ({ ...s, minutes: e.target.value }))} className="mt-1 w-full min-w-0 text-[12.5px] border border-stone-300 rounded-lg px-1.5 py-1.5 bg-white" /></label>
+            <label className="text-[11.5px] font-bold text-stone-500">作業開始<input type="date" value={sim.start} onChange={(e) => setSim((s) => ({ ...s, start: e.target.value }))} className="mt-1 w-full min-w-0 text-[12.5px] border border-stone-300 rounded-lg px-1.5 py-1.5 bg-white" /></label>
+            <label className="text-[11.5px] font-bold text-stone-500">納期<input type="date" value={sim.due} onChange={(e) => setSim((s) => ({ ...s, due: e.target.value }))} className="mt-1 w-full min-w-0 text-[12.5px] border border-stone-300 rounded-lg px-1.5 py-1.5 bg-white" /></label>
+          </div>
+          {plan.error ? <p className="text-[12.5px] text-[#DC2645]">{plan.error}</p> : (
+            <>
+              <div className="rounded-lg px-3 py-2 mb-3 text-[12.5px] font-bold" style={plan.ok ? { background: "#E7F6EC", color: "#15803D" } : { background: "#FBE5EA", color: "#DC2645" }}>
+                {plan.ok ? `自分締切 ${plan.selfDue.slice(5).replace("-", "/")} までに終わる見込みです（合計 ${plan.est.total}時間）`
+                  : `今の作業時間だと ${plan.shortBy}時間 足りません（合計 ${plan.est.total}時間）。開始を早めるか、作業時間を増やすか、分担をAKに相談しましょう`}
+              </div>
+              <div className="border border-stone-100 rounded-lg divide-y divide-stone-100 mb-3">
+                {plan.days.map((d) => {
+                  const dt = new Date(d.date + "T00:00:00");
+                  return (
+                    <div key={d.date} className="flex items-start gap-3 px-3 py-2 text-[12.5px]">
+                      <span className="shrink-0 w-[78px] whitespace-nowrap font-bold text-stone-700">{d.date.slice(5).replace("-", "/")}（{DOW_JA[dt.getDay()]}）</span>
+                      <span className="shrink-0 w-[28px] text-stone-400">{d.slot}</span>
+                      <span className="flex-1 flex flex-wrap gap-1.5">{d.items.map((it, i) => <span key={i} className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">{it.label} {it.hours}h</span>)}</span>
+                    </div>
+                  );
+                })}
+                {plan.days.length === 0 && <div className="px-3 py-2 text-[12.5px] text-stone-400">作業できる日がありません（作業時間・休みの曜日を見直してください）</div>}
+              </div>
+              {plan.days.length > 0 && (
+                <>
+                  <button onClick={download} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white inline-flex items-center gap-1.5" style={{ background: theme.accent }}>
+                    <Icon name="download" className="w-4 h-4" />カレンダー用ファイル（.ics）をダウンロード
+                  </button>
+                  <p className="text-[11px] text-stone-400 mt-1.5">Googleカレンダー（パソコン）→ 右上の歯車 → 設定 → インポート/エクスポート で取り込めます。自動で同期される方式は次の段階で作ります。</p>
+                </>
+              )}
+            </>
+          )}
+        </section>
+
+        <div className="flex gap-2 mb-10">
+          <button onClick={() => setMode("form")} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-300 bg-white text-stone-600">回答を見直す</button>
+          <span className="text-[11px] text-stone-400 self-center">回答日 {saved.updatedAt ? new Date(saved.updatedAt).toLocaleDateString("ja-JP") : ""}</span>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div className="sticky top-[56px] z-[5] -mx-1 px-1 py-2 mb-2" style={{ background: "#E9E8E3" }}>
+        <div className="flex items-center gap-2 text-[11.5px] font-bold text-stone-500">
+          <div className="flex-1 h-1.5 rounded-full bg-white overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.round((answeredCount / totalCount) * 100)}%`, background: theme.accent }} /></div>
+          {answeredCount}/{totalCount}
+        </div>
+      </div>
+
+      <section className={card}>
+        <h2 className={h2}>1. あなたについて</h2>
+        <p className={sub}>生年月日・性別は聞きません。予定づくりに使うのは、作業できる時間と得意なことだけです。</p>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">動画編集は</div>
+        <div className="flex flex-wrap gap-1.5 mb-4">
+          {["本業", "副業", "学生・その他"].map((w) => <button key={w} onClick={() => set({ work: w })} {...chip(draft.work === w)}>{w}</button>)}
+        </div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">得意分野（いくつでも）</div>
+        <div className="flex flex-wrap gap-1.5">
+          {CREATOR_SKILLS.map((k) => { const on = (draft.skills || []).includes(k); return <button key={k} onClick={() => set({ skills: on ? draft.skills.filter((x) => x !== k) : [...(draft.skills || []), k] })} {...chip(on)}>{k}</button>; })}
+        </div>
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>2. 作業できる時間</h2>
+        <p className={sub}>ふだんの1日で、編集に使える時間（だいたいでOK）</p>
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <label className="text-[12px] font-bold text-stone-600">平日<div className="flex items-center gap-1 mt-1"><input type="number" min="0" step="0.5" value={draft.avail.weekday} onChange={(e) => setAvail({ weekday: e.target.value })} className="w-full min-w-0 text-[14px] border border-stone-300 rounded-lg px-2 py-1.5" /><span className="shrink-0">時間</span></div></label>
+          <label className="text-[12px] font-bold text-stone-600">土日<div className="flex items-center gap-1 mt-1"><input type="number" min="0" step="0.5" value={draft.avail.weekend} onChange={(e) => setAvail({ weekend: e.target.value })} className="w-full min-w-0 text-[14px] border border-stone-300 rounded-lg px-2 py-1.5" /><span className="shrink-0">時間</span></div></label>
+        </div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">作業しない曜日</div>
+        <div className="flex gap-1.5 mb-4">
+          {DOW_JA.map((d, i) => { const on = (draft.avail.offDays || []).includes(i); return <button key={d} onClick={() => setAvail({ offDays: on ? draft.avail.offDays.filter((x) => x !== i) : [...(draft.avail.offDays || []), i] })} className="w-9 h-9 rounded-full text-[12.5px] font-bold border" style={on ? { background: "#57534E", color: "#fff", borderColor: "#57534E" } : { background: "#fff", color: "#57534E", borderColor: "#D6D3D1" }}>{d}</button>; })}
+        </div>
+        <div className="text-[12px] font-bold text-stone-600 mb-1.5">集中が続くのは、1回あたり</div>
+        <div className="flex flex-wrap gap-1.5">
+          {[30, 60, 90, 120, 180].map((m) => <button key={m} onClick={() => set({ focusMin: m })} {...chip(Number(draft.focusMin) === m)}>{m < 60 ? `${m}分` : `${m / 60}時間`}{m === 180 ? "以上" : ""}</button>)}
+        </div>
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>3. 工程ごとの好き度合いと、かかる時間</h2>
+        <p className={sub}>10分の動画1本で、それぞれ何時間くらいかかるか。やったことが無い工程は、想像でOK</p>
+        {CREATOR_STEPS.map((s) => { const st = draft.steps[s.key] || {}; return (
+          <div key={s.key} className="border-t border-stone-100 py-3 first:border-t-0 first:pt-0">
+            <div className="text-[13.5px] font-bold text-stone-800 mb-2">{s.label}</div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-1">
+                <span className="text-[11.5px] text-stone-500 mr-1">好き度</span>
+                {[1, 2, 3, 4, 5].map((n) => <button key={n} onClick={() => setStep(s.key, { like: n })} aria-label={`${n}`} className="text-[20px] leading-none" style={{ color: Number(st.like) >= n ? theme.accent : "#D6D3D1" }}>★</button>)}
+              </div>
+              <label className="flex items-center gap-1 text-[11.5px] text-stone-500">かかる時間<input type="number" min="0" step="0.5" value={st.hours == null ? "" : st.hours} onChange={(e) => setStep(s.key, { hours: e.target.value })} className="w-[72px] text-[14px] border border-stone-300 rounded-lg px-2 py-1" />時間</label>
+            </div>
+          </div>
+        ); })}
+      </section>
+
+      <section className={card}>
+        <h2 className={h2}>4. 作業のクセ（12問）</h2>
+        <p className={sub}>直感で答えてください。正解はありません</p>
+        {CREATOR_QUESTIONS.map((q, i) => (
+          <div key={q.id} className="border-t border-stone-100 py-3 first:border-t-0 first:pt-0">
+            <div className="text-[13px] text-stone-800 mb-2"><span className="text-stone-400 mr-1">Q{i + 1}</span>{q.text}</div>
+            <div className="grid grid-cols-5 gap-1">
+              {LIKERT.map((o) => { const on = draft.answers[q.id] === o.v; return (
+                <button key={o.v} onClick={() => setAns(q.id, o.v)} className="text-[10.5px] font-bold rounded-lg py-1.5 border whitespace-pre-line leading-tight"
+                  style={on ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : { background: "#fff", color: "#78716C", borderColor: "#E7E5E4" }}>{o.l}</button>
+              ); })}
+            </div>
+          </div>
+        ))}
+      </section>
+
+      <div className="flex items-center gap-2 mb-10">
+        <button disabled={!complete || saving} onClick={save} className="text-[14px] font-bold px-6 py-2.5 rounded-xl text-white disabled:opacity-40" style={{ background: theme.accent }}>{saving ? "保存中…" : "診断する"}</button>
+        {!complete && <span className="text-[11.5px] text-stone-500">作業できる時間・5工程の好き度と時間・12問に答えると診断できます</span>}
+        {saved && profileComplete(saved) && <button onClick={() => { setDraft({ ...emptyCreatorProfile(), ...saved }); setMode("result"); }} className="text-[12px] font-bold text-stone-500 underline ml-auto">変えずに結果へ戻る</button>}
+      </div>
+    </>
   );
 }
 
@@ -11446,6 +11699,11 @@ export default function App() {
               style={{ color: "#57534E" }}>
               <Icon name="clock" className="w-4 h-4 shrink-0" />担当と納期
             </button>
+            <button onClick={() => setView("creator")}
+              className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
+              style={{ color: "#57534E" }}>
+              <Icon name="sparkle" className="w-4 h-4 shrink-0" />タイプ診断
+            </button>
             <button onClick={() => setView("members")}
               className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-bold text-left"
               style={{ color: "#57534E" }}>
@@ -11543,6 +11801,9 @@ export default function App() {
               </button>
               <button onClick={() => setView("team")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="clock" className="w-3.5 h-3.5" />担当と納期
+              </button>
+              <button onClick={() => setView("creator")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
+                <Icon name="sparkle" className="w-3.5 h-3.5" />タイプ診断
               </button>
               <button onClick={() => setView("members")} className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold bg-white border border-stone-200 text-stone-600">
                 <Icon name="user" className="w-3.5 h-3.5" />メンバー
@@ -11774,6 +12035,33 @@ export default function App() {
       )}
 
       {/* ===== メンバー画面（Phase 3・2026-09-26）。権限は案件ごと（オーナー／編集者）。組織共通の固定ロールは持たない ===== */}
+      {view === "creator" && (
+        <div className="fixed inset-0 z-[45] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+          <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
+              <button onClick={() => setView("home")} className="flex items-center gap-2">
+                <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+                <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              </button>
+              <div className="flex-1" />
+              <button onClick={() => setShowAccount(true)} title={user ? user.name : "ログイン"}
+                className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12px] font-bold border border-white/20 hover:bg-white/10">
+                {user && user.picture ? <img src={user.picture} alt="" className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" /> : <Icon name="user" className="w-4 h-4" />}
+                <span className="max-w-[120px] truncate">{user ? user.name : "ログイン"}</span>
+              </button>
+            </div>
+          </header>
+          <main className="max-w-[760px] mx-auto px-4 sm:px-5 py-7">
+            <div className="flex items-center gap-2 mb-1">
+              <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="sparkle" className="w-5 h-5" style={{ color: theme.main }} />クリエイタータイプ診断</h1>
+              <button onClick={() => setView("home")} className="ml-auto text-[12px] font-bold text-stone-500 hover:text-stone-700">← ホームへ</button>
+            </div>
+            <p className="text-[12px] text-stone-500 mb-4">作業の仕方と工程ごとの時間から、あなたに合った制作の流れと、納期から逆算した作業予定を出します。{!user && "（ログインすると回答がアカウントに保存され、どの端末でも見られます）"}</p>
+            <CreatorDiagnosis theme={theme} caseOptions={index.filter((x) => liveStatus(x.id, caseData(x.id)) !== "完了").map((x) => { const d = caseData(x.id); return { id: x.id, name: (d && d.name) || x.name, deadline: (d && d.deadline) || "" }; })} />
+          </main>
+        </div>
+      )}
+
       {view === "members" && (() => {
         const me = ((user && user.email) || "").toLowerCase();
         const ownedCases = index.filter((x) => !x.collab || x.role === "owner");
