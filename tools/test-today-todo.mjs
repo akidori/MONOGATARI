@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { autoTodos, rollover, addManual, toggle, removeManual, todoList } from "../src/today-todo.js";
+import { autoTodos, rollover, addManual, toggle, removeManual, todoList, stepsFor, toggleStep, fmtSec } from "../src/today-todo.js";
 
 const cases = [
   { caseId: "a", title: "森川さん", pace: "遅れ", current: { name: "本編集" }, mine: { name: "本編集", deadline: "2026-09-24", days: -5 } },
@@ -34,5 +34,34 @@ assert.deepEqual(next.manual.map((m) => m.id), ["m3"]);
 assert.equal(next.manual[0].carried, true);
 assert.deepEqual(next.doneAuto, {});
 assert.equal(removeManual(next, "m3").manual.length, 0);
+
+// 手順分け（2026-09-29）：工程の型＋構成台本のセクション
+const rough = stepsFor("粗編集", ["オープニング", "工房紹介"]);
+assert.deepEqual(rough.slice(0, 3).map((x) => x.title), ["素材をシーケンスにインポート", "まず00のファイルをシーケンスに並べる", "音声を同期する"]);
+assert.ok(rough.some((x) => x.title === "00 オープニングの粗カット"));
+assert.ok(rough.some((x) => x.title === "01 工房紹介の粗カット"));
+assert.equal(fmtSec(10), "10秒");
+assert.equal(fmtSec(300), "5分");
+assert.ok(stepsFor("本編集", []).some((x) => x.title.includes("頭から通しで")), "セクションが無い時は通しの手順1つにまとめる");
+assert.ok(stepsFor("修正対応", ["A"])[0].title.includes("指摘"));
+assert.ok(stepsFor("先方チェック", []).length >= 2, "型が無い工程も分ける");
+
+const withSec = [{ ...cases[0], sections: ["オープニング", "工房紹介"] }];
+let t = rollover(null, "2026-09-29");
+let item = todoList(t, withSec).open[0];
+assert.equal(item.next.title, "粗カットを通しで見直す");
+assert.ok(item.steps.some((x) => x.title === "00 オープニングの本編集（テンポ・BGM・SE）"));
+t = toggleStep(t, item.id, 0, item.steps.length);
+item = todoList(t, withSec).open[0];
+assert.equal(item.stepsDone, 1);
+assert.equal(item.next.title, "00 オープニングの本編集（テンポ・BGM・SE）");
+// 手順のチェックは翌日も残る（工程が数日かかるため）
+assert.deepEqual(rollover(t, "2026-09-30").steps[item.id], [0]);
+// 全部チェックしたら親も完了、1つ外したら戻る
+for (let i = 1; i < item.steps.length; i++) t = toggleStep(t, item.id, i, item.steps.length);
+assert.equal(todoList(t, withSec).done.length, 1);
+t = toggleStep(t, item.id, 2, item.steps.length);
+assert.equal(todoList(t, withSec).done.length, 0);
+assert.equal(todoList(t, withSec).open[0].next.title, item.steps[2].title);
 
 console.log("today todo tests passed");

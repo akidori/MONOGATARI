@@ -7,7 +7,7 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
-import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList } from "./src/today-todo.js";
+import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
@@ -3745,12 +3745,14 @@ function CreatorDiagnosis({ theme, userEmail }) {
 
 /* ===== 今日やること（2026-09-29 AK「アドネス的な今日やるTODOチェックみたいなUI」）=====
    自動＝自分の番の工程で遅れ・今日締切・あと2日以内（/api/my-work）。手動＝自分で足したTODO（未完了は翌日に持ち越し）。
-   保存は window.storage "today-todo-v1"。判定は src/today-todo.js（テストは tools/test-today-todo.mjs） */
+   保存は window.storage "today-todo-v1"。判定は src/today-todo.js（テストは tools/test-today-todo.mjs）
+   自動のTODOは工程を手順に分けて「次：〇〇」を出し、開くとチェックリストになる（一番上のTODOは最初から開いておく） */
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 function TodayTodo({ theme, cases, onOpenCase }) {
   const [state, setState] = useState(null);
   const [text, setText] = useState("");
   const [showDone, setShowDone] = useState(false);
+  const [openIds, setOpenIds] = useState(null); // null＝まだ触っていない（一番上の自動TODOだけ開く）
   const today = todayYmd();
   useEffect(() => {
     (async () => {
@@ -3773,6 +3775,13 @@ function TodayTodo({ theme, cases, onOpenCase }) {
   const d = new Date();
   const BADGE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645" }, "今日": { bg: "#FCE9D6", fg: "#C2410C" }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309" } };
   const add = () => { if (!text.trim()) return; update((s) => todayAdd(s, text)); setText(""); };
+  const firstAuto = list.open.find((x) => x.auto);
+  const isOpen = (id) => (openIds ? openIds.has(id) : !!firstAuto && firstAuto.id === id);
+  const toggleOpen = (id) => setOpenIds((cur) => {
+    const nx = new Set(cur || (firstAuto ? [firstAuto.id] : []));
+    if (nx.has(id)) nx.delete(id); else nx.add(id);
+    return nx;
+  });
   const Row = ({ x }) => (
     <div className="group flex items-start gap-2.5 px-4 py-2.5 hover:bg-stone-50">
       <button onClick={() => update((s) => todayToggle(s, x.id))} aria-label={x.done ? "未完了に戻す" : "完了にする"}
@@ -3789,6 +3798,27 @@ function TodayTodo({ theme, cases, onOpenCase }) {
             {x.auto && <span className="text-[10.5px] font-bold px-1.5 py-[1px] rounded" style={{ background: (BADGE[x.pace] || BADGE["もうすぐ"]).bg, color: (BADGE[x.pace] || BADGE["もうすぐ"]).fg }}>{x.badge}</span>}
             {x.auto && <span className="text-[10.5px] text-stone-400">担当の工程から自動</span>}
             {x.carried && <span className="text-[10.5px] text-stone-400">前日から持ち越し</span>}
+          </div>
+        )}
+        {x.auto && !x.done && x.next && (
+          <button onClick={() => toggleOpen(x.id)} className="mt-1 flex items-center gap-1.5 text-left max-w-full">
+            <span className="text-[10.5px] font-bold px-1.5 py-[1px] rounded text-white shrink-0" style={{ background: theme.accent }}>次</span>
+            <span className="text-[12.5px] text-stone-700 truncate">{x.next.title}</span>
+            <span className="text-[11px] text-stone-400 shrink-0">{todayFmtSec(x.next.sec)}</span>
+            <span className="text-[11px] text-stone-400 shrink-0 ml-1">手順 {x.stepsDone}/{x.steps.length} {isOpen(x.id) ? "▾" : "▸"}</span>
+          </button>
+        )}
+        {x.auto && !x.done && isOpen(x.id) && (
+          <div className="mt-1.5 mb-0.5">
+            {x.steps.map((st, i) => (
+              <label key={i} className="flex items-center gap-2 py-[3px] cursor-pointer">
+                <input type="checkbox" checked={st.done} onChange={() => update((s) => todayToggleStep(s, x.id, i, x.steps.length))}
+                  className="w-3.5 h-3.5 shrink-0" style={{ accentColor: theme.accent }} />
+                <span className={"text-[12.5px] min-w-0 flex-1 " + (st.done ? "line-through text-stone-400" : st === x.next ? "font-bold text-stone-800" : "text-stone-600")}>{st.title}</span>
+                <span className="text-[11px] text-stone-400 shrink-0">{todayFmtSec(st.sec)}</span>
+              </label>
+            ))}
+            <div className="h-1 bg-stone-100 rounded-full overflow-hidden mt-1.5"><div className="h-full rounded-full transition-all" style={{ width: Math.round((x.stepsDone / x.steps.length) * 100) + "%", background: theme.accent }} /></div>
           </div>
         )}
       </div>
