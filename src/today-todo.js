@@ -2,9 +2,47 @@
 // 自動：自分の番の工程で、遅れ・今日締切・あと2日以内のもの（/api/my-work の「あなたの担当」から）
 // 手動：自分で足したTODO。チェックしていないものは翌日に持ち越す（Addnessの今日やることと同じ考え方）
 // 保存は window.storage の "today-todo-v1"（ログイン中はアカウント別のクラウド保存）
+// 手順（2026-09-29 AK「この編集の中で今どのタスクをやるか分解されてないと結局使われなくなる」）：
+//   自動のTODOは工程ごとの型で手順に分け、構成台本のロケ（セクション）があれば「00 〇〇の粗カット」のように差し込む。
+//   手順のチェックは日をまたいで残す（本編集は数日かかるため）。全部チェックしたら親のTODOも完了
 
 export const TODAY_STORE = "today-todo-v1";
 const ORDER = { "遅れ": 0, "今日": 1, "もうすぐ": 2 };
+
+const S = (title, sec) => ({ title, sec });
+const num = (i) => String(i).padStart(2, "0");
+
+/* 工程名 → 手順の型。sections は構成台本のロケ（セクション）名 */
+export function stepsFor(stepName, sections) {
+  const secs = (sections || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 12);
+  const perSection = (verb, sec) => secs.length
+    ? secs.map((name, i) => S(`${num(i)} ${name}の${verb}`, sec))
+    : [S(`${verb}（頭から通しで）`, sec * 3)];
+  const n = String(stepName || "");
+  if (/粗|ラフ|仮編/.test(n)) return [
+    S("素材をシーケンスにインポート", 10), S("まず00のファイルをシーケンスに並べる", 10), S("音声を同期する", 300),
+    ...perSection("粗カット", 1800), S("通しで見て尺をメモする", 600),
+  ];
+  if (/テロップ|字幕/.test(n)) return [
+    S("テロップの型（フォント・色・位置）を用意する", 300), ...perSection("テロップ入れ", 1200), S("誤字を読み上げて確認する", 600),
+  ];
+  if (/修正/.test(n)) return [
+    S("指摘を1行ずつ書き出す", 180), S("該当箇所にマーカーを打つ", 300), S("指摘を上から順に直す", 1800),
+    S("直した所だけ通しで確認する", 600), S("書き出して納品報告する", 600),
+  ];
+  if (/書き出|納品|MA|整音|カラー|色/.test(n)) return [
+    S("音量をそろえる（-14LUFS目安）", 600), S("色を見直す", 900), S("書き出し設定を確認して書き出す", 900),
+    S("書き出したファイルを通しで確認する", 900), S("アップロードして報告する", 300),
+  ];
+  if (/サムネ/.test(n)) return [S("参考サムネを3つ集める", 600), S("ラフを2案つくる", 1200), S("仕上げて書き出す", 1200)];
+  if (/編集|カット/.test(n)) return [
+    S("粗カットを通しで見直す", 600), ...perSection("本編集（テンポ・BGM・SE）", 2400),
+    S("色を揃える", 900), S("書き出してスマホで確認する", 600),
+  ];
+  return [S(`${n || "作業"}の段取りを3行で書く`, 300), S(`${n || "作業"}を進める`, 1800), S("見直して次の人へ渡す", 600)];
+}
+
+export const fmtSec = (sec) => (sec < 60 ? `${sec}秒` : sec < 3600 ? `${Math.round(sec / 60)}分` : `${Math.round(sec / 360) / 10}時間`);
 
 export function autoTodos(cases) {
   const out = [];
@@ -19,16 +57,31 @@ export function autoTodos(cases) {
       pace: w.pace,
       badge: w.pace === "遅れ" ? `遅れ・${Math.abs(days)}日` : w.pace === "今日" ? "今日締切" : `あと${days}日`,
       deadline: w.mine.deadline || "",
+      steps: stepsFor(w.mine.name, w.sections),
     });
   }
   return out.sort((a, b) => ORDER[a.pace] - ORDER[b.pace] || (a.deadline || "9").localeCompare(b.deadline || "9")).slice(0, 8);
 }
 
-// 日付が変わったら：手動の未完了は持ち越し、完了したものと自動のチェックは消す
+// 日付が変わったら：手動の未完了は持ち越し、完了したものと自動のチェックは消す。手順のチェックは残す（工程が数日かかるため）
 export function rollover(state, today) {
   const s = state && typeof state === "object" ? state : {};
-  if (s.date === today) return { date: today, manual: s.manual || [], doneAuto: s.doneAuto || {} };
-  return { date: today, manual: (s.manual || []).filter((m) => !m.done).map((m) => ({ ...m, carried: true })), doneAuto: {} };
+  const steps = s.steps || {};
+  if (s.date === today) return { date: today, manual: s.manual || [], doneAuto: s.doneAuto || {}, steps };
+  return { date: today, manual: (s.manual || []).filter((m) => !m.done).map((m) => ({ ...m, carried: true })), doneAuto: {}, steps };
+}
+
+/* 手順のチェック。手順を全部終えたら親のTODOも完了にする（1つでも外したら未完了に戻す） */
+export function toggleStep(state, id, index, total) {
+  const cur = new Set((state.steps || {})[id] || []);
+  if (cur.has(index)) cur.delete(index); else cur.add(index);
+  const steps = { ...(state.steps || {}), [id]: [...cur].sort((a, b) => a - b) };
+  // 古いTODOの手順が溜まり続けないよう、新しい60件だけ残す
+  const keys = Object.keys(steps);
+  if (keys.length > 60) keys.slice(0, keys.length - 60).forEach((k) => delete steps[k]);
+  const doneAuto = { ...(state.doneAuto || {}) };
+  if (total && cur.size >= total) doneAuto[id] = true; else delete doneAuto[id];
+  return { ...state, steps, doneAuto };
 }
 
 export function addManual(state, text, id) {
@@ -52,7 +105,12 @@ export function removeManual(state, id) {
 
 // 表示用：自動→手動の順。完了は下にまとめる
 export function todoList(state, cases) {
-  const auto = autoTodos(cases).map((a) => ({ ...a, auto: true, done: !!(state.doneAuto || {})[a.id] }));
+  const auto = autoTodos(cases).map((a) => {
+    const checked = new Set((state.steps || {})[a.id] || []);
+    const steps = a.steps.map((st, i) => ({ ...st, done: checked.has(i) }));
+    const next = steps.find((st) => !st.done) || null;
+    return { ...a, steps, next, stepsDone: steps.filter((st) => st.done).length, auto: true, done: !!(state.doneAuto || {})[a.id] };
+  });
   const manual = (state.manual || []).map((m) => ({ ...m, auto: false }));
   const all = [...auto, ...manual];
   return { open: all.filter((x) => !x.done), done: all.filter((x) => x.done), total: all.length };

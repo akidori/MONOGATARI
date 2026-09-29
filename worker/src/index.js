@@ -11,7 +11,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { handleMcp } from "./mcp.js";
-import { runDeadlineReminders, workForCase, jstDate } from "./reminders.js";
+import { runDeadlineReminders, workForCase, jstDate, sectionsOf } from "./reminders.js";
 // 工程リマインドに添えるマニュアル（正本は knowledge/ と tools/。wrangler.toml の Text ルールで同梱）
 import MANUAL_MD from "../../knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md";
 import REGULATION_MD from "../../knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md";
@@ -1692,6 +1692,8 @@ ${qList}
         for (const c of cases) {
           try {
             const doc = await env.SNAPS.get("col:" + c.caseId, "json");
+            // 今日やることの手順分け用（2026-09-29）：構成台本のロケ＝セクション名。「00 〇〇の粗カット」のように使う
+            c.sections = sectionsOf(doc && doc.project);
             if (!doc || !doc.ownerSub) continue;
             if (!(doc.ownerSub in chCache)) {
               const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE sub=? AND key='monogataritch-channels-v1'").bind(doc.ownerSub).first();

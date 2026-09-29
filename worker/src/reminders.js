@@ -306,3 +306,14 @@ export function workForCase(d, today, docs) {
     assignments: (d.assignments || []).filter((a) => a && !a.archived && a.role).map((a) => ({ role: a.role, memberId: a.memberId })),
   };
 }
+
+/* 構成台本のロケ行（kind:"location"）の名前を、今日やることの手順分け用に返す。先頭の番号記号は落とす */
+export function sectionsOf(project) {
+  const rows = (project && Array.isArray(project.rows)) ? project.rows : [];
+  return rows
+    .filter((r) => r && r.kind === "location")
+    .map((r) => String(r.label || "").replace(/^[\s\u2460-\u2473\u3251-\u325F\u32B1-\u32BF0-9０-９.．、)）#＃]+/, "").trim())
+    .filter(Boolean)
+    .slice(0, 12)
+    .map((x) => x.slice(0, 40));
+}
