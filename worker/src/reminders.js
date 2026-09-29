@@ -76,33 +76,28 @@ export function guidesFor(stepName, docs) {
    deliverables: Studio OS の GET /deliverables?expand=detail の data
    loadCase(mgId) → { name, ownerEmail, members } | null（ものがたりっちの共同編集ドキュメント） */
 const EDITOR_ROLES = new Set(["Editor", "編集"]);
-export async function planReminders({ deliverables, loadCase, docs, today, memberEmailById = {}, adminEmails = [] }) {
+export async function planReminders({ deliverables, loadCase, docs, today, memberEmailById = {}, adminEmails = [], openUrlFor = null }) {
   const out = [];
   for (const d of deliverables || []) {
     if (!d || !d.mgProjectId || d.archived || (d.productionStatus && d.productionStatus !== "active")) continue;
     const steps = (d.steps || []).filter((s) => !s.archived && !DONE.has(s.status) && isEditorStep(s));
     const due = steps.map((s) => ({ s, ph: phaseOf(s.deadline, today) })).filter((x) => x.ph);
     if (!due.length) continue;
-    const kase = await loadCase(d.mgProjectId);
-    if (!kase) continue;
+    // 共同編集に招待されていない案件（個人保存のまま）でも、Studio OSの担当には送る（2026-09-29 AK「担当になったら自動で開ける」）
+    const kase = (await loadCase(d.mgProjectId)) || {};
     const owner = (kase.ownerEmail || "").toLowerCase();
     const editors = Array.from(new Set((kase.members || []).map((m) => (m || "").toLowerCase()).filter((m) => m && m.includes("@") && m !== owner)));
-    // Studio OSで編集担当（assignments の Editor）が決まっていて、その人がこの案件の編集者なら、その人にだけ送る
+    // Studio OSで編集担当（assignments の Editor）が決まっていれば、その人に送る（招待の有無は問わない）
     const assigned = Array.from(new Set((d.assignments || []).filter((a) => a && !a.archived && EDITOR_ROLES.has(a.role))
-      .map((a) => (memberEmailById[a.memberId] || "").toLowerCase()).filter(Boolean)));
+      .map((a) => (memberEmailById[a.memberId] || "").toLowerCase()).filter((e) => e && e !== owner)));
     const caseName = kase.name || d.title || "案件";
-    // Studio OSの編集担当のメールが、ものがたりっちの案件メンバーにいない（＝その人には届かない）ことをAKに1回だけ知らせる
-    // オーナー（AK）自身が編集担当のときは「届かない」ではないので除く
-    const missing = assigned.filter((e) => !editors.includes(e) && e !== owner).sort();
-    if (missing.length && adminEmails.length) {
-      out.push({ caseId: d.mgProjectId, caseName, key: `${d.mgProjectId}:mismatch:${missing.join(",")}`, to: adminEmails, forAdmin: true, kind: "mismatch", missing });
-    }
-    if (!editors.length) continue; // ものがたりっちに編集者が登録されていない案件は送らない
-    const narrowed = editors.filter((e) => assigned.includes(e));
-    const to = narrowed.length ? narrowed : editors;
+    const to = assigned.length ? assigned : editors;
+    if (!to.length) continue; // 担当も編集者も決まっていない案件は送らない
+    // 招待されていない担当者には、開ける入口（編集者用の共有リンク）を添える
+    const openUrl = openUrlFor && to.some((e) => !editors.includes(e)) ? await openUrlFor(d.mgProjectId) : null;
     for (const { s, ph } of due) {
       const deadline = s.deadline.slice(0, 10);
-      const base = { caseId: d.mgProjectId, caseName, stepId: s.id, stepName: s.stepName, deadline, phase: ph };
+      const base = { caseId: d.mgProjectId, caseName, stepId: s.id, stepName: s.stepName, deadline, phase: ph, members: editors, openUrl };
       if (ph.key === "stale") {
         // 編集者にはもう送らない。AKに1回だけ（締切が変わらない限り以後は送らない）
         if (adminEmails.length) out.push({ ...base, key: `${d.mgProjectId}:${s.id}:stale:${deadline}`, to: adminEmails, editors: to, guides: [], forAdmin: true, kind: "stale" });
@@ -120,7 +115,7 @@ const listed = (arr, fmt) => arr.slice(0, MAX_LIST).map(fmt).join("\n") + (arr.l
 const itemLine = (r) => `・${r.caseName}（${r.stepName}）…${r.phase.label}（締切 ${r.deadline}）`;
 
 /* 編集者向け：その日の分を1通にまとめる。マニュアルの節は重複を除いて最大3つ */
-export function composeDigest(items, appOrigin) {
+export function composeDigest(items, appOrigin, to = "") {
   const first = items[0];
   const worst = items.some((r) => r.phase.key === "over") ? "締切を過ぎた工程があります" : items.some((r) => r.phase.key === "today") ? "今日が締切の工程があります" : "明日が締切の工程があります";
   const subject = items.length === 1
@@ -134,7 +129,13 @@ export function composeDigest(items, appOrigin) {
     : "";
   const over = items.some((r) => r.phase.key === "over") ? "\n\n締切を過ぎている工程は、状況（いつ終わりそうか）をディレクターに教えてください。" : "";
   const links = Array.from(new Set(items.map((r) => r.caseId))).slice(0, MAX_LIST)
-    .map((id) => `${(items.find((r) => r.caseId === id) || {}).caseName}：${appOrigin}/?case=${encodeURIComponent(id)}`).join("\n");
+    .map((id) => {
+      const r = items.find((x) => x.caseId === id) || {};
+      // 招待済み（共同編集メンバー）はアプリで開く。招待されていない担当者は編集者用の共有リンク、無ければホーム
+      const invited = !to || (r.members || []).includes(to);
+      const url = invited ? `${appOrigin}/?case=${encodeURIComponent(id)}` : (r.openUrl || appOrigin + "/");
+      return `${r.caseName}：${url}`;
+    }).join("\n");
   return {
     subject,
     body: `今日お知らせする工程です。\n\n${listed(items, itemLine)}${over}\n\n案件を開く：\n${links}${guide}\n\n※締切に合わせて自動で送っています（メールは1日1通まで・同じ工程の催促は1回だけ）。締切の変更はディレクターに相談してください。\nBird Flip / ものがたりっち！`,
@@ -201,7 +202,7 @@ export const reminderMode = (env) => {
 };
 
 /* ---- 実行（Worker の cron から呼ぶ） ---- */
-export async function runDeadlineReminders(env, docs, { dryRun = false, now = Date.now(), fetchImpl = fetch, adminEmails = [] } = {}) {
+export async function runDeadlineReminders(env, docs, { dryRun = false, now = Date.now(), fetchImpl = fetch, adminEmails = [], openUrlFor = null } = {}) {
   const mode = reminderMode(env);
   if (mode === "off" && !dryRun) return { ok: true, mode, skipped: "REMINDERS_MODE=off", sent: [] };
   if (!env.STUDIO_AGENT_KEY) return { ok: false, mode, reason: "STUDIO_AGENT_KEY 未設定", sent: [] };
@@ -224,7 +225,7 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
     if (rm.ok && jm && jm.success !== false) for (const m of jm.data || []) if (m.email) memberEmailById[m.id] = m.email;
   } catch (e) { /* 絞り込み無しで続行 */ }
   const today = jstDate(now);
-  const plan = await planReminders({ deliverables, loadCase, docs, today, memberEmailById, adminEmails });
+  const plan = await planReminders({ deliverables, loadCase, docs, today, memberEmailById, adminEmails, openUrlFor });
   const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
   // まだ送っていないものだけ
   const fresh = [];
@@ -235,7 +236,7 @@ export async function runDeadlineReminders(env, docs, { dryRun = false, now = Da
   const mails = [];
   for (const [to, g] of byTo) {
     const mailItems = g.editor.filter((r) => r.mail);
-    if (mailItems.length) mails.push({ to, ...composeDigest(mailItems, appOrigin), items: mailItems.length });
+    if (mailItems.length) mails.push({ to, ...composeDigest(mailItems, appOrigin, to), items: mailItems.length });
     if (g.admin.length) mails.push({ to, ...composeAdminDigest(g.admin, appOrigin), items: g.admin.length });
   }
   const summary = { ok: true, mode, today, planned: plan.length, fresh: fresh.length, mails: mails.map((m) => ({ to: m.to, subject: m.subject, items: m.items })) };

@@ -81,6 +81,25 @@ const rid = (n = 8) => {
 // 編集者が共有リンクから上げた完成動画を、AKがアプリを開かなくても「確認用バージョン」に自動昇格する。
 // R2直再生で即見え、Stream変換をキックして完了後にHLS昇格（配信時の自己治癒で ready 反映）。
 // 版は key を持たせるので、後でAKのアプリが取り込んでも key/uid 一致で重複しない（importGuestUploads / reconcile と整合）。
+/* Studio OSで担当になっている編集者が、招待なしで案件を開ける入口（編集者用の共有リンク）。
+   案件の共有が未発行なら null（案件本体は書き換えない＝アプリ側の保存と競合させない）。2026-09-29 */
+async function editorShareUrlFor(env, projId) {
+  if (!/^[A-Za-z0-9]{3,32}$/.test(projId || "")) return null;
+  let p = null;
+  try {
+    const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1").bind(projId).first();
+    if (row) p = JSON.parse(row.value);
+  } catch (e) {}
+  if (!p) { const doc = await env.SNAPS.get("col:" + projId, "json"); p = doc && doc.project; }
+  const id = p && p.shareId;
+  if (!id || !(await env.SNAPS.get("snap:" + id))) return null;
+  let up = await env.SNAPS.get("uptok:" + id);
+  if (!up) { up = rid(20); await env.SNAPS.put("uptok:" + id, up); }
+  const r = await env.SNAPS.get("rtok:" + id);
+  const origin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+  return { url: origin + "/share.html?id=" + encodeURIComponent(id) + (r ? "&r=" + encodeURIComponent(r) : "") + "&up=" + encodeURIComponent(up), name: p.name || "", shareId: id };
+}
+
 async function autoRegisterReviewVersion(env, origin, snapId, meta) {
   const snap = await env.SNAPS.get("snap:" + snapId, "json");
   if (!snap || !snap.project) return;
@@ -1661,7 +1680,7 @@ ${qList}
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
         if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
-        const r = await runDeadlineReminders(env, REMINDER_DOCS, { dryRun: true, adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) });
+        const r = await runDeadlineReminders(env, REMINDER_DOCS, { dryRun: true, adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean), openUrlFor: async (id) => { const l = await editorShareUrlFor(env, id); return l ? l.url : null; } });
         return json(r);
       }
 
@@ -1675,19 +1694,38 @@ ${qList}
         let b = {}; try { b = await request.json(); } catch (e) {}
         const asked = (Array.isArray(b.ids) ? b.ids : []).slice(0, 500).map(String);
         let allowed = new Set(asked);
-        if (!isStaff(u, env)) {
-          const mine = new Set((await env.SNAPS.get("colmember:" + lc(u.email), "json")) || []);
+        const staffUser = isStaff(u, env);
+        let mine = new Set();
+        if (!staffUser) {
+          mine = new Set((await env.SNAPS.get("colmember:" + lc(u.email), "json")) || []);
           allowed = new Set(asked.filter((id) => mine.has(id)));
         }
-        if (!allowed.size) return json({ connected: true, cases: [] });
+        // 2026-09-29 AK「担当になったら自動で開ける」：Studio OSで担当に入っている案件は、ものがたりっちに
+        // 招待されていなくても編集者本人に返す（ログインのGoogleメール＝Studio OSメンバーのメールで照合）。
+        const myMemberIds = new Set();
+        if (!staffUser) {
+          try {
+            const rm = await fetch("https://studio-os-5dm.pages.dev/api/v1/members?limit=200", { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+            const jm = await rm.json().catch(() => null);
+            if (rm.ok && jm && jm.success !== false) for (const m of jm.data || []) if (m && m.id && lc(m.email) && lc(m.email) === lc(u.email)) myMemberIds.add(m.id);
+          } catch (_) { /* 照合できなければ従来どおり招待済みの案件だけ */ }
+        }
+        if (!allowed.size && !myMemberIds.size) return json({ connected: true, cases: [] });
         const today = jstDate();
         const cases = [];
+        const viaStudio = new Set();
         try {
           for (let page = 1; page <= 10; page++) {
             const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/deliverables?productionStatus=active&expand=detail&limit=200&page=" + page, { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
             const j = await r.json().catch(() => null);
             if (!r.ok || !j || j.success === false) { if (page === 1) return json({ connected: false, cases: [] }); break; }
-            for (const d of (j.data || [])) if (d && d.mgProjectId && allowed.has(d.mgProjectId)) cases.push(workForCase(d, today, REMINDER_DOCS));
+            for (const d of (j.data || [])) {
+              if (!d || !d.mgProjectId) continue;
+              const assignedToMe = myMemberIds.size && (d.assignments || []).some((a) => a && !a.archived && myMemberIds.has(a.memberId));
+              if (!allowed.has(d.mgProjectId) && !assignedToMe) continue;
+              if (assignedToMe && !mine.has(d.mgProjectId)) viaStudio.add(d.mgProjectId);
+              cases.push(workForCase(d, today, REMINDER_DOCS));
+            }
             const total = (j.meta && j.meta.total) || 0;
             if (!(j.data || []).length || page * 200 >= total) break;
           }
@@ -1702,6 +1740,16 @@ ${qList}
             const jm = await rm.json().catch(() => null);
             if (rm.ok && jm && jm.success !== false) for (const m of jm.data || []) if (m && m.id) memberById[m.id] = { name: m.name || m.displayName || m.fullName || m.email || "", email: lc(m.email || "") };
           } catch (_) { /* 名前が無くても役割だけ返す */ }
+        }
+        // 招待されていない（共同編集メンバーでない）担当案件には、開く入口として編集者用の共有リンクを付ける
+        for (const c of cases) {
+          if (!viaStudio.has(c.caseId)) continue;
+          try {
+            const link = await editorShareUrlFor(env, c.caseId);
+            c.viaStudio = true;
+            if (link) { c.openUrl = link.url; if (link.name) c.title = link.name; }
+            else c.openNote = "この案件はまだ共有されていません（ディレクターに共有の発行を頼んでください）";
+          } catch (_) {}
         }
         for (const c of cases) {
           c.team = staff ? c.assignments.map((a) => ({ role: a.role, name: (memberById[a.memberId] || {}).name || "", email: (memberById[a.memberId] || {}).email || "" })).filter((t) => t.name || t.email) : [];
@@ -1966,6 +2014,22 @@ ${qList}
           return { proj_id: m[1], name: (p && p.name) || null, channel: (p && p.channel) || null };
         };
         const upsert = async (key, value) => {
+          // 共有IDの消失ガード（2026-09-29）：同じ案件を2か所で開いていると、共有を発行する前の古い画面が
+          // 保存し直して shareId を消す（リサーチ案件で実際に発生・共同編集リンクの窓が上書き）。共有を外す操作は
+          // アプリに無いので、同じキーで shareId が空になる保存は、前の共有の値を引き継いで保存する。
+          if (/^monogataritch-proj-/.test(key || "")) {
+            try {
+              const inc = JSON.parse(value || "null");
+              if (inc && typeof inc === "object" && !inc.shareId) {
+                const prev = await env.DB.prepare("SELECT value FROM mg_kv WHERE sub=? AND key=?").bind(u.sub, key).first();
+                const old = prev ? JSON.parse(prev.value || "null") : null;
+                if (old && old.shareId) {
+                  for (const k of ["shareId", "shareToken", "shareUpToken", "shareReadToken"]) if (old[k] && !inc[k]) inc[k] = old[k];
+                  value = JSON.stringify(inc);
+                }
+              }
+            } catch (_e) { /* ガードに失敗しても保存は落とさない */ }
+          }
           const f = facets(key, value);
           // case_id は Flip Board cases との紐付け。保存のたびに shareId → cases.mg_project_id で
           // 逆引きして埋める（Flip Board 側は shareId を mg_project_id 列に持っている）。
@@ -2821,7 +2885,7 @@ load();
   async scheduled(event, env, ctx) {
     // 毎朝8:00 JST（23:00 UTC）の1本で、締切リマインド＋掃除をまとめて回す。
     // 2026-09-29: CF無料プランのcron上限（アカウント全体5本）に当たり2本目が登録できなかったため統合。
-    ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) }));
+    ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean), openUrlFor: async (id) => { const l = await editorShareUrlFor(env, id); return l ? l.url : null; } }));
     ctx.waitUntil(cleanupExpired(env));
     ctx.waitUntil(purgeOldStreamVideos(env));
   },
