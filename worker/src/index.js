@@ -2251,6 +2251,11 @@ async function del(fileKey, btn) {
             const baseAt = tsMs(b.baseUpdatedAt);
             if (baseAt && tsMs(doc.updatedAt) > baseAt)
               return json({ conflict: true, project: doc.project, updatedAt: doc.updatedAt }, 409);
+            // 共有IDの消失ガード（2026-09-29・/api/kv set と同じ）：共有を外す操作は無いので、
+            // shareId が空の保存は前の共有の値を引き継ぐ（古い画面・共同編集者の画面が共有を消さないように）
+            if (doc.project && doc.project.shareId && project && typeof project === "object" && !project.shareId) {
+              for (const k of ["shareId", "shareToken", "shareUpToken", "shareReadToken"]) if (doc.project[k] && !project[k]) project[k] = doc.project[k];
+            }
             doc.project = project; doc.name = project.name || doc.name; doc.channel = project.channel || doc.channel; doc.updatedAt = now();
           }
           await env.SNAPS.put(docKey(id), JSON.stringify(doc));
