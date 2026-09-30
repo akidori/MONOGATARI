@@ -3353,6 +3353,84 @@ function WizardPane({ project, setProject, theme, setTab }) {
   );
 }
 
+/* ===== 学習（2026-09-30 AK「診断の上に学習用のタブ。各工程ごとに細かくマニュアルを作成する」）=====
+ * 工程ごとのマニュアルの置き場所。中身（画面収録・手順・気をつける所）はAKが後で作る。
+ * 項目を足す・中身を入れるときは LEARN_GROUPS を書き換える（video=動画URL、steps=手順、points=気をつける所）。
+ * 中身が空の工程は「準備中」と出す。 */
+const LEARN_GROUPS = [
+  { title: "はじめに", items: [
+    { id: "start-app", title: "ものがたりっちの見方" },
+    { id: "start-assets", title: "素材の受け取り" },
+    { id: "start-plugin", title: "Premiereのプラグイン" },
+  ] },
+  { title: "編集", items: [
+    { id: "edit-import", title: "素材インポート" },
+    { id: "edit-sequence", title: "シーケンスに並べる" },
+    { id: "edit-sync", title: "音声同期" },
+    { id: "edit-rough", title: "粗カット" },
+    { id: "edit-emph-telop", title: "強調テロップ挿入" },
+    { id: "edit-bgm", title: "BGM挿入" },
+    { id: "edit-se", title: "SE挿入" },
+    { id: "edit-caption", title: "字幕テロップ" },
+    { id: "edit-fx", title: "演出" },
+    { id: "edit-audio", title: "音声調整" },
+    { id: "edit-proof", title: "誤字脱字チェック" },
+    { id: "edit-review", title: "全体確認" },
+    { id: "edit-export", title: "書き出し" },
+  ] },
+  { title: "納品と修正", items: [
+    { id: "deliver-upload", title: "確認用のアップ" },
+    { id: "deliver-comments", title: "修正コメントの見方" },
+    { id: "deliver-fix", title: "修正対応" },
+  ] },
+];
+function learnReady(it) { return !!(it.video || (it.steps && it.steps.length) || (it.points && it.points.length)); }
+function LearnPage({ theme }) {
+  const all = LEARN_GROUPS.flatMap((g) => g.items);
+  const [sel, setSel] = useState(all[0].id);
+  const it = all.find((x) => x.id === sel) || all[0];
+  const ready = learnReady(it);
+  return (
+    <div className="flex flex-col md:flex-row gap-4">
+      <nav className="md:w-[220px] shrink-0">
+        {LEARN_GROUPS.map((g) => (
+          <div key={g.title} className="mb-3">
+            <div className="text-[11px] font-bold text-stone-400 px-2 mb-1">{g.title}</div>
+            {g.items.map((x) => (
+              <button key={x.id} onClick={() => setSel(x.id)}
+                className={"w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[13px] " + (x.id === sel ? "bg-white font-bold text-stone-800 shadow-sm" : "text-stone-600 hover:bg-white/70")}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: learnReady(x) ? theme.accent : "#D6D3D1" }} />
+                <span className="min-w-0 truncate">{x.title}</span>
+              </button>
+            ))}
+          </div>
+        ))}
+      </nav>
+      <section className="flex-1 min-w-0 bg-white rounded-2xl border border-stone-200 p-5">
+        <h2 className="text-[16px] font-black text-stone-800 mb-3">{it.title}</h2>
+        {!ready && <p className="text-[13px] text-stone-400 py-10 text-center">準備中です</p>}
+        {it.video && (
+          <div className="aspect-video w-full rounded-xl overflow-hidden bg-black mb-4">
+            {/youtube\.com|youtu\.be/.test(it.video)
+              ? <iframe src={it.video.replace("watch?v=", "embed/").replace("youtu.be/", "www.youtube.com/embed/")} className="w-full h-full" allowFullScreen title={it.title} />
+              : <video src={it.video} controls className="w-full h-full" />}
+          </div>
+        )}
+        {it.steps && it.steps.length > 0 && (
+          <ol className="list-decimal pl-5 space-y-1.5 text-[13.5px] text-stone-700 mb-4">
+            {it.steps.map((t, i) => <li key={i}>{t}</li>)}
+          </ol>
+        )}
+        {it.points && it.points.length > 0 && (
+          <div className="rounded-xl p-3 text-[13px] text-stone-700" style={{ background: "#FFF7E6" }}>
+            {it.points.map((t, i) => <div key={i} className="flex gap-1.5"><Icon name="warn" className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />{t}</div>)}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 /* ===== クリエイタータイプ診断（2026-09-29 AK「編集の時間とかを把握するために」）=====
    回答は window.storage（ログイン中はアカウント別のクラウド保存）の "creator-profile-v1"。
    計算は src/creator-type.js（テストは tools/test-creator-type.mjs）。 */
@@ -4005,6 +4083,7 @@ export default function App() {
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
   const [chShareMenu, setChShareMenu] = useState(null);    // チャンネル共有の種類選択（読取専用/編集つき）{channel,x,y}
   const [showCreator, setShowCreator] = useState(false); // クリエイタータイプ診断（どの画面からでも上に重ねて開く）
+  const [showLearn, setShowLearn] = useState(false); // 学習（工程ごとのマニュアル。診断と同じく上に重ねて開く）
   const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集) | "knowledge"(ナレッジ)
   // チャンネル単位の編集者ライブモード（index.html?ch=… ＝ログイン不要で当該クライアントの案件だけ・全タブ直接編集）
   const [chanLive, setChanLive] = useState(null);          // {id,name,channelInfo,cases:[{id,name,format,edit:{liveId,editToken}}]}
@@ -9020,6 +9099,11 @@ export default function App() {
           ))}
         </nav>
         <div className="px-2 pt-2 pb-1 border-t border-white/10">
+          <button onClick={() => setShowLearn(true)} title="学習（工程ごとのマニュアル）"
+            className="w-full flex items-center gap-2 text-[13px] font-bold px-2.5 py-2 mb-1 rounded-lg text-left bg-white/10 hover:bg-white/15" style={{ color: mainText }}>
+            <Icon name="book" className="w-4 h-4 shrink-0" />
+            <span>学習</span>
+          </button>
           <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断（あなたに合った制作の流れと作業予定）"
             className="w-full flex items-center gap-2 text-[13px] font-bold px-2.5 py-2 rounded-lg text-left bg-white/10 hover:bg-white/15" style={{ color: mainText }}>
             <Icon name="sparkle" className="w-4 h-4 shrink-0" />
@@ -12003,6 +12087,12 @@ export default function App() {
               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: todayWork ? "#22C55E" : "#D6D3D1" }} />
               Studio OS {todayWork ? "連携中" : "未接続"}
             </div>
+            {/* 学習（2026-09-30）：診断の上 */}
+            <button onClick={() => setShowLearn(true)}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left bg-white border border-stone-200 shadow-sm hover:border-stone-300">
+              <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0 text-white" style={{ background: theme.main }}><Icon name="book" className="w-4 h-4" /></span>
+              <span className="min-w-0"><span className="block text-[12.5px] font-black text-stone-700">学習</span><span className="block text-[10.5px] text-stone-400 leading-tight">工程ごとのマニュアル</span></span>
+            </button>
             {/* 左下：クリエイタータイプ診断（2026-09-29 AK「左下とかに診断の項目作って、開くと診断できるように」） */}
             <button onClick={() => setShowCreator(true)}
               className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left bg-white border border-stone-200 shadow-sm hover:border-stone-300">
@@ -12010,6 +12100,10 @@ export default function App() {
               <span className="min-w-0"><span className="block text-[12.5px] font-black text-stone-700">タイプ診断</span><span className="block text-[10.5px] text-stone-400 leading-tight">あなたに合った制作の流れ</span></span>
             </button>
           </aside>
+          <button onClick={() => setShowLearn(true)} title="学習（工程ごとのマニュアル）"
+            className="lg:hidden fixed bottom-[72px] left-4 z-40 h-11 pl-3 pr-4 rounded-full shadow-lg inline-flex items-center gap-1.5 text-[12.5px] font-bold text-white" style={{ background: theme.main }}>
+            <Icon name="book" className="w-4 h-4" />学習
+          </button>
           <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断"
             className="lg:hidden fixed bottom-5 left-4 z-40 h-11 pl-3 pr-4 rounded-full shadow-lg inline-flex items-center gap-1.5 text-[12.5px] font-bold text-white" style={{ background: theme.accent }}>
             <Icon name="sparkle" className="w-4 h-4" />タイプ診断
@@ -12119,6 +12213,26 @@ export default function App() {
       )}
 
       {/* ===== メンバー画面（Phase 3・2026-09-26）。権限は案件ごと（オーナー／編集者）。組織共通の固定ロールは持たない ===== */}
+      {showLearn && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+          <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
+            <div className="max-w-[1200px] mx-auto px-5 py-3 flex items-center gap-2">
+              <button onClick={() => { setShowLearn(false); setView("home"); }} className="flex items-center gap-2">
+                <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+                <span className="font-black tracking-[0.08em] text-[15px]">ものがたりっち！</span>
+              </button>
+            </div>
+          </header>
+          <main className="max-w-[1000px] mx-auto px-4 sm:px-5 py-7">
+            <div className="flex items-center gap-2 mb-4">
+              <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="book" className="w-5 h-5" style={{ color: theme.main }} />学習</h1>
+              <button onClick={() => setShowLearn(false)} className="ml-auto text-[12px] font-bold px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-600 hover:bg-stone-50">閉じる</button>
+            </div>
+            <LearnPage theme={theme} />
+          </main>
+        </div>
+      )}
+
       {showCreator && (
         <div className="fixed inset-0 z-[70] overflow-y-auto" style={{ background: "#E9E8E3" }}>
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
