@@ -4247,6 +4247,9 @@ export default function App() {
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
+  // ホームの案件表示（2026-10-01 AK「ホームの案件管理はこんなUIで」＝表紙つきカードの並び）。"cards" | "channels"
+  const [homeMode, setHomeMode] = useState(() => { try { return localStorage.getItem("mg:homeMode") || "cards"; } catch (e) { return "cards"; } });
+  const [homeCh, setHomeCh] = useState("");                 // カード表示のチャンネル絞り込み（""=すべて）
   const [chShareMenu, setChShareMenu] = useState(null);    // チャンネル共有の種類選択（読取専用/編集つき）{channel,x,y}
   const [showCreator, setShowCreator] = useState(false); // クリエイタータイプ診断（どの画面からでも上に重ねて開く）
   const [showLearn, setShowLearn] = useState(false); // 学習（工程ごとのマニュアル。診断と同じく上に重ねて開く）
@@ -12493,7 +12496,74 @@ export default function App() {
 
             {/* 2026-09-29 AK「ホーム画面さっきのシンプルなものに戻して」：あなたの担当・今日の仕事は「担当と納期」へ移し、続きから開くは外した */}
             {user && <TodayTodo theme={theme} cases={(myWork && myWork.cases) || []} onOpenCase={(id) => openCase(id)} />}
-            <div className="text-[13px] font-bold tracking-wide text-stone-600 mb-2">チャンネル（{channelGroups.length}）</div>
+            {(() => {
+              const setMode = (m) => { setHomeMode(m); try { localStorage.setItem("mg:homeMode", m); } catch (e) {} };
+              const STATUS_COLOR = { "完了": ["#E7F6EC", "#15803D"], "確認中": ["#FEF3E2", "#B45309"], "編集中": ["#E8F0FE", "#1D4ED8"], "企画中": ["#F3E8FF", "#7E22CE"], "未着手": ["#F1F0EE", "#78716C"] };
+              const coverOf = (d) => {
+                if (!d) return "";
+                const vs = ((d.review && d.review.versions) || []).filter((v) => v && !v.trashedAt);
+                for (let i = vs.length - 1; i >= 0; i--) { const v = vs[i]; if (v.type === "stream" && v.hls) return v.hls.replace(/manifest\/video\.m3u8.*$/, "thumbnails/thumbnail.jpg?time=8s&height=360"); }
+                const pl = (d.plans || []).find((x) => (x.thumbImages || []).some(Boolean));
+                return pl ? pl.thumbImages.find(Boolean) : "";
+              };
+              const order = (x) => { const i = recentIds.indexOf(x.id); return i >= 0 ? i : 1000 - (x.createdAt || 0) / 1e13; };
+              const cards = index.filter((x) => !homeCh || (x.channel || DEFAULT_CHANNEL) === homeCh).slice().sort((a, b) => order(a) - order(b));
+              return (<>
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <div className="text-[13px] font-bold tracking-wide text-stone-600">{homeMode === "cards" ? `案件（${cards.length}）` : `チャンネル（${channelGroups.length}）`}</div>
+                  <div className="ml-auto inline-flex rounded-lg border border-stone-200 bg-white p-0.5">
+                    {[["cards", "カード"], ["channels", "チャンネル"]].map(([m, l]) => (
+                      <button key={m} onClick={() => setMode(m)} className={"text-[12px] font-bold px-2.5 py-1 rounded-md " + (homeMode === m ? "bg-stone-800 text-white" : "text-stone-600 hover:bg-stone-50")}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                {homeMode === "cards" && (<>
+                  <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                    {["", ...channelGroups.map((g) => g.channel)].map((ch) => (
+                      <button key={ch || "_all"} onClick={() => setHomeCh(ch)}
+                        className={"text-[12px] font-bold px-2.5 py-1 rounded-full border " + (homeCh === ch ? "text-white border-transparent" : "bg-white border-stone-200 text-stone-600 hover:bg-stone-50")}
+                        style={homeCh === ch ? { background: theme.main } : {}}>
+                        {ch ? (channelIconOf(ch) ? channelIconOf(ch) + " " : "") + ch : "すべて"}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+                    {cards.map((x) => {
+                      const d = caseData(x.id);
+                      const cover = coverOf(d);
+                      const st = liveStatus(x.id, d);
+                      const step = studioStatus[x.id] && studioStatus[x.id].stepName;
+                      const sc = STATUS_COLOR[st] || STATUS_COLOR["未着手"];
+                      return (
+                        <button key={x.id} onClick={() => openCase(x.id)}
+                          className="group text-left rounded-xl overflow-hidden bg-white border border-stone-200 shadow-sm hover:shadow-md hover:border-stone-300 transition-shadow">
+                          <div className="aspect-video bg-stone-100 grid place-items-center overflow-hidden">
+                            {cover
+                              ? <img src={cover} alt="" loading="lazy" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                              : <img src="logo-header.png" alt="" className="w-10 h-10 opacity-25 grayscale" />}
+                          </div>
+                          <div className="px-3 pt-2.5 pb-3">
+                            <div className="flex items-start gap-1.5">
+                              <Icon name="file" className="w-4 h-4 shrink-0 mt-0.5 text-stone-400" />
+                              <span className="text-[14px] font-bold text-stone-800 leading-snug line-clamp-2 group-hover:underline">{x.name || "（無題）"}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={{ background: sc[0], color: sc[1] }}>{step || st}</span>
+                              {!homeCh && <span className="text-[11px] px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 truncate max-w-full">{x.channel || DEFAULT_CHANNEL}</span>}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                    <button onClick={(e) => setAddMenu({ channel: homeCh || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY })}
+                      className="rounded-xl border-2 border-dashed border-stone-200 text-stone-400 hover:text-stone-600 hover:border-stone-300 min-h-[160px] grid place-items-center text-[13px] font-bold">
+                      ＋ 新規案件
+                    </button>
+                  </div>
+                </>)}
+              </>);
+            })()}
+            {homeMode === "channels" && (
             <div className="space-y-2.5">
               {channelGroups.map(({ channel, items }) => {
                 const ci = channelInfo[channel] || {};
@@ -12527,6 +12597,7 @@ export default function App() {
               })}
               {channelGroups.length === 0 && <p className="text-[13px] text-stone-500 text-center py-8">まだ案件がありません。上のボタンから作成してください。</p>}
             </div>
+            )}
             <p className="text-[11px] text-stone-500 mt-6 text-center">案件をクリックすると編集画面が開きます。左上ロゴでいつでもここに戻れます。</p>
           </main>
           </div>
