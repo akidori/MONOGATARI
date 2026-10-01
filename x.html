@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>ファイルの受け渡し — ものがたりっち！</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap">
+<style>
+  /* 2026-10-02 AK「ギガファイル便の要素をパクれない？」: URL1本で渡す／受け取るだけのページ。ログイン不要・案件の中身は見せない */
+  :root{--bg:#EEEDE8;--card:#fff;--ink:#1C1C1E;--sub:#6B6B70;--line:#E2E0DA;--main:#D2283C;--ok:#15803D;--warn:#B45309}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"Zen Kaku Gothic New","Hiragino Kaku Gothic ProN","Hiragino Sans",system-ui,sans-serif}
+  .wrap{max-width:720px;margin:0 auto;padding:28px 16px 60px}
+  .brand{font-size:13px;font-weight:900;letter-spacing:.06em;color:var(--sub);margin-bottom:14px}
+  h1{font-size:22px;font-weight:900;margin:0 0 4px;line-height:1.4}
+  .meta{font-size:13px;color:var(--sub);margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+  .row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  .name{flex:1;min-width:0;font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .size{font-size:12px;color:var(--sub);white-space:nowrap}
+  .btn{appearance:none;border:0;border-radius:10px;padding:10px 16px;font:inherit;font-size:14px;font-weight:800;cursor:pointer;background:var(--main);color:#fff}
+  .btn.sub{background:#fff;color:var(--ink);border:1px solid var(--line);padding:7px 12px;font-size:13px}
+  .btn:disabled{opacity:.5;cursor:default}
+  .bar{height:6px;background:#EEE;border-radius:4px;overflow:hidden;margin-top:6px}
+  .bar>div{height:100%;width:0;background:var(--main);transition:width .3s}
+  .drop{border:2px dashed #C9C6BE;border-radius:16px;padding:36px 16px;text-align:center;background:#FAFAF8;cursor:pointer}
+  .drop.on{border-color:var(--main);background:#FFF5F6}
+  .drop b{display:block;font-size:17px;margin-bottom:6px}
+  .drop span{font-size:13px;color:var(--sub)}
+  .item{padding:10px 0;border-bottom:1px solid var(--line)}
+  .item:last-child{border-bottom:0}
+  .item .top{display:flex;gap:10px;align-items:baseline}
+  .st{font-size:12px;color:var(--sub);white-space:nowrap}
+  .st.ok{color:var(--ok);font-weight:800}.st.err{color:var(--main);font-weight:800}
+  .note{font-size:12.5px;color:var(--sub);line-height:1.7;margin-top:14px}
+  .msg{font-size:15px;font-weight:700;padding:24px 0;text-align:center}
+  .actions{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">ものがたりっち！</div>
+  <div id="app"><div class="msg">読み込んでいます...</div></div>
+</div>
+<script>
+const API = (() => { try { const o = localStorage.getItem("mg:shareApi"); if (o) return o.replace(/\/$/, ""); } catch (e) {} return "https://mg-share.aki-surf89315.workers.dev"; })();
+const XID = new URLSearchParams(location.search).get("id") || "";
+const $app = document.getElementById("app");
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtSize = (n) => { n = +n || 0; if (n >= 1e9) return (n / 1e9).toFixed(2) + " GB"; if (n >= 1e6) return (n / 1e6).toFixed(1) + " MB"; if (n >= 1e3) return Math.round(n / 1e3) + " KB"; return n + " B"; };
+const fmtDate = (t) => { const d = new Date(t); return (d.getMonth() + 1) + "月" + d.getDate() + "日 " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0"); };
+const fmtEta = (sec) => { if (!isFinite(sec) || sec <= 0) return ""; if (sec < 60) return "残り" + Math.ceil(sec) + "秒"; if (sec < 3600) return "残り約" + Math.ceil(sec / 60) + "分"; return "残り約" + (sec / 3600).toFixed(1) + "時間"; };
+
+async function load() {
+  if (!XID) return fail("URLが正しくありません");
+  let d;
+  try { const r = await fetch(API + "/api/x/" + encodeURIComponent(XID)); d = await r.json(); if (!r.ok) return fail(d.error || "開けませんでした"); }
+  catch (e) { return fail("通信できませんでした。回線を確かめてもう一度開いてください"); }
+  if (d.kind === "send") renderSend(d); else renderRecv(d);
+}
+function fail(t) { $app.innerHTML = '<div class="card"><div class="msg">' + esc(t) + "</div></div>"; }
+
+/* ---------- 渡す: ファイル一覧とダウンロード ---------- */
+function renderSend(d) {
+  const total = d.files.reduce((n, f) => n + (+f.size || 0), 0);
+  $app.innerHTML =
+    "<h1>" + esc(d.label) + "</h1>" +
+    '<div class="meta">' + d.files.length + "件・" + fmtSize(total) + "　／　" + fmtDate(d.exp) + " まで</div>" +
+    '<div class="actions">' + (d.files.length > 1 ? '<button class="btn" id="all">まとめて保存（フォルダを選ぶ）</button>' : "") + "</div>" +
+    '<div class="card" id="list"></div>' +
+    '<div class="note">ファイル名はそのまま、圧縮もしません。まとめて保存は Chrome / Edge で使えます（それ以外のブラウザでは1つずつ「保存」を押してください）。<br><span id="allmsg"></span></div>';
+  const list = document.getElementById("list");
+  d.files.forEach((f) => {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = '<div class="name" title="' + esc(f.name) + '">' + esc(f.name) + '</div><div class="size">' + fmtSize(f.size) + '</div><a class="btn sub" href="' + dlUrl(f) + '">保存</a>';
+    list.appendChild(row);
+  });
+  const all = document.getElementById("all");
+  if (all) all.onclick = () => saveAll(d.files, all);
+}
+const dlUrl = (f) => API + "/api/x/" + encodeURIComponent(XID) + "/dl?key=" + encodeURIComponent(f.key);
+async function saveAll(files, btn) {
+  const msg = document.getElementById("allmsg");
+  if (!window.showDirectoryPicker) { msg.textContent = "このブラウザはまとめて保存に対応していません。1つずつ「保存」を押してください"; return; }
+  let dir;
+  try { dir = await window.showDirectoryPicker({ mode: "readwrite" }); } catch (e) { return; }
+  btn.disabled = true;
+  let ok = 0;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    msg.textContent = "保存中 (" + (i + 1) + "/" + files.length + ") " + f.name + " — このタブは閉じないでください";
+    try {
+      const r = await fetch(dlUrl(f));
+      if (!r.ok || !r.body) throw new Error("HTTP " + r.status);
+      const fh = await dir.getFileHandle(f.name, { create: true });
+      const w = await fh.createWritable();
+      await r.body.pipeTo(w);
+      ok++;
+    } catch (e) { msg.textContent = f.name + " を保存できませんでした（" + e.message + "）。続きを保存します"; }
+  }
+  msg.textContent = files.length + "件中 " + ok + "件を保存しました";
+  btn.disabled = false;
+}
+
+/* ---------- 受け取る: 放り込むだけ ---------- */
+function renderRecv(d) {
+  $app.innerHTML =
+    "<h1>" + esc(d.label) + "</h1>" +
+    '<div class="meta">' + esc(d.caseName || "") + "　／　" + fmtDate(d.exp) + " まで受け付けます</div>" +
+    '<label class="drop" id="drop"><b>ここにファイルやフォルダをドラッグ</b><span>またはタップして選ぶ（1ファイル500GBまで・名前はそのまま届きます）</span><input id="pick" type="file" multiple hidden></label>' +
+    '<div class="card" id="items" style="margin-top:14px;display:none"></div>' +
+    '<div class="note">送っている間はこのタブを閉じないでください。途中で回線が切れたり閉じてしまっても、同じファイルをもう一度入れれば続きから送ります（1週間以内）。</div>';
+  const drop = document.getElementById("drop"), pick = document.getElementById("pick");
+  drop.addEventListener("click", (e) => { if (e.target !== pick) pick.click(); });
+  pick.addEventListener("change", () => { enqueue([...pick.files].map((f) => ({ file: f, path: "" }))); pick.value = ""; });
+  ["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("on"); }));
+  ["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("on"); }));
+  drop.addEventListener("drop", async (e) => {
+    const items = [...(e.dataTransfer.items || [])].map((it) => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    if (!items.length) return enqueue([...e.dataTransfer.files].map((f) => ({ file: f, path: "" })));
+    const out = [];
+    for (const en of items) await walk(en, "", out);
+    enqueue(out);
+  });
+}
+async function walk(entry, base, out) {
+  if (entry.isFile) { const f = await new Promise((res, rej) => entry.file(res, rej)); out.push({ file: f, path: base }); return; }
+  if (entry.isDirectory) {
+    const reader = entry.createReader();
+    let batch;
+    do { batch = await new Promise((res, rej) => reader.readEntries(res, rej)); for (const c of batch) await walk(c, base ? base + "/" + entry.name : entry.name, out); } while (batch.length);
+  }
+}
+const queue = [];
+let running = false;
+function enqueue(list) {
+  const box = document.getElementById("items");
+  box.style.display = "";
+  for (const it of list) {
+    if (/^\./.test(it.file.name)) continue; // .DS_Store など
+    const el = document.createElement("div");
+    el.className = "item";
+    el.innerHTML = '<div class="top"><div class="name">' + esc((it.path ? it.path + "/" : "") + it.file.name) + '</div><div class="st">待機中</div></div><div class="bar"><div></div></div>';
+    box.appendChild(el);
+    queue.push({ ...it, el });
+  }
+  if (!running) run();
+}
+async function run() {
+  running = true;
+  while (queue.length) {
+    const it = queue.shift();
+    const st = it.el.querySelector(".st"), bar = it.el.querySelector(".bar>div");
+    try {
+      await upload(it.file, it.path, (pct, info) => { bar.style.width = pct + "%"; st.textContent = pct + "%　" + (info && info.eta ? fmtEta(info.eta) : ""); });
+      bar.style.width = "100%"; st.textContent = "届きました"; st.className = "st ok";
+    } catch (e) { st.textContent = "失敗：" + e.message + "（もう一度入れると続きから送ります）"; st.className = "st err"; }
+  }
+  running = false;
+}
+
+/* Driveへの再開可能アップロード。閉じても同じファイルなら続きから（アップ口は1週間有効なのでlocalStorageに覚える） */
+const sigOf = (f, path) => "mg:xup:" + XID + ":" + path + "/" + f.name + ":" + f.size + ":" + f.lastModified;
+async function upload(file, path, onProg) {
+  const sig = sigOf(file, path);
+  let cd = null;
+  try { cd = JSON.parse(localStorage.getItem(sig) || "null"); } catch (e) {}
+  if (!cd || !cd.uploadUrl || Date.now() - (cd.at || 0) > 6 * 86400000) {
+    const r = await fetch(API + "/api/file/gd/create", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ x: XID, name: file.name, size: file.size, mime: file.type || "application/octet-stream", folder: path }) });
+    const d = await r.json();
+    if (!d.uploadUrl) throw new Error(d.error || "開始できませんでした");
+    cd = { uploadUrl: d.uploadUrl, key: d.key, uploadCap: d.uploadCap, snap: d.snap, at: Date.now() };
+    try { localStorage.setItem(sig, JSON.stringify(cd)); } catch (e) {}
+  }
+  const size = file.size, CHUNK = 32 * 1024 * 1024;
+  let off = 0, driveId = null, fails = 0;
+  const t0 = Date.now(); let startOff = null;
+  const put = (body, range) => new Promise((res, rej) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", cd.uploadUrl);
+    xhr.setRequestHeader("Content-Range", range);
+    xhr.timeout = 180000;
+    if (body) xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const sent = off + e.loaded;
+      if (startOff == null) startOff = off;
+      const secs = (Date.now() - t0) / 1000, rate = secs > 2 ? (sent - startOff) / secs : 0;
+      onProg(Math.min(99, Math.floor(sent / Math.max(1, size) * 100)), { eta: rate > 0 ? (size - sent) / rate : 0 });
+    };
+    xhr.onload = () => res(xhr); xhr.onerror = () => rej(new Error("通信エラー")); xhr.ontimeout = () => rej(new Error("通信が止まりました"));
+    xhr.send(body || null);
+  });
+  const nextOff = (xhr, fb) => { const r = xhr.getResponseHeader("Range"); const m = r && /bytes=0-(\d+)/.exec(r); return m ? +m[1] + 1 : fb; };
+  // まずどこまで届いているか聞く（前回の続き）
+  if (size > 0) {
+    try { const st = await put(null, "bytes */" + size); if (st.status === 200 || st.status === 201) driveId = JSON.parse(st.responseText).id; else if (st.status === 308) off = nextOff(st, 0); else if (st.status === 404 || st.status === 410) { localStorage.removeItem(sig); return upload(file, path, onProg); } } catch (e) {}
+  }
+  while (!driveId) {
+    const end = Math.min(size, off + CHUNK);
+    try {
+      const xhr = size === 0 ? await put(null, "bytes */0") : await put(file.slice(off, end), "bytes " + off + "-" + (end - 1) + "/" + size);
+      if (xhr.status === 200 || xhr.status === 201) { driveId = JSON.parse(xhr.responseText).id; break; }
+      if (xhr.status === 308) { off = nextOff(xhr, end); fails = 0; continue; }
+      if (xhr.status === 404 || xhr.status === 410) { localStorage.removeItem(sig); return upload(file, path, onProg); }
+      throw new Error("送信に失敗しました(" + xhr.status + ")");
+    } catch (e) {
+      // 回線が戻るまで粘る（最大20回・最長1分間隔）。オフライン中は戻るのを待つ
+      if (++fails > 20) throw e;
+      if (!navigator.onLine) await new Promise((r) => window.addEventListener("online", r, { once: true }));
+      await new Promise((r) => setTimeout(r, Math.min(60000, 2000 * Math.pow(2, Math.min(fails, 6) - 1))));
+      try { const st = await put(null, "bytes */" + size); if (st.status === 200 || st.status === 201) { driveId = JSON.parse(st.responseText).id; break; } if (st.status === 308) off = nextOff(st, 0); } catch (_) {}
+    }
+  }
+  const fr = await fetch(API + "/api/file/gd/complete", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ snap: cd.snap, key: cd.key, uploadCap: cd.uploadCap, driveId, name: file.name, mime: file.type || "application/octet-stream" }) });
+  const fd = await fr.json();
+  if (!fd.file) throw new Error(fd.error || "確定できませんでした");
+  try { localStorage.removeItem(sig); } catch (e) {}
+  onProg(100, {});
+  return fd.file;
+}
+load();
+</script>
+</body>
+</html>

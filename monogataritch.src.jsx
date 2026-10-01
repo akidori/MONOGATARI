@@ -281,6 +281,9 @@ const ASSET_CATEGORIES = ["撮影素材", "テンプレ素材"];
 const ASSET_CAT_ICON = { "撮影素材": "🎥", "テンプレ素材": "🧩", "確認用動画": "🎬", "参考素材": "📎", "納品物": "📦" };
 const ASSET_CAT_DESC = { "撮影素材": "元動画・音声・写真・Bロール・インタビュー音声・文字起こしなど", "テンプレ素材": "OP/ED・テロップ・BGM・ロゴなど使い回す素材" };
 /* asset: { id, category, type:"mp4"|"youtube"|"file", key?, url?, name, size?, mime?, planId?, sceneId?, createdAt } */
+/* 2026-10-02 AK（ギガファイル便の要素）: アップの残り時間。送った量の伸びから計算（最初の2秒は出さない） */
+const mkEta = (total) => { const t0 = Date.now(); let s0 = null; return (sent) => { if (s0 == null) s0 = sent; const secs = (Date.now() - t0) / 1000; const rate = secs > 2 ? (sent - s0) / secs : 0; return rate > 0 ? Math.max(0, (total - sent) / rate) : 0; }; };
+const fmtEta = (sec) => { if (!sec || !isFinite(sec)) return ""; if (sec < 60) return "残り" + Math.ceil(sec) + "秒"; if (sec < 3600) return "残り約" + Math.ceil(sec / 60) + "分"; return "残り約" + (sec / 3600).toFixed(1) + "時間"; };
 const newAsset = (category = "撮影素材", patch = {}) => ({ id: uid(), category, type: "file", key: "", url: "", name: "", size: 0, mime: "", planId: "", sceneId: "", folder: "", createdAt: Date.now(), ...patch });
 /* Finderからのドロップを再帰展開してFile[]にする。フォルダごとドロップOK（.DS_Store等の不可視ファイルは除外）。
    注意: webkitGetAsEntry はdropイベント同期中に呼ぶ必要がある＝この関数はawaitを挟む前に呼び出すこと。 */
@@ -1320,6 +1323,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
   switch (name) {
     case "pin": return (<svg {...c}><path d="M12 21s6-5.3 6-10A6 6 0 1 0 6 11c0 4.7 6 10 6 10z" /><circle cx="12" cy="11" r="2.2" /></svg>);
     case "clock": return (<svg {...c}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>);
+    case "link": return (<svg {...c}><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></svg>);
     case "flag": return (<svg {...c}><path d="M5 21V4" /><path d="M5 4h11l-2 4 2 4H5" /></svg>);
     case "target": return (<svg {...c}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1.2" /></svg>);
     case "turn": return (<svg {...c}><path d="M4 8h11a4 4 0 0 1 0 8H8" /><path d="m11 13-3 3 3 3" /></svg>);
@@ -4352,6 +4356,7 @@ export default function App() {
   const [searchHits, setSearchHits] = useState(null);      // null=閉, []=ヒットなし, [...]=結果
   const [selAssets, setSelAssets] = useState([]);          // 素材管理: 複数選択DL用の選択id配列
   const [bulkDl, setBulkDl] = useState(null);              // 素材管理: フォルダへまとめて保存の進み具合 {i,n,name,pct,done,fail}
+  const [xferBox, setXferBox] = useState(null);            // 2026-10-02 URL1本で渡す／受け取る { kind, label, days, busy, url, exp, err }
   const [dragCat, setDragCat] = useState(null);            // 素材管理: ドラッグ＆ドロップ中のカテゴリ
   const [renamingAsset, setRenamingAsset] = useState(null); // 素材管理: 名前変更中の素材id
 
@@ -5440,6 +5445,20 @@ export default function App() {
   };
 
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 2200); };
+  /* 2026-10-02 AK「ギガファイル便の要素をパクれない？」: 選んだ素材をURL1本で渡す／ログインなしで受け取るURLを作る（/x.html） */
+  const createXfer = async () => {
+    const box = xferBox;
+    if (!box || box.busy) return;
+    setXferBox({ ...box, busy: true, err: "" });
+    try {
+      const files = box.kind === "send"
+        ? (project.assets || []).filter((a) => selAssets.includes(a.id) && a.key && a.type !== "youtube").map((a) => ({ key: a.key, name: a.name, size: a.size, mime: a.mime }))
+        : undefined;
+      const r = await authFetch("/api/x/create", { snap: project.shareId, kind: box.kind, label: box.label, days: box.days, files });
+      try { await navigator.clipboard.writeText(r.url); } catch (e) {}
+      setXferBox({ ...box, busy: false, url: r.url, exp: r.exp, err: "" });
+    } catch (e) { setXferBox({ ...box, busy: false, err: e.message || "作れませんでした" }); }
+  };
 
   /* ---- 案件操作 ---- */
   /* Fボード制作モードからのリロードなし案件切替（postMessage）。ページ遷移の再読込を無くす */
@@ -7297,11 +7316,20 @@ export default function App() {
   /* 2026-10-01 素材はGoogle Drive（AKの5TB）へ。サーバーが開けたGoogleの「再開可能アップロード」の口へ、ブラウザから直接送る。
      Driveが使えない時は null を返し、呼び出し側が従来のR2へ回す。 */
   const uploadToDrive = async (file, sid, extra, onProg) => {
-    const cr = await fetch(SHARE_API + "/api/file/gd/create", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }) });
-    if (cr.status === 503) return null;
-    const cd = await cr.json();
-    if (!cd.uploadUrl) throw new Error(cd.error || "開始に失敗");
+    // 閉じても・リロードしても、同じファイルをもう一度入れれば続きから（Driveのアップ口は1週間有効）
+    const sig = "mg:gdup:" + sid + ":" + ((extra && extra.folder) || "") + "/" + file.name + ":" + file.size + ":" + file.lastModified;
+    let cd = null;
+    try { cd = JSON.parse(localStorage.getItem(sig) || "null"); if (cd && Date.now() - (cd.at || 0) > 6 * 86400000) cd = null; } catch (e) { cd = null; }
+    if (!cd) {
+      const cr = await fetch(SHARE_API + "/api/file/gd/create", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }) });
+      if (cr.status === 503) return null;
+      cd = await cr.json();
+      if (!cd.uploadUrl) throw new Error(cd.error || "開始に失敗");
+      cd.at = Date.now();
+      try { localStorage.setItem(sig, JSON.stringify({ uploadUrl: cd.uploadUrl, key: cd.key, uploadCap: cd.uploadCap, at: cd.at })); } catch (e) {}
+    }
+    const eta = mkEta(file.size);
     const size = file.size;
     const CHUNK = 32 * 1024 * 1024; // 256KiBの倍数
     const put = (body, range) => new Promise((res, rej) => {
@@ -7309,7 +7337,7 @@ export default function App() {
       xhr.open("PUT", cd.uploadUrl);
       xhr.setRequestHeader("Content-Range", range);
       xhr.timeout = 180000;
-      if (body) xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProg) onProg(Math.min(100, Math.round((off + e.loaded) / Math.max(1, size) * 100))); };
+      if (body) xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProg) { const sent = off + e.loaded; onProg(Math.min(100, Math.round(sent / Math.max(1, size) * 100)), { eta: eta(sent) }); } };
       xhr.onload = () => res(xhr);
       xhr.onerror = () => rej(new Error("通信エラー"));
       xhr.ontimeout = () => rej(new Error("通信が止まりました（タイムアウト）"));
@@ -7317,6 +7345,10 @@ export default function App() {
     });
     const nextOff = (xhr, fallback) => { const r = xhr.getResponseHeader("Range"); const m = r && /bytes=0-(\d+)/.exec(r); return m ? +m[1] + 1 : fallback; };
     let off = 0, driveId = null, fails = 0;
+    // 前回の続きなら、どこまで届いているか先に聞く（新しいアップ口なら0のまま）
+    if (size > 0) {
+      try { const st = await put(null, `bytes */${size}`); if (st.status === 200 || st.status === 201) driveId = JSON.parse(st.responseText).id; else if (st.status === 308) off = nextOff(st, 0); else if (st.status === 404 || st.status === 410) { localStorage.removeItem(sig); return uploadToDrive(file, sid, extra, onProg); } } catch (e) {}
+    }
     while (!driveId) {
       const end = Math.min(size, off + CHUNK);
       try {
@@ -7335,6 +7367,7 @@ export default function App() {
       body: JSON.stringify({ snap: sid, key: cd.key, uploadCap: cd.uploadCap, driveId, name: file.name, mime: file.type || "application/octet-stream", ...extra }) });
     const fd = await fr.json();
     if (!fd.file) throw new Error(fd.error || "確定に失敗");
+    try { localStorage.removeItem(sig); } catch (e) {}
     return fd.file;
   };
   const uploadToR2 = async (file, planId = "", onProgress = null, snapOverride = null, tokenOverride = null, extraOverride = null) => {
@@ -7351,6 +7384,7 @@ export default function App() {
       if (viaDrive) return viaDrive;
     }
     delete extra.drive;
+    const r2Eta = mkEta(file.size);
     const cr = await fetch(SHARE_API + "/api/file/mpu/create", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
@@ -7370,7 +7404,7 @@ export default function App() {
             const xhr = new XMLHttpRequest();
             xhr.open("PUT", SHARE_API + "/api/file/mpu/part?key=" + encodeURIComponent(cd.key) + "&uploadId=" + encodeURIComponent(cd.uploadId) + "&part=" + (i + 1) + "&cap=" + encodeURIComponent(cd.uploadCap));
             xhr.timeout = 180000;
-            xhr.upload.onprogress = (e) => { if (e.lengthComputable) (onProgress || setMediaProg)(Math.min(100, Math.round((start + e.loaded) / file.size * 100))); };
+            xhr.upload.onprogress = (e) => { if (e.lengthComputable) { const sent = start + e.loaded; (onProgress || setMediaProg)(Math.min(100, Math.round(sent / file.size * 100)), { eta: r2Eta(sent) }); } };
             xhr.onload = () => { if (xhr.status >= 200 && xhr.status < 300) { try { res(JSON.parse(xhr.responseText).etag); } catch (_) { rej(new Error("part応答不正")); } } else rej(new Error("part失敗(" + xhr.status + ")")); };
             xhr.onerror = () => rej(new Error("通信エラー"));
             xhr.ontimeout = () => rej(new Error("通信が止まりました（タイムアウト）"));
@@ -7492,7 +7526,7 @@ export default function App() {
     setAssetUp({ cat: category, name: file.name, pct: 0 });
     try {
       // 素材管理（撮影素材・テンプレ素材）は無期限固定。90日で勝手に消えると後日の再編集・編集者の後追いDLで素材ロストになるため（確認用動画と同じ思想）。
-      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token, { retention: 90, drive: true, folder: (file._folder || "").toString().slice(0, 160) });
+      const meta = await uploadToR2(file, "", (p, info) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p, eta: info && info.eta }), sh.id, sh.token, { retention: 90, drive: true, folder: (file._folder || "").toString().slice(0, 160) });
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
       // フォルダごとドロップした素材はフォルダ階層を folder に保持（シーン区分）。平置き＝構造消失を防ぐ。
       const folder = (file._folder || "").toString().slice(0, 160);
@@ -11503,7 +11537,15 @@ export default function App() {
                     <Icon name="download" className="w-3.5 h-3.5" /> 全部DL
                   </button>
                 )}
+                <button onClick={() => setXferBox({ kind: "recv", label: "", days: 14 })} title="カメラマンや先方が、ログインなしでファイルを放り込むだけのURL（案件の中身は見せない）"
+                  className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                  <Icon name="link" className="w-3.5 h-3.5" /> 受け取りURLを作る
+                </button>
                 {selAssets.length > 0 && (<>
+                  <button onClick={() => setXferBox({ kind: "send", label: project.name || "", days: 14 })} title="選んだファイルだけを、期限付きのURL1本で渡す（ダウンロードされたら通知）"
+                    className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                    <Icon name="link" className="w-3.5 h-3.5" /> URLで渡す（{selAssets.length}）
+                  </button>
                   <button onClick={() => downloadAssetsToFolder((project.assets || []).filter((a) => selAssets.includes(a.id)))}
                     className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.main }}>
                     <Icon name="download" className="w-3.5 h-3.5" /> 選択をDL（{selAssets.length}）
@@ -11514,6 +11556,38 @@ export default function App() {
                   </button>
                   <button onClick={() => setSelAssets([])} className="text-[12px] text-stone-500 hover:text-stone-600 underline">選択解除</button>
                 </>)}
+              </div>
+            )}
+            {xferBox && (
+              <div className="mb-3 rounded-xl bg-white border border-stone-200 px-4 py-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[13px] font-black text-stone-800">{xferBox.kind === "send" ? "選んだ " + selAssets.length + " 件をURLで渡す" : "受け取りURLを作る"}</span>
+                  <button onClick={() => setXferBox(null)} className="ml-auto text-[12px] text-stone-500 hover:text-stone-700 underline">閉じる</button>
+                </div>
+                {xferBox.url ? (
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <input readOnly value={xferBox.url} onFocus={(e) => e.target.select()} className="flex-1 text-[12.5px] px-2 py-1.5 rounded-lg border border-stone-300 bg-stone-50 font-mono" />
+                      <button onClick={() => { navigator.clipboard.writeText(xferBox.url).then(() => showToast("URLをコピーしました")).catch(() => {}); }}
+                        className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.main }}>コピー</button>
+                    </div>
+                    <p className="text-[11.5px] text-stone-500 mt-1.5">コピー済み。{new Date(xferBox.exp).toLocaleDateString("ja-JP")} まで使えます。{xferBox.kind === "send" ? "相手がダウンロードするとお知らせが届きます。" : "届いたらお知らせが届きます。素材は「編集者アップを取り込み」で「受け取り/" + (xferBox.label || "受け取り") + "」フォルダに入ります。"}</p>
+                  </div>
+                ) : (
+                  <div className="flex items-end gap-2 flex-wrap">
+                    <label className="text-[11.5px] text-stone-500 flex flex-col gap-1 flex-1 min-w-[180px]">{xferBox.kind === "send" ? "相手に見える名前" : "受け取りの名前（フォルダ名になる。例：カメラマン山田_10月5日）"}
+                      <input value={xferBox.label} onChange={(e) => setXferBox({ ...xferBox, label: e.target.value })} placeholder={xferBox.kind === "send" ? "例：森川さん密着 素材" : "例：カメラマン山田_10月5日"}
+                        className="text-[13px] px-2 py-1.5 rounded-lg border border-stone-300 text-stone-800" />
+                    </label>
+                    <label className="text-[11.5px] text-stone-500 flex flex-col gap-1">期限
+                      <select value={xferBox.days} onChange={(e) => setXferBox({ ...xferBox, days: +e.target.value })} className="text-[13px] px-2 py-1.5 rounded-lg border border-stone-300 text-stone-800 bg-white">
+                        {[3, 7, 14, 30, 90].map((d) => <option key={d} value={d}>{d}日</option>)}
+                      </select>
+                    </label>
+                    <button onClick={createXfer} disabled={xferBox.busy} className="text-[12.5px] font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50" style={{ background: theme.main }}>{xferBox.busy ? "作っています..." : "URLを作る"}</button>
+                    {xferBox.err && <span className="w-full text-[12px] text-rose-600">{xferBox.err}</span>}
+                  </div>
+                )}
               </div>
             )}
             {bulkDl && (
@@ -11547,7 +11621,7 @@ export default function App() {
                     <p className="text-[12px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#78716C" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}{!project.shareId && dragCat !== cat && <span className="block text-stone-600 font-bold mt-0.5">共有リンクを一度発行するとアップできます</span>}</p>
                     {uping && (
                       <div className="mb-2 rounded-lg bg-stone-50 border border-stone-200 px-3 py-2">
-                        <div className="text-[12px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬆ {assetUp.name}</span><span className="font-bold tabular-nums">{assetUp.pct}%</span></div>
+                        <div className="text-[12px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬆ {assetUp.name}</span><span className="font-bold tabular-nums">{assetUp.pct}%{assetUp.eta ? "・" + fmtEta(assetUp.eta) : ""}</span></div>
                         <div className="mt-1 h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full transition-all" style={{ width: assetUp.pct + "%", background: theme.accent }} /></div>
                       </div>
                     )}
@@ -12497,7 +12571,7 @@ export default function App() {
             {!notifs || !notifs.items.length ? (
               <p className="text-[12.5px] text-stone-500 px-4 py-6 text-center">通知はありません。担当している工程の締切の前日（ここだけ）・当日と超過（メールも・1日1通まで）にお知らせします。</p>
             ) : notifs.items.map((n) => {
-              const tone = n.type === "question" ? { bg: "#EFEAFD", fg: "#6D28D9" } : n.type === "uploaded" ? { bg: "#E3F4EA", fg: "#15803D" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
+              const tone = n.type === "question" ? { bg: "#EFEAFD", fg: "#6D28D9" } : (n.type === "uploaded" || n.type === "received" || n.type === "downloaded") ? { bg: "#E3F4EA", fg: "#15803D" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
               const inIndex = index.some((x) => x.id === n.caseId);
               return (
                 <div key={n.id} className="px-4 py-3 border-b border-stone-100 last:border-0" style={n.read ? { opacity: 0.6 } : undefined}>
@@ -12509,7 +12583,7 @@ export default function App() {
                   <div className={"text-[13px] font-bold text-stone-800 " + (n.type === "digest" ? "leading-snug" : "truncate")}>{n.caseName}</div>
                   {Array.isArray(n.guides) && n.guides.length > 0 && (
                     <details className="mt-1" open={n.type === "digest" && !n.read}>
-                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : n.type === "uploaded" ? "アップされた動画" : n.type === "digest" ? "一覧を見る" : "この工程で押さえること"}</summary>
+                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : n.type === "uploaded" ? "アップされた動画" : (n.type === "received" || n.type === "downloaded") ? "内容" : n.type === "digest" ? "一覧を見る" : "この工程で押さえること"}</summary>
                       {n.guides.map((g, gi) => (
                         <div key={gi} className="mt-1.5">
                           <div className="text-[11px] font-bold text-stone-500">{g.source}</div>

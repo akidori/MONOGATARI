@@ -1682,7 +1682,7 @@ async function videoUpload(file, p, accent, main){
   try{
     const selEl=document.getElementById("fl-target"); const target=selEl?selEl.value:"project";
     /* retention:0＝無期限。完成動画は納品URLにもなるため保存期限で消さない */
-    const meta = await mpuUpload(file, { planId: target==="project"?"":target, role:"review", retention: 0 }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target, role:"review", retention: 0 }, (v,eta)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%"+(eta?"・"+fmtEta(eta):"")+"（このまま閉じないでね）"; });
     UPLOADS.push(meta);
     // Workerが完了時にStream版(review.versions)を自動登録するので、最新スナップを取り直してその版を選ぶ。
     // 生R2(up:)のまま選ぶと軽量版が出来ても切り替わらず、60分級だと再読み込みまで重いままだった（2026-09-03監査）。
@@ -2146,16 +2146,27 @@ function mountShorts(p, accent, main){
   poll();
 }
 /* 2026-10-01 素材（完成動画以外）はGoogle Drive（AKの5TB）へ。ブラウザ→Googleへ直接。使えない時は null（R2へ回す） */
+/* 2026-10-02: アップの残り時間（送った量の伸びから） */
+function mkEta(total){ const t0=Date.now(); let s0=null; return (sent)=>{ if(s0==null) s0=sent; const secs=(Date.now()-t0)/1000; const rate=secs>2?(sent-s0)/secs:0; return rate>0?Math.max(0,(total-sent)/rate):0; }; }
+function fmtEta(sec){ if(!sec||!isFinite(sec)) return ""; if(sec<60) return "残り"+Math.ceil(sec)+"秒"; if(sec<3600) return "残り約"+Math.ceil(sec/60)+"分"; return "残り約"+(sec/3600).toFixed(1)+"時間"; }
 async function driveUpload(file, extra, onProg){
-  const cr = await fetch(API+"/api/file/gd/create", { method:"POST", headers:{"Content-Type":"application/json"},
-    body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
-  if(cr.status===503) return null;
-  const cd = await cr.json(); if(!cd.uploadUrl) throw new Error(cd.error||"開始に失敗");
+  // 閉じても・リロードしても、同じファイルをもう一度入れれば続きから（アップ口は1週間有効）
+  const sig="mg:gdup:"+ID+":"+((extra&&extra.folder)||"")+"/"+file.name+":"+file.size+":"+file.lastModified;
+  let cd=null; try{ cd=JSON.parse(localStorage.getItem(sig)||"null"); if(cd&&Date.now()-(cd.at||0)>6*86400000) cd=null; }catch(e){ cd=null; }
+  if(!cd){
+    const cr = await fetch(API+"/api/file/gd/create", { method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
+    if(cr.status===503) return null;
+    cd = await cr.json(); if(!cd.uploadUrl) throw new Error(cd.error||"開始に失敗");
+    cd.at=Date.now(); try{ localStorage.setItem(sig, JSON.stringify({ uploadUrl:cd.uploadUrl, key:cd.key, uploadCap:cd.uploadCap, at:cd.at })); }catch(e){}
+  }
+  const eta=mkEta(file.size);
   const size=file.size, CHUNK=32*1024*1024; let off=0, driveId=null, fails=0;
   const put=(body, range)=>new Promise((res,rej)=>{ const xhr=new XMLHttpRequest(); xhr.open("PUT", cd.uploadUrl); xhr.setRequestHeader("Content-Range", range); xhr.timeout=180000;
-    if(body) xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg) onProg(Math.min(100, Math.round((off+e.loaded)/Math.max(1,size)*100))); };
+    if(body) xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg){ const sent=off+e.loaded; onProg(Math.min(100, Math.round(sent/Math.max(1,size)*100)), eta(sent)); } };
     xhr.onload=()=>res(xhr); xhr.onerror=()=>rej(new Error("通信エラー")); xhr.ontimeout=()=>rej(new Error("通信が止まりました（タイムアウト）")); xhr.send(body||null); });
   const nextOff=(xhr,fb)=>{ const r=xhr.getResponseHeader("Range"); const m=r&&/bytes=0-(\d+)/.exec(r); return m?+m[1]+1:fb; };
+  if(size>0){ try{ const st=await put(null,"bytes */"+size); if(st.status===200||st.status===201) driveId=JSON.parse(st.responseText).id; else if(st.status===308) off=nextOff(st,0); else if(st.status===404||st.status===410){ localStorage.removeItem(sig); return driveUpload(file, extra, onProg); } }catch(e){} }
   while(!driveId){
     const end=Math.min(size, off+CHUNK);
     try{
@@ -2172,12 +2183,14 @@ async function driveUpload(file, extra, onProg){
   const fr = await fetch(API+"/api/file/gd/complete", { method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify(Object.assign({ snap:ID, key:cd.key, uploadCap:cd.uploadCap, driveId, name:file.name, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
   const fd = await fr.json(); if(!fd.file) throw new Error(fd.error||"確定に失敗");
+  try{ localStorage.removeItem(sig); }catch(e){}
   return fd.file;
 }
 /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要）。onProg(0-100) */
 async function mpuUpload(file, extra, onProg){
   if(!(extra&&extra.role==="review")){ const viaDrive=await driveUpload(file, extra, onProg); if(viaDrive) return viaDrive; }
   const CHUNK = Math.min(90*1024*1024, Math.max(16*1024*1024, Math.ceil(file.size/9000)));
+  const r2Eta = mkEta(file.size);
   const cr = await fetch(API+"/api/file/mpu/create", { method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
   const cd = await cr.json(); if(!cd.uploadId||!cd.uploadCap) throw new Error(cd.error||"開始に失敗");
@@ -2193,7 +2206,7 @@ async function mpuUpload(file, extra, onProg){
         etag = await new Promise((res,rej)=>{ const xhr=new XMLHttpRequest();
           xhr.open("PUT", API+"/api/file/mpu/part?key="+encodeURIComponent(cd.key)+"&uploadId="+encodeURIComponent(cd.uploadId)+"&part="+(i+1)+"&cap="+encodeURIComponent(cd.uploadCap));
           xhr.timeout = 180000; // 3分まったく進まなければストールとみなして再試行
-          xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg) onProg(Math.min(100, Math.round((start+e.loaded)/file.size*100))); };
+          xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg){ const sent=start+e.loaded; onProg(Math.min(100, Math.round(sent/file.size*100)), r2Eta(sent)); } };
           xhr.onload=()=>{ if(xhr.status>=200&&xhr.status<300){ try{ res(JSON.parse(xhr.responseText).etag); }catch(_){ rej(new Error("part応答不正")); } } else rej(new Error("part失敗("+xhr.status+")")); };
           xhr.onerror=()=>rej(new Error("通信エラー")); xhr.ontimeout=()=>rej(new Error("通信が止まりました（タイムアウト）")); xhr.send(blob); });
         break;
@@ -2217,7 +2230,7 @@ async function guestUpload(file, p, accent, main){
   if(prog) prog.classList.remove("hidden");
   if(bar) bar.style.background=accent; if(pct){ pct.style.color="#9ca3af"; pct.textContent="アップロード準備中…"; }
   try{
-    const meta = await mpuUpload(file, { planId: target==="project"?"":target, folder, retention: 90 }, (v)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%（このまま閉じないでね）"; });
+    const meta = await mpuUpload(file, { planId: target==="project"?"":target, folder, retention: 90 }, (v,eta)=>{ if(bar){ bar.style.width=v+"%"; } if(pct) pct.textContent="アップロード中 "+v+"%"+(eta?"・"+fmtEta(eta):"")+"（このまま閉じないでね）"; });
     UPLOADS.push(meta);
     if(bar){ bar.style.width="100%"; } if(pct){ pct.style.color="#15803D"; pct.textContent="✓ 「"+(file.name||"ファイル")+"」を送信しました"; }
     const inp=document.getElementById("fl-input"); if(inp) inp.value="";

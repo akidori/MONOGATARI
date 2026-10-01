@@ -129,6 +129,27 @@ async function autoRegisterReviewVersion(env, origin, snapId, meta) {
   }
 }
 
+// 管理者（AK）へのアプリ内通知＋メール。2026-10-02 受け渡しURLのDL・受け取りで使う
+async function notifyAdmins(env, n) {
+  const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const id = "n_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  for (const ad of admins) {
+    const nk = "notif:" + ad;
+    const list = (await env.SNAPS.get(nk, "json")) || [];
+    list.unshift({ id, at: Date.now(), type: n.type, read: false, caseId: n.caseId || null, caseName: n.caseName || "", phase: n.type,
+      title: n.title, deadline: "", guides: [{ source: n.title, points: (n.points || []).filter(Boolean) }] });
+    await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
+    if (env.BOT_API_URL && env.BOT_API_KEY && n.subject) {
+      try {
+        await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
+          method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
+          body: JSON.stringify({ to: ad, subject: n.subject, body: (n.body || "") + "\n\nBird Flip / ものがたりっち！", audit_target: "monogataritch:" + n.type + ":" + id }),
+        });
+      } catch (e) { /* アプリ内通知は残る */ }
+    }
+  }
+}
+
 async function notifyReviewUploaded(env, snapId, project, ver) {
   const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
   const caseName = (project && project.name) || "（案件名なし）";
@@ -2652,6 +2673,69 @@ Bird Flip / ものがたりっち！`;
         return json({ file: meta });
       }
 
+      // ===== URL1本で渡す／受け取る（2026-10-02 AK「ギガファイル便の要素をパクれない？」）=====
+      // 渡す: 選んだファイルだけを期限付きURL1本で渡す（案件の中身は見せない）。DLされたらAKへ通知。
+      // 受け取る: ログインなしで放り込むだけのページ。案件の「受け取り/<名前>」フォルダ（Drive）に入り、AKへ通知。
+      // KV xfer:<id> = { kind:"send"|"recv", snap, label, caseName, files?, folder?, exp, createdBy }
+      if (parts[1] === "x") {
+        const xid = (parts[2] || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 24);
+        // POST /api/x/create { snap, kind, label, days, files?: [{key,name,size,mime}] }（管理者のみ）→ { id, url }
+        if (request.method === "POST" && xid === "create") {
+          const u = await requireUser(request, env);
+          if (!u) return json({ error: "unauthorized" }, 401);
+          if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+          const b = await request.json().catch(() => ({}));
+          const snap = (b.snap || "").toString().slice(0, 16);
+          const rec = snap ? await env.SNAPS.get("snap:" + snap, "json") : null;
+          if (!rec) return json({ error: "案件の共有がまだありません" }, 404);
+          const kind = b.kind === "recv" ? "recv" : "send";
+          const days = [3, 7, 14, 30, 90].includes(+b.days) ? +b.days : 14;
+          const label = (b.label || "").toString().replace(/[\\:*?"<>|/]/g, "_").trim().slice(0, 60) || (kind === "recv" ? "受け取り" : "お渡し");
+          const doc = { kind, snap, label, caseName: (rec.project && rec.project.name) || "", exp: Date.now() + days * 86400000, createdBy: lc(u.email), createdAt: Date.now() };
+          if (kind === "send") {
+            const files = (Array.isArray(b.files) ? b.files : []).filter((f) => f && typeof f.key === "string" && f.key.startsWith("f/" + snap + "/"))
+              .slice(0, 500).map((f) => ({ key: f.key, name: (f.name || "file").toString().slice(0, 255), size: +f.size || 0, mime: (f.mime || "").toString().slice(0, 120) }));
+            if (!files.length) return json({ error: "渡すファイルを選んでください" }, 400);
+            doc.files = files;
+          } else {
+            doc.folder = "受け取り/" + label;
+          }
+          const id = rid(16);
+          await env.SNAPS.put("xfer:" + id, JSON.stringify(doc), { expirationTtl: days * 86400 + 86400 });
+          const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+          return json({ id, url: appOrigin + "/x?id=" + id, exp: doc.exp });
+        }
+        const doc = xid ? await env.SNAPS.get("xfer:" + xid, "json") : null;
+        if (!doc) return json({ error: "このURLは無効です" }, 404);
+        if (Date.now() > doc.exp) return json({ error: "このURLの期限が切れています" }, 410);
+        // GET /api/x/<id> → 中身（渡す=ファイル一覧／受け取る=入れ先の名前）
+        if (request.method === "GET" && !parts[3]) {
+          return json({ kind: doc.kind, label: doc.label, caseName: doc.caseName, exp: doc.exp,
+            files: doc.kind === "send" ? doc.files.map((f) => ({ key: f.key, name: f.name, size: f.size, mime: f.mime })) : undefined });
+        }
+        // GET /api/x/<id>/dl?key= → DLを記録してファイル本体へ（AKへの通知は10分に1回まで）
+        if (request.method === "GET" && parts[3] === "dl" && doc.kind === "send") {
+          const key = url.searchParams.get("key") || "";
+          const f = doc.files.find((x) => x.key === key);
+          if (!f) return json({ error: "not found" }, 404);
+          try {
+            const lk = "xdl:" + xid;
+            const last = +(await env.SNAPS.get(lk)) || 0;
+            if (Date.now() - last > 600000) {
+              await env.SNAPS.put(lk, String(Date.now()), { expirationTtl: 86400 });
+              await notifyAdmins(env, { type: "downloaded", title: "ダウンロードされました：" + doc.label, caseName: doc.caseName || "（案件名なし）",
+                points: [f.name + (doc.files.length > 1 ? " ほか（全" + doc.files.length + "件のURL）" : ""), "渡したURLからダウンロードが始まりました"],
+                subject: "【ものがたりっち】ダウンロードされました：" + doc.label,
+                body: (doc.caseName || "") + " で渡したURL「" + doc.label + "」から " + f.name + " のダウンロードが始まりました。" });
+            }
+          } catch (e) { /* 通知に失敗してもDLは止めない */ }
+          // CORS付きで転送（ページの「まとめて保存」がfetchで追いかけるため。Response.redirectだとCORSヘッダーが付かない）
+          const loc = url.origin + "/api/file/" + key.split("/").map(encodeURIComponent).join("/") + "?dl=1&name=" + encodeURIComponent(f.name);
+          return new Response(null, { status: 302, headers: { ...CORS, Location: loc } });
+        }
+        return json({ error: "not found" }, 404);
+      }
+
       // ===== Google Drive 素材置き場（2026-10-01 AK「ドライブにアップする感じでフロントがものがたりっち」）=====
       // 置き場=AKの個人Drive（5TB）。権限は drive.file（このアプリが作ったファイル・フォルダだけ）。
       // アップ: ここでGoogleの「再開可能アップロード」の口を開け、ブラウザ→Googleへ直接送る（Worker非経由・大容量OK）。
@@ -2750,7 +2834,10 @@ Bird Flip / ものがたりっち！`;
         if (!driveEnabled(env)) return json({ error: "drive_disabled" }, 503);
         if (await opsKilled(env, "uploads")) return json({ error: "アップロードは現在一時停止中です" }, 503);
         const b = await request.json();
-        const snap = (b.snap || "").toString().slice(0, 16);
+        // 受け取りURL（b.x）からは案件IDを渡さない（ページに案件IDを出さないため）。受け取りURLの記録から引く
+        let xdoc = null;
+        if (b.x) xdoc = await env.SNAPS.get("xfer:" + String(b.x).replace(/[^A-Za-z0-9]/g, "").slice(0, 24), "json");
+        const snap = ((xdoc && xdoc.snap) || b.snap || "").toString().slice(0, 16);
         if (!snap) return json({ error: "snap がありません" }, 400);
         const rec = await env.SNAPS.get("snap:" + snap, "json");
         if (!rec) return json({ error: "not found" }, 404);
@@ -2759,7 +2846,13 @@ Bird Flip / ものがたりっち！`;
         const isOwner = !!tok && tok === (b.token || "");
         const uptok = await env.SNAPS.get("uptok:" + snap);
         const isEditor = !isOwner && !!uptok && uptok === (b.up || "");
-        const isUploader = isOwner || isEditor;
+        // 受け取りURL（/x.html）からのアップ: 期限内で同じ案件なら大きいファイルも可。入れ先は「受け取り/<名前>」に固定
+        let rcv = null;
+        if (b.x) {
+          if (!xdoc || xdoc.kind !== "recv" || xdoc.snap !== snap || Date.now() > xdoc.exp) return json({ error: "この受け取りURLは無効か期限切れです" }, 403);
+          rcv = xdoc;
+        }
+        const isUploader = isOwner || isEditor || !!rcv;
         const size = Math.max(0, +b.size || 0);
         const maxSize = isUploader ? 500 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024;
         if (size > maxSize) return json({ error: isUploader ? "ファイルが大きすぎます（500GBまで）" : "ファイルが大きすぎます（このリンクは2GBまで）" }, 413);
@@ -2768,7 +2861,8 @@ Bird Flip / ものがたりっち！`;
           if (ups.length >= 50) return json({ error: "アップロード件数の上限に達しています" }, 429);
         }
         const proj = (rec && rec.project) || {};
-        const folder = (b.folder || "").toString().replace(/[\\:*?"<>|]/g, "_").slice(0, 160);
+        const sub = (b.folder || "").toString().replace(/[\\:*?"<>|]/g, "_").slice(0, 160);
+        const folder = rcv ? (rcv.folder + (sub ? "/" + sub : "")).slice(0, 200) : sub;
         const name = (b.name || "file").toString().slice(0, 255);
         const mime = (b.mime || "application/octet-stream").toString().slice(0, 120);
         try {
@@ -2784,8 +2878,10 @@ Bird Flip / ものがたりっち！`;
           const uploadUrl = r.headers.get("Location");
           if (!r.ok || !uploadUrl) return json({ error: "Driveのアップ口を開けませんでした: " + (await r.text()).slice(0, 160) }, 502);
           const key = "f/" + snap + "/" + rid(8) + "-" + Date.now();
-          const uploadCap = await mintSession({ purpose: "gd-up", snap, key, maxSize, declaredSize: size, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 }, sessionSecret(env));
-          return json({ key, uploadUrl, uploadCap });
+          const uploadCap = await mintSession({ purpose: "gd-up", snap, key, maxSize, declaredSize: size, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600,
+            // 署名つき証明書の中身はASCIIで持つ（日本語をそのまま入れると読み戻しで文字化けした）
+            ...(rcv ? { folderEnc: encodeURIComponent(folder), rcv: String(b.x), rcvLabelEnc: encodeURIComponent(rcv.label || ""), caseNameEnc: encodeURIComponent(rcv.caseName || "") } : {}) }, sessionSecret(env));
+          return json({ key, uploadUrl, uploadCap, ...(rcv ? { snap } : {}) });
         } catch (e) { return json({ error: String(e.message || e) }, 502); }
       }
 
@@ -2825,13 +2921,27 @@ Bird Flip / ものがたりっち！`;
           by: isOwner ? "owner" : (isEditor ? "editor" : "guest"),
           role: "",
           planId: (b.planId || "").toString().slice(0, 40),
-          folder: (b.folder || "").toString().replace(/[\\:*?"<>|]/g, "_").slice(0, 160),
+          folder: (cap.folderEnc ? decodeURIComponent(cap.folderEnc) : "") || (b.folder || "").toString().replace(/[\\:*?"<>|]/g, "_").slice(0, 160),
         };
         await env.SNAPS.put("file:" + key, JSON.stringify(meta));
         if (!isOwner) {
           const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
           ups.push(meta);
           await env.SNAPS.put("file_up:" + snap, JSON.stringify(ups));
+        }
+        if (cap.rcv) {
+          try {
+            cap.rcvLabel = decodeURIComponent(cap.rcvLabelEnc || ""); cap.caseName = decodeURIComponent(cap.caseNameEnc || "");
+            const lk = "xrcv:" + cap.rcv;
+            const last = +(await env.SNAPS.get(lk)) || 0;
+            if (Date.now() - last > 600000) {
+              await env.SNAPS.put(lk, String(Date.now()), { expirationTtl: 86400 });
+              await notifyAdmins(env, { type: "received", title: "受け取りました：" + (cap.rcvLabel || ""), caseName: cap.caseName || "",
+                points: [meta.name, "素材管理の「編集者アップを取り込み」で「" + meta.folder + "」に入ります"],
+                subject: "【ものがたりっち】受け取りました：" + (cap.caseName || "") + "（" + (cap.rcvLabel || "") + "）",
+                body: "受け取りURL「" + (cap.rcvLabel || "") + "」に " + meta.name + " が届きました（続けて届いた分は10分ごとにまとめて知らせます）。" });
+            }
+          } catch (e) { /* 通知に失敗しても受け取りは成立 */ }
         }
         return json({ file: meta });
       }
