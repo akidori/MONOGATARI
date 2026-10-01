@@ -123,6 +123,41 @@ async function autoRegisterReviewVersion(env, origin, snapId, meta) {
   }
   vers.push(ver);
   await env.SNAPS.put("snap:" + snapId, JSON.stringify(snap));
+  // 2026-10-01 AK「編集者はものがたりっちに上げたら完了（あがり報告は不要）」→ 上がったことはここからAKへ知らせる
+  if (meta.by !== "owner") {
+    try { await notifyReviewUploaded(env, snapId, snap.project, ver); } catch (e) {}
+  }
+}
+
+async function notifyReviewUploaded(env, snapId, project, ver) {
+  const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  const caseName = (project && project.name) || "（案件名なし）";
+  // 通知の caseId は案件ID（mg_kv.proj_id）。snapId（共有ID）から引き直す（reminders.js と同じ caseId の意味に揃える）
+  let caseId = "";
+  try {
+    const row = await env.DB.prepare("SELECT proj_id FROM mg_kv WHERE json_extract(value,'$.shareId') = ? ORDER BY updated_at DESC LIMIT 1").bind(snapId).first();
+    caseId = (row && row.proj_id) || "";
+  } catch (e) {}
+  const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+  const id = "up_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  for (const ad of admins) {
+    const nk = "notif:" + ad;
+    const list = (await env.SNAPS.get(nk, "json")) || [];
+    list.unshift({ id, at: Date.now(), type: "uploaded", read: false, caseId, caseName, phase: "uploaded",
+      title: "上がりました：" + ver.label, deadline: "",
+      guides: [{ source: "編集者が動画確認にアップしました", points: [ver.name || ver.label, "動画確認タブで見られます（変換に数分かかることがあります）"] }] });
+    await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
+    if (env.BOT_API_URL && env.BOT_API_KEY) {
+      try {
+        await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
+          method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
+          body: JSON.stringify({ to: ad, subject: "【ものがたりっち】上がりました：" + caseName + "（" + ver.label + "）",
+            body: caseName + " の " + ver.label + "（" + (ver.name || "") + "）を編集者がアップしました。\n\n" + (caseId ? "案件を開く：" + appOrigin + "/?case=" + encodeURIComponent(caseId) + "\n\n" : "") + "Bird Flip / ものがたりっち！",
+            audit_target: "monogataritch:uploaded:" + id }),
+        });
+      } catch (e) { /* アプリ内通知は残る */ }
+    }
+  }
 }
 
 // IPベースの簡易レート制限（KVカウンタ）。無認証で叩けるAI系のコスト焼却DoSを抑止。

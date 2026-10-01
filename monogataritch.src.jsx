@@ -12377,7 +12377,7 @@ export default function App() {
             {!notifs || !notifs.items.length ? (
               <p className="text-[12.5px] text-stone-500 px-4 py-6 text-center">通知はありません。担当している工程の締切の前日（ここだけ）・当日と超過（メールも・1日1通まで）にお知らせします。</p>
             ) : notifs.items.map((n) => {
-              const tone = n.type === "question" ? { bg: "#EFEAFD", fg: "#6D28D9" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
+              const tone = n.type === "question" ? { bg: "#EFEAFD", fg: "#6D28D9" } : n.type === "uploaded" ? { bg: "#E3F4EA", fg: "#15803D" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
               const inIndex = index.some((x) => x.id === n.caseId);
               return (
                 <div key={n.id} className="px-4 py-3 border-b border-stone-100 last:border-0" style={n.read ? { opacity: 0.6 } : undefined}>
@@ -12389,7 +12389,7 @@ export default function App() {
                   <div className={"text-[13px] font-bold text-stone-800 " + (n.type === "digest" ? "leading-snug" : "truncate")}>{n.caseName}</div>
                   {Array.isArray(n.guides) && n.guides.length > 0 && (
                     <details className="mt-1" open={n.type === "digest" && !n.read}>
-                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : n.type === "digest" ? "一覧を見る" : "この工程で押さえること"}</summary>
+                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : n.type === "uploaded" ? "アップされた動画" : n.type === "digest" ? "一覧を見る" : "この工程で押さえること"}</summary>
                       {n.guides.map((g, gi) => (
                         <div key={gi} className="mt-1.5">
                           <div className="text-[11px] font-bold text-stone-500">{g.source}</div>
