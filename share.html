@@ -1304,7 +1304,7 @@ function paneDeliver(p, accent, main){
       ${m.deliverTitle2?`<div class="text-[10px] font-bold text-stone-400 mt-2 mb-0.5">タイトル案2</div><div class="text-[17px] font-black leading-snug text-stone-800">${esc(m.deliverTitle2)}</div>`:""}
     </div>`:""}
     ${ranked.length>1?`<div class="text-[12px] text-stone-500 mb-2">気に入ったサムネがあれば「これに決める」を押してください。選んだ内容はこちらに届きます。</div>`:""}
-    ${ranked.length?`<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 max-w-3xl">${ranked.map((t,i)=>`
+    ${ranked.length?`<div class="grid grid-cols-3 gap-2 sm:gap-3 mb-5">${ranked.map((t,i)=>`
       <div>
         <div class="relative">
           <img src="${API}/api/file/${esc(t.key)}" alt="" data-dvlb="${i}" data-dvintent="${esc(t.intent||"")}" class="dv-thumb w-full aspect-video object-contain bg-stone-100 rounded-lg border-2 ${t._used?"border-emerald-400":"border-stone-200"} cursor-zoom-in" title="クリックで拡大">
@@ -1395,8 +1395,22 @@ function mountDeliver(p, accent, main){
     stage.innerHTML = `<iframe class="w-full h-full" src="https://drive.google.com/file/d/${did}/preview" allow="autoplay" allowfullscreen></iframe>`;
   } else {
     const v = document.createElement("video");
-    v.src = url; v.controls = true; v.playsInline = true; v.preload = "metadata"; v.className = "w-full h-full bg-black";
+    v.controls = true; v.playsInline = true; v.preload = "metadata"; v.className = "w-full h-full bg-black";
     stage.replaceWith(v);
+    // 2026-10-01 AK「動画確認のサクサク動画をここにも」: 納品URLが確認用バージョンと同じR2ファイルなら、
+    // その版のStream軽量版(HLS)で再生する。再生不能なら元ファイルへ自動フォールバック。
+    const km = url.match(/\/api\/file\/([^?#]+)/); const fkey = km ? decodeURIComponent(km[1]) : "";
+    const vers = (p.review && Array.isArray(p.review.versions)) ? p.review.versions : [];
+    const sv = fkey ? vers.slice().reverse().find((x)=>x.key===fkey && x.type==="stream" && x.ready && x.hls) : null;
+    if(!sv){ v.src = url; return; }
+    try{ v.poster = sv.hls.replace(/manifest\/video\.m3u8.*$/,"thumbnails/thumbnail.jpg")+"?time=0s&height=720"; }catch(e){}
+    const raw = ()=>{ if(v.dataset.raw!=="1"){ v.dataset.raw="1"; const t=v.currentTime||0; v.src=url; if(t) try{ v.currentTime=t; }catch(e){} } };
+    v.addEventListener("error", raw);
+    loadHlsShare().then((Hls)=>{
+      if(Hls && Hls.isSupported()){ const h=new Hls(HLS_TUNE); h.on(Hls.Events.ERROR,(_e,d)=>{ if(d&&d.fatal) raw(); }); h.loadSource(sv.hls); h.attachMedia(v); }
+      else if(v.canPlayType("application/vnd.apple.mpegurl")){ v.src = sv.hls; }
+      else raw();
+    });
   }
 }
 function paneVideo(p, accent, main){
