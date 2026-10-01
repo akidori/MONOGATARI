@@ -1477,6 +1477,74 @@ ${qList}
         } catch (e) { return json({ error: "Studio OSに接続できません" }, 502); }
       }
 
+      // ===== Studio OS連携: 新規案件は投稿日から各工程の日程を逆算（2026-10-01 AK）=====
+      // 逆算はStudio OS（backSchedule＝工程テンプレの標準日数を最終納期から遡る）だけが行う。ここは中継のみ（工程・日数を持たない）。
+      // 流れ: 案件作成(final_deadline=publish_date=投稿日) → 紐付けトークン発行 → ものがたりっち案件と紐付け → 工程を返す
+      const STUDIO = "https://studio-os-5dm.pages.dev/api/v1";
+      const studioCall = async (path, init) => {
+        const r = await fetch(STUDIO + path, { ...(init || {}), headers: { "content-type": "application/json", authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+        const j = await r.json().catch(() => null);
+        if (!r.ok || !j || j.success === false) throw new Error((j && j.error && j.error.message) || ("Studio OS " + r.status));
+        return j.data;
+      };
+      const stepsOf = (d) => ((d && (d.steps || d.deliverableSteps)) || []).map((x) => ({ name: x.stepName || x.step_name, deadline: x.deadline || null, status: x.status || "" }));
+
+      // GET /api/studio/accounts → クライアント（Studio OSのアカウント）一覧
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "studio" && parts[2] === "accounts") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ connected: false, accounts: [] });
+        try {
+          const d = await studioCall("/accounts");
+          const rows = Array.isArray(d) ? d : (d.items || d.rows || []);
+          return json({ connected: true, accounts: rows.filter((a) => !a.archived).map((a) => ({ id: a.id, name: a.name, defaultWorkflow: a.defaultWorkflow || null })) });
+        } catch (e) { return json({ connected: false, accounts: [], error: String(e.message || e) }); }
+      }
+
+      // POST /api/studio/new-case { proj, title, accountId, publishDate, template } → { deliverableId, publishDate, steps }
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "studio" && parts[2] === "new-case") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ error: "Studio OSにつながっていません" }, 503);
+        const b = await request.json().catch(() => ({}));
+        const proj = String(b.proj || "").trim(), title = String(b.title || "").trim().slice(0, 120);
+        const publishDate = String(b.publishDate || ""), accountId = String(b.accountId || "");
+        const template = ["wf_full", "wf_documentary"].includes(b.template) ? b.template : "wf_full";
+        if (!/^[A-Za-z0-9]{3,32}$/.test(proj) || !title) return json({ error: "案件の情報が足りません" }, 400);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(publishDate)) return json({ error: "投稿日を入れてください" }, 400);
+        if (!accountId) return json({ error: "クライアントを選んでください" }, 400);
+        try {
+          // すでに紐付いていれば作らずに、投稿日だけ返す（二重作成防止）
+          let dId = null;
+          try { dId = (await studioCall("/agent/mg-gate?mg_project_id=" + encodeURIComponent(proj))).deliverableId; } catch (e) {}
+          if (!dId) {
+            const d = await studioCall("/deliverables", { method: "POST", body: JSON.stringify({ accountId, title, workflowTemplate: template, finalDeadline: publishDate, publishDate }) });
+            dId = d.id;
+            const t = await studioCall("/deliverables/" + dId + "/mg-new-token", { method: "POST", body: "{}" });
+            await studioCall("/public/mg-link", { method: "POST", body: JSON.stringify({ token: t.token, mgProjectId: proj }) });
+          }
+          const d2 = await studioCall("/deliverables/" + dId);
+          return json({ deliverableId: dId, publishDate: d2.publishDate || d2.finalDeadline || publishDate, steps: stepsOf(d2) });
+        } catch (e) { return json({ error: "Studio OSで案件を作れませんでした: " + String(e.message || e) }, 502); }
+      }
+
+      // GET /api/studio/schedule?proj= → { linked, publishDate, steps }
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "studio" && parts[2] === "schedule") {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        if (!env.STUDIO_AGENT_KEY) return json({ linked: false });
+        const proj = (url.searchParams.get("proj") || "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(proj)) return json({ error: "proj不正" }, 400);
+        try {
+          const g = await studioCall("/agent/mg-gate?mg_project_id=" + encodeURIComponent(proj));
+          const d = await studioCall("/deliverables/" + g.deliverableId);
+          return json({ linked: true, deliverableId: g.deliverableId, publishDate: d.publishDate || d.finalDeadline || null, steps: stepsOf(d) });
+        } catch (e) { return json({ linked: false }); }
+      }
+
       // ===== Studio OS連携: ホーム画面「今日の仕事」（2026-09-23）=====
       // GET /api/today — 認証必須（requireUser）。Studio OSのMCPエンドポイント（POST /api/v1/mcp）を
       // 1本だけ叩き、get_workツール（今日の仕事ページ＝案件の今の工程・請求・その他の仕事・待ち・保留を

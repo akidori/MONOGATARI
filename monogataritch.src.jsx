@@ -4247,6 +4247,17 @@ export default function App() {
   const [ctxMenu, setCtxMenu] = useState(null);            // サイドバー チャンネル右クリックメニュー {channel,x,y}
   const [iconPick, setIconPick] = useState(null);          // チャンネルアイコン選択ポップオーバー {channel,x,y}
   const [addMenu, setAddMenu] = useState(null);            // 案件追加のタイプ選択 {channel,x,y}
+  // 2026-10-01 AK「新規案件は必ず最初に投稿日から逆算して各工程の日程を把握」: 作成直後に投稿日などを入れる画面
+  const [schedModal, setSchedModal] = useState(null);       // {projId, name, channel, accounts, accountId, template, date, busy, error, steps, offline}
+  const [schedView, setSchedView] = useState(null);         // 概要タブの工程の日程 {proj, linked, publishDate, steps}
+  useEffect(() => {
+    if (!isStaff || !MG_SESSION || tab !== "overview" || !activeId || (schedView && schedView.proj === activeId)) return;
+    let cancelled = false;
+    fetch(SHARE_API + "/api/studio/schedule?proj=" + encodeURIComponent(activeId), { headers: { Authorization: "Bearer " + MG_SESSION } })
+      .then((r) => r.json()).then((d) => { if (!cancelled) setSchedView({ proj: activeId, linked: !!d.linked, publishDate: d.publishDate || null, steps: d.steps || [] }); })
+      .catch(() => { if (!cancelled) setSchedView({ proj: activeId, linked: false, steps: [] }); });
+    return () => { cancelled = true; };
+  }, [isStaff, tab, activeId]);
   // ホームの案件表示（2026-10-01 AK「ホームの案件管理はこんなUIで」＝表紙つきカードの並び）。"cards" | "channels"
   const [homeMode, setHomeMode] = useState(() => { try { return localStorage.getItem("mg:homeMode") || "cards"; } catch (e) { return "cards"; } });
   const [homeCh, setHomeCh] = useState("");                 // カード表示のチャンネル絞り込み（""=すべて）
@@ -5383,6 +5394,39 @@ export default function App() {
     setActiveId(data.id); setProject(data); setTab("overview"); setView("editor");
     setNewMenu(false); setView("editor");
     showToast(format === "talk" ? "トーク台本を作成しました" : "案件を作成しました");
+    if (isStaff && MG_SESSION) openSchedModal(data.id, "", data.channel);
+  };
+  /* 投稿日から各工程の日程を出す（逆算はStudio OSが行う。ここは入力と表示だけ） */
+  const openSchedModal = async (projId, name, channel) => {
+    setSchedModal({ projId, name: name || "", channel, accounts: [], accountId: "", template: "", date: "", busy: false, error: "", steps: null, offline: false });
+    try {
+      const r = await fetch(SHARE_API + "/api/studio/accounts", { headers: { Authorization: "Bearer " + MG_SESSION } });
+      const d = await r.json();
+      if (!d.connected) { setSchedModal((m) => m && { ...m, offline: true }); return; }
+      const norm = (t) => String(t || "").replace(/[（(].*?[）)]|\s|チャンネル|ch$/g, "").toLowerCase();
+      const remembered = (channelInfo[channel] || {}).studioAccountId;
+      const guess = remembered || ((d.accounts || []).find((a) => { const x = norm(a.name), y = norm(channel); return x && y && (x.includes(y) || y.includes(x)); }) || {}).id || "";
+      const acc = (d.accounts || []).find((a) => a.id === guess);
+      setSchedModal((m) => m && { ...m, accounts: d.accounts || [], accountId: guess, template: (acc && acc.defaultWorkflow) || "wf_full" });
+    } catch (e) { setSchedModal((m) => m && { ...m, offline: true }); }
+  };
+  const submitSched = async () => {
+    const m = schedModal; if (!m) return;
+    const title = (m.name || "").trim();
+    if (!title) { setSchedModal({ ...m, error: "案件名を入れてください" }); return; }
+    if (!m.date) { setSchedModal({ ...m, error: "投稿日を入れてください" }); return; }
+    if (!m.accountId) { setSchedModal({ ...m, error: "クライアントを選んでください" }); return; }
+    setSchedModal({ ...m, busy: true, error: "" });
+    try {
+      renameProject(m.projId, title);
+      const r = await fetch(SHARE_API + "/api/studio/new-case", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
+        body: JSON.stringify({ proj: m.projId, title, accountId: m.accountId, publishDate: m.date, template: m.template }) });
+      const d = await r.json();
+      if (!r.ok || d.error) throw new Error(d.error || ("HTTP " + r.status));
+      setChannelInfo((ci) => ({ ...ci, [m.channel]: { ...emptyChannelInfo(), name: m.channel, ...(ci[m.channel] || {}), studioAccountId: m.accountId } }));
+      setSchedModal((x) => x && { ...x, busy: false, steps: d.steps || [], date: d.publishDate || m.date });
+      setSchedView({ proj: m.projId, linked: true, publishDate: d.publishDate, steps: d.steps || [] });
+    } catch (e) { setSchedModal((x) => x && { ...x, busy: false, error: e.message || String(e) }); }
   };
 
   /* 解析済みデータから新規案件を作成（共通） */
@@ -11272,6 +11316,40 @@ export default function App() {
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
           <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1 space-y-4">
+            {/* 工程の日程（2026-10-01 AK）: Studio OSが投稿日から逆算した各工程の締切。未設定なら入れる入口 */}
+            {isStaff && (() => {
+              const sv = schedView && schedView.proj === project.id ? schedView : null;
+              const today = new Date().toISOString().slice(0, 10);
+              return (
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Icon name="clock" className="w-4 h-4 text-stone-500" />
+                    <span className="text-[14px] font-bold text-stone-800">工程の日程</span>
+                    {sv && sv.publishDate && <span className="text-[12px] text-stone-500">投稿日 {sv.publishDate}</span>}
+                  </div>
+                  {!sv ? <p className="text-[12px] text-stone-500">読み込み中…</p>
+                    : !sv.linked ? (
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <p className="text-[12px] text-stone-600">まだ投稿日が決まっていません。投稿日を入れると、各工程の締切を逆算して出します。</p>
+                        <button onClick={() => openSchedModal(project.id, project.name, project.channel || DEFAULT_CHANNEL)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.main }}>投稿日を決める</button>
+                      </div>
+                    ) : (
+                      <ol className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+                        {sv.steps.map((st, i) => {
+                          const done = st.status === "completed" || st.status === "skipped";
+                          const late = !done && st.deadline && st.deadline < today;
+                          return (
+                            <li key={i} className={"rounded-lg border px-2.5 py-1.5 " + (done ? "border-stone-100 bg-stone-50" : late ? "border-rose-200 bg-rose-50" : "border-stone-200")}>
+                              <div className={"text-[12px] font-bold truncate " + (done ? "text-stone-400 line-through" : "text-stone-700")}>{st.name}</div>
+                              <div className={"text-[12px] tabular-nums " + (late ? "text-rose-600 font-bold" : "text-stone-500")}>{st.deadline ? st.deadline.slice(5).replace("-", "/") : "未設定"}</div>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                </div>
+              );
+            })()}
             {/* 「いまの状態」(ステータス/次にやること/締切)はタスク管理＝Flip Boardに集約のため削除。基本情報カードも未使用のため削除（2026-08-17 AK指示） */}
             {/* ひと目サマリー */}
             <div className="grid grid-cols-3 gap-3">
@@ -12610,6 +12688,54 @@ export default function App() {
       )}
 
       {/* ===== メンバー画面（Phase 3・2026-09-26）。権限は案件ごと（オーナー／編集者）。組織共通の固定ロールは持たない ===== */}
+      {schedModal && (
+        <div className="fixed inset-0 z-[80] bg-black/40 grid place-items-center p-4">
+          <div className="w-full max-w-[460px] rounded-2xl bg-white shadow-2xl p-5">
+            {!schedModal.steps ? (<>
+              <h2 className="text-[16px] font-black text-stone-800 mb-1">投稿日から日程を決める</h2>
+              <p className="text-[12px] text-stone-500 mb-4">投稿日を入れると、各工程の締切を逆算してStudio OSに入れます。</p>
+              {schedModal.offline ? (
+                <p className="text-[13px] text-rose-600 mb-3">Studio OSにつながらないため、今は日程を出せません。概要タブの「工程の日程」から、あとで入れられます。</p>
+              ) : (<>
+                <label className="block text-[12px] font-bold text-stone-600 mb-1">案件名</label>
+                <input value={schedModal.name} onChange={(e) => setSchedModal({ ...schedModal, name: e.target.value })} placeholder="例: #11_山田さん" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-[14px] mb-3" />
+                <label className="block text-[12px] font-bold text-stone-600 mb-1">投稿日（公開される日）</label>
+                <input type="date" value={schedModal.date} onChange={(e) => setSchedModal({ ...schedModal, date: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-[14px] mb-3" />
+                <label className="block text-[12px] font-bold text-stone-600 mb-1">クライアント</label>
+                <select value={schedModal.accountId} onChange={(e) => { const a = schedModal.accounts.find((x) => x.id === e.target.value); setSchedModal({ ...schedModal, accountId: e.target.value, template: (a && a.defaultWorkflow) || schedModal.template || "wf_full" }); }} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-[14px] mb-3">
+                  <option value="">選んでください</option>
+                  {schedModal.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <label className="block text-[12px] font-bold text-stone-600 mb-1">工程の型</label>
+                <div className="flex gap-2 mb-3">
+                  {[["wf_full", "通常制作"], ["wf_documentary", "ドキュメンタリー"]].map(([v, l]) => (
+                    <button key={v} onClick={() => setSchedModal({ ...schedModal, template: v })} className={"text-[12px] font-bold px-3 py-1.5 rounded-lg border " + (schedModal.template === v ? "text-white border-transparent" : "border-stone-200 text-stone-600")} style={schedModal.template === v ? { background: theme.main } : {}}>{l}</button>
+                  ))}
+                </div>
+              </>)}
+              {schedModal.error && <p className="text-[12px] text-rose-600 mb-2">{schedModal.error}</p>}
+              <div className="flex justify-end gap-2">
+                {schedModal.offline && <button onClick={() => setSchedModal(null)} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-600">閉じる</button>}
+                {!schedModal.offline && <button disabled={schedModal.busy} onClick={submitSched} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50" style={{ background: theme.main }}>{schedModal.busy ? "計算中…" : "日程を出す"}</button>}
+              </div>
+            </>) : (<>
+              <h2 className="text-[16px] font-black text-stone-800 mb-1">工程の日程</h2>
+              <p className="text-[12px] text-stone-500 mb-3">投稿日 {schedModal.date} から逆算しました（Studio OSに入っています）。</p>
+              <ol className="space-y-1 mb-4 max-h-[50vh] overflow-y-auto">
+                {schedModal.steps.map((st, i) => (
+                  <li key={i} className="flex items-center gap-3 text-[13px] border-b border-stone-100 py-1.5">
+                    <span className="w-5 text-stone-400 tabular-nums">{i + 1}</span>
+                    <span className="flex-1 text-stone-700">{st.name}</span>
+                    <span className="tabular-nums font-bold text-stone-800">{st.deadline ? st.deadline.slice(5).replace("-", "/") : "未設定"}</span>
+                  </li>
+                ))}
+              </ol>
+              <div className="flex justify-end"><button onClick={() => setSchedModal(null)} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white" style={{ background: theme.main }}>閉じる</button></div>
+            </>)}
+          </div>
+        </div>
+      )}
+
       {showLearn && (
         <div className="fixed inset-0 z-[70] overflow-y-auto" style={{ background: "#E9E8E3" }}>
           <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: mainText }}>
