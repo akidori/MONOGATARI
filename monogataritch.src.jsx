@@ -4305,6 +4305,8 @@ export default function App() {
   const [caseQuery, setCaseQuery] = useState("");           // 案件名の絞り込み（案件が増えても探せる）
   const resizingRef = useRef(false);
   useEffect(() => { setCasePickerOpen(false); }, [activeId]);
+  // 一覧は常設になったので、⌘K などで「開く」指示が来たら検索欄に飛ぶだけ
+  useEffect(() => { if (casePickerOpen) { try { sidebarSearchRef.current && sidebarSearchRef.current.focus(); } catch (e) {} setCasePickerOpen(false); } }, [casePickerOpen]);
   useEffect(() => { try { localStorage.setItem("mg:tab", tab); } catch (_) {} }, [tab]);
   /* 保存した選択ページが今の案件に存在しない場合の正規化。
      例：密着案件で「取材メモ」を開いたままトーク案件を開くと、その案件に取材メモは無い＝
@@ -9151,19 +9153,10 @@ export default function App() {
             <svg className="w-4 h-4 ml-auto text-white/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
-        <div className="px-3 py-3 relative">
-          <button onClick={() => setCasePickerOpen((v) => !v)} aria-expanded={casePickerOpen} aria-controls="mg-case-picker"
-            className="w-full text-left rounded-xl border border-white/20 bg-white/10 px-3 py-3 hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
-            title="案件を切り替える">
-            <span className="block text-[12px] text-white/60 truncate">{project.channel || DEFAULT_CHANNEL}</span>
-            <span className="flex items-center gap-2 mt-1"><span className="font-bold text-[14px] truncate flex-1">{project.name}</span><span aria-hidden="true">{casePickerOpen ? "▴" : "▾"}</span></span>
-            <span className="block text-[11px] text-white/50 mt-1">案件を切り替える</span>
-          </button>
-        </div>
-        {casePickerOpen && (
-        <div id="mg-case-picker" className="absolute left-0 right-0 bottom-0 top-[172px] z-50 flex flex-col border-t border-white/20 shadow-2xl" style={{ background: theme.main }}
-          onKeyDown={(e) => { if (e.key === "Escape") { setCasePickerOpen(false); e.stopPropagation(); } }}>
-        <div className="flex items-center justify-between px-4 pt-3 pb-1"><span className="text-[13px] font-bold">案件を選ぶ</span><button onClick={() => setCasePickerOpen(false)} className="px-2 py-1 text-[13px] rounded hover:bg-white/10">閉じる</button></div>
+        {/* 2026-10-01 AK「左のタブが使いづらい」: 案件の切替画面とメニューが同じ場所で入れ替わる作りをやめ、
+            案件一覧を常に出して、開いている案件の下に作業メニューをぶら下げる（Notion/Linearのページツリーと同じ考え方） */}
+        {(
+        <div id="mg-case-picker" className="flex-1 min-h-0 flex flex-col">
         {!chanLive && (<>
         <div className="px-3 pt-2.5 pb-1.5 flex gap-1.5 relative">
           <button onClick={() => setNewMenu((v) => !v)}
@@ -9201,7 +9194,7 @@ export default function App() {
           <div className="px-3 pb-2">
             <div className="relative">
               <Icon name="search" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-white/30 pointer-events-none" />
-              <input autoFocus ref={sidebarSearchRef} value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件名・チャンネル名で検索"
+              <input ref={sidebarSearchRef} value={caseQuery} onChange={(e) => setCaseQuery(e.target.value)} placeholder="案件名・チャンネル名で検索"
                 className="w-full bg-white/10 border border-white/10 text-[12.5px] placeholder-white/30 rounded-lg pl-8 pr-10 py-1.5 focus:outline-none focus:bg-white/15 focus:border-white/25"
                 style={{ color: mainText }} />
               <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-white/30 pointer-events-none">⌘K</span>
@@ -9236,6 +9229,23 @@ export default function App() {
             </div>
           ) : (() => {
             const q = caseQuery.trim().toLowerCase();
+            const caseTabs = (
+              <nav aria-label="この案件の作業メニュー" className="ml-6 mb-1.5 mt-0.5 border-l border-white/10 pl-1.5">
+                {tabItems.map(([key, icon, label]) => {
+                  const on = view === "editor" && tab === key;
+                  return (
+                    <button key={key} aria-current={on ? "page" : undefined}
+                      onClick={() => { setTab(key); setView("editor"); if (isNarrow) setSidebarOpen(false); }}
+                      className={"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-left transition-colors " + (on ? "font-bold bg-white/15" : "text-white/65 hover:bg-white/10 hover:text-white/90")}
+                      style={on ? { color: mainText } : {}}>
+                      <Icon name={icon} className="w-3.5 h-3.5 shrink-0" style={{ color: on ? theme.accent : undefined }} /><span className="truncate">{label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            );
+            // お気に入りに入っている案件はお気に入りの行の下に、それ以外はチャンネルの行の下に出す
+            const activeIsFav = favoriteCases.some((x) => x.id === activeId);
             /* チャンネル1件分のツリー（見出し＋案件＋ページ）。ステータス別セクションから使い回す */
             const renderChannelGroup = (channel, allItems) => {
               const items = q && !channel.toLowerCase().includes(q) ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
@@ -9279,7 +9289,7 @@ export default function App() {
                         onDragOver={(e) => { if (dragCaseId && dragCaseId !== p.id) { e.preventDefault(); e.stopPropagation(); setDragOverCaseId(p.id); } }}
                         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); reorderCaseByDrag(dragCaseId, p.id); setDragCaseId(null); setDragOverCaseId(null); }}
                         onDragEnd={() => { setDragCaseId(null); setDragOverCaseId(null); }}
-                        className={"group/p rounded-lg mb-0.5 ml-3 pl-2.5 pr-2 py-2 cursor-pointer transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
+                        className={"group/p rounded-md mb-0.5 ml-3 pl-2.5 pr-2 py-1.5 cursor-pointer transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
                         style={{
                           borderLeftColor: active ? theme.accent : "rgba(255,255,255,0.14)",
                           color: mainText,
@@ -9315,7 +9325,7 @@ export default function App() {
                               style={{ color: mainText }}
                             />
                           ) : (
-                            <span className={"flex-1 min-w-0 truncate text-[14px] inline-flex items-center gap-1 " + (active ? "font-semibold" : "font-medium opacity-80")}
+                            <span className={"flex-1 min-w-0 truncate text-[13.5px] inline-flex items-center gap-1 " + (active ? "font-semibold" : "font-medium opacity-80")}
                               onDoubleClick={(e) => { e.stopPropagation(); setRenamingId(p.id); }}>
                               {p.collab && <span title={p.role === "owner" ? "共同編集（あなたがオーナー）" : "共有された案件（" + (p.ownerEmail || "") + "）"} className="shrink-0 text-white/40"><Icon name="user" className="w-3 h-3" /></span>}
                               <span className="truncate">{p.name}</span>
@@ -9330,6 +9340,7 @@ export default function App() {
                           {/* 操作(名前変更・複製・移動・削除)は行の右クリック → caseMenu に集約 */}
                         </div>
                       </div>
+                      {active && !activeIsFav && caseTabs}
 
                       </div>
                     );
@@ -9338,11 +9349,13 @@ export default function App() {
               );
             };
             /* 完了は既定で畳む（2026-09-21 AK「完了した案件は非表示にできるように」）。見出しを押すと開閉、開閉は端末に覚える。検索中は畳まず一致を出す */
-            const isCollapsed = (key) => !q && (sectionCollapsed[key] === undefined ? key === "done" : !!sectionCollapsed[key]);
+            // 開いている案件が入っているセクションは畳まない（作業メニューがその下にぶら下がるため）
+            const activeSection = (channelGroups.find((g) => g.items.some((x) => x.id === activeId)) || {}).status;
+            const isCollapsed = (key) => !q && key !== activeSection && (sectionCollapsed[key] === undefined ? key === "done" : !!sectionCollapsed[key]);
             const renderSectionHeader = (key, label, count) => (
               <button type="button" aria-expanded={!isCollapsed(key)} title={isCollapsed(key) ? label + "を表示" : label + "を隠す"}
                 onClick={() => setSectionCollapsed((v) => ({ ...v, [key]: !isCollapsed(key) }))}
-                className="w-full flex items-center gap-2 px-2 pt-4 pb-2 text-[12px] text-white/60 font-semibold hover:text-white/80 text-left">
+                className="w-full flex items-center gap-2 px-2 pt-3 pb-1.5 text-[11.5px] text-white/50 font-semibold hover:text-white/80 text-left">
                 <span className="text-[10.5px] transition-transform" style={{ transform: isCollapsed(key) ? "rotate(-90deg)" : "none" }}>▾</span>
                 <span>{label}</span><span className="ml-auto">{count}</span>
               </button>
@@ -9358,15 +9371,16 @@ export default function App() {
                     {renderSectionHeader("favorites", "お気に入り", favoriteCases.length)}
                     {!isCollapsed("favorites") && favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
                       const active = p.id === activeId;
-                      return (
-                        <button key={p.id} onClick={() => switchProject(p.id)}
-                          className={"w-full text-left rounded-lg mb-0.5 pl-2.5 pr-2 py-2 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
+                      return (<React.Fragment key={p.id}>
+                        <button onClick={() => switchProject(p.id)}
+                          className={"w-full text-left rounded-md mb-0.5 pl-2.5 pr-2 py-1.5 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
                           style={{ borderLeftColor: active ? theme.accent : "transparent", color: mainText, ...(active ? { background: "rgba(255,255,255,0.12)" } : {}) }}>
                           <Icon name="star" className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
                           <span className={"flex-1 min-w-0 truncate text-[14px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{p.name}</span>
                           <span className="text-[11px] text-white/30 truncate max-w-[64px]">{p.channel || DEFAULT_CHANNEL}</span>
                         </button>
-                      );
+                        {active && caseTabs}
+                      </React.Fragment>);
                     })}
                   </div>
                 )}
@@ -9387,24 +9401,15 @@ export default function App() {
         </div>
         </div>
         )}
-        <nav aria-label="この案件の作業メニュー" className={"mg-scroll flex-1 min-h-0 overflow-y-auto px-3 pb-4 " + (casePickerOpen ? "invisible" : "")}>
-          {tabItems.map(([key, icon, label]) => (
-            <button key={key} aria-current={tab === key ? "page" : undefined}
-              onClick={() => { setTab(key); setView("editor"); if (isNarrow) setSidebarOpen(false); }}
-              className={"w-full flex items-center gap-3 px-3 py-3 mb-1 rounded-lg text-[14px] text-left border-l-2 transition-colors " + (tab === key ? "font-bold bg-white/15" : "text-white/70 hover:bg-white/10")}
-              style={{ borderLeftColor: tab === key ? theme.accent : "transparent" }}>
-              <Icon name={icon} className="w-4 h-4 shrink-0" style={{ color: tab === key ? theme.accent : undefined }} /><span>{label}</span>
-            </button>
-          ))}
-        </nav>
+
         <div className="px-2 pt-2 pb-1 border-t border-white/10">
           <button onClick={() => setShowLearn(true)} title="学習（工程ごとのマニュアル）"
-            className="w-full flex items-center gap-2 text-[13px] font-bold px-2.5 py-2 mb-1 rounded-lg text-left bg-white/10 hover:bg-white/15" style={{ color: mainText }}>
+            className="w-full flex items-center gap-2 text-[13px] font-medium px-2.5 py-1.5 rounded-md text-left text-white/70 hover:bg-white/10">
             <Icon name="book" className="w-4 h-4 shrink-0" />
             <span>学習</span>
           </button>
           <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断（あなたに合った制作の流れと作業予定）"
-            className="w-full flex items-center gap-2 text-[13px] font-bold px-2.5 py-2 rounded-lg text-left bg-white/10 hover:bg-white/15" style={{ color: mainText }}>
+            className="w-full flex items-center gap-2 text-[13px] font-medium px-2.5 py-1.5 rounded-md text-left text-white/70 hover:bg-white/10">
             <Icon name="sparkle" className="w-4 h-4 shrink-0" />
             <span>タイプ診断</span>
           </button>
