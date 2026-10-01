@@ -4225,6 +4225,7 @@ export default function App() {
   const [caseSearch, setCaseSearch] = useState("");        // 全案件横断検索クエリ
   const [searchHits, setSearchHits] = useState(null);      // null=閉, []=ヒットなし, [...]=結果
   const [selAssets, setSelAssets] = useState([]);          // 素材管理: 複数選択DL用の選択id配列
+  const [bulkDl, setBulkDl] = useState(null);              // 素材管理: フォルダへまとめて保存の進み具合 {i,n,name,pct,done,fail}
   const [dragCat, setDragCat] = useState(null);            // 素材管理: ドラッグ＆ドロップ中のカテゴリ
   const [renamingAsset, setRenamingAsset] = useState(null); // 素材管理: 名前変更中の素材id
 
@@ -7402,6 +7403,59 @@ export default function App() {
     const dl = (list || []).filter((a) => a && a.key && a.type !== "youtube");
     dl.forEach((a, i) => setTimeout(() => downloadAsset(a), i * 600)); // 連続DLブロック回避でずらす
     return dl.length;
+  };
+  // 2026-10-01 AK「DLが1回1回ボタン押さなきゃいけないのでめんどい」:
+  // 保存先フォルダを1回選ぶだけで、フォルダ(シーン)構造のまま1本ずつ元の名前で保存する（ZIPにしない）。Chrome/Edge のみ。
+  // 対応していないブラウザは従来の順次DLに落とす。
+  const downloadAssetsToFolder = async (list) => {
+    const dl = (list || []).filter((a) => a && a.key && a.type !== "youtube");
+    if (!dl.length) return;
+    if (bulkDl && !bulkDl.done) { showToast("いま保存中です。終わるまで待ってね"); return; }
+    if (!window.showDirectoryPicker) { const n = downloadAssets(dl); showToast(n + "件のダウンロードを開始（Chromeならフォルダごとまとめて保存できます）"); return; }
+    let root;
+    try { root = await window.showDirectoryPicker({ mode: "readwrite" }); } catch (e) { return; }
+    const safe = (t) => String(t || "").replace(/[\\/:*?"<>|]/g, "_").replace(/^\.+$/, "_").slice(0, 150) || "_";
+    const total = Math.max(1, dl.reduce((n, a) => n + (+a.size || 0), 0));
+    let got = 0; const fail = [];
+    const leave = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", leave);
+    try {
+      for (let i = 0; i < dl.length; i++) {
+        const a = dl[i]; const before = got;
+        setBulkDl({ i: i + 1, n: dl.length, name: a.name || "file", pct: Math.round(got / total * 100) });
+        try {
+          let dir = root;
+          for (const seg of String(a.folder || "").split("/").filter(Boolean)) dir = await dir.getDirectoryHandle(safe(seg), { create: true });
+          const fh = await dir.getFileHandle(safe(a.name || "file"), { create: true });
+          const w = await fh.createWritable();
+          try {
+            const r = await fetch(SHARE_API + "/api/file/" + a.key + "?dl=1");
+            if (!r.ok || !r.body) throw new Error("HTTP " + r.status);
+            const reader = r.body.getReader(); let last = -1;
+            for (;;) {
+              const { done, value } = await reader.read(); if (done) break;
+              await w.write(value); got += value.byteLength;
+              const pct = Math.round(got / total * 100);
+              if (pct !== last) { last = pct; setBulkDl({ i: i + 1, n: dl.length, name: a.name || "file", pct }); }
+            }
+            await w.close();
+          } catch (e) { try { await w.abort(); } catch (_) {} throw e; }
+        } catch (e) { fail.push(a.name || "file"); got = before + (+a.size || 0); }
+      }
+    } finally { window.removeEventListener("beforeunload", leave); }
+    setBulkDl({ done: true, n: dl.length, fail });
+    showToast(fail.length ? `${dl.length - fail.length}件保存・${fail.length}件失敗（失敗分は個別DLで）` : `${dl.length}件をフォルダごと保存しました`);
+  };
+  // 選んだ素材をフォルダ（シーン）に入れる。空欄でフォルダから出す
+  const putAssetsInFolder = (ids) => {
+    if (!ids.length) return;
+    const existing = Array.from(new Set((project.assets || []).map((a) => a.folder).filter(Boolean)));
+    const name = window.prompt("入れるフォルダの名前（新しい名前なら作ります。空欄でフォルダから出します）" + (existing.length ? "\n今あるフォルダ: " + existing.slice(0, 12).join(" / ") : ""), existing[0] || "");
+    if (name === null) return;
+    const folder = name.trim().replace(/[\\:*?"<>|]/g, "_").slice(0, 160);
+    setAssets((arr) => arr.map((x) => (ids.includes(x.id) ? { ...x, folder } : x)));
+    setSelAssets([]);
+    showToast(folder ? `${ids.length}件を「${folder}」に入れました` : `${ids.length}件をフォルダから出しました`);
   };
   const toggleSelAsset = (id) => setSelAssets((s) => s.includes(id) ? s.filter((x) => x !== id) : [...s, id]);
   // 編集者が共有リンクから上げた素材(file_up)を、この案件の素材管理に取り込む
@@ -11169,17 +11223,31 @@ export default function App() {
                   <Icon name="refresh" className="w-3.5 h-3.5" /> 編集者アップを取り込み
                 </button>
                 {(project.assets || []).some((a) => a.key && a.type !== "youtube") && (
-                  <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => a.key && a.type !== "youtube")); showToast(n + "件のダウンロードを開始"); }}
+                  <button onClick={() => downloadAssetsToFolder((project.assets || []).filter((a) => a.key && a.type !== "youtube"))} title="保存先フォルダを1回選ぶと、フォルダ構造のまま全部保存します"
                     className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
                     <Icon name="download" className="w-3.5 h-3.5" /> 全部DL
                   </button>
                 )}
                 {selAssets.length > 0 && (<>
-                  <button onClick={() => { const n = downloadAssets((project.assets || []).filter((a) => selAssets.includes(a.id))); showToast(n + "件のダウンロードを開始"); }}
+                  <button onClick={() => downloadAssetsToFolder((project.assets || []).filter((a) => selAssets.includes(a.id)))}
                     className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5" style={{ background: theme.main }}>
                     <Icon name="download" className="w-3.5 h-3.5" /> 選択をDL（{selAssets.length}）
                   </button>
+                  <button onClick={() => putAssetsInFolder(selAssets)} title="選んだ素材をフォルダ（シーン）にまとめる"
+                    className="text-[12px] font-bold px-3 py-1.5 rounded-lg border border-stone-300 bg-white text-stone-700 shadow-sm hover:bg-stone-50 inline-flex items-center gap-1.5">
+                    <Icon name="folder" className="w-3.5 h-3.5" /> フォルダに入れる
+                  </button>
                   <button onClick={() => setSelAssets([])} className="text-[12px] text-stone-500 hover:text-stone-600 underline">選択解除</button>
+                </>)}
+              </div>
+            )}
+            {bulkDl && (
+              <div className="mb-3 rounded-lg bg-white border border-stone-200 px-3 py-2">
+                {bulkDl.done ? (
+                  <div className="text-[12px] text-stone-600 flex items-center gap-2"><span className="flex-1">{bulkDl.fail && bulkDl.fail.length ? `保存 ${bulkDl.n - bulkDl.fail.length}件・失敗 ${bulkDl.fail.length}件：${bulkDl.fail.slice(0, 3).join("、")}` : `${bulkDl.n}件をフォルダごと保存しました`}</span><button onClick={() => setBulkDl(null)} className="text-stone-400 hover:text-stone-600"><Icon name="close" className="w-3.5 h-3.5" /></button></div>
+                ) : (<>
+                  <div className="text-[12px] text-stone-600 flex items-center gap-2"><span className="truncate flex-1">⬇ ({bulkDl.i}/{bulkDl.n}) {bulkDl.name}（このタブは閉じないでね）</span><span className="font-bold tabular-nums">{bulkDl.pct}%</span></div>
+                  <div className="mt-1 h-1.5 bg-stone-200 rounded overflow-hidden"><div className="h-full transition-all" style={{ width: bulkDl.pct + "%", background: theme.accent }} /></div>
                 </>)}
               </div>
             )}
@@ -11264,6 +11332,7 @@ export default function App() {
                                     <Icon name="folder" className="w-3.5 h-3.5 text-stone-500" />
                                     <span className="text-[12px] font-bold text-stone-600">{fname}</span>
                                     <span className="text-[11px] text-stone-500">{arr.length}</span>
+                                    {dlIds.length > 0 && <button onClick={(e) => { e.stopPropagation(); downloadAssetsToFolder(arr); }} title="このフォルダをまとめて保存" className="ml-auto text-[11px] font-bold px-2 py-0.5 rounded border border-stone-200 text-stone-600 hover:bg-stone-100 inline-flex items-center gap-1"><Icon name="download" className="w-3 h-3" />まとめてDL</button>}
                                   </div>
                                 ) : null}
                                 {!collapsed && <ul className="divide-y divide-stone-100">{arr.map(renderRow)}</ul>}
