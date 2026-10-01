@@ -26,6 +26,16 @@ const SECTION_TYPES = {
   "訴求":      { full: "訴求（2~3分）",         target: 180, color: "#348C53", bg: "#EAF8EE", borderColor: "#CBEBD5", dot: "#4CAF6B", card: "#F5FBF7" },
 };
 const TYPE_KEYS = Object.keys(SECTION_TYPES);
+/* 人物ごとの色分け（2026-09-25 AK「各人物のパートごとに色を変えたい・4色ぐらい」）。
+   シーン行 r.person / ロケ行 r.person に p1〜p4 を持つ。シーン未指定ならロケの色を継ぐ。名前は meta.personNames。
+   種別色（赤/黄/橙/青/緑）と被らない色相を選ぶ */
+const PERSON_COLORS = [
+  { key: "p1", color: "#8B5CF6", def: "人物A" },
+  { key: "p2", color: "#0E9AA7", def: "人物B" },
+  { key: "p3", color: "#DB4F8E", def: "人物C" },
+  { key: "p4", color: "#8A6A3B", def: "人物D" },
+];
+const personColorOf = (key) => { const p = PERSON_COLORS.find((x) => x.key === key); return p ? p.color : null; };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const newScene = (type = "解説系", label = "") => ({ id: uid(), kind: "scene", label, type, sec: null, tc: null, script: "" });
@@ -2444,7 +2454,7 @@ function QaEvidenceAutoSync({ projId, resolvedSig }) {
   return null;
 }
 
-function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare }) {
+function ReviewBoard({ versions, trashedVersions, comments, main, accent, accentText, busy, prog, onUploadVideo, onAddYouTube, onRemoveVersion, onRenameVersion, onRestoreVersion, onPost, onUpdate, onReply, onDelete, userName, onRefreshStream, shareId, shareToken, onEnsureShare, onUploadImage }) {
   trashedVersions = trashedVersions || [];
   const mono = '"IBM Plex Mono",ui-monospace,monospace';
   const [selId, setSelId] = React.useState(versions.length ? versions[versions.length - 1].id : null);
@@ -2467,6 +2477,10 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const [replyText, setReplyText] = React.useState({});
   const vref = React.useRef(null);
   const [rate, setRate] = React.useState(1);
+  // 動画スピーカーだけの音量（OS/システム音量には触れない＝<video>のvolumeプロパティとYT APIのsetVolumeで完結）
+  const [vol, setVol] = React.useState(() => { try { const v = parseFloat(localStorage.getItem("mg_review_vol")); return isFinite(v) && v >= 0 && v <= 1 ? v : 1; } catch (e) { return 1; } });
+  const [img, setImg] = React.useState(null);       // 修正コメントに添付する画像 { file, url }
+  const [imgBusy, setImgBusy] = React.useState(false);
   const [cur, setCur] = React.useState(0);
   const [dur, setDur] = React.useState(0);
   /* シーク/バッファ待ち中の表示。生mp4（軽量版なし）は移動に数秒かかるので「移動中」を出して固まって見えるのを防ぐ */
@@ -2571,11 +2585,19 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
       ytPlayerRef.current = new YT.Player(ytDivRef.current, {
         videoId: ytIdFromUrl(sel.url) || "",
         playerVars: { rel: 0, modestbranding: 1, iv_load_policy: 3, playsinline: 1 },
-        events: { onReady: () => { timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) { if (Date.now() > ytSeekGuard.current) setCur(p.getCurrentTime() || 0); if (p.getDuration) setDur(p.getDuration() || 0); } }, 200); } },
+        events: { onReady: () => { try { ytPlayerRef.current && ytPlayerRef.current.setVolume && ytPlayerRef.current.setVolume(Math.round(vol * 100)); } catch (e) {} timer = setInterval(() => { const p = ytPlayerRef.current; if (p && p.getCurrentTime) { if (Date.now() > ytSeekGuard.current) setCur(p.getCurrentTime() || 0); if (p.getDuration) setDur(p.getDuration() || 0); } }, 200); } },
       });
     });
     return () => { destroyed = true; if (timer) clearInterval(timer); try { ytPlayerRef.current && ytPlayerRef.current.destroy && ytPlayerRef.current.destroy(); } catch (e) {} ytPlayerRef.current = null; };
   }, [sel && sel.id, isYT]);
+  // 音量変更（動画側だけ。OS/システム音量は変えない）。localStorageに覚えて次回も同じ音量から始める
+  const applyVol = (v) => {
+    const cv = Math.max(0, Math.min(1, v));
+    setVol(cv);
+    try { localStorage.setItem("mg_review_vol", String(cv)); } catch (e) {}
+    if (isYT) { try { ytPlayerRef.current && ytPlayerRef.current.setVolume && ytPlayerRef.current.setVolume(Math.round(cv * 100)); } catch (e) {} }
+    else if (vref.current) vref.current.volume = cv;
+  };
   const getTime = () => isYT ? (ytPlayerRef.current && ytPlayerRef.current.getCurrentTime ? ytPlayerRef.current.getCurrentTime() : 0) : (vref.current ? vref.current.currentTime : 0);
   /* スマホ判定＋版履歴の折りたたみ（2026-08-24 AK「スマホで履歴表示がうざい→トグルで最小化」） */
   const [isNarrowRB, setIsNarrowRB] = React.useState(() => { try { return window.matchMedia("(max-width: 640px)").matches; } catch (e) { return false; } });
@@ -2637,7 +2659,20 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   }, [sel && sel.id, isYT, streamPending]);
   const filtered = verComments.filter((c) => filter === "全部" ? true : filter === "高優先度" ? c.priority === "高" : CMT_STATUSES.includes(filter) ? cstat(c) === filter : CMT_CATEGORIES.includes(filter) ? (c.category || "その他") === filter : true)
     .sort((a, b) => (a.timecode || 0) - (b.timecode || 0));
-  const submit = () => { const t = text.trim(); if (!t || !sel) return; onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応" }); setText(""); try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {} };
+  const submit = async () => {
+    const t = text.trim(); if ((!t && !img) || !sel) return;
+    let images = [];
+    if (img) {
+      setImgBusy(true);
+      try {
+        const meta = onUploadImage ? await onUploadImage(img.file) : null;
+        if (meta && meta.key) images = [{ key: meta.key, name: meta.name || "", mime: meta.mime || "" }];
+      } finally { setImgBusy(false); }
+    }
+    onPost({ versionId: sel.id, videoKey: vKey, timecode: streamPending ? null : getTime(), text: t, category: cat, priority: prio, status: "未対応", images });
+    setText(""); if (img && img.url) { try { URL.revokeObjectURL(img.url); } catch (e) {} } setImg(null);
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
+  };
   /* 理由チップを押した時点で登録。フォームを埋めさせない＝レビューの手が止まらない（share.html と同じ作法）。 */
   const postClip = (reason) => {
     if (!sel) return;
@@ -2751,7 +2786,7 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
       </div>
       <VersionTrashPanel items={trashedVersions} onRestore={onRestoreVersion} />
       </>)}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.8fr)_minmax(0,1fr)] gap-4">
         {/* 左：プレイヤー */}
         <div>
           <div className="relative rounded-xl overflow-hidden bg-black grid place-items-center" style={{ aspectRatio: "16/9" }}>
@@ -2763,8 +2798,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                 ? <div className="text-center text-white/80 px-4"><div className="text-[14px] font-bold mb-1">⚙️ 動画を準備中…{sel.pct ? " " + Math.round(sel.pct) + "%" : ""}</div><div className="text-[12px] opacity-70">アップロードか変換の完了待ちです。少し待ってから「🔄更新」を押してね。</div>
                     {onRefreshStream && <div className="mt-3"><button onClick={onRefreshStream} className="text-[12px] font-bold px-3 py-1 rounded bg-white/15 hover:bg-white/25">🔄 状況を更新</button></div>}</div>
                 : streamReadyHls
-                  ? <video key="hls" ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
-                  : <video key="raw" ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => setDur(e.target.duration || 0)} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
+                  ? <video key="hls" ref={vref} playsInline preload="auto" poster={pvThumbBase ? pvThumbBase + "?time=0s&height=720" : undefined} onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => { setDur(e.target.duration || 0); e.target.volume = vol; }} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />
+                  : <video key="raw" ref={vref} src={rawSrc} playsInline preload="auto" onClick={onVideoTap} style={{ touchAction: "manipulation" }} onTimeUpdate={(e) => setCur(e.target.currentTime)} onLoadedMetadata={(e) => { setDur(e.target.duration || 0); e.target.volume = vol; }} onDurationChange={(e) => setDur(e.target.duration || 0)} onSeeking={() => setSeeking(true)} onWaiting={() => setSeeking(true)} onSeeked={() => setSeeking(false)} onPlaying={() => setSeeking(false)} onCanPlay={() => setSeeking(false)} className="w-full h-full bg-black cursor-pointer" title="クリックで再生/停止" />}
             {/* 左右ダブルタップの±5秒インジケータ */}
             {skipFlash && (
               <div className={"absolute inset-y-0 grid place-items-center pointer-events-none " + (skipFlash.side === "l" ? "left-0 w-1/3" : "right-0 w-1/3")}>
@@ -2836,6 +2871,11 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               <span className="text-[12px] font-bold tabular-nums px-2 py-1 rounded" style={{ background: "#1C1C1E", color: "#fff", fontFamily: mono }}>{fmtTC(cur)}{isYT && dur ? " / " + fmtTC(dur) : ""}</span>
               <button onClick={togglePlay} title="再生/停止（Enter）" className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⏯</button>
               <button onClick={() => { const el = isYT ? (ytDivRef.current && ytDivRef.current.querySelector("iframe")) || ytDivRef.current : vref.current; if (el && el.requestFullscreen) el.requestFullscreen(); }} title="全画面" className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 hover:bg-stone-50">⛶</button>
+              {/* 動画の音量だけを下げる（OS全体の音量には触れない）。<video>のvolumeとYT APIのsetVolumeで完結 */}
+              <span className="flex items-center gap-1 px-1.5 py-1 rounded border border-stone-200">
+                <button onClick={() => applyVol(vol > 0 ? 0 : 1)} title={vol > 0 ? "ミュート" : "ミュート解除"} className="text-[12px] leading-none text-stone-600">{vol <= 0 ? "🔇" : vol < 0.5 ? "🔉" : "🔊"}</button>
+                <input type="range" min={0} max={1} step="0.01" value={vol} onChange={(e) => applyVol(+e.target.value)} title="動画の音量" className="w-16 h-2 cursor-pointer accent-current" style={{ color: accent }} />
+              </span>
               <span className="text-[11px] text-stone-500 ml-1 mr-0.5">速度</span>
               {rates.map((r) => (
                 <button key={r} onClick={() => applyRate(r)}
@@ -2860,9 +2900,24 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
               {!streamPending && <span className="text-[12px] font-bold tabular-nums px-2 py-0.5 rounded" style={{ background: accent, color: accentText, fontFamily: mono }}>{fmtTC(cur)} に</span>}
               <select value={cat} onChange={(e) => setCat(e.target.value)} className="text-[12px] border border-stone-200 rounded px-1.5 py-1">{CMT_CATEGORIES.map((c) => <option key={c}>{c}</option>)}</select>
               <select value={prio} onChange={(e) => setPrio(e.target.value)} className="text-[12px] border border-stone-200 rounded px-1.5 py-1">{CMT_PRIORITIES.map((p) => <option key={p}>優先:{p}</option>)}</select>
+              <label className="text-[12px] font-bold px-2 py-1 rounded border border-stone-200 text-stone-600 cursor-pointer hover:bg-stone-50 inline-flex items-center gap-1" title="画像を添付（スクショや参考画像）">
+                🖼 画像
+                <input type="file" accept="image/*" className="hidden" onChange={(e) => {
+                  const f = e.target.files && e.target.files[0]; if (!f) return;
+                  if (f.size > 12 * 1024 * 1024) { window.alert("画像は12MBまで"); e.target.value = ""; return; }
+                  if (img && img.url) { try { URL.revokeObjectURL(img.url); } catch (er) {} }
+                  setImg({ file: f, url: URL.createObjectURL(f) }); e.target.value = "";
+                }} />
+              </label>
             </div>
+            {img && (
+              <div className="mb-2 relative inline-block">
+                <img src={img.url} alt="" className="h-16 rounded-lg border border-stone-200 object-cover" />
+                <button onClick={() => { if (img.url) { try { URL.revokeObjectURL(img.url); } catch (e) {} } setImg(null); }} title="画像を外す" className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-stone-700 text-white text-[10px] leading-none flex items-center justify-center">×</button>
+              </div>
+            )}
             <textarea value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); submit(); } }} placeholder="修正内容を入力（⌘+Enterで送信）" className="w-full h-16 text-[13px] border border-stone-200 rounded-lg px-2.5 py-2 focus:outline-none focus:border-stone-400 resize-y" />
-            <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={!text.trim()} className="text-[12px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>修正を追加</button></div>
+            <div className="flex justify-end mt-1.5"><button onClick={submit} disabled={(!text.trim() && !img) || imgBusy} className="text-[12px] font-bold px-4 py-1.5 rounded-lg shadow disabled:opacity-40 text-white" style={{ background: main }}>{imgBusy ? "画像アップ中…" : "修正を追加"}</button></div>
           </div>
           )}
           {/* 切り抜き候補（取れ高マーク）。区間ではなく「点」だけ取る＝尺の前後はたてがた君側に探させる */}
@@ -2937,6 +2992,15 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
                     <select value={st} onChange={(e) => onUpdate(c.id, { status: e.target.value })} className="text-[11px] font-bold border-0 rounded px-1.5 py-0.5 ml-auto" style={{ background: CMT_STATUS_COLOR[st].bg, color: CMT_STATUS_COLOR[st].fg }}>{CMT_STATUSES.map((s) => <option key={s}>{s}</option>)}</select>
                   </div>
                   <div className="text-[13px] text-stone-800 leading-snug whitespace-pre-wrap">{c.text}</div>
+                  {Array.isArray(c.images) && c.images.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      {c.images.map((im, ii) => (
+                        <a key={ii} href={SHARE_API + "/api/file/" + im.key} target="_blank" rel="noreferrer" title="クリックで原寸表示">
+                          <img src={SHARE_API + "/api/file/" + im.key} alt="" className="h-16 w-16 object-cover rounded-lg border border-stone-200 hover:opacity-80" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
                   <div className="text-[11px] text-stone-500 mt-1 flex items-center gap-2"><span>{c.author || "ゲスト"}</span>{c.createdAt && <span>{String(c.createdAt).slice(5, 16).replace("T", " ")}</span>}<button onClick={() => { if (window.confirm("この修正を削除？")) onDelete(c.id); }} className="ml-auto hover:text-rose-500">削除</button></div>
                   {/* 返信スレッド */}
                   {(c.replies || []).length > 0 && (
@@ -4301,6 +4365,14 @@ export default function App() {
   const [tab, setTab] = useState(() => { try { return localStorage.getItem("mg:tab") || "overview"; } catch (_) { return "overview"; } }); // overview | plan | script | kouban | assets | review | deliver | concept
   // タブ切替時にmainへ入場フェードを付け直す（remountなし＝状態・スクロール副作用ゼロ）
   const mainRef = useRef(null);
+  // 表示の大きさ（2026-09-25 AK「プラス/マイナスで大きく小さく」）。本文(main)だけ拡大縮小、ヘッダー・サイドバーは据え置き。端末ごとに保存
+  const ZOOM_STEPS = [0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.4, 1.5];
+  const [uiZoom, setUiZoom] = useState(() => { try { const v = parseFloat(localStorage.getItem("mg:uiZoom")); return ZOOM_STEPS.includes(v) ? v : 1; } catch (_) { return 1; } });
+  const stepZoom = (dir) => setUiZoom((z) => {
+    const i = ZOOM_STEPS.indexOf(z); const next = dir === 0 ? 1 : ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, (i < 0 ? 2 : i) + dir))];
+    try { localStorage.setItem("mg:uiZoom", String(next)); } catch (_) {}
+    return next;
+  });
   useEffect(() => {
     const el = mainRef.current; if (!el) return;
     el.classList.remove("mg-tab-in");
@@ -5716,7 +5788,7 @@ export default function App() {
       const data = { ...project, name: project.name || d.project.name || project.name, channel: project.channel || d.project.channel || project.channel, meta, rows: parsed.rows };
       setProject(data);
       try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (e) {}
-      showToast("骨組みを作ったよ（" + parsed.rows.filter((r) => r.kind === "scene").length + "シーン）。マインドマップで確認してね");
+      showToast("骨組みを作ったよ（" + parsed.rows.filter((r) => r.kind === "scene").length + "シーン）。構成台本タブで確認してね");
     } catch (e) {
       showToast("骨組み生成に失敗：" + (e.message || e));
     } finally { setTranscriptBusy(false); setTranscriptStep(null); }
@@ -8201,6 +8273,12 @@ export default function App() {
   };
 
   /* ===== 修正管理：コメント投稿（属性付き）／状態変更／返信／削除 ===== */
+  // 修正コメントに添付する画像。既存のR2アップロード(uploadToR2)をそのまま流用して/api/file/{key}で配信する
+  const uploadReviewImage = async (file) => {
+    const sh = await ensureShare(); if (!sh) { showToast("先に確認用URLを発行してね"); return null; }
+    try { return await uploadToR2(file, "", null, sh.id, sh.token); }
+    catch (e) { showToast("画像のアップロードに失敗：" + (e.message || e)); return null; }
+  };
   const postReviewComment = async (body) => {
     const snap = project && project.shareId, token = project && project.shareToken;
     if (!snap) { showToast("先に確認用URLを発行してね"); return false; }
@@ -8497,6 +8575,12 @@ export default function App() {
   const setTheme = (key, val) => setProject((p) => ({ ...p, theme: { ...p.theme, [key]: val } }));
   const setRows = (fn) => setProject((p) => ({ ...p, rows: typeof fn === "function" ? fn(p.rows) : fn }));
   const updateRow = (id, patch) => setRows((rows) => rows.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+  // 人物色：key=null で解除。ロケに付けた色は、色を持たない配下シーンに効く
+  const setPersonFor = (ids, key) => { const set = new Set(ids); setRows((rows) => rows.map((x) => (set.has(x.id) ? { ...x, person: key || null } : x))); };
+  const personNames = (project && project.meta && project.meta.personNames) || {};
+  const personLabel = (key) => { const p = PERSON_COLORS.find((x) => x.key === key); return p ? ((personNames[key] || "").trim() || p.def) : ""; };
+  const personOfRow = {};
+  { let locP = null; ((project && project.rows) || []).forEach((r) => { if (r.kind === "location") { locP = r.person || null; personOfRow[r.id] = locP; } else personOfRow[r.id] = r.person || locP; }); }
   const deleteRow = (id) => setRows((rows) => rows.filter((x) => x.id !== id));
   const moveRow = (idx, dir) => setRows((rows) => {
     const j = idx + dir;
@@ -9730,6 +9814,14 @@ export default function App() {
             <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: theme.accent }}></span>
           </span>
           {/* 規定一覧・マニュアルのボタンは撤去（2026-09-26 AK「AIに質問があるのでいらない」）。レギュレーション一覧は左の作業メニューから開ける */}
+          <div className="hidden sm:inline-flex items-center h-8 rounded-lg border border-white/20 overflow-hidden shrink-0" style={{ color: mainText }}>
+            <button onClick={() => stepZoom(-1)} disabled={uiZoom <= ZOOM_STEPS[0]} title="表示を小さく"
+              className="w-8 h-full grid place-items-center text-[16px] font-bold hover:bg-white/10 disabled:opacity-30">−</button>
+            <button onClick={() => stepZoom(0)} title="表示の大きさを100%に戻す"
+              className="h-full px-1.5 text-[12px] font-bold tabular-nums hover:bg-white/10 border-x border-white/20 min-w-[48px]">{Math.round(uiZoom * 100)}%</button>
+            <button onClick={() => stepZoom(1)} disabled={uiZoom >= ZOOM_STEPS[ZOOM_STEPS.length - 1]} title="表示を大きく"
+              className="w-8 h-full grid place-items-center text-[16px] font-bold hover:bg-white/10 disabled:opacity-30">＋</button>
+          </div>
           {/* 先方コメント */}
           {project.shareId && (
             <button onClick={() => { setShowComments(true); fetchComments(); }} title="先方コメント"
@@ -9933,7 +10025,7 @@ export default function App() {
           </div>
         </aside>
       )}
-      <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5">
+      <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5" style={uiZoom !== 1 ? { zoom: uiZoom } : undefined}>
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
         {sched && (
@@ -10407,14 +10499,22 @@ export default function App() {
             </section>
             </>)}
 
-            {/* 台本編集／マインドマップの表示切替（Phase3） */}
-            <div className="flex justify-end items-center gap-2 -mt-2 -mb-1">
-              <button onClick={() => setScriptView((v) => v === "mindmap" ? "table" : "mindmap")}
-                title={scriptView === "mindmap" ? "台本の編集画面に戻す" : "マインドマップで見る"}
-                className={"text-[12px] font-bold px-2.5 py-1 rounded-lg border transition-colors " + (scriptView === "mindmap" ? "text-white border-transparent" : "border-stone-200 text-stone-600 hover:bg-stone-50")}
-                style={scriptView === "mindmap" ? { background: theme.main } : {}}>
-                {scriptView === "mindmap" ? "◂ 台本に戻る" : "マインドマップで見る"}
-              </button>
+            {/* マインドマップの切替ボタンは廃止（2026-09-25 AK指示）。代わりに人物色の凡例（名前はここで編集） */}
+            <div className="flex justify-end items-center gap-x-2 gap-y-1.5 -mt-1 mb-3 flex-wrap">
+              <div className="flex items-center gap-1.5 mr-auto flex-wrap" title="人物ごとの色。行を右クリック（または複数選択）で色を付けます。ロケに付けると配下のシーンすべてに効きます">
+                <span className="text-[11.5px] text-stone-500 mr-0.5">人物の色</span>
+                {PERSON_COLORS.map((pc) => (
+                  <span key={pc.key} className="inline-flex items-center gap-1 h-[24px] pl-2 pr-1 rounded-full border" style={{ borderColor: hexA(pc.color, 0.35), background: hexA(pc.color, 0.08) }}>
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: pc.color }} />
+                    <BufferedInput
+                      value={personNames[pc.key] || ""}
+                      onChange={(v) => setMeta("personNames", { ...personNames, [pc.key]: v })}
+                      placeholder={pc.def}
+                      className="bg-transparent text-[12px] font-semibold leading-none focus:outline-none placeholder:text-stone-400"
+                      style={{ color: pc.color, width: "calc(" + Math.min(10, Math.max(2, ((personNames[pc.key] || "").trim() || pc.def).length)) + "em + 6px)" }} />
+                  </span>
+                ))}
+              </div>
               {/* 構成テーブル（PC：横並びテーブル）。overflow-clip＝角丸クリップは維持しつつ
                   スクロールコンテナ化しない→theadのstickyが効く（列名がスクロールで消えない） */}
               {/* 見せ方の切替（PCのみ）。スマホは上下積み固定なので出さない */}
@@ -10434,17 +10534,7 @@ export default function App() {
                 </button>
               )}
             </div>
-            {scriptView === "mindmap" ? (
-              <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden p-3 sm:p-4">
-                {(() => {
-                  const mm = buildMindmapSections(project.rows, spineFw, project.rate || 5, project.mindmapNotes);
-                  const posPrefix = spineFw + ":";
-                  const posMap = {}; Object.keys(project.mindmapPos || {}).forEach((k) => { if (k.startsWith(posPrefix)) posMap[k.slice(posPrefix.length)] = project.mindmapPos[k]; });
-                  const widthMap = {}; Object.keys(project.mindmapWidth || {}).forEach((k) => { if (k.startsWith(posPrefix)) widthMap[k.slice(posPrefix.length)] = project.mindmapWidth[k]; });
-                  return <MindmapView height="calc(100vh - 190px)" deliverableTitle={project.name} totalEstSec={mm.totalEstSec} totalScenes={mm.totalScenes} sections={mm.sections} onNodeClick={jumpToRow} onNoteChange={setMindmapNote} onAddScene={addSceneFromMindmap} onRenameScene={renameSceneLabel} onAddSceneAfter={addSceneAfter} onEditQuestion={patchQuestion} onEditAnswer={patchAnswer} posMap={posMap} onPosChange={setMindmapPos} onClearPos={clearMindmapPos} widthMap={widthMap} onWidthChange={setMindmapWidth} onUndo={mmUndo} onRedo={mmRedo} onDeleteScene={deleteSceneFromMindmap} onDeleteQuestion={deleteQuestionFromMindmap} onAddQuestion={addQuestionToScene} />;
-                })()}
-              </section>
-            ) : (<>
+            {(<>
 
             {!stacked && (
             <section className="bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-clip">
@@ -10462,7 +10552,7 @@ export default function App() {
                   <tr style={{ background: theme.main, color: mainText }}>
                     {["時間", "内容", "シーン", "秒数", "所要時間", "原稿"].map((h, i) => (
                       <th key={i} className="sticky z-[5] px-3 py-2 text-left text-[11px] font-bold tracking-wide whitespace-nowrap"
-                        style={{ top: headerH, background: theme.main }}>
+                        style={{ top: headerH / uiZoom, background: theme.main }}>
                         <span style={{ opacity: 0.9 }}>{h}</span>
                       </th>
                     ))}
@@ -10496,6 +10586,9 @@ export default function App() {
                                 className="flex-1 min-w-0 self-center block bg-transparent text-[14px] leading-snug font-bold tracking-[0.08em] px-3 py-2 focus:outline-none"
                                 style={{ color: mainText, textDecoration: r.done ? "line-through" : "none" }}
                               />
+                              {r.person && personColorOf(r.person) && (
+                                <span className="shrink-0 self-center mr-2 inline-flex items-center gap-1 h-[20px] px-2 rounded-full text-[11.5px] font-bold" style={{ background: personColorOf(r.person), color: "#fff" }} title="このロケのシーンの人物色">{personLabel(r.person)}</span>
+                              )}
                               {dayPickerEl(r, true)}
                               <input
                                 type="time"
@@ -10539,17 +10632,18 @@ export default function App() {
                     const locDone = sceneLocDone[r.id];
                     if (locDone) return null; // 所属ロケが撮影完了 → 畳んで非表示
                     const sceneDone = !!r.done;
+                    const pColor = personColorOf(personOfRow[r.id]);
                     return (
                       <tr key={r.id} id={"row-" + r.id}
                         {...dropZoneProps(idx)}
                         onContextMenu={(e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: e.clientX, y: e.clientY }); }}
                         className="border-b border-stone-100 transition-colors"
                         style={{
-                          ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : { background: t.color + "0e" }), // シーン種別ごとに極薄トーンで色分け（見分けやすく）
+                          ...(sceneDone ? { background: "#F5F5F4", opacity: 0.55 } : { background: pColor ? hexA(pColor, 0.07) : t.color + "0e" }), // 人物色があればそれ、無ければシーン種別ごとの極薄トーン
                           ...(dragOverIndex === idx && dragIds && !dragIds.includes(r.id) ? { boxShadow: "inset 0 3px 0 0 " + theme.accent } : {}),
                           ...(flashId === r.id ? { boxShadow: "inset 0 0 0 3px " + theme.accent } : {}),
                         }}>
-                        <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: "3px solid " + t.color }}>
+                        <td className="align-top pt-2 pl-1.5 pr-1" style={{ borderLeft: pColor ? "6px solid " + pColor : "3px solid " + t.color }} title={pColor ? "人物：" + personLabel(personOfRow[r.id]) : undefined}>
                           <div className="flex flex-col items-center gap-1">
                             <button
                               onClick={(e) => { e.stopPropagation(); updateRow(r.id, { done: !r.done }); }}
@@ -10827,7 +10921,7 @@ export default function App() {
                   ...dropZoneProps(idx),
                   onContextMenu: (e) => { e.preventDefault(); setRowMenu({ id: r.id, idx, kind: "scene", sceneType: r.type, x: e.clientX, y: e.clientY }); },
                   className: "group relative transition-colors hover:bg-[#FCFCFD] scroll-mt-24" + (last ? "" : " border-b"),
-                  style: { borderColor: BORDER, ...(sceneDone ? { opacity: 0.5 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) },
+                  style: { borderColor: BORDER, ...(personColorOf(personOfRow[r.id]) ? { boxShadow: "inset 5px 0 0 0 " + personColorOf(personOfRow[r.id]), background: hexA(personColorOf(personOfRow[r.id]), 0.05) } : {}), ...(sceneDone ? { opacity: 0.5 } : {}), ...(isDragOver ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}), ...(flashId === r.id ? { boxShadow: "inset 0 0 0 2px " + theme.accent } : {}) },
                 };
                 if (isNarrow) {
                   return (
@@ -11714,7 +11808,7 @@ export default function App() {
               shareId={project.shareId} shareToken={project.shareToken} onEnsureShare={ensureShare}
               onUploadVideo={(f) => uploadVersionVideo(f)} onAddYouTube={(u) => addVersionYouTube(u)}
               onRemoveVersion={(id) => removeVersion(id)} onRenameVersion={(id, n) => renameVersion(id, n)} onRestoreVersion={(id) => restoreVersion(id)}
-              onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} />
+              onPost={(b) => postReviewComment(b)} onUpdate={(cid, p) => updateComment(cid, p)} onReply={(cid, t) => addCommentReply(cid, t)} onDelete={(cid) => deleteComment(cid)} onRefreshStream={() => resumeStreamPolls(true)} onUploadImage={(f) => uploadReviewImage(f)} />
             <QaEvidenceAutoSync projId={project.id} resolvedSig={comments.filter((c) => c && c.status === "完了").map((c) => c.id).sort().join(",")} />
           </div>
           );
@@ -13942,10 +14036,24 @@ export default function App() {
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setRowMenu(null)} onContextMenu={(e) => { e.preventDefault(); setRowMenu(null); }} />
           <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
-            style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 200) }}>
+            style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 290) }}>
             <div className="flex border-b border-stone-100">
               <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
               <button onClick={() => { moveRow(rowMenu.idx, 1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
+            </div>
+            <div className="px-3 py-2 border-b border-stone-100">
+              <div className="text-[11px] text-stone-500 mb-1.5">{rowMenu.kind === "location" ? "人物の色（このロケ全体）" : "人物の色"}</div>
+              <div className="flex items-center gap-1.5">
+                {PERSON_COLORS.map((pc) => {
+                  const cur = ((project.rows || []).find((x) => x.id === rowMenu.id) || {}).person;
+                  return (
+                    <button key={pc.key} onClick={() => { setPersonFor([rowMenu.id], pc.key); setRowMenu(null); }} title={personLabel(pc.key)}
+                      className="w-6 h-6 rounded-full grid place-items-center hover:scale-110 transition-transform" style={{ background: pc.color, boxShadow: cur === pc.key ? "0 0 0 2px #fff, 0 0 0 4px " + pc.color : "none" }} />
+                  );
+                })}
+                <button onClick={() => { setPersonFor([rowMenu.id], null); setRowMenu(null); }} title="色を外す"
+                  className="ml-1 text-[11.5px] text-stone-500 hover:text-stone-800 px-1.5 py-0.5 rounded hover:bg-stone-100">なし</button>
+              </div>
             </div>
             <button onClick={() => { const idx = rowMenu.idx, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(rowMenu.kind === "location" ? "解説系" : (sceneType || "解説系"))); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-500" />下にシーンを追加</button>
             <button onClick={() => { const idx = rowMenu.idx; setRowMenu(null); insertBelow(idx, newLocation("")); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="folder" className="w-3.5 h-3.5 text-stone-500" />下にロケ（セクション）を追加</button>
@@ -14573,6 +14681,13 @@ export default function App() {
           style={{ background: theme.main, color: mainText }}>
           <span className="text-[13px] font-bold mr-1">{selectedIds.length}件 選択中</span>
           <span className="text-[12px] opacity-70 mr-2 hidden sm:inline">左の番号をドラッグでまとめて移動</span>
+          <span className="inline-flex items-center gap-1 mx-1" title="選択した行に人物の色を付ける">
+            {PERSON_COLORS.map((pc) => (
+              <button key={pc.key} onClick={() => setPersonFor(selectedIds, pc.key)} title={personLabel(pc.key)}
+                className="w-5 h-5 rounded-full border-2 border-white/70 hover:scale-110 transition-transform" style={{ background: pc.color }} />
+            ))}
+            <button onClick={() => setPersonFor(selectedIds, null)} title="色を外す" className="text-[11px] px-1.5 py-0.5 rounded-full bg-white/15 hover:bg-white/25">色なし</button>
+          </span>
           <button onClick={copySelectedScripts}
             className="text-[12px] font-bold px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 inline-flex items-center gap-1">⧉ 原稿をコピー</button>
           <button onClick={downloadSelectedScripts} title="選択した原稿を.txtで保存（Claudeにファイルとしてドラッグ＝空にならない）"
