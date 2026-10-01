@@ -1698,7 +1698,12 @@ function curTime(){ if(videoEl) return videoEl.currentTime||0; if(ytPlayer&&ytPl
 function seekTo(sec){ sec=+sec||0; if(videoEl){ videoEl.currentTime=sec; } else if(ytPlayer&&ytPlayer.seekTo){ ytPlayer.seekTo(sec,true); } }
 function videoTimed(){
   const multi = videoOptions(SNAP.project).length > 1;
-  return COMMENTS.filter(c=> typeof c.timecode==="number" && (!multi || (c.videoKey||"")===(VSEL||""))).sort((a,b)=>a.timecode-b.timecode);
+  // 同じ動画ファイル(key)が複数の版に二重登録されていても、コメントは共通で見せる（2026-10-01 青木さん v1/v2）
+  const vers=(SNAP.project.review&&Array.isArray(SNAP.project.review.versions))?SNAP.project.review.versions:[];
+  const cur=vers.find(v=>(v.uid||v.key||v.url)===VSEL);
+  const ids=new Set([VSEL||""]);
+  if(cur&&cur.key) vers.filter(v=>v.key===cur.key).forEach(v=>[v.uid,v.key,v.url,v.id].filter(Boolean).forEach(x=>ids.add(x)));
+  return COMMENTS.filter(c=> typeof c.timecode==="number" && (!multi || ids.has(c.videoKey||""))).sort((a,b)=>a.timecode-b.timecode);
 }
 function videoComments(){ return videoTimed().filter(c=> (c.category||"")!==CLIP_CAT); }
 function clipComments(){ return videoTimed().filter(c=> (c.category||"")===CLIP_CAT); }

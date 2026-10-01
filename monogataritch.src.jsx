@@ -2485,7 +2485,12 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
   const sel = versions.find((v) => v.id === selId) || versions[versions.length - 1] || null;
   const vKey = sel ? (sel.uid || sel.key || sel.url || "") : "";
   const fmtTC = (s) => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60), sec = Math.floor(s % 60), cs = Math.floor((s * 100) % 100); return m + ":" + String(sec).padStart(2, "0") + "." + String(cs).padStart(2, "0"); };
-  const belongs = (c) => sel && (c.versionId === sel.id || (c.videoKey || "") === vKey || (sel.uid && c.videoKey === sel.uid) || (sel.key && c.videoKey === sel.key));
+  // 2026-10-01 青木さん：同じ動画ファイル(key)が v1/v2 に二重登録され、v1に付いた先方コメントが v2 で見えなかった。
+  // 同じファイルの版どうしはコメントを共通で見せる（版のID・変換ID(uid)・keyのどれで付いていても拾う）。
+  const sameFile = sel ? versions.filter((v) => v.id === sel.id || (sel.key && v.key === sel.key)) : [];
+  const fileIds = new Set(sameFile.flatMap((v) => [v.id, v.uid, v.key, v.url].filter(Boolean)));
+  const belongs = (c) => sel && (c.versionId === sel.id || (c.videoKey || "") === vKey || (sel.uid && c.videoKey === sel.uid) || (sel.key && c.videoKey === sel.key)
+    || (c.versionId && fileIds.has(c.versionId)) || (c.videoKey && fileIds.has(c.videoKey)));
   const verAll = comments.filter(belongs);
   /* 切り抜き候補は修正依頼と混ぜない。ステータス集計・フィルタ・件数は全部「修正レーン」だけを見る。 */
   const verComments = verAll.filter((c) => !isClip(c));
@@ -2697,7 +2702,8 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           const latestId = versions.length ? versions[versions.length - 1].id : null;
           const shown = showOldVers ? versions : versions.filter((v) => v.id === latestId || v.id === sel.id);
           const hidden = versions.filter((v) => !shown.some((x) => x.id === v.id));
-          const openOf = (vv) => comments.filter((c) => !isClip(c) && (c.versionId === vv.id || (c.videoKey || "") === (vv.key || vv.url || "")) && cstat(c) !== "完了").length;
+          const openOf = (vv) => { const ids = new Set(versions.filter((x) => x.id === vv.id || (vv.key && x.key === vv.key)).flatMap((x) => [x.id, x.uid, x.key, x.url].filter(Boolean)));
+            return comments.filter((c) => !isClip(c) && (ids.has(c.versionId) || ids.has(c.videoKey || "")) && cstat(c) !== "完了").length; };
           const hiddenOpen = hidden.reduce((n, vv) => n + openOf(vv), 0);
           return (<React.Fragment>
             {hidden.length > 0 && (
@@ -7467,6 +7473,14 @@ export default function App() {
     catch (e) { if (!silent) showToast("取り込み失敗：" + (e.message || e)); return; }
     const have0 = new Set((project.assets || []).map((a) => a.key).filter(Boolean));
     const haveVer = new Set(reviewVersions().map((v) => v.key).filter(Boolean));
+    // 完成動画はサーバー側でも自動で版になる（autoRegisterReviewVersion）。アプリの版一覧がまだ回収前でも、
+    // 共有側に同じファイルの版があれば取り込まない（2026-10-01 青木さん v1/v2 二重登録の根本対策）
+    if (ups.some((u) => u && u.role === "review")) {
+      try {
+        const sn = await fetch(SHARE_API + "/api/snap/" + project.shareId + "?token=" + encodeURIComponent(project.shareToken || "")).then((r) => r.json());
+        for (const v of ((((sn && sn.project) || {}).review || {}).versions || [])) if (v && v.key) haveVer.add(v.key);
+      } catch (e) {}
+    }
     // 重複判定は役割ごとに分ける：完成動画(role:review)の再取り込みをブロックしていいのは
     // 「動画確認のバージョン一覧（ゴミ箱含む＝意図的削除の尊重）」だけ。
     // 素材管理のミラー(have0)まで見ると、バージョン側だけ消えた時に編集者の新版が永久に入らなくなる（2026-07-07 近川さん）
@@ -7989,6 +8003,8 @@ export default function App() {
   const addVersionFromVideo = async (targetId, vobj, name) => {
     const buildNext = (p) => {
       const rv = (p.review && p.review.versions) || [];
+      // 同じ動画ファイル(key)の版がもうあれば二重に足さない（取り込みと回収が同時に走った時の二重登録防止・2026-10-01）
+      if (vobj.key && rv.some((v) => v.key === vobj.key)) return p;
       // 採番は「配列長+1」だと削除や競合でv3が2個できる（2026-07-07 近川さんで実発生）→既存最大番号+1
       const maxN = rv.reduce((mx, v) => { const m = /^v(\d+)$/.exec(v.label || ""); return m ? Math.max(mx, +m[1]) : mx; }, 0);
       const label = "v" + (maxN + 1);
