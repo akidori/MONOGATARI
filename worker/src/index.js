@@ -3223,7 +3223,7 @@ function slim(p) {
         : { id: r.id, kind: "scene", label: r.label || "", type: r.type, sec: r.sec ?? null, tc: r.tc ?? null, script: r.script || "", person: /^p[1-4]$/.test(r.person || "") ? r.person : "" }
     ),
     plans: (p.plans || []).map((pl) => ({
-      id: pl.id, title: pl.title || "", thumbText: pl.thumbText || "", thumbText2: pl.thumbText2 || "", note: pl.note || "",
+      id: pl.id, title: pl.title || "", title2: pl.title2 || "", thumbText: pl.thumbText || "", thumbText2: pl.thumbText2 || "", note: pl.note || "",
       // 自作サムネ（dataURL・最大5枚）。ここに無いと share.html の番組情報/企画タブにサムネ画像が一切出ない
       thumbImages: Array.isArray(pl.thumbImages)
         ? pl.thumbImages.filter((s) => typeof s === "string" && s.startsWith("data:image/") && s.length <= 1200000).slice(0, 5)

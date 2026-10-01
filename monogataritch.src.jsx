@@ -464,7 +464,7 @@ const migrateProject = (p) => {
 
 /* ===== 企画・サムネ：YouTube参考動画まわりのヘルパー ===== */
 const emptyRef = () => ({ url: "", vid: "", title: "", channel: "", views: 0, subs: 0, likes: 0, uploadDate: "", duration: "" });
-const newPlan = () => ({ id: uid(), title: "", thumbText: "", thumbText2: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], thumbImages: [], video: null, files: [], shareId: null, shareToken: null });
+const newPlan = () => ({ id: uid(), title: "", title2: "", thumbText: "", thumbText2: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], thumbImages: [], video: null, files: [], shareId: null, shareToken: null });
 const ytIdFromUrl = (url) => { const m = (url || "").match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/); return m ? m[1] : ((url || "").trim().match(/^[a-zA-Z0-9_-]{11}$/) ? url.trim() : null); };
 const parseDur = (iso) => { const m = (iso || "").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if (!m) return ""; const h = +(m[1] || 0), mi = +(m[2] || 0), s = +(m[3] || 0); return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(s).padStart(2, "0"); };
 const fmtNum = (n) => { n = Number(n) || 0; if (n >= 1e8) return (n / 1e8).toFixed(1) + "億"; if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + "万"; return n.toLocaleString(); };
@@ -524,7 +524,7 @@ const metaTitlesFromPlans = (plans) => {
   const ps = plans || [];
   const slot = (i, f) => (ps[i] && ps[i][f]) || "";
   return {
-    titles: [slot(0, "title"), slot(1, "title"), slot(2, "title")],
+    titles: [[slot(0, "title"), slot(0, "title2")].filter((t) => t.trim()).join("\n"), slot(1, "title"), slot(2, "title")],
     thumbs: [slot(0, "thumbText"), slot(1, "thumbText"), slot(2, "thumbText")],
     thumbs2: [slot(0, "thumbText2"), slot(1, "thumbText2"), slot(2, "thumbText2")],
   };
@@ -5598,6 +5598,9 @@ export default function App() {
       const patch = { deliverChapters: chapters, deliverTitle: d.title || "", deliverTitle2: d.title2 || "", deliverDescription: d.description || "", deliverHashtags: d.hashtags || "" };
       if (transcript && (d.chapters || "").trim()) { patch.deliverChapters = d.chapters.trim(); patch.deliverChaptersTranscriptAt = transcriptUpdatedAt || Date.now(); }
       // 固定済みは除外（deliverTitle2はタイトルの固定に含まれる／TranscriptAtは目次に付随）
+      // タイトルは構成台本の案1/案2を写すのが正（2026-10-01 AK）。AI案は空欄の時だけ入れる＝既存タイトルを黙って書き換えない
+      if (((project.meta || {}).deliverTitle || "").trim()) delete patch.deliverTitle;
+      if (((project.meta || {}).deliverTitle2 || "").trim()) delete patch.deliverTitle2;
       const lockKeyOf = (k) => k === "deliverTitle2" ? "deliverTitle" : k === "deliverChaptersTranscriptAt" ? "deliverChapters" : k;
       const skipped = Object.keys(patch).filter((k) => lockedNow(lockKeyOf(k)));
       skipped.forEach((k) => { delete patch[k]; });
@@ -5703,17 +5706,32 @@ export default function App() {
   }, [tab, activeId, project && project.review && (project.review.versions || []).length]);
   /* 納品完了タブのタイトル＝構成台本（企画・サムネのタイトル案①＝plans[0].title）と連動。
      手入力で差し替えたら追従を止める（動画URLの自動追従と同じ「まだ自動か」判定パターン）。 */
-  const lastSyncedDeliverTitleRef = useRef(null);
+  const lastSyncedDeliverTitleRef = useRef({});
   useEffect(() => {
     if (tab !== "deliver" || !project) return;
-    const planTitle = ((project.plans && project.plans[0] && project.plans[0].title) || "").trim();
-    const curTitle = ((project.meta || {}).deliverTitle || "").trim();
-    if (!planTitle) return;
-    if (!curTitle || curTitle === lastSyncedDeliverTitleRef.current) {
-      if (curTitle !== planTitle) setMeta("deliverTitle", planTitle);
-      lastSyncedDeliverTitleRef.current = planTitle;
-    }
-  }, [tab, activeId, project && project.plans && project.plans[0] && project.plans[0].title]);
+    const p0 = (project.plans && project.plans[0]) || {};
+    [["deliverTitle", "title"], ["deliverTitle2", "title2"]].forEach(([dk, pk]) => {
+      const planTitle = (p0[pk] || "").trim();
+      const curTitle = ((project.meta || {})[dk] || "").trim();
+      if (!planTitle) return;
+      if (!curTitle || curTitle === lastSyncedDeliverTitleRef.current[dk]) {
+        if (curTitle !== planTitle) setMeta(dk, planTitle);
+        lastSyncedDeliverTitleRef.current[dk] = planTitle;
+      }
+    });
+  }, [tab, activeId, project && project.plans && project.plans[0] && project.plans[0].title, project && project.plans && project.plans[0] && project.plans[0].title2]);
+  /* タイトル欄が案1/案2の2欄になる前の案件（1欄に改行で2案）を、開いた時に1行目=案1・残り=案2へ分ける */
+  const titleSplitDoneRef = useRef({});
+  useEffect(() => {
+    const p0 = project && project.plans && project.plans[0];
+    if (!p0 || titleSplitDoneRef.current[activeId]) return;
+    titleSplitDoneRef.current[activeId] = true;   // 開いた時の1回だけ（入力中の改行で勝手に分かれないように）
+    if ((p0.title2 || "").trim()) return;
+    const lines = (p0.title || "").split("\n").map((t) => t.trim()).filter(Boolean);
+    if (lines.length < 2) return;
+    setPlanField(0, "title", lines[0]);
+    setPlanField(0, "title2", lines.slice(1).join("\n"));
+  }, [activeId, !!(project && project.plans && project.plans[0])]);
 
   /* 指摘の対象シーンへスクロール＋一時ハイライト */
   const jumpToRow = (rowId) => {
@@ -9988,9 +10006,19 @@ export default function App() {
               {/* タイトル（企画・サムネタブと連携）＝ラベル下・改行可。中身の行数ぶん自動で伸びる（切れて見えないようにする） */}
               <div className="border-b border-stone-100 px-3 py-2">
                 <div className="text-[12px] font-bold text-stone-500 mb-1">タイトル</div>
-                <AutoTextarea value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路"
-                  onChange={(e) => setPlanField(0, "title", e.target.value)} title="企画・サムネタブのタイトルと連携しています"
-                  minHeight={44} className="block w-full bg-transparent text-[14px] leading-relaxed focus:outline-none placeholder:text-stone-400" />
+                {/* 案1/案2の2欄（2026-10-01 AK）。納品完了の案1/案2へそのまま写る */}
+                <div className="flex gap-2 items-start">
+                  <span className="w-8 shrink-0 pt-0.5 text-[11px] font-bold text-stone-400">案1</span>
+                  <AutoTextarea value={((project.plans || [])[0] && project.plans[0].title) || ""} placeholder="例）30歳で会社を捨てた男の末路"
+                    onChange={(e) => setPlanField(0, "title", e.target.value)} title="企画・サムネタブのタイトルと連携しています"
+                    minHeight={28} className="flex-1 min-w-0 block bg-transparent text-[14px] leading-relaxed focus:outline-none placeholder:text-stone-400" />
+                </div>
+                <div className="flex gap-2 items-start mt-1">
+                  <span className="w-8 shrink-0 pt-0.5 text-[11px] font-bold text-stone-400">案2</span>
+                  <AutoTextarea value={((project.plans || [])[0] && project.plans[0].title2) || ""} placeholder="もう1つのタイトル案（任意）"
+                    onChange={(e) => setPlanField(0, "title2", e.target.value)}
+                    minHeight={28} className="flex-1 min-w-0 block bg-transparent text-[14px] leading-relaxed focus:outline-none placeholder:text-stone-400" />
+                </div>
               </div>
               {/* サムネ文言 ＝2パターン。ラベル下・改行可。空行込みで全文見えるように自動で伸ばす */}
               <div className="grid sm:grid-cols-2">
