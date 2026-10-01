@@ -1530,6 +1530,26 @@ ${qList}
         } catch (e) { return json({ error: "Studio OSで案件を作れませんでした: " + String(e.message || e) }, 502); }
       }
 
+      // POST /api/studio/stuck-note { proj, step, body }（Bearer MCP_WRITE_KEY＝Premiereのプラグインのサーバー）
+      // 2026-10-01 AK「工程ごとに時間を設けて、過ぎたら詰まってる所をAIに聞いてもらう。AKにも届ける」→ Studio OSの案件メモに残す
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "studio" && parts[2] === "stuck-note") {
+        const auth = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!env.MCP_WRITE_KEY || auth !== env.MCP_WRITE_KEY) return json({ error: "forbidden" }, 403);
+        if (!env.STUDIO_AGENT_KEY || !env.STUDIO_MCP_KEY) return json({ ok: false, reason: "Studio OS未接続" });
+        const b = await request.json().catch(() => ({}));
+        const proj = String(b.proj || "").trim();
+        if (!/^[A-Za-z0-9]{3,32}$/.test(proj)) return json({ error: "proj不正" }, 400);
+        const body = ("【編集で詰まった所（プラグインのAI相談）】" + String(b.step || "") + "\n" + String(b.body || "")).slice(0, 2000);
+        try {
+          const g = await studioCall("/agent/mg-gate?mg_project_id=" + encodeURIComponent(proj));
+          const r = await fetch(STUDIO + "/mcp", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + env.STUDIO_MCP_KEY },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "add_note", arguments: { deliverable_id: g.deliverableId, body } } }) });
+          const j = await r.json().catch(() => null);
+          if (!r.ok || !j || (j.result && j.result.isError)) return json({ ok: false, reason: "メモを残せませんでした" });
+          return json({ ok: true });
+        } catch (e) { return json({ ok: false, reason: String(e.message || e) }); }
+      }
+
       // GET /api/studio/schedule?proj= → { linked, publishDate, steps }
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "studio" && parts[2] === "schedule") {
         const u = await requireUser(request, env);

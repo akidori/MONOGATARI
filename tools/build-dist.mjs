@@ -29,3 +29,21 @@ const sw = (await readFile(swPath, "utf8"))
 await writeFile(swPath, sw);
 
 console.log(`dist ready: ${publicFiles.length} files, version ${version}`);
+
+// 2026-10-01: 学習タブの工程マニュアル（LEARN_GROUPS）を learn.json として公開する。
+// Premiereのプラグインの「困ったら聞く」AIが、工程ごとのやり方を読んで解説するため（正本はアプリのソース1か所のまま）。
+{
+  const src = await readFile(path.join(root, "monogataritch.src.jsx"), "utf8");
+  const start = src.indexOf("const LEARN_GROUPS = [");
+  if (start >= 0) {
+    const open = src.indexOf("[", start);
+    let depth = 0, end = open;
+    for (let i = open; i < src.length; i++) {
+      const ch = src[i];
+      if (ch === "[") depth++;
+      else if (ch === "]") { depth--; if (depth === 0) { end = i + 1; break; } }
+    }
+    const groups = new Function("return " + src.slice(open, end))();
+    await writeFile(path.join(dist, "learn.json"), JSON.stringify({ groups }, null, 1));
+  }
+}
