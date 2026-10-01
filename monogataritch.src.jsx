@@ -7123,6 +7123,49 @@ export default function App() {
     try { await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
   };
   /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要・GB級対応）。meta を返す */
+  /* 2026-10-01 素材はGoogle Drive（AKの5TB）へ。サーバーが開けたGoogleの「再開可能アップロード」の口へ、ブラウザから直接送る。
+     Driveが使えない時は null を返し、呼び出し側が従来のR2へ回す。 */
+  const uploadToDrive = async (file, sid, extra, onProg) => {
+    const cr = await fetch(SHARE_API + "/api/file/gd/create", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }) });
+    if (cr.status === 503) return null;
+    const cd = await cr.json();
+    if (!cd.uploadUrl) throw new Error(cd.error || "開始に失敗");
+    const size = file.size;
+    const CHUNK = 32 * 1024 * 1024; // 256KiBの倍数
+    const put = (body, range) => new Promise((res, rej) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", cd.uploadUrl);
+      xhr.setRequestHeader("Content-Range", range);
+      xhr.timeout = 180000;
+      if (body) xhr.upload.onprogress = (e) => { if (e.lengthComputable && onProg) onProg(Math.min(100, Math.round((off + e.loaded) / Math.max(1, size) * 100))); };
+      xhr.onload = () => res(xhr);
+      xhr.onerror = () => rej(new Error("通信エラー"));
+      xhr.ontimeout = () => rej(new Error("通信が止まりました（タイムアウト）"));
+      xhr.send(body || null);
+    });
+    const nextOff = (xhr, fallback) => { const r = xhr.getResponseHeader("Range"); const m = r && /bytes=0-(\d+)/.exec(r); return m ? +m[1] + 1 : fallback; };
+    let off = 0, driveId = null, fails = 0;
+    while (!driveId) {
+      const end = Math.min(size, off + CHUNK);
+      try {
+        const xhr = size === 0 ? await put(null, "bytes */0") : await put(file.slice(off, end), `bytes ${off}-${end - 1}/${size}`);
+        if (xhr.status === 200 || xhr.status === 201) { driveId = JSON.parse(xhr.responseText).id; break; }
+        if (xhr.status === 308) { off = nextOff(xhr, end); fails = 0; continue; }
+        throw new Error("Driveへの送信に失敗(" + xhr.status + ")");
+      } catch (e) {
+        if (++fails > 6) throw e;
+        await new Promise((r) => setTimeout(r, Math.min(30000, 2000 * Math.pow(2, fails - 1))));
+        // どこまで届いたかGoogleに聞いて、そこから再開（最初からやり直さない）
+        try { const st = await put(null, `bytes */${size}`); if (st.status === 200 || st.status === 201) { driveId = JSON.parse(st.responseText).id; break; } if (st.status === 308) off = nextOff(st, 0); } catch (_) {}
+      }
+    }
+    const fr = await fetch(SHARE_API + "/api/file/gd/complete", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ snap: sid, key: cd.key, uploadCap: cd.uploadCap, driveId, name: file.name, mime: file.type || "application/octet-stream", ...extra }) });
+    const fd = await fr.json();
+    if (!fd.file) throw new Error(fd.error || "確定に失敗");
+    return fd.file;
+  };
   const uploadToR2 = async (file, planId = "", onProgress = null, snapOverride = null, tokenOverride = null, extraOverride = null) => {
     // 発行直後は setProject 未反映で project.shareId/Token が古い。ensureShare の戻り値を直に使えるよう上書き引数を受ける。
     const sid = snapOverride || project.shareId;
@@ -7131,6 +7174,12 @@ export default function App() {
     // 細い/不安定な回線で1パートが小さいほど瞬断からの再試行が軽い＝下限を16MBに
     const CHUNK = Math.min(90 * 1024 * 1024, Math.max(16 * 1024 * 1024, Math.ceil(file.size / 9000)));
     const extra = { token: stok, retention, planId, ...(extraOverride || {}) };
+    if (extra.drive) {
+      const { drive, retention: _r, ...dx } = extra;
+      const viaDrive = await uploadToDrive(file, sid, dx, onProgress || setMediaProg);
+      if (viaDrive) return viaDrive;
+    }
+    delete extra.drive;
     const cr = await fetch(SHARE_API + "/api/file/mpu/create", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ snap: sid, name: file.name, size: file.size, mime: file.type || "application/octet-stream", ...extra }),
@@ -7272,7 +7321,7 @@ export default function App() {
     setAssetUp({ cat: category, name: file.name, pct: 0 });
     try {
       // 素材管理（撮影素材・テンプレ素材）は無期限固定。90日で勝手に消えると後日の再編集・編集者の後追いDLで素材ロストになるため（確認用動画と同じ思想）。
-      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token, { retention: 90 });
+      const meta = await uploadToR2(file, "", (p) => setAssetUp({ cat: category, name: (batch ? `[${batch.i}/${batch.n}] ` : "") + file.name, pct: p }), sh.id, sh.token, { retention: 90, drive: true, folder: (file._folder || "").toString().slice(0, 160) });
       const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|m4v|webm)$/i.test(file.name);
       // フォルダごとドロップした素材はフォルダ階層を folder に保持（シーン区分）。平置き＝構造消失を防ぐ。
       const folder = (file._folder || "").toString().slice(0, 160);

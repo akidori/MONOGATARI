@@ -2529,6 +2529,115 @@ Bird Flip / ものがたりっち！`;
         return json({ file: meta });
       }
 
+      // ===== Google Drive 素材置き場（2026-10-01 AK「ドライブにアップする感じでフロントがものがたりっち」）=====
+      // 置き場=AKの個人Drive（5TB）。権限は drive.file（このアプリが作ったファイル・フォルダだけ）。
+      // アップ: ここでGoogleの「再開可能アップロード」の口を開け、ブラウザ→Googleへ直接送る（Worker非経由・大容量OK）。
+      // 持ち主は常にAK（編集者がアップしても編集者の容量を食わない）。DL: GET /api/file/{key} がDriveから中継（元の名前・ZIPなし・Range対応）。
+      // 完成動画(role:review)は従来どおりR2＋Stream（再生・コメントがそちらに依存）。
+
+      // GET /api/drive/status （Authorization: Bearer MCP_WRITE_KEY）→ つながっているアカウントと容量
+      if (request.method === "GET" && parts[1] === "drive" && parts[2] === "status") {
+        const auth = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!env.MCP_WRITE_KEY || auth !== env.MCP_WRITE_KEY) return json({ error: "forbidden" }, 403);
+        if (!driveEnabled(env)) return json({ enabled: false });
+        try {
+          const t = await driveAccessToken(env);
+          const r = await fetch("https://www.googleapis.com/drive/v3/about?fields=user(emailAddress),storageQuota", { headers: { Authorization: "Bearer " + t } });
+          return json({ enabled: true, about: await r.json() });
+        } catch (e) { return json({ enabled: true, error: String(e.message || e) }, 502); }
+      }
+
+      // POST /api/file/gd/create { snap, name, size, mime, token?, up?, folder?, planId? } → { key, uploadUrl, uploadCap }
+      if (request.method === "POST" && parts[1] === "file" && parts[2] === "gd" && parts[3] === "create") {
+        if (!driveEnabled(env)) return json({ error: "drive_disabled" }, 503);
+        if (await opsKilled(env, "uploads")) return json({ error: "アップロードは現在一時停止中です" }, 503);
+        const b = await request.json();
+        const snap = (b.snap || "").toString().slice(0, 16);
+        if (!snap) return json({ error: "snap がありません" }, 400);
+        const rec = await env.SNAPS.get("snap:" + snap, "json");
+        if (!rec) return json({ error: "not found" }, 404);
+        if (b.role === "review") return json({ error: "完成動画は動画確認から上げてください" }, 400);
+        const tok = await env.SNAPS.get("tok:" + snap);
+        const isOwner = !!tok && tok === (b.token || "");
+        const uptok = await env.SNAPS.get("uptok:" + snap);
+        const isEditor = !isOwner && !!uptok && uptok === (b.up || "");
+        const isUploader = isOwner || isEditor;
+        const size = Math.max(0, +b.size || 0);
+        const maxSize = isUploader ? 500 * 1024 * 1024 * 1024 : 2 * 1024 * 1024 * 1024;
+        if (size > maxSize) return json({ error: isUploader ? "ファイルが大きすぎます（500GBまで）" : "ファイルが大きすぎます（このリンクは2GBまで）" }, 413);
+        if (!isUploader) {
+          const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
+          if (ups.length >= 50) return json({ error: "アップロード件数の上限に達しています" }, 429);
+        }
+        const proj = (rec && rec.project) || {};
+        const folder = (b.folder || "").toString().replace(/[\\:*?"<>|]/g, "_").slice(0, 160);
+        const name = (b.name || "file").toString().slice(0, 255);
+        const mime = (b.mime || "application/octet-stream").toString().slice(0, 120);
+        try {
+          const t = await driveAccessToken(env);
+          const parent = await driveEnsurePath(env, t, ["ものがたりっち素材", proj.channel || "未分類", (proj.name || snap) + "（" + snap + "）", ...folder.split("/").filter(Boolean)]);
+          const origin = request.headers.get("Origin") || "";
+          const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,size", {
+            method: "POST",
+            headers: { Authorization: "Bearer " + t, "Content-Type": "application/json; charset=UTF-8",
+              "X-Upload-Content-Type": mime, ...(size ? { "X-Upload-Content-Length": String(size) } : {}), ...(origin ? { Origin: origin } : {}) },
+            body: JSON.stringify({ name, parents: [parent] }),
+          });
+          const uploadUrl = r.headers.get("Location");
+          if (!r.ok || !uploadUrl) return json({ error: "Driveのアップ口を開けませんでした: " + (await r.text()).slice(0, 160) }, 502);
+          const key = "f/" + snap + "/" + rid(8) + "-" + Date.now();
+          const uploadCap = await mintSession({ purpose: "gd-up", snap, key, maxSize, declaredSize: size, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 }, sessionSecret(env));
+          return json({ key, uploadUrl, uploadCap });
+        } catch (e) { return json({ error: String(e.message || e) }, 502); }
+      }
+
+      // POST /api/file/gd/complete { snap, key, uploadCap, driveId, name, mime, folder?, planId?, token?, up? } → { file }
+      if (request.method === "POST" && parts[1] === "file" && parts[2] === "gd" && parts[3] === "complete") {
+        const b = await request.json();
+        const snap = (b.snap || "").toString().slice(0, 16);
+        const key = (b.key || "").toString();
+        const cap = await verifySession((b.uploadCap || "").toString(), sessionSecret(env));
+        if (!cap || cap.purpose !== "gd-up" || cap.snap !== snap || cap.key !== key) return json({ error: "アップロード認証が無効です" }, 403);
+        const driveId = (b.driveId || "").toString().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 120);
+        if (!driveId) return json({ error: "driveId がありません" }, 400);
+        const t = await driveAccessToken(env);
+        const fr = await fetch("https://www.googleapis.com/drive/v3/files/" + driveId + "?fields=id,size,trashed", { headers: { Authorization: "Bearer " + t } });
+        const f = fr.ok ? await fr.json() : null;
+        const actualSize = f ? +f.size || 0 : 0;
+        if (!f || f.trashed || actualSize > +cap.maxSize || (+cap.declaredSize && actualSize !== +cap.declaredSize)) {
+          return json({ error: "アップロードの検証に失敗しました（大きさが合いません）" }, 413);
+        }
+        const tok = await env.SNAPS.get("tok:" + snap);
+        const isOwner = !!tok && tok === (b.token || "");
+        const uptok = await env.SNAPS.get("uptok:" + snap);
+        const isEditor = !isOwner && !!uptok && uptok === (b.up || "");
+        try {
+          const ym = new Date().toISOString().slice(0, 7).replace("-", "");
+          const cur = (await env.SNAPS.get("usage:gd:" + ym, "json")) || { bytes: 0, count: 0 };
+          cur.bytes += actualSize; cur.count += 1;
+          await env.SNAPS.put("usage:gd:" + ym, JSON.stringify(cur));
+        } catch (e) {}
+        const meta = {
+          key, store: "gdrive", driveId,
+          name: (b.name || "file").toString().slice(0, 255),
+          size: actualSize,
+          mime: (b.mime || "application/octet-stream").toString().slice(0, 120),
+          uploadedAt: now(),
+          expiresAt: null, // Driveは期限で消さない（AK「90日で消えるのをやめたい」）
+          by: isOwner ? "owner" : (isEditor ? "editor" : "guest"),
+          role: "",
+          planId: (b.planId || "").toString().slice(0, 40),
+          folder: (b.folder || "").toString().replace(/[\\:*?"<>|]/g, "_").slice(0, 160),
+        };
+        await env.SNAPS.put("file:" + key, JSON.stringify(meta));
+        if (!isOwner) {
+          const ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
+          ups.push(meta);
+          await env.SNAPS.put("file_up:" + snap, JSON.stringify(ups));
+        }
+        return json({ file: meta });
+      }
+
       // GET /api/snap/{id}/uploads  → 先方アップロード一覧
       if (request.method === "GET" && parts[1] === "snap" && parts[3] === "uploads" && !parts[4]) {
         const ups = (await env.SNAPS.get("file_up:" + parts[2], "json")) || [];
@@ -2771,6 +2880,7 @@ load();
       if (request.method === "GET" && parts[1] === "file" && parts[2] && parts[2] !== "mpu") {
         const key = parts.slice(2).join("/");
         const meta = (await env.SNAPS.get("file:" + key, "json")) || {};
+        if (meta.store === "gdrive" && meta.driveId) return driveServe(env, request, url, meta, key);
         // Range再生（動画シーク）時は onlyIf を渡さない＝条件付きGETでbody無し応答になりカクつくのを防ぐ
         const hasRange = request.headers.has("Range");
         const obj = await env.FILES.get(key, hasRange ? { range: request.headers } : { onlyIf: request.headers });
@@ -2805,7 +2915,9 @@ load();
         const snap = url.searchParams.get("snap") || "";
         const tok = await env.SNAPS.get("tok:" + snap);
         if (!tok || tok !== (url.searchParams.get("token") || "")) return json({ error: "forbidden" }, 403);
-        await env.FILES.delete(key);
+        const dmeta = (await env.SNAPS.get("file:" + key, "json")) || {};
+        if (dmeta.store === "gdrive" && dmeta.driveId) await driveTrash(env, dmeta.driveId);
+        else await env.FILES.delete(key);
         await env.SNAPS.delete("file:" + key);
         let ups = (await env.SNAPS.get("file_up:" + snap, "json")) || [];
         const before = ups.length;
@@ -3092,7 +3204,8 @@ async function cleanupExpired(env) {
       const meta = await env.SNAPS.get(k.name, "json");
       if (meta && meta.expiresAt && new Date(meta.expiresAt).getTime() < nowMs) {
         const key = k.name.slice("file:".length);
-        await env.FILES.delete(key);
+        if (meta.store === "gdrive" && meta.driveId) await driveTrash(env, meta.driveId); // Driveはゴミ箱へ（30日は戻せる）
+        else await env.FILES.delete(key);
         await env.SNAPS.delete(k.name);
         // ゴミ箱の猶予期限切れ：R2本体と一緒にStream変換版も本削除（trash時に streamUid を退避してある）
         if (meta.streamUid && env.STREAM_ACCOUNT_ID && env.STREAM_API_TOKEN) {
@@ -4354,4 +4467,69 @@ export class LiveDoc extends DurableObject {
     server.addEventListener("error", cleanup);
     return new Response(null, { status: 101, webSocket: pair[0] });
   }
+}
+
+// ===== Google Drive helpers（2026-10-01）=====
+function driveEnabled(env) {
+  return !!(env.GDRIVE_CLIENT_ID && env.GDRIVE_CLIENT_SECRET && env.GDRIVE_REFRESH_TOKEN);
+}
+let _driveTok = null; // { token, exp }（同じisolate内で使い回す）
+async function driveAccessToken(env) {
+  if (_driveTok && _driveTok.exp > Date.now() + 60000) return _driveTok.token;
+  const r = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ client_id: env.GDRIVE_CLIENT_ID, client_secret: env.GDRIVE_CLIENT_SECRET, refresh_token: env.GDRIVE_REFRESH_TOKEN, grant_type: "refresh_token" }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw new Error("Driveの認証に失敗しました（許可の取り直しが必要かもしれません）");
+  _driveTok = { token: j.access_token, exp: Date.now() + (+j.expires_in || 3600) * 1000 };
+  return _driveTok.token;
+}
+const driveSafe = (t) => String(t || "").replace(/[\\/]/g, "_").trim().slice(0, 120) || "_";
+// "ものがたりっち素材/チャンネル/案件/シーン" を順に作る。作ったIDはKVに覚える（drive.fileでは他で作った同名フォルダは見えないので検索しない）
+async function driveEnsurePath(env, token, segs) {
+  let parent = "root";
+  let path = "";
+  for (const raw of segs) {
+    const name = driveSafe(raw);
+    path += "/" + name;
+    const ck = "gdir:" + path;
+    let id = await env.SNAPS.get(ck);
+    if (!id) {
+      const r = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
+        method: "POST", headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parent] }),
+      });
+      if (!r.ok) throw new Error("Driveのフォルダを作れませんでした: " + (await r.text()).slice(0, 160));
+      id = (await r.json()).id;
+      await env.SNAPS.put(ck, id);
+    }
+    parent = id;
+  }
+  return parent;
+}
+async function driveTrash(env, id) {
+  try {
+    const t = await driveAccessToken(env);
+    await fetch("https://www.googleapis.com/drive/v3/files/" + id, { method: "PATCH", headers: { Authorization: "Bearer " + t, "Content-Type": "application/json" }, body: JSON.stringify({ trashed: true }) });
+  } catch (e) {}
+}
+// Driveの素材をそのまま中継（ZIPにしない・元の名前・Range対応）
+async function driveServe(env, request, url, meta, key) {
+  const t = await driveAccessToken(env);
+  const hdr = { Authorization: "Bearer " + t };
+  const range = request.headers.get("Range");
+  if (range) hdr.Range = range;
+  const r = await fetch("https://www.googleapis.com/drive/v3/files/" + meta.driveId + "?alt=media&acknowledgeAbuse=true", { headers: hdr });
+  if (!r.ok && r.status !== 206) return json({ error: "Driveから取り出せませんでした (" + r.status + ")" }, r.status === 404 ? 404 : 502);
+  const h = new Headers(CORS);
+  h.set("Content-Type", meta.mime || r.headers.get("Content-Type") || "application/octet-stream");
+  h.set("Accept-Ranges", "bytes");
+  h.set("Access-Control-Expose-Headers", "Content-Length,Content-Range,Content-Disposition,ETag,Accept-Ranges");
+  for (const k of ["Content-Length", "Content-Range"]) { const v = r.headers.get(k); if (v) h.set(k, v); }
+  const fname = url.searchParams.get("name") || meta.name || key.split("/").pop() || "download";
+  const dl = url.searchParams.get("dl");
+  const inline = !dl && INLINE_OK.test(h.get("Content-Type") || "");
+  h.set("Content-Disposition", `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(fname)}`);
+  return new Response(r.body, { status: r.status, headers: h });
 }

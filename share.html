@@ -2145,8 +2145,38 @@ function mountShorts(p, accent, main){
   };
   poll();
 }
+/* 2026-10-01 素材（完成動画以外）はGoogle Drive（AKの5TB）へ。ブラウザ→Googleへ直接。使えない時は null（R2へ回す） */
+async function driveUpload(file, extra, onProg){
+  const cr = await fetch(API+"/api/file/gd/create", { method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
+  if(cr.status===503) return null;
+  const cd = await cr.json(); if(!cd.uploadUrl) throw new Error(cd.error||"開始に失敗");
+  const size=file.size, CHUNK=32*1024*1024; let off=0, driveId=null, fails=0;
+  const put=(body, range)=>new Promise((res,rej)=>{ const xhr=new XMLHttpRequest(); xhr.open("PUT", cd.uploadUrl); xhr.setRequestHeader("Content-Range", range); xhr.timeout=180000;
+    if(body) xhr.upload.onprogress=(e)=>{ if(e.lengthComputable&&onProg) onProg(Math.min(100, Math.round((off+e.loaded)/Math.max(1,size)*100))); };
+    xhr.onload=()=>res(xhr); xhr.onerror=()=>rej(new Error("通信エラー")); xhr.ontimeout=()=>rej(new Error("通信が止まりました（タイムアウト）")); xhr.send(body||null); });
+  const nextOff=(xhr,fb)=>{ const r=xhr.getResponseHeader("Range"); const m=r&&/bytes=0-(\d+)/.exec(r); return m?+m[1]+1:fb; };
+  while(!driveId){
+    const end=Math.min(size, off+CHUNK);
+    try{
+      const xhr = size===0 ? await put(null,"bytes */0") : await put(file.slice(off,end), "bytes "+off+"-"+(end-1)+"/"+size);
+      if(xhr.status===200||xhr.status===201){ driveId=JSON.parse(xhr.responseText).id; break; }
+      if(xhr.status===308){ off=nextOff(xhr,end); fails=0; continue; }
+      throw new Error("Driveへの送信に失敗("+xhr.status+")");
+    }catch(e){
+      if(++fails>6) throw e;
+      await new Promise(r=>setTimeout(r, Math.min(30000, 2000*Math.pow(2,fails-1))));
+      try{ const st=await put(null,"bytes */"+size); if(st.status===200||st.status===201){ driveId=JSON.parse(st.responseText).id; break; } if(st.status===308) off=nextOff(st,0); }catch(_){}
+    }
+  }
+  const fr = await fetch(API+"/api/file/gd/complete", { method:"POST", headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(Object.assign({ snap:ID, key:cd.key, uploadCap:cd.uploadCap, driveId, name:file.name, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
+  const fd = await fr.json(); if(!fd.file) throw new Error(fd.error||"確定に失敗");
+  return fd.file;
+}
 /* ブラウザ→Worker→R2 のマルチパートアップロード（鍵不要）。onProg(0-100) */
 async function mpuUpload(file, extra, onProg){
+  if(!(extra&&extra.role==="review")){ const viaDrive=await driveUpload(file, extra, onProg); if(viaDrive) return viaDrive; }
   const CHUNK = Math.min(90*1024*1024, Math.max(16*1024*1024, Math.ceil(file.size/9000)));
   const cr = await fetch(API+"/api/file/mpu/create", { method:"POST", headers:{"Content-Type":"application/json"},
     body:JSON.stringify(Object.assign({ snap:ID, name:file.name, size:file.size, mime:file.type||"application/octet-stream", up:UP_TOKEN }, extra||{})) });
