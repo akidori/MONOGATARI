@@ -4250,14 +4250,7 @@ export default function App() {
   // 2026-10-01 AK「新規案件は必ず最初に投稿日から逆算して各工程の日程を把握」: 作成直後に投稿日などを入れる画面
   const [schedModal, setSchedModal] = useState(null);       // {projId, name, channel, accounts, accountId, template, date, busy, error, steps, offline}
   const [schedView, setSchedView] = useState(null);         // 概要タブの工程の日程 {proj, linked, publishDate, steps}
-  useEffect(() => {
-    if (!isStaff || !MG_SESSION || tab !== "overview" || !activeId || (schedView && schedView.proj === activeId)) return;
-    let cancelled = false;
-    fetch(SHARE_API + "/api/studio/schedule?proj=" + encodeURIComponent(activeId), { headers: { Authorization: "Bearer " + MG_SESSION } })
-      .then((r) => r.json()).then((d) => { if (!cancelled) setSchedView({ proj: activeId, linked: !!d.linked, publishDate: d.publishDate || null, steps: d.steps || [] }); })
-      .catch(() => { if (!cancelled) setSchedView({ proj: activeId, linked: false, steps: [] }); });
-    return () => { cancelled = true; };
-  }, [isStaff, tab, activeId]);
+
   // ホームの案件表示（2026-10-01 AK「ホームの案件管理はこんなUIで」＝表紙つきカードの並び）。"cards" | "channels"
   const [homeMode, setHomeMode] = useState(() => { try { return localStorage.getItem("mg:homeMode") || "cards"; } catch (e) { return "cards"; } });
   const [homeCh, setHomeCh] = useState("");                 // カード表示のチャンネル絞り込み（""=すべて）
@@ -4286,6 +4279,15 @@ export default function App() {
   const [askBusy, setAskBusy] = useState(false);
   const [askLog, setAskLog] = useState(() => { try { return JSON.parse(localStorage.getItem("mg:askLog") || "[]"); } catch (e) { return []; } });
   const [isStaff, setIsStaff] = useState(null);        // AK（管理者）か。Studio OSの業務・ナレッジは管理者だけに見せる（Workerが403を返したらfalse）
+  // 概要タブの工程の日程を読む（isStaff の宣言より後に置く。前に置くと読み込み時に落ちる＝10-01本番障害）
+  useEffect(() => {
+    if (!isStaff || !MG_SESSION || tab !== "overview" || !activeId || (schedView && schedView.proj === activeId)) return;
+    let cancelled = false;
+    fetch(SHARE_API + "/api/studio/schedule?proj=" + encodeURIComponent(activeId), { headers: { Authorization: "Bearer " + MG_SESSION } })
+      .then((r) => r.json()).then((d) => { if (!cancelled) setSchedView({ proj: activeId, linked: !!d.linked, publishDate: d.publishDate || null, steps: d.steps || [] }); })
+      .catch(() => { if (!cancelled) setSchedView({ proj: activeId, linked: false, steps: [] }); });
+    return () => { cancelled = true; };
+  }, [isStaff, tab, activeId]);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [channelEditId, setChannelEditId] = useState(null); // チャンネル変更中の案件id（新規フォルダ名の入力用）
@@ -9921,6 +9923,42 @@ export default function App() {
         {/* チャンネル（コンセプト）は概要タブに統合 */}
         {tab === "overview" && (
           <div className="max-w-[1000px] mx-auto mb-8">
+            <div className="mb-4">
+            {/* 工程の日程（2026-10-01 AK）: Studio OSが投稿日から逆算した各工程の締切。未設定なら入れる入口 */}
+            {isStaff && (() => {
+              const sv = schedView && schedView.proj === project.id ? schedView : null;
+              const today = new Date().toISOString().slice(0, 10);
+              return (
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Icon name="clock" className="w-4 h-4 text-stone-500" />
+                    <span className="text-[14px] font-bold text-stone-800">工程の日程</span>
+                    {sv && sv.publishDate && <span className="text-[12px] text-stone-500">投稿日 {sv.publishDate}</span>}
+                  </div>
+                  {!sv ? <p className="text-[12px] text-stone-500">読み込み中…</p>
+                    : !sv.linked ? (
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <p className="text-[12px] text-stone-600">まだ投稿日が決まっていません。投稿日を入れると、各工程の締切を逆算して出します。</p>
+                        <button onClick={() => openSchedModal(project.id, project.name, project.channel || DEFAULT_CHANNEL)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.main }}>投稿日を決める</button>
+                      </div>
+                    ) : (
+                      <ol className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
+                        {sv.steps.map((st, i) => {
+                          const done = st.status === "completed" || st.status === "skipped";
+                          const late = !done && st.deadline && st.deadline < today;
+                          return (
+                            <li key={i} className={"rounded-lg border px-2.5 py-1.5 " + (done ? "border-stone-100 bg-stone-50" : late ? "border-rose-200 bg-rose-50" : "border-stone-200")}>
+                              <div className={"text-[12px] font-bold truncate " + (done ? "text-stone-400 line-through" : "text-stone-700")}>{st.name}</div>
+                              <div className={"text-[12px] tabular-nums " + (late ? "text-rose-600 font-bold" : "text-stone-500")}>{st.deadline ? st.deadline.slice(5).replace("-", "/") : "未設定"}</div>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    )}
+                </div>
+              );
+            })()}
+            </div>
             <div className="flex items-center gap-2 mb-4 flex-wrap">
               <p className="text-[13px] text-stone-600 leading-relaxed flex-1 min-w-[200px]">
                 チャンネル「<span className="font-bold" style={{ color: theme.main }}>{curChannel}</span>」のコンセプト。<span className="font-bold">同じチャンネル（フォルダ）の全案件で共有</span>されます。
@@ -11316,40 +11354,6 @@ export default function App() {
         {/* ================= 概要タブ（案件の入口・現在地） ================= */}
         {tab === "overview" && (
           <div className="max-w-[1500px] mx-auto px-1 sm:px-0 py-1 space-y-4">
-            {/* 工程の日程（2026-10-01 AK）: Studio OSが投稿日から逆算した各工程の締切。未設定なら入れる入口 */}
-            {isStaff && (() => {
-              const sv = schedView && schedView.proj === project.id ? schedView : null;
-              const today = new Date().toISOString().slice(0, 10);
-              return (
-                <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Icon name="clock" className="w-4 h-4 text-stone-500" />
-                    <span className="text-[14px] font-bold text-stone-800">工程の日程</span>
-                    {sv && sv.publishDate && <span className="text-[12px] text-stone-500">投稿日 {sv.publishDate}</span>}
-                  </div>
-                  {!sv ? <p className="text-[12px] text-stone-500">読み込み中…</p>
-                    : !sv.linked ? (
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <p className="text-[12px] text-stone-600">まだ投稿日が決まっていません。投稿日を入れると、各工程の締切を逆算して出します。</p>
-                        <button onClick={() => openSchedModal(project.id, project.name, project.channel || DEFAULT_CHANNEL)} className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white" style={{ background: theme.main }}>投稿日を決める</button>
-                      </div>
-                    ) : (
-                      <ol className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2">
-                        {sv.steps.map((st, i) => {
-                          const done = st.status === "completed" || st.status === "skipped";
-                          const late = !done && st.deadline && st.deadline < today;
-                          return (
-                            <li key={i} className={"rounded-lg border px-2.5 py-1.5 " + (done ? "border-stone-100 bg-stone-50" : late ? "border-rose-200 bg-rose-50" : "border-stone-200")}>
-                              <div className={"text-[12px] font-bold truncate " + (done ? "text-stone-400 line-through" : "text-stone-700")}>{st.name}</div>
-                              <div className={"text-[12px] tabular-nums " + (late ? "text-rose-600 font-bold" : "text-stone-500")}>{st.deadline ? st.deadline.slice(5).replace("-", "/") : "未設定"}</div>
-                            </li>
-                          );
-                        })}
-                      </ol>
-                    )}
-                </div>
-              );
-            })()}
             {/* 「いまの状態」(ステータス/次にやること/締切)はタスク管理＝Flip Boardに集約のため削除。基本情報カードも未使用のため削除（2026-08-17 AK指示） */}
             {/* ひと目サマリー */}
             <div className="grid grid-cols-3 gap-3">
