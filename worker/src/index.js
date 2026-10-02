@@ -3167,8 +3167,15 @@ Bird Flip / ものがたりっち！`;
         }));
         if (!items.length) return json({ error: "載せるショートがありません" }, 400);
         const cur = (await env.SNAPS.get("shorts:" + snap, "json")) || { items: [] };
-        const keep = b.replace ? [] : (cur.items || []).filter((x) => !items.some((n) => n.key === x.key));
-        await env.SNAPS.put("shorts:" + snap, JSON.stringify({ ...cur, items: [...items, ...keep].slice(0, 60), updatedAt: now() }));
+        // 2026-10-02 同じショート（同じファイル名＝案件名_shortNN）を納品し直したら古い方を置き換える（一覧に重複を作らない）。
+        // 表示中の古いものは前の版として残すと先方に二重に見えるので、置き換え時は新しい方に表示状態を引き継ぐ
+        const sameName = (x) => items.find((n) => n.key === x.key || (n.name && x.name === n.name && x.source === "plugin"));
+        for (const n of items) { const old = (cur.items || []).find((x) => x.key === n.key || (x.name === n.name && x.source === "plugin")); if (old && !old.hidden) delete n.hidden; }
+        const keep = b.replace ? [] : (cur.items || []).filter((x) => !sameName(x));
+        // 60件を超える時は、非表示の古いものから落とす（表示中のものは黙って消さない）
+        let all = [...items, ...keep];
+        while (all.length > 60) { const i = all.map((x) => !!x.hidden).lastIndexOf(true); if (i < 0) break; all.splice(i, 1); }
+        await env.SNAPS.put("shorts:" + snap, JSON.stringify({ ...cur, items: all, updatedAt: now() }));
         return json({ ok: true, snap, count: items.length });
       }
       // GET /api/shorts/stale?key=<MG_LIST_KEY>&thresholdMin=N → 放置ジョブ検知（cron-worker日次まとめ用）
