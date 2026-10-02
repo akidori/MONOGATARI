@@ -9,6 +9,7 @@ import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec, linkCaseSections as todayLinkSections, loadScheduleRows as todayLoadRows, restSec as todayRestSec } from "./src/today-todo.js";
 import { readCreatorProfile, writeCreatorProfile, fetchLearnSteps } from "./src/learning-diagnosis.js";
+import { createTodoPersistence, todoCloudStorage } from "./src/today-todo-storage.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
@@ -3866,6 +3867,13 @@ function LearnPage({ theme }) {
   const all = groups.flatMap((g) => g.items);
   const [sel, setSel] = useState(LEARN_GROUPS[0].items[0].id);
   const picked = useRef(false);
+  const materialRef = useRef(null);
+  const [selectionRequest, setSelectionRequest] = useState(0);
+  useEffect(() => {
+    // Only a manual selection moves the reader, after the new material renders.
+    // Re-selecting the same item returns to its heading; loading/retry never jumps.
+    if (selectionRequest) materialRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [selectionRequest]);
   const it = all.find((x) => x.id === sel) || all[0];
   const ready = learnReady(it);
   return (
@@ -3876,12 +3884,12 @@ function LearnPage({ theme }) {
         <button disabled={loadState.status === "loading"} onClick={() => setAttempt((n) => n + 1)} className="font-bold underline disabled:opacity-40">再読み込み</button>
       </div>
       <div className="flex flex-col md:flex-row gap-4">
-      <nav className="md:w-[220px] shrink-0">
+      <nav aria-label="教材一覧" className="md:w-[220px] shrink-0 max-h-[40vh] overflow-y-auto overscroll-contain md:sticky md:top-20 md:self-start md:max-h-[calc(100vh-6rem)]">
         {groups.map((g) => (
           <div key={g.title} className="mb-3">
             <div className="text-[11px] font-bold text-stone-400 px-2 mb-1">{g.title}</div>
             {g.items.map((x) => (
-              <button key={x.id} onClick={() => { picked.current = true; setSel(x.id); }}
+              <button key={x.id} aria-current={x.id === it.id ? "true" : undefined} aria-controls="learn-material" onClick={() => { picked.current = true; setSel(x.id); setSelectionRequest((n) => n + 1); }}
                 className={"w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[13px] " + (x.id === it.id ? "bg-white font-bold text-stone-800 shadow-sm" : "text-stone-600 hover:bg-white/70")}>
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: learnReady(x) ? theme.accent : "#D6D3D1" }} />
                 <span className="min-w-0 truncate">{x.title}</span>
@@ -3890,7 +3898,7 @@ function LearnPage({ theme }) {
           </div>
         ))}
       </nav>
-      <section className="flex-1 min-w-0 bg-white rounded-2xl border border-stone-200 p-5">
+      <section id="learn-material" ref={materialRef} className="flex-1 min-w-0 scroll-mt-20 bg-white rounded-2xl border border-stone-200 p-5">
         <h2 className="text-[16px] font-black text-stone-800 mb-3">{it.title}</h2>
         {it.goal && <p className="text-[12.5px] rounded-lg px-3 py-2 mb-3" style={{ background: hexA(theme.accent, 0.08) }}>終わりの合図：{it.goal}</p>}
         {!ready && <p className="text-[13px] text-stone-400 py-10 text-center">準備中です</p>}
@@ -4363,8 +4371,12 @@ function CreatorDiagnosis({ theme, userEmail }) {
    保存は window.storage "today-todo-v1"。判定は src/today-todo.js（テストは tools/test-today-todo.mjs）
    自動のTODOは工程を手順に分けて「次：〇〇」を出し、開くとチェックリストになる（一番上のTODOは最初から開いておく） */
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-function TodayTodo({ theme, cases, onOpenCase, loadRows }) {
-  const [state, setState] = useState(null);
+const TODAY_DRAFT_CACHE = new Map(); // 未保存分だけ、アカウント別にメモリ内で保持（外部へは送らない）
+function TodayTodo({ theme, cases, onOpenCase, loadRows, ownerKey }) {
+  const [persistence, setPersistence] = useState({ draft: null, ready: false, loading: true });
+  const persistenceRef = useRef(null);
+  const storage = window.storage, session = MG_SESSION;
+  const state = persistence.draft;
   // 香盤表（ロケ行）を案件ごとに読んで手順に差し込む。Workerの返すロケ名より手元の最新を優先（2026-10-02 AK「香盤表と連動してない」）
   const [rowsById, setRowsById] = useState({});
   const caseKey = JSON.stringify((cases || []).map((c) => c && c.caseId).filter(Boolean));
@@ -4377,26 +4389,30 @@ function TodayTodo({ theme, cases, onOpenCase, loadRows }) {
   const [openIds, setOpenIds] = useState(null); // null＝まだ触っていない（一番上の自動TODOだけ開く）
   const today = todayYmd();
   useEffect(() => {
-    (async () => {
-      let v = null;
-      try { const r = window.storage && await window.storage.get(TODAY_STORE); v = r && r.value ? JSON.parse(r.value) : null; } catch (e) {}
-      setState(todayRollover(v, todayYmd()));
-    })();
-  }, []);
-  const saveRef = useRef(null);
-  const update = (fn) => setState((cur) => {
-    const nx = fn(todayRollover(cur, todayYmd()));
-    clearTimeout(saveRef.current);
-    saveRef.current = setTimeout(() => { try { window.storage && window.storage.set(TODAY_STORE, JSON.stringify(nx)); } catch (e) {} }, 400);
-    return nx;
-  });
-  if (!state) return null;
+    setPersistence({ draft: null, ready: false, loading: true });
+    const controller = createTodoPersistence({
+      storage: storage === cloudStorage ? todoCloudStorage(authFetch) : storage,
+      current: () => !!ownerKey && window.storage === storage && MG_SESSION === session,
+      today: todayYmd, onChange: setPersistence, cache: TODAY_DRAFT_CACHE, cacheKey: ownerKey,
+    });
+    persistenceRef.current = controller;
+    void controller.load();
+    return () => { controller.dispose(); if (persistenceRef.current === controller) persistenceRef.current = null; };
+  }, [ownerKey, storage, session]);
+  const update = (fn) => persistenceRef.current?.update(fn) || false;
+  const storageNotice = (persistence.loading || persistence.loadError || persistence.saveError || persistence.saving || persistence.dirty) && <div className="px-4 py-2 text-[12px]" aria-live="polite">
+    {persistence.loading && <p>今日やることを読み込んでいます…</p>}
+    {persistence.loadError && <div role="alert"><p>{persistence.loadError}</p><button onClick={() => { void persistenceRef.current?.load(); }} className="mt-1 font-bold underline">もう一度読み込む</button></div>}
+    {persistence.saveError && <div role="alert"><p>{persistence.saveError}</p><button disabled={!persistence.ready || persistence.saving} onClick={() => { void persistenceRef.current?.save(); }} className="mt-1 font-bold underline disabled:opacity-40">再保存する</button></div>}
+    {!persistence.loadError && !persistence.saveError && (persistence.saving || persistence.dirty) && <p>{persistence.saving ? "保存中…" : "未保存の変更があります"}</p>}
+  </div>;
+  if (!state) return <section className="bg-white border border-stone-200 rounded-xl mb-6"><h2 className="px-4 pt-3.5 text-[14px] font-black">今日やること</h2>{storageNotice}</section>;
   const list = todayList(state.date === today ? state : todayRollover(state, today), casesLinked);
   const doneN = list.done.length;
   const pct = list.total ? Math.round((doneN / list.total) * 100) : 0;
   const d = new Date();
   const BADGE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645" }, "今日": { bg: "#FCE9D6", fg: "#C2410C" }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309" } };
-  const add = () => { if (!text.trim()) return; update((s) => todayAdd(s, text)); setText(""); };
+  const add = () => { if (!text.trim()) return; if (update((s) => todayAdd(s, text))) setText(""); };
   const firstAuto = list.open.find((x) => x.auto);
   const isOpen = (id) => (openIds ? openIds.has(id) : !!firstAuto && firstAuto.id === id);
   const toggleOpen = (id) => setOpenIds((cur) => {
@@ -4451,6 +4467,8 @@ function TodayTodo({ theme, cases, onOpenCase, loadRows }) {
   );
   return (
     <section className="bg-white border border-stone-200 rounded-xl shadow-sm mb-6 overflow-hidden">
+      {storageNotice}
+      <fieldset disabled={!persistence.ready} className="min-w-0">
       <div className="px-4 pt-3.5 pb-2.5 flex items-center gap-2">
         <h2 className="text-[14px] font-black text-stone-800">今日やること</h2>
         <span className="text-[12px] text-stone-400">{d.getMonth() + 1}/{d.getDate()}（{"日月火水木金土"[d.getDay()]}）</span>
@@ -4474,6 +4492,7 @@ function TodayTodo({ theme, cases, onOpenCase, loadRows }) {
           {showDone && <div className="divide-y divide-stone-100">{list.done.map((x) => <Row key={x.id} x={x} />)}</div>}
         </div>
       )}
+      </fieldset>
     </section>
   );
 }
@@ -13103,7 +13122,7 @@ export default function App() {
             )}
 
             {/* 2026-09-29 AK「ホーム画面さっきのシンプルなものに戻して」：あなたの担当・今日の仕事は「担当と納期」へ移し、続きから開くは外した */}
-            {user && <TodayTodo key={user.email || user.sub} theme={theme} cases={(myWork && myWork.cases) || []} onOpenCase={(id) => openCase(id)} loadRows={loadCaseRows} />}
+            {user && <TodayTodo key={user.email || user.sub} ownerKey={user.sub || user.email} theme={theme} cases={(myWork && myWork.cases) || []} onOpenCase={(id) => openCase(id)} loadRows={loadCaseRows} />}
             {(() => {
               const setMode = (m) => { setHomeMode(m); try { localStorage.setItem("mg:homeMode", m); } catch (e) {} };
               const STATUS_COLOR = { "完了": ["#E7F6EC", "#15803D"], "確認中": ["#FEF3E2", "#B45309"], "編集中": ["#E8F0FE", "#1D4ED8"], "企画中": ["#F3E8FF", "#7E22CE"], "未着手": ["#F1F0EE", "#78716C"] };

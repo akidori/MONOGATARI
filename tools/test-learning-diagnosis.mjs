@@ -207,6 +207,49 @@ response.resolve({ ok: true, json: async () => ({ connected: true, data: { phase
 await learnApp.flush();
 assert.ok(button(learnApp, 'Basic manual').props.className.includes('shadow-sm'));
 
+// A long index must reveal the newly rendered material only on explicit picks.
+// These DOM-ref spies verify selection timing; responsive geometry is browser QA.
+const longLearning = { phases: [{ id: 'long', title: 'Long index', steps: Array.from({ length: 30 }, (_, i) => ({ id: 'step-' + i, do: 'Material ' + (i + 1), tip: 'Instructions ' + (i + 1) })) }] };
+let longResponse = deferred();
+const selectionApp = mount('LearnPage', {
+  fetch: async () => longResponse.promise,
+  window: { scrollTo() { assert.fail('Learning selection must not reset the window'); } },
+});
+await selectionApp.flush();
+const material = nodes(selectionApp.tree).find((node) => node.props.id === 'learn-material');
+const materialScrolls = [];
+material.props.ref.current = { scrollIntoView(options) {
+  materialScrolls.push({ title: textOf(nodes(selectionApp.tree).find((node) => node.type === 'h2')), block: options.block, behavior: options.behavior });
+} };
+assert.ok(material.props.className.includes('scroll-mt-20')); // clears the sticky header
+const index = nodes(selectionApp.tree).find((node) => node.type === 'nav');
+assert.equal(index.props['aria-label'], '教材一覧');
+for (const className of ['max-h-[40vh]', 'overflow-y-auto', 'overscroll-contain', 'md:sticky', 'md:top-20', 'md:self-start', 'md:max-h-[calc(100vh-6rem)]']) assert.ok(index.props.className.split(' ').includes(className), className);
+longResponse.resolve({ ok: true, json: async () => ({ connected: true, data: longLearning }) });
+await selectionApp.flush();
+assert.equal(materialScrolls.length, 0); // initial remote selection does not move the reader
+assert.equal(nodes(selectionApp.tree).filter((node) => node.type === 'button' && node.props['aria-controls'] === 'learn-material').length, 31);
+await click(selectionApp, '30. Material 30');
+assert.deepEqual(materialScrolls, [{ title: '30. Material 30', block: 'start', behavior: 'auto' }]);
+assert.equal(button(selectionApp, '30. Material 30').props['aria-current'], 'true');
+await click(selectionApp, '30. Material 30'); // same selection still returns to the heading
+assert.equal(materialScrolls.length, 2);
+assert.equal(materialScrolls[1].title, '30. Material 30');
+await click(selectionApp, 'Basic manual');
+assert.equal(materialScrolls.length, 3);
+assert.equal(materialScrolls[2].title, 'Basic manual');
+assert.equal(button(selectionApp, '30. Material 30').props['aria-current'], undefined);
+assert.equal(button(selectionApp, 'Basic manual').props['aria-current'], 'true');
+longResponse = deferred(); await click(selectionApp, '再読み込み');
+longResponse.reject(new Error('offline')); await selectionApp.flush();
+assert.equal(materialScrolls.length, 3); // failed retry preserves the reading position
+longResponse = deferred(); await click(selectionApp, '再読み込み');
+longResponse.resolve({ ok: true, json: async () => ({ connected: true, data: longLearning }) });
+await selectionApp.flush();
+assert.equal(materialScrolls.length, 3); // successful retry does not scroll either
+assert.equal(textOf(nodes(selectionApp.tree).find((node) => node.type === 'h2')), 'Basic manual');
+selectionApp.unmount();
+
 // A late load for a previous account must never replace the newer account.
 const oldLoad = deferred(); let loadCount = 0;
 const accountApp = mount('CreatorDiagnosis', { storage: { get: async () => ++loadCount === 1 ? oldLoad.promise : { value: JSON.stringify({ ...profile, name: 'New synthetic account' }) } } });
