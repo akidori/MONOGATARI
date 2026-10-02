@@ -3751,16 +3751,39 @@ const LEARN_GROUPS = [
       ] },
   ] },
 ];
-function learnReady(it) { return !!(it.video || (it.steps && it.steps.length) || (it.points && it.points.length)); }
+function learnReady(it) { return !!(it.video || (it.steps && it.steps.length) || (it.points && it.points.length) || (it.qa && it.qa.length)); }
+/* 編集者の作業ステップ（2026-10-02）。正本は GitHub birdflip-knowledge の Manuals/process/editor-steps.json。
+   Worker の /api/learn-steps 経由で読み、粗編・初稿・修正の3グループとして学習タブの先頭に足す。
+   読めない時（鍵未設定・通信失敗）は今までの LEARN_GROUPS だけを出す */
+function stepsToLearnGroups(data) {
+  if (!data || !Array.isArray(data.phases)) return [];
+  return data.phases.map((ph) => ({
+    title: "作業ステップ：" + ph.title,
+    items: (ph.steps || []).map((s, i) => ({
+      id: "step-" + ph.id + "-" + s.id,
+      title: (i + 1) + ". " + s.do,
+      goal: i === 0 ? ph.goal : "",
+      steps: s.tip ? [s.tip] : [],
+      qa: (s.help || []).map((h) => ({ q: h.q, a: h.a || [], src: h.src || "" })),
+    })),
+  }));
+}
 function LearnPage({ theme }) {
-  const all = LEARN_GROUPS.flatMap((g) => g.items);
-  const [sel, setSel] = useState(all[0].id);
+  const [remote, setRemote] = useState([]);
+  useEffect(() => {
+    let off = false;
+    fetch(SHARE_API + "/api/learn-steps").then((r) => r.json()).then((j) => { if (!off && j && j.connected) setRemote(stepsToLearnGroups(j.data)); }).catch(() => {});
+    return () => { off = true; };
+  }, []);
+  const groups = remote.length ? remote.concat(LEARN_GROUPS) : LEARN_GROUPS;
+  const all = groups.flatMap((g) => g.items);
+  const [sel, setSel] = useState(LEARN_GROUPS[0].items[0].id);
   const it = all.find((x) => x.id === sel) || all[0];
   const ready = learnReady(it);
   return (
     <div className="flex flex-col md:flex-row gap-4">
       <nav className="md:w-[220px] shrink-0">
-        {LEARN_GROUPS.map((g) => (
+        {groups.map((g) => (
           <div key={g.title} className="mb-3">
             <div className="text-[11px] font-bold text-stone-400 px-2 mb-1">{g.title}</div>
             {g.items.map((x) => (
@@ -3775,6 +3798,7 @@ function LearnPage({ theme }) {
       </nav>
       <section className="flex-1 min-w-0 bg-white rounded-2xl border border-stone-200 p-5">
         <h2 className="text-[16px] font-black text-stone-800 mb-3">{it.title}</h2>
+        {it.goal && <p className="text-[12.5px] rounded-lg px-3 py-2 mb-3" style={{ background: hexA(theme.accent, 0.08) }}>終わりの合図：{it.goal}</p>}
         {!ready && <p className="text-[13px] text-stone-400 py-10 text-center">準備中です</p>}
         {it.video && (
           <div className="aspect-video w-full rounded-xl overflow-hidden bg-black mb-4">
@@ -3791,6 +3815,18 @@ function LearnPage({ theme }) {
         {it.points && it.points.length > 0 && (
           <div className="rounded-xl p-3 text-[13px] text-stone-700" style={{ background: "#FFF7E6" }}>
             {it.points.map((t, i) => <div key={i} className="flex gap-1.5"><Icon name="warn" className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />{t}</div>)}
+          </div>
+        )}
+        {it.qa && it.qa.length > 0 && (
+          <div className="mt-2">
+            <div className="text-[12px] font-bold text-stone-500 mb-1.5">よくある困りごと</div>
+            {it.qa.map((h, i) => (
+              <details key={i} className="border-t border-stone-100 py-2">
+                <summary className="cursor-pointer text-[13.5px] font-bold text-stone-800">{h.q}</summary>
+                <ol className="list-decimal pl-5 mt-1.5 space-y-1 text-[13px] text-stone-700">{h.a.map((a, j) => <li key={j}>{a}</li>)}</ol>
+                {h.src && <div className="text-[11px] text-stone-400 mt-1">元：{h.src}</div>}
+              </details>
+            ))}
           </div>
         )}
       </section>
