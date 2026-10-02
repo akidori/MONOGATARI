@@ -373,7 +373,24 @@ async function listScripts(env) {
   const list = (results || [])
     .filter((r) => r.proj_id && (!alive.size || alive.has(r.proj_id)))
     .map((r) => ({ id: r.proj_id, name: r.name || "", channel: r.channel || "未分類", updatedAt: r.updated_at, shared: !!r.shared }));
+  // 2026-10-02 AK「納品完了してるものまで表示されてる」: Studio OS で制作完了の案件に done:true を付ける（プラグインが一覧から外す）。
+  // 読めない時は何も付けない（隠しすぎない）
+  const done = await studioDoneProjIds(env).catch(() => null);
+  if (done) for (const x of list) if (done.has(x.id)) x.done = true;
   return toolText({ scripts: list });
+}
+async function studioDoneProjIds(env) {
+  if (!env.STUDIO_AGENT_KEY) return null;
+  const ids = new Set();
+  for (let page = 1; page <= 10; page++) {
+    const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/deliverables?productionStatus=completed&limit=200&page=" + page, { headers: { authorization: "Bearer " + env.STUDIO_AGENT_KEY } });
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || j.success === false) return null;
+    for (const d of j.data || []) if (d && d.mgProjectId && (!d.productionStatus || d.productionStatus === "completed")) ids.add(d.mgProjectId);
+    const total = (j.meta && j.meta.total) || 0;
+    if (!(j.data || []).length || page * 200 >= total) break;
+  }
+  return ids;
 }
 
 async function getUploadLink(env, { id }) {
