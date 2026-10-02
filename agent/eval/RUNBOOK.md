@@ -44,6 +44,6 @@
 
 ## Routine
 
-- trigger_id: `trig_01Bpj1eGHJ4ucdE4oDLYdKfN`（毎日 8:52 JST、依頼を受けたセッションに届く。Day 7 で `enabled=false` にする）
+- trigger_id: `trig_01Bpj1eGHJ4ucdE4oDLYdKfN`（毎日 8:52 JST、依頼を受けたセッションに届く。2026-10-02 Day 7 の後に `enabled=false` にした）
 - 旧 `trig_01KWPWiWU7P6SEpTy37R3UpY`（毎回新しいセッション）は 2026-09-27 に停止：Day 2 の回は動いたが結果がブランチに push されず（新しいセッションから akidori/MONOGATARI へ書けなかったとみられる）、Day 2 は依頼を受けたセッションで代わりに実行した
 - PRを作るツールが無い環境だった場合は、pushだけして日次レポートに「PR未作成」と書く（ブランチに結果が残っていればよい）
