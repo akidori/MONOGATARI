@@ -7,7 +7,7 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
-import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
+import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec, sectionsFromRows as todaySections, restSec as todayRestSec } from "./src/today-todo.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
@@ -4322,8 +4322,23 @@ function CreatorDiagnosis({ theme, userEmail }) {
    保存は window.storage "today-todo-v1"。判定は src/today-todo.js（テストは tools/test-today-todo.mjs）
    自動のTODOは工程を手順に分けて「次：〇〇」を出し、開くとチェックリストになる（一番上のTODOは最初から開いておく） */
 const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-function TodayTodo({ theme, cases, onOpenCase }) {
+function TodayTodo({ theme, cases, onOpenCase, loadRows }) {
   const [state, setState] = useState(null);
+  // 香盤表（ロケ行）を案件ごとに読んで手順に差し込む。Workerの返すロケ名より手元の最新を優先（2026-10-02 AK「香盤表と連動してない」）
+  const [rowsById, setRowsById] = useState({});
+  const caseKey = (cases || []).map((c) => c && c.caseId).filter(Boolean).join(",");
+  useEffect(() => {
+    if (!loadRows || !caseKey) return;
+    let alive = true;
+    caseKey.split(",").forEach(async (id) => {
+      try { const rows = await loadRows(id); if (alive && Array.isArray(rows)) setRowsById((m) => ({ ...m, [id]: rows })); } catch (e) {}
+    });
+    return () => { alive = false; };
+  }, [caseKey]);
+  const casesLinked = useMemo(() => (cases || []).map((c) => {
+    const secs = c && rowsById[c.caseId] ? todaySections(rowsById[c.caseId]) : null;
+    return secs && secs.length ? { ...c, sections: secs } : c;
+  }), [cases, rowsById]);
   const [text, setText] = useState("");
   const [showDone, setShowDone] = useState(false);
   const [openIds, setOpenIds] = useState(null); // null＝まだ触っていない（一番上の自動TODOだけ開く）
@@ -4343,7 +4358,7 @@ function TodayTodo({ theme, cases, onOpenCase }) {
     return nx;
   });
   if (!state) return null;
-  const list = todayList(state.date === today ? state : todayRollover(state, today), cases);
+  const list = todayList(state.date === today ? state : todayRollover(state, today), casesLinked);
   const doneN = list.done.length;
   const pct = list.total ? Math.round((doneN / list.total) * 100) : 0;
   const d = new Date();
@@ -4379,7 +4394,7 @@ function TodayTodo({ theme, cases, onOpenCase }) {
             <span className="text-[10.5px] font-bold px-1.5 py-[1px] rounded text-white shrink-0" style={{ background: theme.accent }}>次</span>
             <span className="text-[12.5px] text-stone-700 truncate">{x.next.title}</span>
             <span className="text-[11px] text-stone-400 shrink-0">{todayFmtSec(x.next.sec)}</span>
-            <span className="text-[11px] text-stone-400 shrink-0 ml-1">手順 {x.stepsDone}/{x.steps.length} {isOpen(x.id) ? "▾" : "▸"}</span>
+            <span className="text-[11px] text-stone-400 shrink-0 ml-1">手順 {x.stepsDone}/{x.steps.length}・残り{todayFmtSec(todayRestSec(x.steps))} {isOpen(x.id) ? "▾" : "▸"}</span>
           </button>
         )}
         {x.auto && !x.done && isOpen(x.id) && (
@@ -5735,6 +5750,17 @@ export default function App() {
 
   /* 最近の案件は前回の作業ページへ。未記録なら概要を開く。 */
   const openCase = async (id) => { await switchProject(id, resumePages.current[id] || "overview"); };
+  /* ホーム「今日やること」用：案件の香盤表（rows）だけを読む。開いている案件は編集中の最新を返す */
+  const loadCaseRows = async (id) => {
+    if (id === activeIdRef.current && project) return project.rows || [];
+    const entry = index.find((x) => x.id === id);
+    if (entry && !entry.collab) {
+      const r = await window.storage.get(STORE_PROJ(id));
+      return r && r.value ? (JSON.parse(r.value).rows || []) : null;
+    }
+    const r = await collabGet(id);
+    return (r && r.project && r.project.rows) || null;
+  };
 
   const createProject = async (template = true, channel = DEFAULT_CHANNEL, format = "documentary") => {
     const n = index.length + 1;
@@ -11262,8 +11288,8 @@ export default function App() {
                   <div className="text-[12.5px] text-stone-700 leading-snug whitespace-pre-wrap break-words">{m.shootDate || "撮影日未設定"}{maxDay > 1 && <>（{maxDay}日撮影）</>}</div>
                   <div className="flex flex-wrap gap-1.5 text-[12px] tabular-nums">
                     <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">{locations.length}ロケ</span>
-                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">本編想定 <b>{fmt(totalEst)}</b></span>
-                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">シーン合計 <b>{fmt(totalTarget)}</b></span>
+                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">本編想定 <b>{fmtDurJP(totalEst)}</b></span>
+                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">シーン合計 <b>{fmtDurJP(totalTarget)}</b></span>
                     {totalTravel > 0 && <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700">交通費 <b>¥{totalTravel.toLocaleString()}</b></span>}
                   </div>
                 </div>
@@ -11393,7 +11419,7 @@ export default function App() {
                         <div className="px-3 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-stone-500 min-w-0" style={{ fontFamily: mono }}>
                           <span className="font-bold text-emerald-600 inline-flex items-center gap-1"><Icon name="checkCircle" className="w-3.5 h-3.5" />撮影完了</span>
                           <span>{loc.scenes.length}シーン</span>
-                          <span className="ml-auto whitespace-nowrap">想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}</span>
+                          <span className="ml-auto whitespace-nowrap">動画内 想定 {fmtDurJP(loc.dur)} / シーン尺 {fmtDurJP(loc.secSum)}</span>
                         </div>
                       ) : (
                         <>
@@ -11426,7 +11452,7 @@ export default function App() {
                               );
                             })}
                             <span className="ml-auto text-[11px] text-stone-500 whitespace-nowrap" style={{ fontFamily: mono }}>
-                              {loc.scenes.length}シーン / 想定 {fmt(loc.dur)} / シーン尺 {fmt(loc.secSum)}
+                              {loc.scenes.length}シーン / 動画内 想定 {fmtDurJP(loc.dur)} / シーン尺 {fmtDurJP(loc.secSum)}
                             </span>
                           </div>
                         </>
@@ -13041,7 +13067,7 @@ export default function App() {
             )}
 
             {/* 2026-09-29 AK「ホーム画面さっきのシンプルなものに戻して」：あなたの担当・今日の仕事は「担当と納期」へ移し、続きから開くは外した */}
-            {user && <TodayTodo theme={theme} cases={(myWork && myWork.cases) || []} onOpenCase={(id) => openCase(id)} />}
+            {user && <TodayTodo theme={theme} cases={(myWork && myWork.cases) || []} onOpenCase={(id) => openCase(id)} loadRows={loadCaseRows} />}
             {(() => {
               const setMode = (m) => { setHomeMode(m); try { localStorage.setItem("mg:homeMode", m); } catch (e) {} };
               const STATUS_COLOR = { "完了": ["#E7F6EC", "#15803D"], "確認中": ["#FEF3E2", "#B45309"], "編集中": ["#E8F0FE", "#1D4ED8"], "企画中": ["#F3E8FF", "#7E22CE"], "未着手": ["#F1F0EE", "#78716C"] };

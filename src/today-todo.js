@@ -12,19 +12,38 @@ const ORDER = { "遅れ": 0, "今日": 1, "もうすぐ": 2 };
 const S = (title, sec) => ({ title, sec });
 const num = (i) => String(i).padStart(2, "0");
 
-/* 工程名 → 手順の型。sections は構成台本のロケ（セクション）名 */
+/* 香盤表（構成台本のロケ行）→ 手順に差し込むセクション（2026-10-02 AK「時間が分かりずらい・香盤表と連動してない」）。
+   ロケ名に入っている撮影時刻（13:00〜15:00）は作業時間と見分けにくいので外し、番号は香盤表と同じものを使う */
+const CLOCK_RE = /\s*[0-9０-９]{1,2}[:：][0-9０-９]{2}\s*(?:[〜~～\-ー]\s*(?:[0-9０-９]{1,2}[:：][0-9０-９]{2})?)?/g;
+export function sectionsFromRows(rows) {
+  const out = [];
+  for (const r of rows || []) {
+    if (!r) continue;
+    if (r.kind === "location") {
+      const label = String(r.label || "").trim();
+      const m = label.match(/^\s*([0-9０-９]+(?:-[A-Za-z0-9]+)?)\s*[｜|.．、)）]?\s*(.*)$/);
+      const name = ((m ? m[2] : label).replace(CLOCK_RE, " ").replace(/\s+/g, " ").trim()) || "ロケ";
+      out.push({ no: m ? m[1] : num(out.length + 1), name: name.slice(0, 40), scenes: 0 });
+    } else if (out.length) out[out.length - 1].scenes += 1;
+  }
+  return out.slice(0, 12);
+}
+
+/* 工程名 → 手順の型。sections は香盤表のロケ（{no,name,scenes}）か、Workerから来たロケ名の文字列 */
 export function stepsFor(stepName, sections) {
-  const secs = (sections || []).map((x) => String(x || "").trim()).filter(Boolean).slice(0, 12);
-  const perSection = (verb, sec) => secs.length
-    ? secs.map((name, i) => S(`${num(i)} ${name}の${verb}`, sec))
+  const secs = (sections || []).map((x, i) => (typeof x === "string" ? { no: num(i + 1), name: x.trim(), scenes: 0 } : x))
+    .filter((x) => x && x.name).slice(0, 12);
+  // シーン数が分かるロケは1シーンあたりの目安×シーン数（最低1シーン分）、分からなければ1ロケ分の目安
+  const perSection = (verb, perScene, sec) => secs.length
+    ? secs.map((x) => S(`${x.no} ${x.name}の${verb}${x.scenes ? `（${x.scenes}シーン）` : ""}`, x.scenes ? perScene * x.scenes : sec))
     : [S(`${verb}（頭から通しで）`, sec * 3)];
   const n = String(stepName || "");
   if (/粗|ラフ|仮編/.test(n)) return [
-    S("素材をシーケンスにインポート", 10), S("まず00のファイルをシーケンスに並べる", 10), S("音声を同期する", 300),
-    ...perSection("粗カット", 1800), S("通しで見て尺をメモする", 600),
+    S("素材をシーケンスにインポート", 10), S("まず最初のロケのファイルをシーケンスに並べる", 10), S("音声を同期する", 300),
+    ...perSection("粗カット", 300, 1800), S("通しで見て尺をメモする", 600),
   ];
   if (/テロップ|字幕/.test(n)) return [
-    S("テロップの型（フォント・色・位置）を用意する", 300), ...perSection("テロップ入れ", 1200), S("誤字を読み上げて確認する", 600),
+    S("テロップの型（フォント・色・位置）を用意する", 300), ...perSection("テロップ入れ", 200, 1200), S("誤字を読み上げて確認する", 600),
   ];
   if (/修正/.test(n)) return [
     S("指摘を1行ずつ書き出す", 180), S("該当箇所にマーカーを打つ", 300), S("指摘を上から順に直す", 1800),
@@ -36,13 +55,23 @@ export function stepsFor(stepName, sections) {
   ];
   if (/サムネ/.test(n)) return [S("参考サムネを3つ集める", 600), S("ラフを2案つくる", 1200), S("仕上げて書き出す", 1200)];
   if (/編集|カット/.test(n)) return [
-    S("粗カットを通しで見直す", 600), ...perSection("本編集（テンポ・BGM・SE）", 2400),
+    S("粗カットを通しで見直す", 600), ...perSection("本編集（テンポ・BGM・SE）", 400, 2400),
     S("色を揃える", 900), S("書き出してスマホで確認する", 600),
   ];
   return [S(`${n || "作業"}の段取りを3行で書く`, 300), S(`${n || "作業"}を進める`, 1800), S("見直して次の人へ渡す", 600)];
 }
 
-export const fmtSec = (sec) => (sec < 60 ? `${sec}秒` : sec < 3600 ? `${Math.round(sec / 60)}分` : `${Math.round(sec / 360) / 10}時間`);
+/* 作業にかかる目安。撮影時刻（13:00）と見間違えないよう「約1時間30分」の形で出す */
+export const fmtSec = (sec) => {
+  const s = Math.max(0, Math.round(sec || 0));
+  if (s < 60) return `${s}秒`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `約${m}分`;
+  return `約${Math.floor(m / 60)}時間${m % 60 ? `${m % 60}分` : ""}`;
+};
+
+/* 手順の残り時間の合計 */
+export const restSec = (steps) => (steps || []).reduce((a, st) => a + (st.done ? 0 : st.sec || 0), 0);
 
 export function autoTodos(cases) {
   const out = [];

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { autoTodos, rollover, addManual, toggle, removeManual, todoList, stepsFor, toggleStep, fmtSec } from "../src/today-todo.js";
+import { autoTodos, rollover, addManual, toggle, removeManual, todoList, stepsFor, toggleStep, fmtSec, sectionsFromRows, restSec } from "../src/today-todo.js";
 
 const cases = [
   { caseId: "a", title: "森川さん", pace: "遅れ", current: { name: "本編集" }, mine: { name: "本編集", deadline: "2026-09-24", days: -5 } },
@@ -37,11 +37,27 @@ assert.equal(removeManual(next, "m3").manual.length, 0);
 
 // 手順分け（2026-09-29）：工程の型＋構成台本のセクション
 const rough = stepsFor("粗編集", ["オープニング", "工房紹介"]);
-assert.deepEqual(rough.slice(0, 3).map((x) => x.title), ["素材をシーケンスにインポート", "まず00のファイルをシーケンスに並べる", "音声を同期する"]);
-assert.ok(rough.some((x) => x.title === "00 オープニングの粗カット"));
-assert.ok(rough.some((x) => x.title === "01 工房紹介の粗カット"));
+assert.deepEqual(rough.slice(0, 3).map((x) => x.title), ["素材をシーケンスにインポート", "まず最初のロケのファイルをシーケンスに並べる", "音声を同期する"]);
+assert.ok(rough.some((x) => x.title === "01 オープニングの粗カット"));
+assert.ok(rough.some((x) => x.title === "02 工房紹介の粗カット"));
 assert.equal(fmtSec(10), "10秒");
-assert.equal(fmtSec(300), "5分");
+assert.equal(fmtSec(300), "約5分");
+assert.equal(fmtSec(5400), "約1時間30分");
+assert.equal(fmtSec(7200), "約2時間");
+
+// 香盤表と連動（2026-10-02）：ロケ番号は香盤表のまま、ロケ名の撮影時刻は外し、目安はシーン数から
+const kouban = sectionsFromRows([
+  { kind: "location", label: "01｜大阪工場 13:00〜15:00" }, { kind: "scene" }, { kind: "scene" }, { kind: "scene" }, { kind: "scene" }, { kind: "scene" }, { kind: "scene" },
+  { kind: "location", label: "03-B｜車内（京都へ移動中）15:10〜15:50" }, { kind: "scene" },
+  { kind: "location", label: "京都本社" },
+]);
+assert.deepEqual(kouban, [{ no: "01", name: "大阪工場", scenes: 6 }, { no: "03-B", name: "車内（京都へ移動中）", scenes: 1 }, { no: "03", name: "京都本社", scenes: 0 }]);
+const kr = stepsFor("粗編集", kouban);
+const osaka = kr.find((x) => x.title === "01 大阪工場の粗カット（6シーン）");
+assert.ok(osaka, "香盤表の番号とロケ名・シーン数で出る");
+assert.equal(osaka.sec, 1800, "1シーン5分×6");
+assert.ok(kr.some((x) => x.title === "03 京都本社の粗カット" && x.sec === 1800), "シーンが無いロケは1ロケ分の目安");
+assert.equal(restSec([{ sec: 60, done: true }, { sec: 120 }, { sec: 30 }]), 150);
 assert.ok(stepsFor("本編集", []).some((x) => x.title.includes("頭から通しで")), "セクションが無い時は通しの手順1つにまとめる");
 assert.ok(stepsFor("修正対応", ["A"])[0].title.includes("指摘"));
 assert.ok(stepsFor("先方チェック", []).length >= 2, "型が無い工程も分ける");
@@ -50,11 +66,11 @@ const withSec = [{ ...cases[0], sections: ["オープニング", "工房紹介"]
 let t = rollover(null, "2026-09-29");
 let item = todoList(t, withSec).open[0];
 assert.equal(item.next.title, "粗カットを通しで見直す");
-assert.ok(item.steps.some((x) => x.title === "00 オープニングの本編集（テンポ・BGM・SE）"));
+assert.ok(item.steps.some((x) => x.title === "01 オープニングの本編集（テンポ・BGM・SE）"));
 t = toggleStep(t, item.id, 0, item.steps.length);
 item = todoList(t, withSec).open[0];
 assert.equal(item.stepsDone, 1);
-assert.equal(item.next.title, "00 オープニングの本編集（テンポ・BGM・SE）");
+assert.equal(item.next.title, "01 オープニングの本編集（テンポ・BGM・SE）");
 // 手順のチェックは翌日も残る（工程が数日かかるため）
 assert.deepEqual(rollover(t, "2026-09-30").steps[item.id], [0]);
 // 全部チェックしたら親も完了、1つ外したら戻る
