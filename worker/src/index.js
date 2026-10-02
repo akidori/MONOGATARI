@@ -1669,8 +1669,10 @@ ${qList}
         const hit = await cache.match(key);
         if (hit) return hit;
         try {
-          const r = await fetch("https://birdflip-knowledge-api.aki-surf89315.workers.dev/api/file?path=" + encodeURIComponent("Manuals/process/editor-steps.json"),
-            { headers: { authorization: "Bearer " + env.KNOWLEDGE_API_TOKEN } });
+          // Service Binding（KNOWLEDGE_API）で呼ぶ。同じアカウントの workers.dev へ URL で fetch すると弾かれるため
+          const u = "https://birdflip-knowledge-api.aki-surf89315.workers.dev/api/file?path=" + encodeURIComponent("Manuals/process/editor-steps.json");
+          const init = { headers: { authorization: "Bearer " + env.KNOWLEDGE_API_TOKEN } };
+          const r = env.KNOWLEDGE_API ? await env.KNOWLEDGE_API.fetch(u, init) : await fetch(u, init);
           if (!r.ok) return json({ connected: false });
           const data = await r.json();
           const res = json({ connected: true, sha: r.headers.get("x-source-sha") || "", data });
