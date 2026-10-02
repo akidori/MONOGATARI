@@ -31,6 +31,7 @@ const TOOLS = [
       "台本を更新する。data は { name?, channel?, meta?, rows? }。meta は指定キーだけ上書き、rows は全置換（idが一致する行は未指定の項目を保持、idの無い行は新規）。" +
       "rows[].kind は location|scene。scene の type は インサート(5秒)/ブリッジ(10秒)/VLOG(30秒)/解説系(60秒)/訴求(180秒)、sec 省略時は type の秒数。" +
       "script の改行は実際の改行文字。baseUpdatedAt を渡すと、それより新しい保存があれば上書きせず失敗する。" +
+      "シーンの役割：scene の rows[].role に digest（ダイジェスト候補）/ peak（ピーク）/ cv（CV）か null。台本を開いた時に、導入（ダイジェスト）・ピーク・CVの場所が分かるようにする印。" +
       "人物の色分け：rows[].person に p1(紫)/p2(青緑)/p3(ピンク)/p4(茶) か null(解除)。location に付けると色の無い配下 scene に効く。色の名前は meta.personNames = { p1:\"矢内社長\", ... }。",
     inputSchema: {
       type: "object",
@@ -156,6 +157,8 @@ const str = (v, path) => { if (typeof v !== "string") throw new Error(path + " �
 const num = (v, path) => { if (typeof v !== "number" || !Number.isFinite(v) || v < 0) throw new Error(path + " は0以上の数値にしてください"); return v; };
 
 const PERSON_KEYS = ["p1", "p2", "p3", "p4"]; // 人物色（アプリの PERSON_COLORS と同じキー）。null で解除
+const ROLE_KEYS = ["digest", "peak", "cv"];
+const role = (v, path) => { if (v === null || v === "") return null; if (!ROLE_KEYS.includes(v)) throw new Error(path + " は " + ROLE_KEYS.join("/") + " か null にしてください"); return v; };
 const person = (v, path) => { if (v === null || v === "") return null; if (!PERSON_KEYS.includes(v)) throw new Error(path + " は " + PERSON_KEYS.join("/") + " か null にしてください"); return v; };
 
 function normalizeRows(incoming, existing) {
@@ -198,6 +201,7 @@ function normalizeRows(incoming, existing) {
     else if (out.script === undefined) out.script = "";
     if (r.tc !== undefined) out.tc = r.tc === null ? null : num(r.tc, p + ".tc");
     if (r.person !== undefined) out.person = person(r.person, p + ".person");
+    if (r.role !== undefined) out.role = role(r.role, p + ".role");
     return out;
   });
 }

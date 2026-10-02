@@ -311,6 +311,9 @@ function paneScript(p, accent, main){
   const maxDay = (p.rows||[]).reduce((a,r)=> r.kind==="location" ? Math.max(a, dayD(r)) : a, 1);
   const personNames = (p.meta && p.meta.personNames) || {};
   const personOf = (k)=> PERSON_COLORS[k] ? { color: PERSON_COLORS[k].color, name: String(personNames[k]||"").trim() || PERSON_COLORS[k].def } : null;
+  /* シーンの役割（本体 monogataritch.src.jsx の SCENE_ROLES と同じ）。r.role = digest / peak / cv */
+  const SCENE_ROLES = { digest:{label:"ダイジェスト候補",mark:"◆"}, peak:{label:"ピーク",mark:"★"}, cv:{label:"CV",mark:"→"} };
+  const roleChip = (k)=> SCENE_ROLES[k] ? `<span class="shrink-0 inline-flex items-center h-[18px] px-2 rounded-full text-[10.5px] font-bold" style="background:#1F2937;color:#fff" title="このシーンの役割">${SCENE_ROLES[k].mark} ${esc(SCENE_ROLES[k].label)}</span>` : "";
   const personChip = (pc)=> pc ? `<span class="shrink-0 inline-flex items-center h-[18px] px-2 rounded-full text-[10.5px] font-bold" style="background:${pc.color};color:#fff">${esc(pc.name)}</span>` : "";
   let locPerson = null;
   let sceneNo = 0, rowsHtml = "", prevDay = null;
@@ -363,6 +366,7 @@ function paneScript(p, accent, main){
           <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" style="background:${t.bg};color:${t.color}">${esc(t.full)}</span>
           <span class="text-[13px] font-bold">${esc(r.label||"")}</span>
           ${r.person && r.person !== locPerson ? personChip(pc) : ""}
+          ${roleChip(r.role)}
           <span class="ml-auto shrink-0 inline-flex items-baseline gap-2 text-[10px] text-stone-400 mono" style="font-variant-numeric:tabular-nums">
             <span title="目標秒数">${target}秒</span>
             <span title="所要時間（文字数÷${rate}字/秒）・文字数">${ch>0?fmtT(ch/rate):"—"}・${ch}字</span>
@@ -382,7 +386,9 @@ function paneScript(p, accent, main){
   // 人物の色の凡例（本体の「人物の色」と同じ）。台本で人物色を使っている時だけ出す
   const usedP = Object.keys(PERSON_COLORS).filter(k => (p.rows||[]).some(r => r.person === k));
   const legend = usedP.length ? `<div class="mb-3 flex flex-wrap items-center gap-2"><span class="text-[12px] font-bold text-stone-500 mr-1">人物の色</span>${usedP.map(k=>{ const pc=personOf(k); return `<span class="inline-flex items-center gap-1.5 h-7 px-3 rounded-full text-[12px] font-bold border" style="color:${pc.color};background:${pc.color}14;border-color:${pc.color}40"><span class="w-2.5 h-2.5 rounded-full" style="background:${pc.color}"></span>${esc(pc.name)}</span>`; }).join("")}</div>` : "";
-  return `${legend}<div>${rowsHtml}</div>
+  const usedR = Object.keys(SCENE_ROLES).filter(k => (p.rows||[]).some(r => r.kind === "scene" && r.role === k));
+  const roleLegend = usedR.length ? `<div class="mb-3 flex flex-wrap items-center gap-2"><span class="text-[12px] font-bold text-stone-500 mr-1">シーンの役割</span>${usedR.map(k=>roleChip(k)).join("")}</div>` : "";
+  return `${legend}${roleLegend}<div>${rowsHtml}</div>
     <div class="flex justify-end gap-4 mt-3 pr-1 text-[11px] text-stone-500 mono" style="font-variant-numeric:tabular-nums">
       <span title="原稿がある行は文字数÷${rate}字/秒、無い行は目標秒数で積み上げ">合計（目安） ${fmtT(acc)}</span>
       <span title="各シーンの目標秒数の合計">目標 ${fmtT(totalTarget)}</span>
