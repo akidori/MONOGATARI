@@ -2427,7 +2427,7 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
                     {/* 2026-10-02 タイトル・概要欄3行（押すとコピー） */}
                     {s.title && <div className="mt-1 text-[11px] font-bold text-stone-700 leading-snug break-words" title={s.category || ""}>{s.title}</div>}
                     {s.desc && (
-                      <button onClick={() => { try { navigator.clipboard.writeText(s.desc); } catch (e) {} }} title={s.desc}
+                      <button onClick={() => { try { navigator.clipboard.writeText(s.desc + (s.hashtags ? "\n\n" + s.hashtags : "")); } catch (e) {} }} title={s.desc + (s.hashtags ? "\n" + s.hashtags : "")}
                         className="mt-0.5 w-full text-left text-[10.5px] text-stone-500 hover:text-stone-700 leading-snug">概要欄をコピー</button>
                     )}
                   </div>

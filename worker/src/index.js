@@ -3126,9 +3126,12 @@ Bird Flip / ものがたりっち！`;
         await env.SNAPS.put("shorts:" + snap, JSON.stringify({ ...res, items, updatedAt: now() }));
         return json({ ok: true, key: it.key, hidden: !!it.hidden });
       }
-      // PUT /api/shorts/upload?key=<MG_LIST_KEY>&snap=&name= → Macが生成ショートmp4をR2に上げる。keyを返す
+      // PUT /api/shorts/upload?key=<SHORTS_KEY>&snap=&name= → 生成ショートmp4をR2に上げる。keyを返す
+      // 2026-10-02 Premiereプラグイン（Authorization: Bearer MCP_WRITE_KEY）からも受ける
       if (request.method === "PUT" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "upload") {
-        if (!env.SHORTS_KEY || url.searchParams.get("key") !== env.SHORTS_KEY) return json({ error: "forbidden" }, 403);
+        const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        const okKey = (env.SHORTS_KEY && url.searchParams.get("key") === env.SHORTS_KEY) || (env.MCP_WRITE_KEY && bearer === env.MCP_WRITE_KEY);
+        if (!okKey) return json({ error: "forbidden" }, 403);
         const snap = (url.searchParams.get("snap") || "").slice(0, 16);
         const name = (url.searchParams.get("name") || "short.mp4").replace(/[\/\\]/g, "_").slice(0, 120);
         if (!snap) return json({ error: "snap必須" }, 400);
@@ -3136,6 +3139,32 @@ Bird Flip / ものがたりっち！`;
         await env.FILES.put(rkey, request.body, { httpMetadata: { contentType: "video/mp4" } });
         await env.SNAPS.put("file:" + rkey, JSON.stringify({ name, mime: "video/mp4" }));
         return json({ ok: true, key: rkey });
+      }
+      // POST /api/shorts/add（Authorization: Bearer MCP_WRITE_KEY）{ proj?|snap?, items:[{key,name,size,title,desc,hashtags,category}], replace? }
+      // 2026-10-02 AK「プラグインのショート生成を一発納品できるレベルに」: プラグインで作って点検を通したショートを、案件の「ショート」欄に載せる
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "shorts" && parts[2] === "add") {
+        const bearer = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!env.MCP_WRITE_KEY || bearer !== env.MCP_WRITE_KEY) return json({ error: "forbidden" }, 403);
+        const b = await request.json().catch(() => ({}));
+        let snap = (b.snap || "").toString().slice(0, 16);
+        if (!snap && b.proj) {
+          try {
+            const row = await env.DB.prepare("SELECT value FROM mg_kv WHERE proj_id = ? ORDER BY updated_at DESC LIMIT 1").bind(String(b.proj)).first();
+            snap = ((row && JSON.parse(row.value || "{}").shareId) || "").toString();
+          } catch (e) { snap = ""; }
+        }
+        if (!snap) return json({ error: "案件の共有がまだありません（ものがたりっちで共有を発行してください）" }, 400);
+        const items = (Array.isArray(b.items) ? b.items : []).filter((s) => s && typeof s.key === "string" && s.key.startsWith("f/" + snap + "/")).slice(0, 30).map((s) => ({
+          key: s.key.slice(0, 200), name: ("" + (s.name || "short.mp4")).slice(0, 120), size: parseInt(s.size, 10) || 0,
+          ...(s.title ? { title: ("" + s.title).slice(0, 120) } : {}), ...(s.desc ? { desc: ("" + s.desc).slice(0, 600) } : {}),
+          ...(s.hashtags ? { hashtags: ("" + s.hashtags).slice(0, 300) } : {}), ...(s.category ? { category: ("" + s.category).slice(0, 40) } : {}),
+          source: "plugin", addedAt: now(),
+        }));
+        if (!items.length) return json({ error: "載せるショートがありません" }, 400);
+        const cur = (await env.SNAPS.get("shorts:" + snap, "json")) || { items: [] };
+        const keep = b.replace ? [] : (cur.items || []).filter((x) => !items.some((n) => n.key === x.key));
+        await env.SNAPS.put("shorts:" + snap, JSON.stringify({ ...cur, items: [...items, ...keep].slice(0, 60), updatedAt: now() }));
+        return json({ ok: true, snap, count: items.length });
       }
       // GET /api/shorts/stale?key=<MG_LIST_KEY>&thresholdMin=N → 放置ジョブ検知（cron-worker日次まとめ用）
       // SHORTS_KEYではなくMG_LIST_KEYでゲート＝Mac用ではなくcron専用の口
