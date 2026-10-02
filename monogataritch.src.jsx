@@ -8,6 +8,7 @@ import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec, linkCaseSections as todayLinkSections, loadScheduleRows as todayLoadRows, restSec as todayRestSec } from "./src/today-todo.js";
+import { readCreatorProfile, writeCreatorProfile, fetchLearnSteps } from "./src/learning-diagnosis.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
@@ -3759,21 +3760,9 @@ const LEARN_GROUPS = [
 ];
 function learnReady(it) { return !!(it.video || (it.steps && it.steps.length) || (it.points && it.points.length) || (it.qa && it.qa.length)); }
 /* 編集者の作業ステップ（2026-10-02）。正本は GitHub birdflip-knowledge の Manuals/process/editor-steps.json。
-   Worker の /api/learn-steps 経由で読み、粗編・初稿・修正の3グループとして学習タブの先頭に足す。
+   Worker の /api/learn-steps 経由で読み、正本にある全工程を学習タブの先頭に足す。
    読めない時（鍵未設定・通信失敗）は今までの LEARN_GROUPS だけを出す */
-function stepsToLearnGroups(data) {
-  if (!data || !Array.isArray(data.phases)) return [];
-  return data.phases.map((ph) => ({
-    title: "作業ステップ：" + ph.title,
-    items: (ph.steps || []).map((s, i) => ({
-      id: "step-" + ph.id + "-" + s.id,
-      title: (i + 1) + ". " + s.do,
-      goal: i === 0 ? ph.goal : "",
-      steps: s.tip ? [s.tip] : [],
-      qa: (Array.isArray(s.help) ? s.help : []).map((h) => ({ q: String((h && h.q) || ""), a: Array.isArray(h && h.a) ? h.a.map(String) : [], src: String((h && h.src) || "") })),
-    })),
-  }));
-}
+
 /* 制作の情報（2026-10-02 AK「新規案件を作る時に質問に答えていくと全部入る」）。
    納期は Studio OS が正本（投稿日から逆算）なのでここには持たない。ここは制作の中身：演者・撮影日・完成尺・目的とCV・企画の軸・担当編集者。
    保存先は project.meta.prod。新規案件ウィザードの2ページ目と、概要タブのカードで同じ部品を使う。
@@ -3856,17 +3845,23 @@ function ProdInfoForm({ meta, onMeta }) {
 }
 function LearnPage({ theme }) {
   const [remote, setRemote] = useState([]);
+  const [loadState, setLoadState] = useState({ status: "loading", version: "" });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let off = false;
-    fetch(SHARE_API + "/api/learn-steps").then((r) => r.json()).then((j) => {
-      if (off || !j || !j.connected) return;
-      const g = stepsToLearnGroups(j.data);
-      setRemote(g);
-      // まだ何も選んでいなければ、先頭の作業ステップを開く
-      if (!picked.current && g[0] && g[0].items[0]) setSel(g[0].items[0].id);
-    }).catch(() => {});
-    return () => { off = true; };
-  }, []);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    setLoadState((state) => ({ ...state, status: "loading" }));
+    fetchLearnSteps(fetch, SHARE_API + "/api/learn-steps", controller.signal).then(({ groups, version }) => {
+      if (off) return;
+      setRemote(groups);
+      setLoadState({ status: groups.length ? "ready" : "empty", version });
+      if (!picked.current && groups[0] && groups[0].items[0]) setSel(groups[0].items[0].id);
+    }).catch(() => {
+      if (!off) setLoadState((state) => ({ ...state, status: "error" }));
+    }).finally(() => clearTimeout(timeout));
+    return () => { off = true; controller.abort(); clearTimeout(timeout); };
+  }, [attempt]);
   const groups = remote.length ? remote.concat(LEARN_GROUPS) : LEARN_GROUPS;
   const all = groups.flatMap((g) => g.items);
   const [sel, setSel] = useState(LEARN_GROUPS[0].items[0].id);
@@ -3874,14 +3869,20 @@ function LearnPage({ theme }) {
   const it = all.find((x) => x.id === sel) || all[0];
   const ready = learnReady(it);
   return (
-    <div className="flex flex-col md:flex-row gap-4">
+    <>
+      <div role="status" className="text-[12px] text-stone-600 rounded-xl border border-stone-200 bg-white px-3 py-2 mb-3 flex flex-wrap items-center gap-2">
+        <span>{loadState.status === "loading" ? "作業ステップを読み込み中…" : loadState.status === "error" ? (remote.length ? "作業ステップを取得できませんでした。前回読み込んだ内容を表示しています。" : "作業ステップを取得できませんでした。基本マニュアルは引き続き読めます。") : loadState.status === "empty" ? "取得した作業ステップは0件です。基本マニュアルを表示しています。" : `作業ステップ ${remote.reduce((n, group) => n + group.items.length, 0)}件を読み込みました。`}</span>
+        {(loadState.version || loadState.status === "ready" || loadState.status === "empty") && <span className="break-all text-stone-400">表示中の版：{loadState.version || "版情報なし"}</span>}
+        <button disabled={loadState.status === "loading"} onClick={() => setAttempt((n) => n + 1)} className="font-bold underline disabled:opacity-40">再読み込み</button>
+      </div>
+      <div className="flex flex-col md:flex-row gap-4">
       <nav className="md:w-[220px] shrink-0">
         {groups.map((g) => (
           <div key={g.title} className="mb-3">
             <div className="text-[11px] font-bold text-stone-400 px-2 mb-1">{g.title}</div>
             {g.items.map((x) => (
               <button key={x.id} onClick={() => { picked.current = true; setSel(x.id); }}
-                className={"w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[13px] " + (x.id === sel ? "bg-white font-bold text-stone-800 shadow-sm" : "text-stone-600 hover:bg-white/70")}>
+                className={"w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[13px] " + (x.id === it.id ? "bg-white font-bold text-stone-800 shadow-sm" : "text-stone-600 hover:bg-white/70")}>
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: learnReady(x) ? theme.accent : "#D6D3D1" }} />
                 <span className="min-w-0 truncate">{x.title}</span>
               </button>
@@ -3924,6 +3925,7 @@ function LearnPage({ theme }) {
         )}
       </section>
     </div>
+    </>
   );
 }
 
@@ -3969,6 +3971,7 @@ function CreatorProfileCard({ profile: p, theme }) {
   const est10 = estimateHours(p, 10, type);
   const wk = weeklyHours(p);
   const cap = monthlyCapacity(p, 10, type);
+  const fullHours = est10.complete && est10.total > 0;
   const match = posting.trim() ? matchPosting(p, posting) : null;
   const card = "bg-white border border-stone-200 rounded-xl px-4 py-4 shadow-sm mb-4";
   const pill = "text-[11.5px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600";
@@ -4002,11 +4005,12 @@ function CreatorProfileCard({ profile: p, theme }) {
         )}
         {(p.skills || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">得意分野</div><div className="flex flex-wrap gap-1.5">{p.skills.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
         {(p.software || []).length > 0 && <div className="mb-2"><div className="text-[11.5px] font-bold text-stone-500 mb-1">使えるソフト</div><div className="flex flex-wrap gap-1.5">{p.software.map((k) => <span key={k} className={pill}>{k}</span>)}</div></div>}
-        <div className={"grid gap-2 mt-3 text-center " + (est10.total > 0 ? "grid-cols-3" : "grid-cols-1")}>
+        <div className={"grid gap-2 mt-3 text-center " + (fullHours ? "grid-cols-3" : "grid-cols-1")}>
           <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{wk}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">1週間に使える時間</div></div>
-          {est10.total > 0 && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{est10.total}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">10分の動画1本（目安）</div></div>}
-          {est10.total > 0 && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{cap}<span className="text-[11px]">本</span></div><div className="text-[10.5px] text-stone-500">月の目安（10分）</div></div>}
+          {fullHours && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{est10.total}<span className="text-[11px]">時間</span></div><div className="text-[10.5px] text-stone-500">10分の動画1本（目安）</div></div>}
+          {fullHours && <div className="rounded-lg bg-stone-50 py-2"><div className="text-[17px] font-black text-stone-800">{cap}<span className="text-[11px]">本</span></div><div className="text-[10.5px] text-stone-500">月の目安（10分）</div></div>}
         </div>
+        {!est10.complete && est10.enteredCount > 0 && <p className="text-[11.5px] text-stone-500 mt-2">時間の目安は{est10.enteredCount}/5工程のみ入力。動画全体の所要時間・月の本数は算出していません。</p>}
       </section>
 
       <section className={card}>
@@ -4060,6 +4064,12 @@ function CreatorDiagnosis({ theme, userEmail }) {
   const [draft, setDraft] = useState(emptyCreatorProfile);
   const [mode, setMode] = useState("form");
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const generation = useRef(0);
+  const loadedStorage = useRef(null);
+  const saveBusy = useRef(false);
   const [preview, setPreview] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const copyShare = async () => {
@@ -4072,15 +4082,28 @@ function CreatorDiagnosis({ theme, userEmail }) {
   };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const r = window.storage && await window.storage.get(STORE_CREATOR);
-        const p = r && r.value ? JSON.parse(r.value) : null;
-        if (p) { setSaved(p); setDraft({ ...emptyCreatorProfile(), ...p }); if (profileComplete(p)) setMode("result"); }
-      } catch (e) {}
-      setLoaded(true);
-    })();
-  }, []);
+    const current = ++generation.current;
+    const storage = window.storage;
+    loadedStorage.current = null;
+    setLoaded(false);
+    setLoadError("");
+    setSaveError("");
+    readCreatorProfile(storage, STORE_CREATOR).then((profile) => {
+      if (current !== generation.current) return;
+      const empty = emptyCreatorProfile();
+      setSaved(profile);
+      setDraft(profile ? { ...empty, ...profile, answers: profile.answers || {}, steps: profile.steps || {}, avail: { ...empty.avail, ...(profile.avail || {}) } } : empty);
+      setMode(profile && profileComplete(profile) ? "result" : "form");
+      setPreview(false);
+      setShareCopied(false);
+      loadedStorage.current = storage;
+    }).catch(() => {
+      if (current === generation.current) setLoadError("保存済みの回答を読み込めませんでした。回答を保護するため、再読み込みができるまで編集・保存を止めています。");
+    }).finally(() => {
+      if (current === generation.current) setLoaded(true);
+    });
+    return () => { generation.current += 1; };
+  }, [loadAttempt, userEmail]);
 
   const set = (patch) => setDraft((d) => ({ ...d, ...patch }));
   const setAns = (id, v) => setDraft((d) => ({ ...d, answers: { ...d.answers, [id]: v } }));
@@ -4093,16 +4116,33 @@ function CreatorDiagnosis({ theme, userEmail }) {
   const totalCount = CREATOR_QUESTIONS.length + CREATOR_STEPS.length + 1;
 
   const save = async () => {
+    if (saveBusy.current || !loaded || loadError || !complete) return;
+    const storage = loadedStorage.current;
+    if (!storage || storage !== window.storage) {
+      setLoadError("保存先が変わりました。回答を保護するため、再読み込みしてください。");
+      return;
+    }
+    const current = generation.current;
     const p = { ...draft, updatedAt: Date.now() };
+    saveBusy.current = true;
     setSaving(true);
-    try { if (window.storage) await window.storage.set(STORE_CREATOR, JSON.stringify(p)); } catch (e) { alert("保存できませんでした：" + (e && e.message || e)); }
-    setSaving(false);
-    setSaved(p);
-    setMode("result");
-    window.scrollTo && window.scrollTo(0, 0);
+    setSaveError("");
+    try {
+      await writeCreatorProfile(storage, STORE_CREATOR, p);
+      if (current !== generation.current) return;
+      setSaved(p);
+      setMode("result");
+      window.scrollTo && window.scrollTo(0, 0);
+    } catch (e) {
+      if (current === generation.current) setSaveError("保存できませんでした。入力した回答はこの画面に残っています。通信を確認して、もう一度保存してください。");
+    } finally {
+      saveBusy.current = false;
+      setSaving(false);
+    }
   };
 
   if (!loaded) return <p className="text-[13px] text-stone-400">読み込み中…</p>;
+  if (loadError) return <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-[13px] text-stone-700"><p>{loadError}</p><button onClick={() => setLoadAttempt((n) => n + 1)} className="mt-3 font-bold underline">回答を再読み込み</button></div>;
 
   const card = "bg-white border border-stone-200 rounded-xl px-4 py-4 shadow-sm mb-4";
   const h2 = "text-[14px] font-black text-stone-800 mb-1";
@@ -4182,7 +4222,7 @@ function CreatorDiagnosis({ theme, userEmail }) {
   }
 
   return (
-    <>
+    <fieldset disabled={saving} className="min-w-0 border-0 p-0 m-0">
       <div className="sticky top-[56px] z-[5] -mx-1 px-1 py-2 mb-2" style={{ background: "#E9E8E3" }}>
         <div className="flex items-center gap-2 text-[11.5px] font-bold text-stone-500">
           <div className="flex-1 h-1.5 rounded-full bg-white overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.round((answeredCount / totalCount) * 100)}%`, background: theme.accent }} /></div>
@@ -4245,7 +4285,7 @@ function CreatorDiagnosis({ theme, userEmail }) {
                 <span className="text-[11.5px] text-stone-500 mr-1">好き度</span>
                 {[1, 2, 3, 4, 5].map((n) => <button key={n} onClick={() => setStep(s.key, { like: n })} aria-label={`${n}`} className="text-[20px] leading-none" style={{ color: Number(st.like) >= n ? theme.accent : "#D6D3D1" }}>★</button>)}
               </div>
-              <label className="flex items-center gap-1 text-[11.5px] text-stone-500">かかる時間（任意）<input type="number" min="0" step="0.5" value={st.hours == null ? "" : st.hours} onChange={(e) => setStep(s.key, { hours: e.target.value })} className="w-[72px] text-[14px] border border-stone-300 rounded-lg px-2 py-1" />時間</label>
+              <label className="flex items-center gap-1 text-[11.5px] text-stone-500">かかる時間（任意）<input type="number" min="0" step="0.5" value={st.hours == null ? "" : st.hours} onChange={(e) => setStep(s.key, { hours: e.target.value, hoursEntered: e.target.value.trim() !== "" })} className="w-[72px] text-[14px] border border-stone-300 rounded-lg px-2 py-1" />時間</label>
             </div>
           </div>
         ); })}
@@ -4308,12 +4348,13 @@ function CreatorDiagnosis({ theme, userEmail }) {
         {(draft.portfolio || []).length < 10 && <button onClick={() => set({ portfolio: [...(draft.portfolio || []), { url: "", title: "", roles: [], note: "" }] })} className="text-[12.5px] font-bold px-3 py-1.5 rounded-lg border border-dashed border-stone-300 text-stone-600 bg-white">＋ 作品を追加</button>}
       </section>
 
+      {saveError && <p role="alert" className="text-[12px] text-rose-700 mb-3">{saveError}</p>}
       <div className="flex items-center gap-2 mb-10">
-        <button disabled={!complete || saving} onClick={save} className="text-[14px] font-bold px-6 py-2.5 rounded-xl text-white disabled:opacity-40" style={{ background: theme.accent }}>{saving ? "保存中…" : "診断する"}</button>
+        <button disabled={!complete || saving} onClick={save} className="text-[14px] font-bold px-6 py-2.5 rounded-xl text-white disabled:opacity-40" style={{ background: theme.accent }}>{saving ? "保存中…" : saveError ? "もう一度保存して診断する" : "診断する"}</button>
         {!complete && <span className="text-[11.5px] text-stone-500">作業できる時間・5工程の好き度・12問に答えると診断できます</span>}
         {saved && profileComplete(saved) && <button onClick={() => { setDraft({ ...emptyCreatorProfile(), ...saved }); setMode("result"); }} className="text-[12px] font-bold text-stone-500 underline ml-auto">変えずに結果へ戻る</button>}
       </div>
-    </>
+    </fieldset>
   );
 }
 
@@ -13272,7 +13313,7 @@ export default function App() {
               <h1 className="text-[18px] font-black text-stone-800 flex items-center gap-2"><Icon name="sparkle" className="w-5 h-5" style={{ color: theme.main }} />クリエイタータイプ診断</h1>
               <button onClick={() => setShowCreator(false)} className="ml-auto text-[12px] font-bold px-3 py-1.5 rounded-lg bg-white border border-stone-200 text-stone-600 hover:bg-stone-50">閉じる</button>
             </div>
-            <p className="text-[12px] text-stone-500 mb-4">作業の仕方と工程ごとの時間から、あなたに合った制作の流れと、納期から逆算した作業予定を出します。{!user && "（ログインすると回答がアカウントに保存され、どの端末でも見られます）"}</p>
+            <p className="text-[12px] text-stone-500 mb-4">作業の仕方と工程ごとの好き度から、あなたに合った制作の流れを整理します。時間は任意の目安です。案件の作業予定は案件側で確認できます。{!user && "（ログインすると回答がアカウントに保存され、どの端末でも見られます）"}</p>
             <CreatorDiagnosis theme={theme} userEmail={(user && user.email) || ""} />
           </main>
         </div>

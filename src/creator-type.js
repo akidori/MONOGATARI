@@ -103,6 +103,14 @@ export function bufferRate(type) {
 
 const round1 = (x) => Math.round(x * 10) / 10;
 
+// Older public URLs turned blank time fields into 0. Treat those ambiguous
+// zeroes as unknown; newly entered explicit zeroes carry an additive flag.
+export function hasStepHours(step) {
+  if (!step || step.hoursEntered === false || step.hours == null || String(step.hours).trim() === "") return false;
+  const hours = Number(step.hours);
+  return Number.isFinite(hours) && hours >= 0 && (hours > 0 || step.hoursEntered === true);
+}
+
 // 動画1本あたりの工程ごとの時間（回答は「10分の動画で何時間」）
 export function estimateHours(profile, minutes, type) {
   const scale = (Number(minutes) || 10) / 10;
@@ -110,10 +118,10 @@ export function estimateHours(profile, minutes, type) {
   const steps = CREATOR_STEPS.map((s) => {
     const base = Number(profile && profile.steps && profile.steps[s.key] && profile.steps[s.key].hours) || 0;
     const hours = round1(base * scale * (1 + buf));
-    return { ...s, base, hours };
+    return { ...s, base, hours, entered: hasStepHours(profile && profile.steps && profile.steps[s.key]) };
   });
   const total = round1(steps.reduce((n, s) => n + s.hours, 0));
-  return { steps, total, buffer: buf };
+  return { steps, total, buffer: buf, complete: steps.every((s) => s.entered), enteredCount: steps.filter((s) => s.entered).length };
 }
 
 // 工程ごとの助言（好き度合い・時間・タイプから）
@@ -260,7 +268,7 @@ export function publicProfile(p) {
     brain: BRAIN_TYPES.some((b) => b.key === p.brain) ? p.brain : "",
     work: clip(p.work, 20), skills: (p.skills || []).slice(0, 20), software: (p.software || []).slice(0, 12),
     focusMin: Number(p.focusMin) || 60, answers: p.answers || {},
-    steps: Object.fromEntries(CREATOR_STEPS.map((s) => { const st = (p.steps || {})[s.key] || {}; return [s.key, { like: Number(st.like) || 0, hours: Number(st.hours) || 0 }]; })),
+    steps: Object.fromEntries(CREATOR_STEPS.map((s) => { const st = (p.steps || {})[s.key] || {}; return [s.key, { like: Number(st.like) || 0, hours: Number(st.hours) || 0, hoursEntered: hasStepHours(st) }]; })),
     avail: { weekday: Number(p.avail && p.avail.weekday) || 0, weekend: Number(p.avail && p.avail.weekend) || 0, offDays: (p.avail && p.avail.offDays) || [] },
     portfolio: (p.portfolio || []).map((w) => ({ url: safeUrl(w.url), title: clip(w.title, 60), roles: (w.roles || []).slice(0, 8), note: clip(w.note, 120) })).filter((w) => w.url).slice(0, 10),
     updatedAt: p.updatedAt || Date.now(),
@@ -291,8 +299,9 @@ export function weeklyHours(p) {
   return n;
 }
 export function monthlyCapacity(p, minutes, type) {
-  const per = estimateHours(p, minutes, type).total;
-  if (!per) return 0;
+  const estimate = estimateHours(p, minutes, type);
+  const per = estimate.total;
+  if (!estimate.complete || per <= 0) return null;
   return Math.floor(((weeklyHours(p) * 4.3) / per) * 10) / 10;
 }
 
@@ -327,7 +336,8 @@ export function matchPosting(p, text) {
   }
   const mm = /(\d+(?:\.\d+)?)\s*分/.exec(t);
   const minutes = mm ? Number(mm[1]) : null;
-  const hasHours = estimateHours(p, 10, type).total > 0;
+  const estimate = estimateHours(p, 10, type);
+  const hasHours = estimate.complete && estimate.total > 0;
   if (minutes && minutes <= 180 && hasHours) {
     const per = estimateHours(p, minutes, type).total;
     const wk = weeklyHours(p);
@@ -362,9 +372,13 @@ export function profilePrompt(p, posting) {
   if ((p.skills || []).length) L.push(`- 得意分野：${p.skills.join("、")}`);
   if ((p.software || []).length) L.push(`- 使えるソフト：${p.software.join("、")}`);
   L.push(`- 作業できる時間：平日${Number(p.avail.weekday) || 0}時間／土日${Number(p.avail.weekend) || 0}時間${(p.avail.offDays || []).length ? "（作業しない曜日：" + p.avail.offDays.map((d) => "日月火水木金土"[d]).join("") + "）" : ""}、週${weeklyHours(p)}時間`);
-  L.push(est.total > 0
+  L.push(est.complete && est.total > 0
     ? `- 10分の動画1本で合計約${est.total}時間（本人の目安）：` + est.steps.map((s) => `${s.label}${s.hours}h（好き度${(p.steps[s.key] || {}).like || "-"}/5）`).join("、")
     : "- 工程ごとの好き度：" + est.steps.map((s) => `${s.label}${(p.steps[s.key] || {}).like || "-"}/5`).join("、"));
+  if (!est.complete && est.enteredCount > 0) {
+    L.push(`- 時間の目安は${est.enteredCount}/5工程のみ入力。動画全体の所要時間・月の本数は算出していません。`);
+    L.push("- 入力済み工程の目安（10分の動画）：" + est.steps.filter((s) => s.entered).map((s) => `${s.label}${s.hours}h`).join("、"));
+  }
   if (p.site) L.push(`- ポートフォリオサイト：${p.site}`);
   if (p.bio) L.push(`- 自己紹介：${p.bio}`);
   if ((p.portfolio || []).length) { L.push("- ポートフォリオ："); for (const w of p.portfolio) L.push(`  - ${w.title || "作品"} ${w.url}${(w.roles || []).length ? "（担当：" + w.roles.join("・") + "）" : ""}${w.note ? "　" + w.note : ""}`); }
