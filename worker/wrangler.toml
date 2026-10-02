@@ -67,3 +67,8 @@ new_sqlite_classes = ["LiveDoc"]
 type = "Text"
 globs = ["**/*.md"]
 fallthrough = true
+
+# 編集者の作業ステップをナレッジAPIから読む（2026-10-02）。同じアカウントの workers.dev へ URL で fetch すると弾かれるため Service Binding でつなぐ
+[[services]]
+binding = "KNOWLEDGE_API"
+service = "birdflip-knowledge-api"
