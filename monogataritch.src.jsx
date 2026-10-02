@@ -6002,15 +6002,25 @@ export default function App() {
     setPlanField(0, "title2", lines.slice(1).join("\n"));
   }, [activeId, !!(project && project.plans && project.plans[0])]);
 
-  /* 指摘の対象シーンへスクロール＋一時ハイライト */
-  const jumpToRow = (rowId) => {
-    if (!rowId) return;
+  /* 指摘の対象シーンへスクロール＋一時ハイライト。label を渡すと、行が見つからない時に目次名（data-toc）で探す */
+  const jumpToRow = (rowId, label) => {
+    if (!rowId && !label) return;
     setTab("script");
     setScriptView("table");   // マインドマップ表示中にジャンプした時も台本編集画面へ戻す
     setShowReview(false);
     setTimeout(() => {
-      const el = document.getElementById("row-" + rowId);
-      if (!el) return;
+      let el = rowId ? document.getElementById("row-" + rowId) : null;
+      if (!el && label) {
+        try { el = document.querySelector('[data-toc="' + CSS.escape(label) + '"]'); } catch (e) { el = null; }
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.classList.add("ring-2", "ring-offset-2");
+          el.style.setProperty("--tw-ring-color", theme.accent);
+          setTimeout(() => { el.classList.remove("ring-2", "ring-offset-2"); el.style.removeProperty("--tw-ring-color"); }, 2000);
+          return;
+        }
+      }
+      if (!el) { showToast("台本の中にこの場所が見つかりませんでした（シーンが消されたか、名前が変わった可能性）"); return; }
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       setFlashId(rowId);
       setTimeout(() => setFlashId((f) => (f === rowId ? null : f)), 2000);
@@ -14643,9 +14653,17 @@ export default function App() {
               {[...comments.filter((c) => !isClip(c))].sort((a, b) => (a.resolved === b.resolved ? (a.createdAt < b.createdAt ? 1 : -1) : a.resolved ? 1 : -1)).map((c) => (
                 <div key={c.id} className={"rounded-xl border p-3 " + (c.resolved ? "bg-stone-100 border-stone-200 opacity-70" : "bg-white border-stone-200 shadow-sm")}>
                   <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-[12px] font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]" style={{ background: theme.main, color: mainText }}>
-                      {c.sceneLabel || "全体"}
-                    </span>
+                    {/* 2026-10-02 AK「クリックしたらその場所まで移動」: シーン名を押すと台本のその行へ飛ぶ */}
+                    {c.sceneId && c.sceneId !== "deliverThumbPick" && !(typeof c.timecode === "number" && c.timecode > 0) ? (
+                      <button onClick={() => { setShowComments(false); jumpToRow(c.sceneId, c.sceneLabel); }} title="台本のこの場所へ移動"
+                        className="text-[12px] font-bold px-2 py-0.5 rounded-full truncate max-w-[200px] hover:opacity-80 inline-flex items-center gap-1" style={{ background: theme.main, color: mainText }}>
+                        <span className="truncate">{c.sceneLabel || "全体"}</span><span className="shrink-0 opacity-80">↗</span>
+                      </button>
+                    ) : (
+                      <span className="text-[12px] font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]" style={{ background: theme.main, color: mainText }}>
+                        {c.sceneLabel || "全体"}
+                      </span>
+                    )}
                     {/* 動画コメントのタイムコード。2026-08-25 青山さん「秒数がわからない」：データには timecode が
                         入っているのにここが「全体」チップだけで捨てていた。押すと動画確認タブへ移動（該当秒はチップ表記）。 */}
                     {typeof c.timecode === "number" && c.timecode > 0 && (
@@ -14656,7 +14674,8 @@ export default function App() {
                     )}
                     <span className="text-[11px] text-stone-500 shrink-0 ml-auto">{(c.createdAt || "").slice(5, 16).replace("T", " ")}</span>
                   </div>
-                  <p className="text-[14px] leading-relaxed whitespace-pre-wrap break-words text-stone-800">{c.text}</p>
+                  <p onClick={() => { if (c.sceneId && c.sceneId !== "deliverThumbPick" && !(typeof c.timecode === "number" && c.timecode > 0)) { setShowComments(false); jumpToRow(c.sceneId, c.sceneLabel); } }}
+                    className={"text-[14px] leading-relaxed whitespace-pre-wrap break-words text-stone-800" + (c.sceneId && c.sceneId !== "deliverThumbPick" ? " cursor-pointer hover:text-stone-600" : "")}>{c.text}</p>
                   <div className="mt-1.5 flex items-center justify-between">
                     <span className="text-[12px] text-stone-500">{c.author || "ゲスト"}</span>
                     <button onClick={() => resolveComment(c.id, !c.resolved)}
