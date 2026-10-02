@@ -201,7 +201,7 @@ async function opsKilled(env, what) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
 
     const url = new URL(request.url);
@@ -1654,6 +1654,29 @@ ${qList}
           work.groups = (work.groups || []).filter((g) => KEEP[g.key]).map((g) => ({ ...g, rows: (g.rows || []).filter(KEEP[g.key]) }));
           delete work.counts;
           return json({ connected: true, work });
+        } catch (e) { return json({ connected: false }); }
+      }
+
+      // ===== 編集者の作業ステップ（2026-10-02）=====
+      // 正本は GitHub birdflip-knowledge の Manuals/process/editor-steps.json。ナレッジAPIの /api/file から読み、
+      // 学習タブとプラグインに渡す。鍵（KNOWLEDGE_API_TOKEN）はWorkerだけが持つ。10分キャッシュ。
+      // 鍵が未設定・取得失敗の時は { connected:false } を返し、画面側は今までの学習タブ（LEARN_GROUPS）を出す。
+      // wrangler secret put KNOWLEDGE_API_TOKEN
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "learn-steps" && !parts[2]) {
+        if (!env.KNOWLEDGE_API_TOKEN) return json({ connected: false });
+        const cache = caches.default;
+        const key = new Request("https://cache.mg-share/learn-steps");
+        const hit = await cache.match(key);
+        if (hit) return hit;
+        try {
+          const r = await fetch("https://birdflip-knowledge-api.aki-surf89315.workers.dev/api/file?path=" + encodeURIComponent("Manuals/process/editor-steps.json"),
+            { headers: { authorization: "Bearer " + env.KNOWLEDGE_API_TOKEN } });
+          if (!r.ok) return json({ connected: false });
+          const data = await r.json();
+          const res = json({ connected: true, sha: r.headers.get("x-source-sha") || "", data });
+          res.headers.set("cache-control", "max-age=600");
+          ctx.waitUntil(cache.put(key, res.clone()));
+          return res;
         } catch (e) { return json({ connected: false }); }
       }
 

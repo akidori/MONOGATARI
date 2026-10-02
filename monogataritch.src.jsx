@@ -36,6 +36,20 @@ const PERSON_COLORS = [
   { key: "p4", color: "#8A6A3B", def: "人物D" },
 ];
 const personColorOf = (key) => { const p = PERSON_COLORS.find((x) => x.key === key); return p ? p.color : null; };
+/* シーンの役割（2026-10-02 AK「台本を開いた時点で導入（ダイジェスト）・ピーク・CVの場所が分かるように」）。
+   シーン行 r.role に digest / peak / cv を持つ（null＝なし）。台本作成時に AK が選ぶ。ダイジェストは「候補」で、撮影でもっといい場面があればそちらを使う。
+   種別色・人物色と混ざらないよう、色ではなく記号＋濃い地の札で見分ける。香盤表のロケ行の ★山場（loc.peak）とは別物 */
+const SCENE_ROLES = [
+  { key: "digest", label: "ダイジェスト候補", mark: "◆" },
+  { key: "peak", label: "ピーク", mark: "★" },
+  { key: "cv", label: "CV", mark: "→" },
+];
+const sceneRoleOf = (key) => SCENE_ROLES.find((x) => x.key === key) || null;
+const RoleChip = ({ role, className = "" }) => {
+  const r = sceneRoleOf(role);
+  if (!r) return null;
+  return <span className={"shrink-0 inline-flex items-center gap-1 h-[20px] px-2 rounded-full text-[11px] font-bold " + className} style={{ background: "#1F2937", color: "#fff" }} title={"このシーンの役割：" + r.label}>{r.mark} {r.label}</span>;
+};
 
 const uid = () => Math.random().toString(36).slice(2, 10);
 const newScene = (type = "解説系", label = "") => ({ id: uid(), kind: "scene", label, type, sec: null, tc: null, script: "" });
@@ -3737,16 +3751,39 @@ const LEARN_GROUPS = [
       ] },
   ] },
 ];
-function learnReady(it) { return !!(it.video || (it.steps && it.steps.length) || (it.points && it.points.length)); }
+function learnReady(it) { return !!(it.video || (it.steps && it.steps.length) || (it.points && it.points.length) || (it.qa && it.qa.length)); }
+/* 編集者の作業ステップ（2026-10-02）。正本は GitHub birdflip-knowledge の Manuals/process/editor-steps.json。
+   Worker の /api/learn-steps 経由で読み、粗編・初稿・修正の3グループとして学習タブの先頭に足す。
+   読めない時（鍵未設定・通信失敗）は今までの LEARN_GROUPS だけを出す */
+function stepsToLearnGroups(data) {
+  if (!data || !Array.isArray(data.phases)) return [];
+  return data.phases.map((ph) => ({
+    title: "作業ステップ：" + ph.title,
+    items: (ph.steps || []).map((s, i) => ({
+      id: "step-" + ph.id + "-" + s.id,
+      title: (i + 1) + ". " + s.do,
+      goal: i === 0 ? ph.goal : "",
+      steps: s.tip ? [s.tip] : [],
+      qa: (s.help || []).map((h) => ({ q: h.q, a: h.a || [], src: h.src || "" })),
+    })),
+  }));
+}
 function LearnPage({ theme }) {
-  const all = LEARN_GROUPS.flatMap((g) => g.items);
-  const [sel, setSel] = useState(all[0].id);
+  const [remote, setRemote] = useState([]);
+  useEffect(() => {
+    let off = false;
+    fetch(SHARE_API + "/api/learn-steps").then((r) => r.json()).then((j) => { if (!off && j && j.connected) setRemote(stepsToLearnGroups(j.data)); }).catch(() => {});
+    return () => { off = true; };
+  }, []);
+  const groups = remote.length ? remote.concat(LEARN_GROUPS) : LEARN_GROUPS;
+  const all = groups.flatMap((g) => g.items);
+  const [sel, setSel] = useState(LEARN_GROUPS[0].items[0].id);
   const it = all.find((x) => x.id === sel) || all[0];
   const ready = learnReady(it);
   return (
     <div className="flex flex-col md:flex-row gap-4">
       <nav className="md:w-[220px] shrink-0">
-        {LEARN_GROUPS.map((g) => (
+        {groups.map((g) => (
           <div key={g.title} className="mb-3">
             <div className="text-[11px] font-bold text-stone-400 px-2 mb-1">{g.title}</div>
             {g.items.map((x) => (
@@ -3761,6 +3798,7 @@ function LearnPage({ theme }) {
       </nav>
       <section className="flex-1 min-w-0 bg-white rounded-2xl border border-stone-200 p-5">
         <h2 className="text-[16px] font-black text-stone-800 mb-3">{it.title}</h2>
+        {it.goal && <p className="text-[12.5px] rounded-lg px-3 py-2 mb-3" style={{ background: hexA(theme.accent, 0.08) }}>終わりの合図：{it.goal}</p>}
         {!ready && <p className="text-[13px] text-stone-400 py-10 text-center">準備中です</p>}
         {it.video && (
           <div className="aspect-video w-full rounded-xl overflow-hidden bg-black mb-4">
@@ -3777,6 +3815,18 @@ function LearnPage({ theme }) {
         {it.points && it.points.length > 0 && (
           <div className="rounded-xl p-3 text-[13px] text-stone-700" style={{ background: "#FFF7E6" }}>
             {it.points.map((t, i) => <div key={i} className="flex gap-1.5"><Icon name="warn" className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />{t}</div>)}
+          </div>
+        )}
+        {it.qa && it.qa.length > 0 && (
+          <div className="mt-2">
+            <div className="text-[12px] font-bold text-stone-500 mb-1.5">よくある困りごと</div>
+            {it.qa.map((h, i) => (
+              <details key={i} className="border-t border-stone-100 py-2">
+                <summary className="cursor-pointer text-[13.5px] font-bold text-stone-800">{h.q}</summary>
+                <ol className="list-decimal pl-5 mt-1.5 space-y-1 text-[13px] text-stone-700">{h.a.map((a, j) => <li key={j}>{a}</li>)}</ol>
+                {h.src && <div className="text-[11px] text-stone-400 mt-1">元：{h.src}</div>}
+              </details>
+            ))}
           </div>
         )}
       </section>
@@ -8586,6 +8636,7 @@ export default function App() {
   const setRows = (fn) => setProject((p) => ({ ...p, rows: typeof fn === "function" ? fn(p.rows) : fn }));
   const updateRow = (id, patch) => setRows((rows) => rows.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   // 人物色：key=null で解除。ロケに付けた色は、色を持たない配下シーンに効く
+  const setRoleFor = (ids, key) => { const set = new Set(ids); setRows((rows) => rows.map((x) => (set.has(x.id) ? { ...x, role: key || null } : x))); };
   const setPersonFor = (ids, key) => { const set = new Set(ids); setRows((rows) => rows.map((x) => (set.has(x.id) ? { ...x, person: key || null } : x))); };
   const personNames = (project && project.meta && project.meta.personNames) || {};
   const personLabel = (key) => { const p = PERSON_COLORS.find((x) => x.key === key); return p ? ((personNames[key] || "").trim() || p.def) : ""; };
@@ -10687,6 +10738,7 @@ export default function App() {
                           </div>
                         </td>
                         <td className="align-top p-0">
+                          {r.role && <div className="px-3 pt-1.5"><RoleChip role={r.role} /></div>}
                           <BufferedTextarea
                             value={r.label}
                             onChange={(v) => updateRow(r.id, { label: v })}
@@ -10938,7 +10990,7 @@ export default function App() {
                     <div key={r.id} {...rowProps}>
                       <div className="flex items-center gap-2 px-3 pt-3 flex-wrap">
                         <span className="cursor-grab active:cursor-grabbing grid place-items-center w-6 h-6" {...rowDragProps(idx, r.id)} title="ドラッグで移動"><Icon name="grip" className="w-3.5 h-3.5 text-stone-300" /></span>
-                        {startTimeWrap}{pillEl}
+                        {startTimeWrap}{pillEl}<RoleChip role={r.role} />
                         <div className="flex-1" />
                         {durEl}{actionsEl}
                       </div>
@@ -10956,7 +11008,7 @@ export default function App() {
                           <div className="h-7 w-6 grid place-items-center cursor-grab active:cursor-grabbing select-none" {...rowDragProps(idx, r.id)} title="ドラッグで移動">
                             <Icon name="grip" className="w-3.5 h-3.5 text-stone-500" />
                           </div>
-                          {startTimeWrap}{pillEl}{durEl}
+                          {startTimeWrap}{pillEl}<RoleChip role={r.role} />{durEl}
                           <div className="flex-1" />
                           {actionsEl}
                         </div>
@@ -14065,6 +14117,20 @@ export default function App() {
                   className="ml-1 text-[11.5px] text-stone-500 hover:text-stone-800 px-1.5 py-0.5 rounded hover:bg-stone-100">なし</button>
               </div>
             </div>
+            {rowMenu.kind !== "location" && (
+              <div className="px-3 py-2 border-b border-stone-100">
+                <div className="text-[11px] text-stone-500 mb-1.5">このシーンの役割</div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {SCENE_ROLES.map((ro) => {
+                    const cur = ((project.rows || []).find((x) => x.id === rowMenu.id) || {}).role;
+                    return (
+                      <button key={ro.key} onClick={() => { setRoleFor([rowMenu.id], cur === ro.key ? null : ro.key); setRowMenu(null); }}
+                        className="text-[11.5px] font-bold px-2 py-0.5 rounded-full border" style={cur === ro.key ? { background: "#1F2937", color: "#fff", borderColor: "#1F2937" } : { color: "#1F2937", borderColor: "#D6D3D1" }}>{ro.mark} {ro.label}</button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <button onClick={() => { const idx = rowMenu.idx, sceneType = rowMenu.sceneType; setRowMenu(null); insertBelow(idx, newScene(rowMenu.kind === "location" ? "解説系" : (sceneType || "解説系"))); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="plus" className="w-3.5 h-3.5 text-stone-500" />下にシーンを追加</button>
             <button onClick={() => { const idx = rowMenu.idx; setRowMenu(null); insertBelow(idx, newLocation("")); }} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="folder" className="w-3.5 h-3.5 text-stone-500" />下にロケ（セクション）を追加</button>
             <button onClick={() => { setRowMenu(null); setShowReview(true); if (!reviewBusy) runReview(); }} className="w-full text-left px-3 py-2 mt-1 border-t border-stone-100 hover:bg-stone-50 text-[13px] flex items-center gap-2"><Icon name="spellcheck" className="w-3.5 h-3.5 text-stone-500" />AI校正チェック（台本全体）</button>
