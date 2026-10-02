@@ -91,6 +91,21 @@ const TOOLS = [
   },
 ];
 
+// ツールの性質（2026-10-02追加）。ChatGPT等のクライアントが読み取りは確認なし・書き込みは確認ありで扱う目安。
+const READ_ONLY = { readOnlyHint: true, openWorldHint: false };
+const ANNOTATIONS = {
+  get_script: { title: "台本を読む", ...READ_ONLY },
+  list_scripts: { title: "案件の一覧", ...READ_ONLY },
+  get_effort: { title: "工数表を読む", ...READ_ONLY },
+  get_upload_link: { title: "アップ用リンクを得る", ...READ_ONLY },
+  update_script: { title: "台本を書き換える", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  create_script: { title: "台本を新規作成", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  log_effort: { title: "実績時間を足す", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  set_edit_state: { title: "編集の進み具合を保存", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  set_planned: { title: "予定時間を決める", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+};
+for (const t of TOOLS) if (ANNOTATIONS[t.name]) t.annotations = ANNOTATIONS[t.name];
+
 const rpcOk = (id, result) => ({ jsonrpc: "2.0", id, result });
 const rpcErr = (id, code, message) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 const toolText = (obj, isError = false) => ({ content: [{ type: "text", text: JSON.stringify(obj) }], isError });

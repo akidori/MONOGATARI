@@ -1,6 +1,6 @@
 /* ============================================================
-   mg-mcp：claude.ai 用の OAuth 付き入口（ものがたりっち MCP）
-   - claude.ai のカスタムコネクタは固定Bearerヘッダーを送れないので、MCP標準のOAuthをここで受ける。
+   mg-mcp：claude.ai / ChatGPT 用の OAuth 付き入口（ものがたりっち MCP）
+   - claude.ai / ChatGPT のカスタムコネクタは固定Bearerヘッダーを送れないので、MCP標準のOAuthをここで受ける。
    - OAuthサーバー機能は @cloudflare/workers-oauth-provider（トークン類は OAUTH_KV にハッシュで保存）。
    - 本人確認はアプリと同じ Google ログイン。ボタンは許可済みオリジンの
      monogataritch.pages.dev/mcp-login に置き、IDトークンを /callback で検証する（シークレット不要）。
@@ -10,9 +10,16 @@
 
 import { OAuthProvider, AuthorizationError } from "@cloudflare/workers-oauth-provider";
 
-// 認可コードの送り先として許すのは claude.ai のコールバックだけ。
+// 認可コードの送り先として許すのは claude.ai と ChatGPT のコールバックだけ。
 // 誰でもクライアント登録はできるが、ここ以外へはコードを渡さない＝第三者は権限を受け取れない。
-const REDIRECT_ALLOW = ["https://claude.ai/api/mcp/auth_callback", "https://claude.com/api/mcp/auth_callback"];
+// ChatGPT は iss 対応のサーバーには固定URI、そうでなければ /connector/oauth/<callback_id> を使う（2026-10-02 追加）。
+const REDIRECT_EXACT = [
+  "https://claude.ai/api/mcp/auth_callback",
+  "https://claude.com/api/mcp/auth_callback",
+  "https://chatgpt.com/connector_platform_oauth_redirect",
+];
+const CHATGPT_CALLBACK_RE = /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{1,128}$/;
+const redirectAllowed = (u) => typeof u === "string" && (REDIRECT_EXACT.includes(u) || CHATGPT_CALLBACK_RE.test(u));
 const STATE_TTL_SEC = 600;
 
 const enc = new TextEncoder();
@@ -59,7 +66,7 @@ const defaultHandler = {
         oauthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request);
       } catch (error) {
         if (!(error instanceof AuthorizationError)) throw error;
-        if (!error.redirectUri || !REDIRECT_ALLOW.includes(error.redirectUri)) return page("認可リクエストが正しくありません。");
+        if (!error.redirectUri || !redirectAllowed(error.redirectUri)) return page("認可リクエストが正しくありません。");
         const back = new URL(error.redirectUri);
         back.searchParams.set("error", error.code);
         back.searchParams.set("error_description", error.description);
@@ -67,7 +74,7 @@ const defaultHandler = {
         if (error.issuer) back.searchParams.set("iss", error.issuer);
         return Response.redirect(back.toString(), 302);
       }
-      if (!REDIRECT_ALLOW.includes(oauthRequest.redirectUri)) return page("このMCPは claude.ai からの接続だけを受け付けます。", 403);
+      if (!redirectAllowed(oauthRequest.redirectUri)) return page("このMCPは claude.ai と ChatGPT からの接続だけを受け付けます。", 403);
       const state = await signState({ r: oauthRequest, exp: Math.floor(Date.now() / 1000) + STATE_TTL_SEC }, env.STATE_SECRET);
       return Response.redirect(env.LOGIN_PAGE + "?s=" + encodeURIComponent(state), 302);
     }
@@ -78,15 +85,15 @@ const defaultHandler = {
       const state = (form.get("state") || "").toString();
       const credential = (form.get("credential") || "").toString();
       const payload = await readState(state, env.STATE_SECRET).catch(() => null);
-      if (!payload) return page("有効期限が切れました。claude.ai から接続をやり直してください。");
-      if (!REDIRECT_ALLOW.includes(payload.r.redirectUri)) return page("このMCPは claude.ai からの接続だけを受け付けます。", 403);
+      if (!payload) return page("有効期限が切れました。Claude / ChatGPT から接続をやり直してください。");
+      if (!redirectAllowed(payload.r.redirectUri)) return page("このMCPは claude.ai と ChatGPT からの接続だけを受け付けます。", 403);
 
       // 検証は mg-share の /api/auth/google と同じ方式（tokeninfo＋aud必須）
       const ti = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(credential));
       if (!ti.ok) return page("Google の検証に失敗しました。", 401);
       const g = await ti.json();
       if (g.aud !== env.GOOGLE_CLIENT_ID) return page("client_id が一致しません。", 401);
-      if (g.nonce !== (await nonceOf(state))) return page("ログインのやり直しが必要です。claude.ai から接続し直してください。", 401);
+      if (g.nonce !== (await nonceOf(state))) return page("ログインのやり直しが必要です。Claude / ChatGPT から接続し直してください。", 401);
       const email = (g.email || "").toLowerCase();
       const allowed = (env.ALLOWED_EMAILS || "").toLowerCase().split(",").map((s) => s.trim()).filter(Boolean);
       if (!g.sub || !email || String(g.email_verified) !== "true" || !allowed.includes(email))
@@ -102,7 +109,7 @@ const defaultHandler = {
       return Response.redirect(redirectTo, 303);
     }
 
-    return page("claude.ai のコネクタ設定に、このサーバーの /mcp のURLを登録してください。", 404);
+    return page("claude.ai / ChatGPT のコネクタ設定に、このサーバーの /mcp のURLを登録してください。", 404);
   },
 };
 
@@ -129,7 +136,7 @@ export default new OAuthProvider({
   accessTokenTTL: 86400,
   clientRegistrationCallback: ({ clientMetadata }) => {
     const uris = Array.isArray(clientMetadata.redirect_uris) ? clientMetadata.redirect_uris : [];
-    if (!uris.length || !uris.every((u) => REDIRECT_ALLOW.includes(u)))
-      return { code: "invalid_redirect_uri", description: "redirect_uris must be the claude.ai MCP callback" };
+    if (!uris.length || !uris.every(redirectAllowed))
+      return { code: "invalid_redirect_uri", description: "redirect_uris must be the claude.ai or ChatGPT MCP callback" };
   },
 });
