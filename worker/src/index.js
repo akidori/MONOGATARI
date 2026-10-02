@@ -50,12 +50,16 @@ const json = (obj, status = 200) =>
 // share.htmlが単に描画していないだけで無フィルタのまま漏れていた。
 // ここでは「絶対にクライアントへ見せてはいけない」と指示書で名指しされた最小限のフィールドだけを
 // 除外する（安全側の最小修正。hearing/plans等の共有前提で見せているデータは対象外＝挙動を変えない）。
-function redactForNonAdmin(snap) {
+const LEARN_CACHE = { data: null, at: 0, sha: "" };
+function redactForNonAdmin(snap, opts = {}) {
   if (!snap || !snap.project) return snap;
   const out = JSON.parse(JSON.stringify(snap)); // 直前のStream自己治癒でputした元snapは触らない
   const p = out.project;
   if (p.manualsGlobal !== undefined) delete p.manualsGlobal;
   if (p.meta && p.meta.note !== undefined) delete p.meta.note;
+  // 2026-10-02: 制作の情報（演者の本名・読み・公開名、担当編集、目的・CV）は編集者だけに見せる。
+  // 正しい編集者用トークン（&up=）が付いている時だけ残し、先方・演者・AI用JSONからは消す（レビュー指摘：本名が漏れ得た）
+  if (p.meta && p.meta.prod !== undefined && !opts.editor) delete p.meta.prod;
   if (Array.isArray(p.rows)) {
     for (const row of p.rows) { if (row && row.spine !== undefined) delete row.spine; }
   }
@@ -1103,11 +1107,13 @@ ${qList}
         // 2026-08-23: 編集者用リンク（&up=）で実際に開かれた印を1回だけ残す（upseen:<id>）。
         // 「AKがリンクを発行した」と「編集者の手に渡って開いた」は別物で、後者が無い案件を Studio OS が
         // 「編集者の入口の穴」として朝に出す。KV put は初回のみ（1,000回/日の枠を食わない）。値は時刻だけ。
+        let upOk = false;
         try {
           const upParam = url.searchParams.get("up") || "";
           if (upParam) {
             const uptok = await env.SNAPS.get("uptok:" + parts[2]);
-            if (uptok && uptok === upParam && !(await env.SNAPS.get("upseen:" + parts[2]))) {
+            upOk = !!(uptok && uptok === upParam);
+            if (upOk && !(await env.SNAPS.get("upseen:" + parts[2]))) {
               await env.SNAPS.put("upseen:" + parts[2], new Date().toISOString());
             }
           }
@@ -1138,7 +1144,7 @@ ${qList}
             if (changed) await env.SNAPS.put("snap:" + parts[2], JSON.stringify(snap));
           }
         } catch (e) {}
-        return json(isAdmin ? snap : redactForNonAdmin(snap));
+        return json(isAdmin ? snap : redactForNonAdmin(snap, { editor: upOk }));
       }
 
       // GET /api/snap/{id}/comments
@@ -1664,10 +1670,8 @@ ${qList}
       // wrangler secret put KNOWLEDGE_API_TOKEN
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "learn-steps" && !parts[2]) {
         if (!env.KNOWLEDGE_API_TOKEN) return json({ connected: false });
-        const cache = caches.default;
-        const key = new Request("https://cache.mg-share/learn-steps");
-        const hit = await cache.match(key);
-        if (hit) return hit;
+        // workers.dev では caches.default が効かないので、isolate ごとの変数に10分持つ（2026-10-02 レビュー）
+        if (LEARN_CACHE.data && Date.now() - LEARN_CACHE.at < 600000) return json({ connected: true, sha: LEARN_CACHE.sha, data: LEARN_CACHE.data });
         try {
           // Service Binding（KNOWLEDGE_API）で呼ぶ。同じアカウントの workers.dev へ URL で fetch すると弾かれるため
           const u = "https://birdflip-knowledge-api.aki-surf89315.workers.dev/api/file?path=" + encodeURIComponent("Manuals/process/editor-steps.json");
@@ -1675,10 +1679,9 @@ ${qList}
           const r = env.KNOWLEDGE_API ? await env.KNOWLEDGE_API.fetch(u, init) : await fetch(u, init);
           if (!r.ok) return json({ connected: false });
           const data = await r.json();
-          const res = json({ connected: true, sha: r.headers.get("x-source-sha") || "", data });
-          res.headers.set("cache-control", "max-age=600");
-          ctx.waitUntil(cache.put(key, res.clone()));
-          return res;
+          if (!data || !Array.isArray(data.phases)) return json({ connected: false });
+          LEARN_CACHE.data = data; LEARN_CACHE.at = Date.now(); LEARN_CACHE.sha = r.headers.get("x-source-sha") || "";
+          return json({ connected: true, sha: LEARN_CACHE.sha, data });
         } catch (e) { return json({ connected: false }); }
       }
 
