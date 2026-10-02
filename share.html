@@ -571,19 +571,20 @@ function paneTalk(p, accent, main){
 /* 制作の情報（2026-10-02・本体の meta.prod）。編集者用リンク（up=）の時だけ出す。先方・演者には出さない */
 function prodInfoBlock(p){
   if(!UP_TOKEN) return "";
-  const m = p.meta||{}; const d = m.prod||{};
+  const m = p.meta||{}; const d = (m.prod && typeof m.prod==="object") ? m.prod : {};
+  const str = (x)=> x==null ? "" : String(x);
   const rows = [];
-  (d.talents||[]).filter(t=>(t.name||"").trim()).forEach(t=>{
+  (Array.isArray(d.talents)?d.talents:[]).map(t=>(t&&typeof t==="object")?t:{name:str(t)}).map(t=>({name:str(t.name),reading:str(t.reading),call:str(t.call),publicName:str(t.publicName)})).filter(t=>t.name.trim()).forEach(t=>{
     const extra = [t.reading&&("読み："+t.reading), t.call&&("呼び方："+t.call), t.publicName&&("公開名："+t.publicName)].filter(Boolean).join("／");
     rows.push(["演者", t.name + (extra?"（"+extra+"）":"")]);
   });
   if(m.shootDate) rows.push(["撮影日", m.shootDate]);
-  else if(d.shootDecideBy) rows.push(["撮影日", "未定（"+d.shootDecideBy+" までに決定）"]);
-  if(d.targetMin) rows.push(["完成尺", d.targetMin+"分"]);
-  if(d.purpose) rows.push(["目的", d.purpose]);
-  if(d.cv) rows.push(["CV", d.cv]);
-  if(d.planAxis) rows.push(["企画の軸", d.planAxis]);
-  if(d.editor) rows.push(["担当編集", d.editor]);
+  else if(d.shootDecideBy) rows.push(["撮影日", "未定（"+str(d.shootDecideBy)+" までに決定）"]);
+  if(d.targetMin) rows.push(["完成尺", str(d.targetMin)+"分"]);
+  if(d.purpose) rows.push(["目的", str(d.purpose)]);
+  if(d.cv) rows.push(["CV", str(d.cv)]);
+  if(d.planAxis) rows.push(["企画の軸", str(d.planAxis)]);
+  if(d.editor) rows.push(["担当編集", str(d.editor)]);
   if(!rows.length) return "";
   return sectionHead("制作の情報（編集者向け）") + `<div class="bg-white px-4 py-2">${rows.map(([k,v])=>`<div class="py-1.5 flex gap-3 items-start"><div class="w-16 shrink-0 text-[11px] font-bold text-stone-400 pt-0.5">${esc(k)}</div><div class="flex-1 min-w-0 text-[13px] leading-relaxed text-stone-800 whitespace-pre-wrap">${esc(v)}</div></div>`).join("")}</div>`;
 }

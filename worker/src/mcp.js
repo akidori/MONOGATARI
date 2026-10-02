@@ -32,6 +32,7 @@ const TOOLS = [
       "rows[].kind は location|scene。scene の type は インサート(5秒)/ブリッジ(10秒)/VLOG(30秒)/解説系(60秒)/訴求(180秒)、sec 省略時は type の秒数。" +
       "script の改行は実際の改行文字。baseUpdatedAt を渡すと、それより新しい保存があれば上書きせず失敗する。" +
       "シーンの役割：scene の rows[].role に digest（ダイジェスト候補）/ peak（ピーク）/ cv（CV）か null。台本を開いた時に、導入（ダイジェスト）・ピーク・CVの場所が分かるようにする印。" +
+      "制作の情報：meta.prod = { talents:[{name,reading,call,publicName}], shootDecideBy:\"YYYY-MM-DD\", targetMin:\"18\"(分), purpose, cv, planAxis, editor }（値はすべて文字列）。撮影日は meta.shootDate。" +
       "人物の色分け：rows[].person に p1(紫)/p2(青緑)/p3(ピンク)/p4(茶) か null(解除)。location に付けると色の無い配下 scene に効く。色の名前は meta.personNames = { p1:\"矢内社長\", ... }。",
     inputSchema: {
       type: "object",
@@ -157,6 +158,17 @@ const str = (v, path) => { if (typeof v !== "string") throw new Error(path + " �
 const num = (v, path) => { if (typeof v !== "number" || !Number.isFinite(v) || v < 0) throw new Error(path + " は0以上の数値にしてください"); return v; };
 
 const PERSON_KEYS = ["p1", "p2", "p3", "p4"]; // 人物色（アプリの PERSON_COLORS と同じキー）。null で解除
+// 制作の情報（meta.prod）の形をそろえる。形が崩れた値が入るとアプリ・共有ページが描画で落ちるため（2026-10-02 レビュー）
+function normalizeProd(v) {
+  if (v === null) return null;
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error("meta.prod はオブジェクトにしてください");
+  const s = (x) => (x == null ? "" : String(x));
+  const talents = Array.isArray(v.talents) ? v.talents : (v.talents ? [v.talents] : []);
+  return {
+    talents: talents.map((t) => (t && typeof t === "object" ? { name: s(t.name), reading: s(t.reading), call: s(t.call), publicName: s(t.publicName) } : { name: s(t), reading: "", call: "", publicName: "" })),
+    shootDecideBy: s(v.shootDecideBy), targetMin: s(v.targetMin), purpose: s(v.purpose), cv: s(v.cv), planAxis: s(v.planAxis), editor: s(v.editor),
+  };
+}
 const ROLE_KEYS = ["digest", "peak", "cv"];
 const role = (v, path) => { if (v === null || v === "") return null; if (!ROLE_KEYS.includes(v)) throw new Error(path + " は " + ROLE_KEYS.join("/") + " か null にしてください"); return v; };
 const person = (v, path) => { if (v === null || v === "") return null; if (!PERSON_KEYS.includes(v)) throw new Error(path + " は " + PERSON_KEYS.join("/") + " か null にしてください"); return v; };
@@ -215,7 +227,7 @@ function applyScript(project, data) {
   if (data.meta !== undefined) {
     if (!data.meta || typeof data.meta !== "object" || Array.isArray(data.meta)) throw new Error("meta はオブジェクトにしてください");
     const meta = { ...(project.meta || {}) };
-    for (const [k, v] of Object.entries(data.meta)) meta[k] = typeof v === "string" ? fixNewlines(v) : v;
+    for (const [k, v] of Object.entries(data.meta)) meta[k] = k === "prod" ? normalizeProd(v) : (typeof v === "string" ? fixNewlines(v) : v);
     next.meta = meta;
   }
   if (data.rows !== undefined) next.rows = normalizeRows(data.rows, project.rows);

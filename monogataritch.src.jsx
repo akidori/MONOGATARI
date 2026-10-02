@@ -3519,7 +3519,7 @@ const LEARN_GROUPS = [
         "下に出る一覧でシーンごとの結果を見る。「OK」は全部合った、「一部」は合わなかったSonyがある",
         "「一部」のシーンは「Sonyだけ」の本数を見て、そのクリップを確認する",
         "Sonyだけで撮った場面ならそのままでよい。DJIと同時に撮ったはずのものなら、波形を見ながら手で位置を合わせる",
-        "プラグインで案件を選んでいれば、工数表の「素材インポート」「シーケンスに並べる」「音声同期」が完了になり、「粗カット」に進む",
+        "プラグインで案件を選んでいれば、工数表の「素材を取り込む」「並べて同期」が完了になり、「粗くカット」に進む",
       ],
       points: [
         "DJIはファイル名の撮影時刻（DJI_20260827174258_… の部分）で置く。ファイル名を変えると置けなくなる",
@@ -3770,7 +3770,7 @@ function stepsToLearnGroups(data) {
       title: (i + 1) + ". " + s.do,
       goal: i === 0 ? ph.goal : "",
       steps: s.tip ? [s.tip] : [],
-      qa: (s.help || []).map((h) => ({ q: h.q, a: h.a || [], src: h.src || "" })),
+      qa: (Array.isArray(s.help) ? s.help : []).map((h) => ({ q: String((h && h.q) || ""), a: Array.isArray(h && h.a) ? h.a.map(String) : [], src: String((h && h.src) || "") })),
     })),
   }));
 }
@@ -3779,7 +3779,16 @@ function stepsToLearnGroups(data) {
    保存先は project.meta.prod。新規案件ウィザードの2ページ目と、概要タブのカードで同じ部品を使う。
    撮影日が未定なら「いつまでに決めるか」を入れる（その日を過ぎたら概要タブで赤く出す） */
 const emptyProd = () => ({ talents: [{ name: "", reading: "", call: "", publicName: "" }], shootDecideBy: "", targetMin: "", purpose: "", cv: "", planAxis: "", editor: "" });
-const prodOf = (meta) => ({ ...emptyProd(), ...((meta && meta.prod) || {}) });
+const prodOf = (meta) => {
+  // 形が崩れた値（AIやMCPが入れた文字列・数値など）でも描画で落ちないようにそろえる（2026-10-02 レビュー）
+  const raw = (meta && meta.prod && typeof meta.prod === "object") ? meta.prod : {};
+  const s = (x) => (x == null ? "" : String(x));
+  const ts = Array.isArray(raw.talents) ? raw.talents : (raw.talents ? [raw.talents] : []);
+  const talents = ts.map((x) => (x && typeof x === "object" ? { name: s(x.name), reading: s(x.reading), call: s(x.call), publicName: s(x.publicName) } : { name: s(x), reading: "", call: "", publicName: "" }));
+  return { ...emptyProd(), shootDecideBy: s(raw.shootDecideBy), targetMin: s(raw.targetMin), purpose: s(raw.purpose), cv: s(raw.cv), planAxis: s(raw.planAxis), editor: s(raw.editor), talents: talents.length ? talents : emptyProd().talents };
+};
+/* 端末の日付（日本時間）で YYYY-MM-DD。toISOString は UTC なので朝9時まで前日になる */
+const localYmd = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 /* 編集者に渡す前に埋まっていてほしい項目。空欄の名前を返す */
 function prodMissing(meta) {
   const p = prodOf(meta); const out = [];
@@ -3849,12 +3858,19 @@ function LearnPage({ theme }) {
   const [remote, setRemote] = useState([]);
   useEffect(() => {
     let off = false;
-    fetch(SHARE_API + "/api/learn-steps").then((r) => r.json()).then((j) => { if (!off && j && j.connected) setRemote(stepsToLearnGroups(j.data)); }).catch(() => {});
+    fetch(SHARE_API + "/api/learn-steps").then((r) => r.json()).then((j) => {
+      if (off || !j || !j.connected) return;
+      const g = stepsToLearnGroups(j.data);
+      setRemote(g);
+      // まだ何も選んでいなければ、先頭の作業ステップを開く
+      if (!picked.current && g[0] && g[0].items[0]) setSel(g[0].items[0].id);
+    }).catch(() => {});
     return () => { off = true; };
   }, []);
   const groups = remote.length ? remote.concat(LEARN_GROUPS) : LEARN_GROUPS;
   const all = groups.flatMap((g) => g.items);
   const [sel, setSel] = useState(LEARN_GROUPS[0].items[0].id);
+  const picked = useRef(false);
   const it = all.find((x) => x.id === sel) || all[0];
   const ready = learnReady(it);
   return (
@@ -3864,7 +3880,7 @@ function LearnPage({ theme }) {
           <div key={g.title} className="mb-3">
             <div className="text-[11px] font-bold text-stone-400 px-2 mb-1">{g.title}</div>
             {g.items.map((x) => (
-              <button key={x.id} onClick={() => setSel(x.id)}
+              <button key={x.id} onClick={() => { picked.current = true; setSel(x.id); }}
                 className={"w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-[13px] " + (x.id === sel ? "bg-white font-bold text-stone-800 shadow-sm" : "text-stone-600 hover:bg-white/70")}>
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: learnReady(x) ? theme.accent : "#D6D3D1" }} />
                 <span className="min-w-0 truncate">{x.title}</span>
@@ -10311,9 +10327,9 @@ export default function App() {
             {(() => {
               const miss = prodMissing(project.meta);
               const p = prodOf(project.meta);
-              const lateDecide = !project.meta.shootDate && p.shootDecideBy && p.shootDecideBy < new Date().toISOString().slice(0, 10);
+              const lateDecide = !project.meta.shootDate && p.shootDecideBy && p.shootDecideBy < localYmd();
               return (
-                <details className="mb-4 rounded-2xl border border-stone-200 bg-white p-4" open={miss.length > 0}>
+                <details key={project.id} className="mb-4 rounded-2xl border border-stone-200 bg-white p-4" ref={(el) => { if (el && !el.dataset.init) { el.dataset.init = "1"; el.open = miss.length > 0; } }}>
                   <summary className="cursor-pointer flex items-center gap-2 flex-wrap">
                     <span className="text-[14px] font-bold text-stone-800">制作の情報</span>
                     {miss.length ? <span className="text-[12px] font-bold text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">未入力：{miss.join("・")}</span> : <span className="text-[12px] text-emerald-700">そろっています</span>}
@@ -14202,7 +14218,7 @@ export default function App() {
         <>
           <div className="fixed inset-0 z-[60]" onClick={() => setRowMenu(null)} onContextMenu={(e) => { e.preventDefault(); setRowMenu(null); }} />
           <div className="mg-pop fixed z-[61] w-48 bg-white rounded-xl shadow-2xl border border-stone-200 overflow-hidden text-stone-700 py-1"
-            style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 290) }}>
+            style={{ left: Math.min(rowMenu.x, (typeof window !== "undefined" ? window.innerWidth : 9999) - 200), top: Math.max(8, Math.min(rowMenu.y, (typeof window !== "undefined" ? window.innerHeight : 9999) - 380)) }}>
             <div className="flex border-b border-stone-100">
               <button onClick={() => { moveRow(rowMenu.idx, -1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1"><Icon name="up" className="w-3.5 h-3.5" />上へ</button>
               <button onClick={() => { moveRow(rowMenu.idx, 1); setRowMenu(null); }} className="flex-1 px-3 py-2 hover:bg-stone-50 text-[13px] inline-flex items-center justify-center gap-1 border-l border-stone-100"><Icon name="down" className="w-3.5 h-3.5" />下へ</button>
