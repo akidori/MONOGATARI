@@ -18,6 +18,12 @@ const MUST = [
   ["修正コメントの画像添付", "const uploadReviewImage"],
   ["動画の音量スライダー", "const applyVol"],
   ["表示の拡大縮小（＋/−）", "const stepZoom"],
+  // 2026-10-02 追加
+  ["先方コメントから構成台本の場所へ移動", "jumpToRow(c.sceneId, c.sceneLabel)"],
+  ["素材をURL1本で渡す／受け取りURL（/x）", "const createXfer"],
+  ["アップの残り時間表示", "const mkEta"],
+  ["学習タブ: 音声同期の手順", 'id: "edit-sync", title: "素材を並べて音声を合わせる"'],
+  ["学習タブ: テロップを横の中央にそろえる", 'id: "telop-center"'],
 ];
 // 一度やめたもの（AK指示で撤去済み）。戻ってきたら merge で古い画面に巻き戻った印
 const MUST_NOT = [
