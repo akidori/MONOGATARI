@@ -3159,6 +3159,8 @@ Bird Flip / ものがたりっち！`;
           ...(s.title ? { title: ("" + s.title).slice(0, 120) } : {}), ...(s.desc ? { desc: ("" + s.desc).slice(0, 600) } : {}),
           ...(s.hashtags ? { hashtags: ("" + s.hashtags).slice(0, 300) } : {}), ...(s.category ? { category: ("" + s.category).slice(0, 40) } : {}),
           source: "plugin", addedAt: now(),
+          // 2026-10-02 AK「社外でちゃんと使えるように」: プラグインから上げたショートは非表示で載せ、AKがものがたりっちで見て「表示」にしてから先方に出す
+          ...(b.visible === true ? {} : { hidden: true }),
         }));
         if (!items.length) return json({ error: "載せるショートがありません" }, 400);
         const cur = (await env.SNAPS.get("shorts:" + snap, "json")) || { items: [] };
