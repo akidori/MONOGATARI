@@ -3062,7 +3062,9 @@ Bird Flip / ものがたりっち！`;
         if (!job) return json({ error: "job not found" }, 404);
         job.status = b.status === "error" ? "error" : "done";
         job.error = ("" + (b.error || "")).slice(0, 500);
-        job.shorts = Array.isArray(b.shorts) ? b.shorts.slice(0, 20).map((s) => ({ key: ("" + (s.key || "")).slice(0, 200), name: ("" + (s.name || "")).slice(0, 120), size: parseInt(s.size, 10) || 0 })) : [];
+        // 2026-10-02: タイトル・概要欄3行・カテゴリも受け取る（以前は作っても捨てていた）
+        job.shorts = Array.isArray(b.shorts) ? b.shorts.slice(0, 20).map((s) => ({ key: ("" + (s.key || "")).slice(0, 200), name: ("" + (s.name || "")).slice(0, 120), size: parseInt(s.size, 10) || 0,
+          ...(s.title ? { title: ("" + s.title).slice(0, 120) } : {}), ...(s.desc ? { desc: ("" + s.desc).slice(0, 600) } : {}), ...(s.category ? { category: ("" + s.category).slice(0, 40) } : {}) })) : [];
         job.updatedAt = now();
         await env.SNAPS.put("sjob:" + job.id, JSON.stringify(job));
         const ridx = (await env.SNAPS.get("sjobs:idx", "json")) || [];

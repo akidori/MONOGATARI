@@ -2379,7 +2379,7 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-3 mb-3">
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="text-[13px] font-bold text-stone-600">🎬 たてがた君（縦ショート自動生成）</div>
+        <div className="text-[13px] font-bold text-stone-600">縦ショート（自動生成）</div>
         <div className="flex-1" />
         {shownCount > 0 && (
           <button onClick={copyGalleryUrl}
@@ -2424,6 +2424,12 @@ function ShortsPanel({ videoKey, shareId, shareToken, onEnsureShare, onCopyGalle
                       className={"mt-1 w-full text-[12px] font-bold py-1 rounded-md border inline-flex items-center justify-center gap-1 disabled:opacity-50 " + (s.hidden ? "border-stone-300 bg-stone-100 text-stone-600 hover:bg-stone-200" : "border-stone-200 bg-white text-stone-600 hover:bg-stone-50")}>
                       <Icon name={s.hidden ? "eyeOff" : "eye"} className="w-3.5 h-3.5" />{s.hidden ? "非表示" : "表示中"}
                     </button>
+                    {/* 2026-10-02 タイトル・概要欄3行（押すとコピー） */}
+                    {s.title && <div className="mt-1 text-[11px] font-bold text-stone-700 leading-snug break-words" title={s.category || ""}>{s.title}</div>}
+                    {s.desc && (
+                      <button onClick={() => { try { navigator.clipboard.writeText(s.desc); } catch (e) {} }} title={s.desc}
+                        className="mt-0.5 w-full text-left text-[10.5px] text-stone-500 hover:text-stone-700 leading-snug">概要欄をコピー</button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -11882,7 +11888,7 @@ export default function App() {
             ["deliverTitle", "タイトル", "自動生成（手直しOK）", false, true, "title2"],
             ["deliverThumbImages", "サムネ画像", "", false, false, "image"],
             ["deliverVideoUrl", "納品完了動画", "動画確認の最新版から自動（URL差替OK）", false, true],
-            ["deliverShorts", "切り抜きショート", "たてがた君から自動（1行に1本）", true, true],
+            ["deliverShorts", "切り抜きショート", "縦ショートの自動生成から（1行に1本）", true, true],
             ["deliverDescription", "概要欄", "自動生成（手直しOK）", true, true],
             ["deliverHashtags", "ハッシュタグ", "自動生成（手直しOK）", false, true],
             ["deliverChapters", "目次", "自動生成（手直しOK）", true, true],
