@@ -3774,6 +3774,77 @@ function stepsToLearnGroups(data) {
     })),
   }));
 }
+/* 制作の情報（2026-10-02 AK「新規案件を作る時に質問に答えていくと全部入る」）。
+   納期は Studio OS が正本（投稿日から逆算）なのでここには持たない。ここは制作の中身：演者・撮影日・完成尺・目的とCV・企画の軸・担当編集者。
+   保存先は project.meta.prod。新規案件ウィザードの2ページ目と、概要タブのカードで同じ部品を使う。
+   撮影日が未定なら「いつまでに決めるか」を入れる（その日を過ぎたら概要タブで赤く出す） */
+const emptyProd = () => ({ talents: [{ name: "", reading: "", call: "", publicName: "" }], shootDecideBy: "", targetMin: "", purpose: "", cv: "", planAxis: "", editor: "" });
+const prodOf = (meta) => ({ ...emptyProd(), ...((meta && meta.prod) || {}) });
+/* 編集者に渡す前に埋まっていてほしい項目。空欄の名前を返す */
+function prodMissing(meta) {
+  const p = prodOf(meta); const out = [];
+  if (!(p.talents || []).some((x) => (x.name || "").trim())) out.push("演者の名前");
+  if (!(meta && meta.shootDate) && !p.shootDecideBy) out.push("撮影日（未定なら決める期限）");
+  if (!String(p.targetMin || "").trim()) out.push("完成尺");
+  if (!(p.purpose || "").trim() && !(p.cv || "").trim()) out.push("目的・CV");
+  if (!(p.planAxis || "").trim()) out.push("企画の軸");
+  return out;
+}
+function ProdInfoForm({ meta, onMeta }) {
+  const p = prodOf(meta);
+  const set = (k, v) => onMeta("prod", { ...p, [k]: v });
+  const setT = (i, k, v) => set("talents", p.talents.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
+  const inp = "w-full border border-stone-300 rounded-lg px-2.5 py-1.5 text-[13px]";
+  const lbl = "block text-[12px] font-bold text-stone-600 mb-1";
+  return (
+    <div className="space-y-3">
+      <div>
+        <label className={lbl}>演者（テロップに出る名前と呼び方）</label>
+        {p.talents.map((x, i) => (
+          <div key={i} className="grid grid-cols-2 gap-1.5 mb-1.5">
+            <input className={inp} value={x.name} onChange={(e) => setT(i, "name", e.target.value)} placeholder="フルネーム（例：森川 智仁）" />
+            <input className={inp} value={x.reading} onChange={(e) => setT(i, "reading", e.target.value)} placeholder="読み（例：もりかわ ともひと）" />
+            <input className={inp} value={x.call} onChange={(e) => setT(i, "call", e.target.value)} placeholder="呼び方（例：森川さん）" />
+            <input className={inp} value={x.publicName} onChange={(e) => setT(i, "publicName", e.target.value)} placeholder="公開してよい名前（本名以外なら）" />
+          </div>
+        ))}
+        <button type="button" onClick={() => set("talents", [...p.talents, { name: "", reading: "", call: "", publicName: "" }])} className="text-[12px] font-bold text-stone-500 hover:text-stone-800">＋ 演者を足す</button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={lbl}>撮影日</label>
+          <input type="date" className={inp} value={(meta && meta.shootDate && /^\d{4}-\d{2}-\d{2}$/.test(meta.shootDate)) ? meta.shootDate : ""} onChange={(e) => onMeta("shootDate", e.target.value)} />
+          {meta && meta.shootDate && !/^\d{4}-\d{2}-\d{2}$/.test(meta.shootDate) && <p className="text-[11px] text-stone-500 mt-0.5">今の記入：{meta.shootDate}</p>}
+        </div>
+        <div>
+          <label className={lbl}>未定なら、いつまでに決める？</label>
+          <input type="date" className={inp} value={p.shootDecideBy} onChange={(e) => set("shootDecideBy", e.target.value)} />
+        </div>
+        <div>
+          <label className={lbl}>完成尺（分）</label>
+          <input type="number" min="1" className={inp} value={p.targetMin} onChange={(e) => set("targetMin", e.target.value)} placeholder="例：18" />
+        </div>
+        <div>
+          <label className={lbl}>担当の編集者</label>
+          <input className={inp} value={p.editor} onChange={(e) => set("editor", e.target.value)} placeholder="例：村越さん" />
+        </div>
+      </div>
+      <div>
+        <label className={lbl}>目的（1行）</label>
+        <input className={inp} value={p.purpose} onChange={(e) => set("purpose", e.target.value)} placeholder="例：クリエイターがFANTSに入りたくなる" />
+      </div>
+      <div>
+        <label className={lbl}>CV（見た人に取ってほしい行動）</label>
+        <input className={inp} value={p.cv} onChange={(e) => set("cv", e.target.value)} placeholder="例：FANTSの説明会に申し込む" />
+      </div>
+      <div>
+        <label className={lbl}>企画の軸（仮でよい）</label>
+        <input className={inp} value={p.planAxis} onChange={(e) => set("planAxis", e.target.value)} placeholder="例：どん底で社長になった人が「好き」を職業にする仕組みを作った" />
+        <p className="text-[11px] text-stone-400 mt-0.5">サムネの文言は「企画・サムネ」タブに入れます</p>
+      </div>
+    </div>
+  );
+}
 function LearnPage({ theme }) {
   const [remote, setRemote] = useState([]);
   useEffect(() => {
@@ -10236,6 +10307,22 @@ export default function App() {
         {/* チャンネル（コンセプト）は概要タブに統合 */}
         {tab === "overview" && (
           <div className="max-w-[1000px] mx-auto mb-8">
+            {/* 制作の情報（2026-10-02）。空欄があれば何が足りないかを出す */}
+            {(() => {
+              const miss = prodMissing(project.meta);
+              const p = prodOf(project.meta);
+              const lateDecide = !project.meta.shootDate && p.shootDecideBy && p.shootDecideBy < new Date().toISOString().slice(0, 10);
+              return (
+                <details className="mb-4 rounded-2xl border border-stone-200 bg-white p-4" open={miss.length > 0}>
+                  <summary className="cursor-pointer flex items-center gap-2 flex-wrap">
+                    <span className="text-[14px] font-bold text-stone-800">制作の情報</span>
+                    {miss.length ? <span className="text-[12px] font-bold text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">未入力：{miss.join("・")}</span> : <span className="text-[12px] text-emerald-700">そろっています</span>}
+                    {lateDecide && <span className="text-[12px] font-bold text-rose-600 bg-rose-50 rounded-full px-2 py-0.5">撮影日を決める期限（{p.shootDecideBy}）を過ぎています。先方に確認を</span>}
+                  </summary>
+                  <div className="mt-3"><ProdInfoForm meta={project.meta} onMeta={setMeta} /></div>
+                </details>
+              );
+            })()}
             <div className="mb-4">
             {/* 工程の日程（2026-10-01 AK）: Studio OSが投稿日から逆算した各工程の締切。未設定なら入れる入口 */}
             {isStaff && (() => {
@@ -13050,8 +13137,15 @@ export default function App() {
       {/* ===== メンバー画面（Phase 3・2026-09-26）。権限は案件ごと（オーナー／編集者）。組織共通の固定ロールは持たない ===== */}
       {schedModal && (
         <div className="fixed inset-0 z-[80] bg-black/40 grid place-items-center p-4">
-          <div className="w-full max-w-[460px] rounded-2xl bg-white shadow-2xl p-5">
-            {!schedModal.steps ? (<>
+          <div className="w-full max-w-[460px] rounded-2xl bg-white shadow-2xl p-5 max-h-[92vh] overflow-y-auto">
+            {schedModal.page === "prod" ? (<>
+              <h2 className="text-[16px] font-black text-stone-800 mb-1">制作の情報</h2>
+              <p className="text-[12px] text-stone-500 mb-4">編集者が最初に知りたいことです。分かる所だけで大丈夫です。あとから概要タブで直せます。</p>
+              {project && project.id === schedModal.projId
+                ? <ProdInfoForm meta={project.meta} onMeta={setMeta} />
+                : <p className="text-[13px] text-stone-500">この案件を開いてから、概要タブで入れてください。</p>}
+              <div className="flex justify-end mt-4"><button onClick={() => setSchedModal(null)} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white" style={{ background: theme.main }}>完了</button></div>
+            </>) : !schedModal.steps ? (<>
               <h2 className="text-[16px] font-black text-stone-800 mb-1">投稿日から日程を決める</h2>
               <p className="text-[12px] text-stone-500 mb-4">投稿日を入れると、各工程の締切を逆算してStudio OSに入れます。</p>
               {schedModal.offline ? (
@@ -13076,6 +13170,7 @@ export default function App() {
               {schedModal.error && <p className="text-[12px] text-rose-600 mb-2">{schedModal.error}</p>}
               <div className="flex justify-end gap-2">
                 {schedModal.offline && <button onClick={() => setSchedModal(null)} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-600">閉じる</button>}
+                {schedModal.offline && <button onClick={() => setSchedModal({ ...schedModal, page: "prod" })} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white" style={{ background: theme.main }}>次へ：制作の情報</button>}
                 {!schedModal.offline && <button disabled={schedModal.busy} onClick={submitSched} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white disabled:opacity-50" style={{ background: theme.main }}>{schedModal.busy ? "計算中…" : "日程を出す"}</button>}
               </div>
             </>) : (<>
@@ -13090,7 +13185,10 @@ export default function App() {
                   </li>
                 ))}
               </ol>
-              <div className="flex justify-end"><button onClick={() => setSchedModal(null)} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white" style={{ background: theme.main }}>閉じる</button></div>
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setSchedModal(null)} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-200 text-stone-600">あとで</button>
+                <button onClick={() => setSchedModal({ ...schedModal, steps: null, page: "prod" })} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white" style={{ background: theme.main }}>次へ：制作の情報</button>
+              </div>
             </>)}
           </div>
         </div>
