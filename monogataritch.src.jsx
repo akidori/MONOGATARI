@@ -4078,6 +4078,11 @@ function CreatorDiagnosis({ theme, userEmail }) {
   const generation = useRef(0);
   const loadedStorage = useRef(null);
   const saveBusy = useRef(false);
+  const resultRef = useRef(null);
+  const [resultScrollRequest, setResultScrollRequest] = useState(0);
+  useEffect(() => {
+    if (resultScrollRequest) resultRef.current?.scrollIntoView({ block: "start", behavior: "auto" });
+  }, [resultScrollRequest]);
   const [preview, setPreview] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const copyShare = async () => {
@@ -4140,7 +4145,7 @@ function CreatorDiagnosis({ theme, userEmail }) {
       if (current !== generation.current) return;
       setSaved(p);
       setMode("result");
-      window.scrollTo && window.scrollTo(0, 0);
+      setResultScrollRequest((n) => n + 1);
     } catch (e) {
       if (current === generation.current) setSaveError("保存できませんでした。入力した回答はこの画面に残っています。通信を確認して、もう一度保存してください。");
     } finally {
@@ -4178,7 +4183,7 @@ function CreatorDiagnosis({ theme, userEmail }) {
     };
     return (
       <>
-        <section className={card} style={{ borderTop: `4px solid ${theme.accent}` }}>
+        <section ref={resultRef} className={card + " scroll-mt-20"} style={{ borderTop: `4px solid ${theme.accent}` }}>
           <div className="text-[11.5px] font-bold text-stone-400 mb-1">あなたのクリエイタータイプ</div>
           <div className="text-[24px] font-black text-stone-800 leading-tight">{type.name}</div>
           <div className="text-[13px] text-stone-600 mt-1 mb-2">{type.catch}</div>
