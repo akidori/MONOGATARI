@@ -9,6 +9,7 @@ import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec, linkCaseSections as todayLinkSections, loadScheduleRows as todayLoadRows, restSec as todayRestSec } from "./src/today-todo.js";
 import { readCreatorProfile, writeCreatorProfile, fetchLearnSteps } from "./src/learning-diagnosis.js";
+import { readBootJSON, bootRecord, bootIndex, bootProject } from "./src/boot-storage.js";
 import { createTodoPersistence, todoCloudStorage } from "./src/today-todo-storage.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
@@ -119,6 +120,7 @@ const migrate = (p) => {
     ...DEFAULT_PROJECT,
     ...p,
     meta: {
+      ...meta,
       shootDate: meta.shootDate || "",
       place: meta.place || "",
       titles: meta.titles || [meta.title || "", "", ""],
@@ -208,10 +210,10 @@ const AUTH_USER_KEY = "mg:auth:user";
 const LOCAL_STORAGE_SHIM = (typeof window !== "undefined" && window.storage) ? window.storage : null;
 let MG_SESSION = null; // 現在のセッショントークン（cloudStorage が参照）
 
-async function authFetch(path, body) {
+async function authFetch(path, body, token = MG_SESSION, keepalive = (path === "/api/collab/upsert" && JSON.stringify(body || {}).length < 60000)) {
   const res = await fetch(SHARE_API + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(MG_SESSION ? { Authorization: "Bearer " + MG_SESSION } : {}) },
+    method: "POST", keepalive,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) },
     body: JSON.stringify(body || {}),
   });
   if (res.status === 401) { const e = new Error("unauthorized"); e.code = 401; throw e; }
@@ -225,12 +227,26 @@ async function authFetch(path, body) {
 }
 
 /* localStorage shim と同じ形（get は未存在で throw）でクラウドKVをラップ */
-const cloudStorage = {
-  async get(key) { const r = await authFetch("/api/kv/get", { key }); if (!r || r.value == null) throw new Error("nf"); return { key, value: r.value, shared: true }; },
-  async set(key, value) { await authFetch("/api/kv/set", { key, value }); return { key, value, shared: true }; },
-  async delete(key) { await authFetch("/api/kv/delete", { key }); return { key, deleted: true, shared: true }; },
-  async list(prefix) { const r = await authFetch("/api/kv/list", { prefix: prefix || "" }); return { keys: r.keys || [], prefix, shared: true }; },
-};
+function storageForToken(token) {
+  return {
+    async get(key) {
+      const r = await authFetch("/api/kv/get", { key }, token);
+      if (!r || !Object.prototype.hasOwnProperty.call(r, "value")) throw new Error("保存データの応答を確認できません");
+      if (r.value === null) throw new Error("nf");
+      if (typeof r.value !== "string") throw new Error("保存データの形式を確認できません");
+      return { key, value: r.value, shared: true };
+    },
+    async set(key, value) { const body = { key, value }; await authFetch("/api/kv/set", body, token, JSON.stringify(body).length < 60000); return { key, value, shared: true }; },
+    async delete(key) { await authFetch("/api/kv/delete", { key }, token); return { key, deleted: true, shared: true }; },
+    async list(prefix) {
+      const r = await authFetch("/api/kv/list", { prefix: prefix || "" }, token);
+      if (!r || !Array.isArray(r.keys)) throw new Error("保存一覧の応答を確認できません");
+      return { keys: r.keys, prefix, shared: true };
+    },
+  };
+}
+const cloudStorage = Object.fromEntries(["get", "set", "delete", "list"].map((method) =>
+  [method, (...args) => storageForToken(MG_SESSION)[method](...args)]));
 
 function setActiveStorage(useCloud) {
   if (typeof window === "undefined") return;
@@ -441,6 +457,7 @@ const inferStatus = (p) => {
 const migrateProject = (p) => {
   const meta = p.meta || {};
   return {
+    ...p, // Preserve unrecognized legacy fields when an explicit edit is eventually saved.
     id: p.id || uid(),
     name: p.name || "案件",
     channel: p.channel || DEFAULT_CHANNEL,
@@ -476,7 +493,7 @@ const migrateProject = (p) => {
     hearing: (Array.isArray(p.hearing) && p.hearing.length) ? p.hearing : HEARING_TEMPLATE(),
     wizard: { ...newWizard(), ...(p.wizard || {}), meta: { ...newWizard().meta, ...((p.wizard && p.wizard.meta) || {}) }, answers: (p.wizard && p.wizard.answers && typeof p.wizard.answers === "object") ? p.wizard.answers : {} },
     assets: assetsFromLegacy(p),
-    review: { versions: Array.isArray(p.review && p.review.versions) ? p.review.versions : [], comments: Array.isArray(p.review && p.review.comments) ? p.review.comments : [] },
+    review: { ...(p.review || {}), versions: Array.isArray(p.review && p.review.versions) ? p.review.versions : [], comments: Array.isArray(p.review && p.review.comments) ? p.review.comments : [] },
     manuals: Array.isArray(p.manuals) ? p.manuals : [],
     video: p.video || null,
     files: Array.isArray(p.files) ? p.files : [],
@@ -4831,6 +4848,23 @@ export default function App() {
      その日の編集がまるごと保存されず消えた（矢内さん案件）。原因は
      ①0.7秒デバウンスの案件保存 ②4秒デバウンスの共有自動再発行(1回2書込)
      ③枯れた後も8秒毎に無限リトライして枠を焼き続ける、の3つ。 */
+  const [bootState, setBootState] = useState({ status: "loading", error: "" });
+  const storageScopeRef = useRef(null);
+  const bootRequestRef = useRef(0);
+  const switchRequestRef = useRef(0);
+  const saveQueueRef = useRef(new Map());
+  const scopeCurrent = (scope) => !!scope && storageScopeRef.current === scope && scope.token === MG_SESSION;
+  const acceptProject = (data) => {
+    const plans = data.plans?.length ? data.plans : [newPlan()];
+    data = { ...data, plans, meta: { ...data.meta, ...metaTitlesFromPlans(plans) } };
+    lastSaveSigRef.current = JSON.stringify(cleanProj(data));
+    const scope = storageScopeRef.current;
+    if (scope) { scope.baselines ||= new Map(); scope.baselines.set(data.id, lastSaveSigRef.current); }
+    pendingSaveRef.current = null;
+    histBaseRef.current = { id: data.id, snap: histSnapshot(data) };
+    lastPubSig.current = null;
+    setActiveId(data.id); setProject(data); setSaveState("ok");
+  };
   const lastSaveSigRef = useRef("");     // 直前に保存した内容の指紋。同じ内容は書かない
   const histBaseRef = useRef(null);      // 履歴の比較基準（直近に保存した時点のスナップショット）
   const histCacheRef = useRef({ id: "", entries: null }); // 現案件の履歴（毎回読みに行かない）
@@ -4953,141 +4987,112 @@ export default function App() {
     } catch (e) {}
   }, [view, activeId, tab, loaded]);
 
-  /* index取得 → なければ旧データ移行 or 新規作成。ログイン/ログアウト後にも再実行する */
+  /* A failed read never authorizes a replacement index or a default project write. */
   const loadAll = async () => {
+    const request = ++bootRequestRef.current;
+    ++switchRequestRef.current;
+    clearTimeout(saveTimer.current); clearTimeout(chSaveTimer.current); clearTimeout(republishTimer.current);
+    const token = MG_SESSION;
+    const scope = { token, storage: token ? storageForToken(token) : LOCAL_STORAGE_SHIM, ready: false };
+    storageScopeRef.current = scope;
+    const current = () => request === bootRequestRef.current && scopeCurrent(scope);
+    setLoaded(false); setBootState({ status: "loading", error: "" });
     try {
-      if (typeof window.storage === "undefined") { setLoaded(true); return; }
-      try { const cr = await window.storage.get(STORE_CHANNELS); setChannelInfo(cr && cr.value ? JSON.parse(cr.value) : {}); }
-      catch (e) { if (e && e.code === 401) throw e; }
-      let idx = null;
-      try { const r = await window.storage.get(STORE_INDEX); idx = r && r.value ? JSON.parse(r.value) : null; }
-      catch (e) { if (e && e.code === 401) throw e; }
-
-      // Studio OS連携: 新規案件の自動作成（?new=1&title=...&token=...）。既存indexの有無を問わず
-      // 最優先で処理する（indexが空＝初回起動のブラウザでも動く必要があるため、この後の
-      // 「indexが無ければ初期案件を作る」分岐より前に置く）。
-      // Studio OS側に未紐付けのDeliverableがある時、Studio OSがこのURLを新規タブで開く。
-      // ここで案件を作成し、Studio OSへ新規案件idを一方向Webhookで報告する（Studio OSはこの結果を
-      // 受けてdeliverables.mgProjectIdを更新するだけ・ものがたりっち側の認証を肩代わりする経路は
-      // 作らない設計）。報告後はURLを?case=<新id>へ置き換え、以後は通常の?case=経路で開ける。
-      let urlNew = null;
-      try { urlNew = new URLSearchParams(location.search).get("new"); } catch (e) {}
-      if (urlNew === "1") {
-        const sp = new URLSearchParams(location.search);
-        const title = (sp.get("title") || "新規案件").slice(0, 200);
-        const token = sp.get("token") || "";
-        const data = newProjectData(title);
-        try {
-          await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
-          const newIdx = [...(idx || []).map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL })), { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
-          setIndex(newIdx); await persistIndex(newIdx);
-          setActiveId(data.id); setProject(data); setTab("overview"); setView("editor"); setLoaded(true);
-          try { history.replaceState(null, "", location.pathname + "?case=" + encodeURIComponent(data.id)); } catch (e) {}
-          if (token) {
-            fetch("https://studio-os-5dm.pages.dev/api/v1/public/mg-link", {
-              method: "POST", headers: { "content-type": "application/json" },
-              body: JSON.stringify({ token, mgProjectId: data.id }),
-            }).then((r) => r.json()).then(async (linked) => {
-              const gateToken = linked && linked.data && linked.data.gateToken;
-              if (!gateToken) return;
-              const linkedProject = { ...data, studioGateToken: gateToken };
-              setProject(linkedProject);
-              await window.storage.set(STORE_PROJ(data.id), JSON.stringify(linkedProject));
-            }).catch((e) => console.error("Studio OSへの紐付け報告に失敗", e));
-          }
-        } catch (e) { showToast("案件を作成できませんでした（通信）。回線を確認してもう一度お試しください"); setLoaded(true); }
+      if (!scope.storage) throw new Error("保存先に接続できません");
+      const channels = await readBootJSON(scope.storage, STORE_CHANNELS, bootRecord, true) || {};
+      const rawIndex = await readBootJSON(scope.storage, STORE_INDEX, bootIndex, true);
+      if (!current()) return;
+      const idx = (rawIndex || []).map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL }));
+      lastChSaveRef.current = JSON.stringify(channels);
+      setChannelInfo(channels); setIndex(idx);
+      // Explicit integration creation is offered after a successful read; it never runs on login alone.
+      const sp = new URLSearchParams(location.search);
+      if (sp.get("new") === "1") {
+        setBootState({ status: "empty", index: idx, draft: newProjectData((sp.get("title") || "新規案件").slice(0, 200)), integrationToken: sp.get("token") || "", error: "" });
         return;
       }
-
-      if (!idx || !idx.length) {
-        // 旧単一データがあれば1案件として移行
-        let migrated = null;
-        try {
-          const old = await window.storage.get(STORAGE_KEY);
-          if (old && old.value) {
-            const p = migrate(JSON.parse(old.value));
-            migrated = { ...newProjectData("（移行）案件1"), ...p, id: uid(), name: "案件1" };
-          }
-        } catch (e) {}
-        const first = migrated || newProjectData("案件1");
-        idx = [{ id: first.id, name: first.name, channel: first.channel || DEFAULT_CHANNEL, createdAt: first.createdAt }];
-        await window.storage.set(STORE_PROJ(first.id), JSON.stringify(first));
-        await window.storage.set(STORE_INDEX, JSON.stringify(idx));
-        setIndex(idx); setActiveId(first.id); setProject(first);
-        setLoaded(true);
+      if (!idx.length) {
+        const old = await readBootJSON(scope.storage, STORAGE_KEY, bootProject, true);
+        if (!current()) return;
+        const draft = old ? migrateProject({ ...migrate(old), id: uid(), name: old.name || "案件1" }) : null;
+        setBootState({ status: "empty", index: idx, draft, legacy: !!old, error: "" });
         return;
       }
-
-      // 既存indexにchannelが無ければ補完
-      idx = idx.map((x) => ({ ...x, channel: x.channel || DEFAULT_CHANNEL }));
-      setIndex(idx);
-      // Fボード制作モードからの案件指定（?case=<projectId|shareId>）を最優先で開く（PHASE1接続版）
-      let urlCase = null;
-      try { urlCase = new URLSearchParams(location.search).get("case"); } catch (e) {}
-      if (urlCase) {
-        let hitId = idx.some((x) => x.id === urlCase) ? urlCase : null;
-        if (!hitId) {
-          // shareId→projectId はキャッシュ(mg:shareMap)を先に見る。無ければ全案件を走査して逆引き
-          let map = {};
-          try { map = JSON.parse(localStorage.getItem("mg:shareMap") || "{}"); } catch (e) {}
-          if (map[urlCase] && idx.some((x) => x.id === map[urlCase])) hitId = map[urlCase];
-          else {
-            for (const x of idx) {
-              try {
-                const rr = await window.storage.get(STORE_PROJ(x.id));
-                const pd = rr && rr.value ? JSON.parse(rr.value) : null;
-                if (pd && pd.shareId === urlCase) { hitId = x.id; map[urlCase] = x.id; try { localStorage.setItem("mg:shareMap", JSON.stringify(map)); } catch (e) {} break; }
-              } catch (e) {}
-            }
-          }
-        }
-        // 共同編集に昇格した案件は個人ストレージに無い＝collabから直接引く（2026-08-25。
-        // Studio OSの「ものがたりっちで開く」(?case=)が招待後に黙って別案件を開いていた）
-        let data = null;
-        if (hitId) {
-          const rr = await window.storage.get(STORE_PROJ(hitId));
-          data = rr && rr.value ? migrateProject(JSON.parse(rr.value)) : null;
-        }
-        if (!data && MG_SESSION) {
-          try {
-            const r = await collabGet(urlCase);
-            if (r && r.project) { hitId = urlCase; data = { ...migrateProject(r.project), id: urlCase, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members }; }
-          } catch (e) {}
-        }
-        if (hitId) {
-          if (data) {
-            const gateToken = new URLSearchParams(location.search).get("gateToken");
-            if (gateToken) {
-              data.studioGateToken = gateToken;
-              try { await window.storage.set(STORE_PROJ(hitId), JSON.stringify(data)); } catch (e) {}
-            }
-            setActiveId(hitId); setProject(data); setView("editor");
-            // Studio OS連携: ?tab=でタブ直接指定（香盤表/動画確認/納品等への1クリック遷移用）
-            // 不正値は下の「保存した選択ページの正規化」useEffectがoverviewへ補正するので、
-            // ここでは軽くホワイトリスト検証するのみ
-            const wantTab = new URLSearchParams(location.search).get("tab");
-            if (wantTab && ["overview", "plan", "hearing", "script", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
-              setTab(wantTab);
-            }
-            setLoaded(true); return;
-          }
-        }
-      }
-      // 直前に開いていた案件＋タブを復元（⌘R/リロードでホームに戻さない）
       let lastView = null;
-      try { lastView = JSON.parse(localStorage.getItem("mg:lastView") || "null"); } catch (e) {}
-      const wantId = (lastView && lastView.id && idx.some((x) => x.id === lastView.id)) ? lastView.id : idx[0].id;
-      const r = await window.storage.get(STORE_PROJ(wantId));
-      const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData((idx.find((x) => x.id === wantId) || idx[0]).name);
-      setActiveId(wantId); setProject(data);
-      if (lastView && lastView.id === wantId) { if (lastView.tab) setTab(lastView.tab); setView("editor"); }
+      try { lastView = JSON.parse(localStorage.getItem("mg:lastView") || "null"); } catch (_) {}
+      const urlCase = sp.get("case");
+      let id = urlCase && idx.some((x) => x.id === urlCase) ? urlCase : null;
+      if (urlCase && !id) {
+        for (const entry of idx) {
+          const candidate = await readBootJSON(scope.storage, STORE_PROJ(entry.id), bootProject);
+          if (!current()) return;
+          if (candidate.shareId === urlCase) { id = entry.id; break; }
+        }
+      }
+      let data;
+      if (urlCase && !id && token) {
+        const r = await authFetch("/api/collab/get", { id: urlCase }, token);
+        if (!bootProject(r?.project)) throw new Error("指定された案件を読み込めません");
+        id = urlCase;
+        data = { ...migrateProject(r.project), id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members };
+        if (current()) collabBaseRef.current[id] = { updatedAt: r.updatedAt || 0, base: data };
+      }
+      if (urlCase && !id) throw new Error("指定された案件が見つかりません");
+      id = id || (lastView && idx.some((x) => x.id === lastView.id) ? lastView.id : idx[0].id);
+      if (!data) {
+        const saved = await readBootJSON(scope.storage, STORE_PROJ(id), bootProject);
+        if (saved.id && saved.id !== id) throw new Error("案件IDを確認できません");
+        data = { ...migrateProject(saved), id };
+      }
+      if (!current()) return;
+      // A link's token may be used in memory, but viewing a link is not consent to persist it.
+      if (sp.get("gateToken")) data.studioGateToken = sp.get("gateToken");
+      const draftKey = UNSAVED_KEY + ":" + encodeURIComponent(token ? (userIdentityRef.current || "cloud") : "local") + ":" + data.id;
+      let unsaved = null;
+      try { unsaved = localStorage.getItem(draftKey); } catch (_) {}
+      if (unsaved) {
+        setBootState({ status: "recovery", data, unsaved, error: "この端末に未保存のコピーがあります。保存済みデータを上書きせず、コピーをダウンロードして確認できます。" });
+        return;
+      }
+      scope.ready = true;
+      acceptProject(data);
+      if (urlCase || lastView?.id === id) { setView("editor"); setTab(sp.get("tab") || lastView?.tab || "overview"); }
+      else setView("home");
+      setBootState({ status: "ready", error: "" }); setLoaded(true);
     } catch (e) {
-      if (e && e.code === 401) { doLogoutLocal(); return loadAll(); } // セッション切れ→ローカルに戻す
-      console.error(e);
+      if (!current()) return;
+      setBootState({ status: "error", error: e?.code === 401 ? "ログインの有効期限を確認できません。再ログインしてください。" : "保存データを読み込めませんでした。データは変更していません。回線を確認して再試行してください。" });
+      console.error("初期読み込み", e);
     }
-    // どの経路でも project が無いまま終わらない（「読み込み中…」固着を防ぐ）
-    setProject((p) => p || newProjectData("案件1"));
-    setLoaded(true);
+  };
+
+  const createBootProject = async () => {
+    const scope = storageScopeRef.current;
+    if (!scopeCurrent(scope) || bootState.status !== "empty") return;
+    const state = bootState;
+    const data = state.draft || newProjectData("案件1");
+    // Keep the same ID after a partial failure; retry never replaces existing index entries.
+    setBootState({ ...state, draft: data, busy: true, error: "" });
+    try {
+      await scope.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
+      if (!scopeCurrent(scope)) return;
+      const idx = [...state.index, { id: data.id, name: data.name, channel: data.channel || DEFAULT_CHANNEL, createdAt: data.createdAt }];
+      await scope.storage.set(STORE_INDEX, JSON.stringify(idx));
+      if (!scopeCurrent(scope)) return;
+      scope.ready = true; setIndex(idx); acceptProject(data); setLoaded(true); setView("editor"); setTab("overview");
+      setBootState({ status: "ready", error: "" });
+      if (new URLSearchParams(location.search).get("new") === "1") history.replaceState(null, "", location.pathname + "?case=" + encodeURIComponent(data.id));
+      if (state.integrationToken) {
+        const response = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/mg-link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: state.integrationToken, mgProjectId: data.id }) });
+        if (!response.ok) throw new Error("Studio OS連携に失敗しました");
+        const linked = await response.json();
+        if (scopeCurrent(scope) && linked?.data?.gateToken) setProject((p) => p?.id === data.id ? { ...p, studioGateToken: linked.data.gateToken } : p);
+      }
+    } catch (e) {
+      if (!scopeCurrent(scope)) return;
+      if (!scope.ready) setBootState({ ...state, draft: data, busy: false, error: "保存できませんでした。元のデータを残しています。再試行してください。" });
+      else showToast(e.message || "連携に失敗しました");
+    }
   };
 
   /* ログイン状態をクリアしてローカルストレージに戻す（再ロードは呼び出し側） */
@@ -5097,25 +5102,59 @@ export default function App() {
     setActiveStorage(false);
   };
 
-  /* 初回ログイン時：クラウドが空ならローカル案件を引っ越す */
-  const migrateLocalToCloudIfEmpty = async () => {
-    try {
-      const r = await cloudStorage.list("");
-      if ((r.keys || []).some((k) => k === STORE_INDEX)) return; // 既にクラウドに案件あり
-      let lidx = null;
-      try { const x = await LOCAL_STORAGE_SHIM.get(STORE_INDEX); lidx = x && x.value ? JSON.parse(x.value) : null; } catch (e) {}
-      if (!lidx || !lidx.length) return;
-      for (const it of lidx) {
-        try { const p = await LOCAL_STORAGE_SHIM.get(STORE_PROJ(it.id)); if (p && p.value) await cloudStorage.set(STORE_PROJ(it.id), p.value); } catch (e) {}
+  // Logging in never migrates local projects implicitly. Originals remain in this browser.
+
+  const channelQueueRef = useRef(Promise.resolve());
+  const saveChannelData = (scope, json) => {
+    const task = channelQueueRef.current.catch(() => {}).then(async () => {
+      if (!scopeCurrent(scope)) throw new Error("保存先が変わりました");
+      if (json === lastChSaveRef.current) return;
+      await scope.storage.set(STORE_CHANNELS, json);
+      if (scopeCurrent(scope)) lastChSaveRef.current = json;
+    });
+    channelQueueRef.current = task; return task;
+  };
+
+  // Drain edits made while a request was pending before changing account/project.
+  const saveBeforeAccountChange = async () => {
+    const scope = storageScopeRef.current;
+    if (!scope?.ready) return true;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      if (!scopeCurrent(scope)) return false;
+      // A revert can equal the old baseline while an older different save is still in flight.
+      const projectQueue = saveQueueRef.current.get(scope.token || scope.storage);
+      const channelQueue = channelQueueRef.current;
+      await Promise.all([projectQueue, channelQueue.catch(() => {})]);
+      if (!scopeCurrent(scope)) return false;
+      if (projectQueue !== saveQueueRef.current.get(scope.token || scope.storage) || channelQueue !== channelQueueRef.current) continue;
+      const p = projectLiveRef.current;
+      const sig = p && JSON.stringify(cleanProj(p));
+      const channels = JSON.stringify(channelInfoRef.current);
+      clearTimeout(saveTimer.current); clearTimeout(chSaveTimer.current);
+      if (p && !p.live && sig !== scope.baselines?.get(p.id)) {
+        if (await saveProjectData(p, scope) === false) {
+          pendingSaveRef.current = projectLiveRef.current;
+          showToast("未保存の編集があります。保存できるまで切り替えません。"); return false;
+        }
+        if (!scopeCurrent(scope)) return false;
+        lastSaveSigRef.current = sig;
+        if (pendingSaveRef.current === p) pendingSaveRef.current = null;
       }
-      await cloudStorage.set(STORE_INDEX, JSON.stringify(lidx));
-      showToast("この端末の案件をクラウドに移行しました");
-    } catch (e) {}
+      if (channels !== lastChSaveRef.current) {
+        try { await saveChannelData(scope, channels); }
+        catch (_) { showToast("チャンネル設定を保存できませんでした。保存後に切り替えてください。"); return false; }
+        if (!scopeCurrent(scope)) return false;
+        lastChSaveRef.current = channels;
+      }
+      if ((!p || p.live || (JSON.stringify(cleanProj(projectLiveRef.current)) === sig && scope.baselines?.get(p.id) === sig)) && JSON.stringify(channelInfoRef.current) === channels && channels === lastChSaveRef.current) return true;
+    }
+    showToast("編集が続いています。入力が落ち着いてからもう一度切り替えてください。"); return false;
   };
 
   /* Googleの資格情報(JWT) → Worker でセッション発行 → クラウド同期へ切替 */
   const handleGoogleCredential = async (credential) => {
-    if (!credential) return;
+    if (!credential || !(await saveBeforeAccountChange())) return;
+    const authRequest = ++bootRequestRef.current;
     setAuthBusy(true);
     try {
       const res = await fetch(SHARE_API + "/api/auth/google", {
@@ -5123,10 +5162,11 @@ export default function App() {
       });
       const d = await res.json();
       if (!res.ok || !d.token) throw new Error(d.error || "ログインに失敗しました");
+      if (authRequest !== bootRequestRef.current || !(await saveBeforeAccountChange())) return;
+      if (authRequest !== bootRequestRef.current) return;
       MG_SESSION = d.token; setUser(d.user);
       try { localStorage.setItem(AUTH_TOKEN_KEY, d.token); localStorage.setItem(AUTH_USER_KEY, JSON.stringify(d.user)); } catch (e) {}
       setActiveStorage(true);
-      await migrateLocalToCloudIfEmpty();
       setLoaded(false); await loadAll();
       setShowAccount(false);
       showToast("ログインしました：" + (d.user.name || ""));
@@ -5136,6 +5176,7 @@ export default function App() {
   };
 
   const logout = async () => {
+    if (!(await saveBeforeAccountChange())) return;
     try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
     doLogoutLocal();
     setLoaded(false); await loadAll();
@@ -5260,16 +5301,20 @@ export default function App() {
       }
       return () => clearTimeout(liveSendTimer.current);
     }
+    const scope = storageScopeRef.current;
+    if (!scopeCurrent(scope) || !scope.ready) return;
     clearTimeout(saveTimer.current);
     // 0.7秒→3秒。打鍵が0.7秒止まるたびに1書込していたのがKV枠枯渇の主因のひとつ。
     // 案件切替/タブ閉じ/共有発行の直前には別途フラッシュ保存が走るので、遅くしても取りこぼさない。
     saveTimer.current = setTimeout(async () => {
       // クラウド保存の成否を握る。失敗したら pendingSaveRef に退避して「未保存」表示＋裏で再送し続ける。
+      if (!scopeCurrent(scope)) return;
       const sig = JSON.stringify(cleanProj(project));
       if (sig === lastSaveSigRef.current && !pendingSaveRef.current) return;   // 中身が変わってなければ書かない
       if (Date.now() < quotaUntilRef.current) { pendingSaveRef.current = project; setSaveState("quota"); return; }
-      const ok = await saveProjectData(project);
-      if (ok === false) { pendingSaveRef.current = project; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
+      const ok = await saveProjectData(project, scope);
+      if (!scopeCurrent(scope) || projectLiveRef.current?.id !== project.id) return;
+      if (ok === false) { pendingSaveRef.current = projectLiveRef.current; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
       else {
         pendingSaveRef.current = null; lastSaveSigRef.current = sig; setSaveState("ok"); recordHistory(project);
         // 発行済みの同時編集リンク（DO）にも同じ内容を押し込む（2026-08-18・置き去りDO対策）。
@@ -5292,6 +5337,10 @@ export default function App() {
      ・visibilitychange(hidden) / pagehide で即書込
      ・fetch は keepalive＝ページが破棄されたあともブラウザが送り切る
      ・送る前に localStorage へも退避し、次回ロードで本体より新しければ復元（ネットが死んでても残す） */
+  const channelInfoRef = useRef(channelInfo);
+  channelInfoRef.current = channelInfo;
+  const userIdentityRef = useRef(null);
+  userIdentityRef.current = user?.sub || user?.email || null;
   const projectLiveRef = useRef(null);
   projectLiveRef.current = project;
   useEffect(() => {
@@ -5314,28 +5363,24 @@ export default function App() {
         } catch (e) {}
         return;
       }
+      const scope = storageScopeRef.current;
+      if (!scopeCurrent(scope) || !scope.ready) return;
       let sig;
-      try { sig = JSON.stringify(cleanProj(p)); } catch (e) { return; }
-      if (sig === lastSaveSigRef.current) return;                // 保存済みと同じ内容なら何もしない
-      lastSaveSigRef.current = sig;
+      try { sig = JSON.stringify(cleanProj(p)); } catch (_) { return; }
+      if (sig === lastSaveSigRef.current) return;
       clearTimeout(saveTimer.current);
-      const data = { ...p, updatedAt: Date.now() };
-      const json = JSON.stringify(data);
-      try { localStorage.setItem(UNSAVED_KEY, JSON.stringify({ id: data.id, at: data.updatedAt, project: data })); } catch (e) {}
-      const done = () => { try { localStorage.removeItem(UNSAVED_KEY); } catch (e) {} };
-      if (MG_SESSION) {
-        const path = data.collab ? "/api/collab/upsert" : "/api/kv/set";
-        const body = data.collab ? { id: data.id, project: data } : { key: STORE_PROJ(data.id), value: json };
-        try {
-          fetch(SHARE_API + path, {
-            method: "POST", keepalive: true,
-            headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
-            body: JSON.stringify(body),
-          }).then((r) => { if (r && r.ok) done(); }, () => {});
-        } catch (e) {}
-      } else {
-        try { localStorage.setItem("mg:" + STORE_PROJ(data.id), json); done(); } catch (e) {}
-      }
+      const draftKey = UNSAVED_KEY + ":" + encodeURIComponent(scope.token ? (userIdentityRef.current || "cloud") : "local") + ":" + p.id;
+      const draft = JSON.stringify({ id: p.id, at: Date.now(), project: p });
+      try { localStorage.setItem(draftKey, draft); } catch (_) {}
+      pendingSaveRef.current = p;
+      saveProjectData(p, scope).then((ok) => {
+        if (!scopeCurrent(scope)) return;
+        if (ok !== false) {
+          lastSaveSigRef.current = sig;
+          if (pendingSaveRef.current === p) pendingSaveRef.current = null;
+          try { if (localStorage.getItem(draftKey) === draft) localStorage.removeItem(draftKey); } catch (_) {}
+        } else setSaveState("error");
+      });
     };
     const onVis = () => { if (document.visibilityState === "hidden") flush(); };
     window.addEventListener("pagehide", flush);
@@ -5350,12 +5395,16 @@ export default function App() {
     const schedule = (ms) => { clearTimeout(timer); timer = setTimeout(run, ms); };
     const run = async () => {
       if (stopped) return;
-      const p = pendingSaveRef.current;
+      const pending = pendingSaveRef.current;
+      const p = pending && projectLiveRef.current?.id === pending.id ? projectLiveRef.current : pending;
       if (!p) { retryDelayRef.current = 8000; return schedule(8000); }
       if (typeof navigator !== "undefined" && navigator.onLine === false) return schedule(8000);
       if (Date.now() < quotaUntilRef.current) { setSaveState("quota"); return schedule(60000); } // 上限中は一切叩かない
-      const ok = await saveProjectData(p);
-      if (ok !== false) { pendingSaveRef.current = null; setSaveState("ok"); retryDelayRef.current = 8000; return schedule(8000); }
+      const scope = storageScopeRef.current;
+      if (!scopeCurrent(scope) || !scope.ready) return schedule(8000);
+      const ok = await saveProjectData(p, scope);
+      if (!scopeCurrent(scope)) return schedule(8000);
+      if (ok !== false) { if (pendingSaveRef.current === p) pendingSaveRef.current = null; lastSaveSigRef.current = JSON.stringify(cleanProj(p)); setSaveState("ok"); retryDelayRef.current = 8000; return schedule(8000); }
       retryDelayRef.current = Math.min(retryDelayRef.current * 2, 600000);
       schedule(retryDelayRef.current);
     };
@@ -5395,13 +5444,15 @@ export default function App() {
   /* チャンネルコンセプトの自動保存 */
   const chSaveTimer = useRef(null);
   useEffect(() => {
-    if (!loaded) return;
+    const scope = storageScopeRef.current;
+    if (!loaded || !scopeCurrent(scope) || !scope.ready) return;
     clearTimeout(chSaveTimer.current);
     chSaveTimer.current = setTimeout(async () => {
+      if (!scopeCurrent(scope)) return;
       const js = JSON.stringify(channelInfo);
       if (js === lastChSaveRef.current) return;              // 中身が同じなら書かない
       if (Date.now() < quotaUntilRef.current) return;        // KV書込上限中は叩かない
-      try { if (typeof window.storage !== "undefined") { await window.storage.set(STORE_CHANNELS, js); lastChSaveRef.current = js; } }
+      try { await saveChannelData(scope, js); }
       catch (e) { console.error("チャンネル保存エラー", e); noteSaveError(e); }
     }, 3000);   // 0.7秒→3秒（案件保存と同じ理由）
     return () => clearTimeout(chSaveTimer.current);
@@ -5411,13 +5462,17 @@ export default function App() {
   useEffect(() => {
     if (!loaded) return;
     if (!user) { setIndex((cur) => cur.filter((x) => !x.collab)); return; }
-    loadCollab().then((collab) => setIndex((cur) => [...cur.filter((x) => !x.collab), ...collab]));
+    let active = true;
+    loadCollab().then((collab) => { if (active) setIndex((cur) => [...cur.filter((x) => !x.collab), ...collab]); });
+    return () => { active = false; };
   }, [loaded, user]);
 
   /* 全体の決め事（マニュアル）をロード／保存。window.storage＝ログイン時クラウド同期 */
   useEffect(() => {
     if (!loaded) return;
-    (async () => { try { const r = await window.storage.get(STORE_MANUALS_GLOBAL); if (r && r.value) setGlobalManuals(JSON.parse(r.value)); } catch (e) {} })();
+    let active = true; const storage = storageScopeRef.current?.storage;
+    (async () => { try { const r = await storage.get(STORE_MANUALS_GLOBAL); if (active && r && r.value) { lastPubSig.current = null; setGlobalManuals(JSON.parse(r.value)); } } catch (e) {} })();
+    return () => { active = false; };
   }, [loaded, user]);
   // マニュアルの正本はObsidian。ものがたりっち内の案件コピーだけを保存する。
   const saveGlobalManuals = (next) => { setGlobalManuals(next); try { window.storage.set(STORE_MANUALS_GLOBAL, JSON.stringify(next)); } catch (e) {} };
@@ -5478,38 +5533,45 @@ export default function App() {
     if (r && r.project) collabBaseRef.current[id] = { updatedAt: r.updatedAt || 0, base: { ...r.project, id, collab: true } };
     return r;
   };
-  const saveProjectData = async (data0) => {
+  const saveProjectData = async (data0, scope = storageScopeRef.current) => {
     if (!data0) return true;
-    const data = { ...data0, updatedAt: Date.now() };
-    // collab かつログイン中のみクラウドへ。未ログイン(ログアウト後)は個人ストレージへフォールバック保存（silent fail防止）
-    if (data.collab && MG_SESSION) {
-      // 競合検知つき保存（2026-08-18）。従来はlast-write-wins＝相手の保存を黙って上書きしていた。
-      // baseUpdatedAt（最後に見たサーバ版）を添えて送り、サーバがより新しければ409+現物が返る→3方向マージして再保存
+    if (!scopeCurrent(scope) || !scope.ready) return false;
+    const sig = JSON.stringify(cleanProj(data0));
+    const queueKey = scope.token || scope.storage;
+    const previous = saveQueueRef.current.get(queueKey) || Promise.resolve();
+    const task = previous.catch(() => {}).then(async () => {
+      if (!scopeCurrent(scope)) return false;
+      if (scope.baselines?.get(data0.id) === sig) return true;
+      const data = { ...data0, updatedAt: Date.now() };
       try {
-        const entry = collabBaseRef.current[data.id] || {};
-        const r = await authFetch("/api/collab/upsert", { id: data.id, project: data, baseUpdatedAt: entry.updatedAt || 0 });
-        collabBaseRef.current[data.id] = { updatedAt: (r && r.updatedAt) || Date.now(), base: data };
-        return true;
-      }
-      catch (e) {
-        if (e.code === 409 && e.data && e.data.project) {
+        if (data.collab) {
+          if (!scope.token) return false;
+          const entry = collabBaseRef.current[data.id] || {};
           try {
-            const entry = collabBaseRef.current[data.id] || {};
+            const r = await authFetch("/api/collab/upsert", { id: data.id, project: data, baseUpdatedAt: entry.updatedAt || 0 }, scope.token);
+            if (!scopeCurrent(scope)) return false;
+            collabBaseRef.current[data.id] = { updatedAt: r?.updatedAt || Date.now(), base: data };
+          } catch (e) {
+            if (!scopeCurrent(scope) || e.code !== 409 || !bootProject(e.data?.project)) throw e;
             const remote = { ...e.data.project, id: data.id };
             const merged = { ...merge3(entry.base || null, data, remote), id: data.id, collab: true };
-            const r2 = await authFetch("/api/collab/upsert", { id: data.id, project: merged, baseUpdatedAt: e.data.updatedAt || 0 });
-            collabBaseRef.current[data.id] = { updatedAt: (r2 && r2.updatedAt) || Date.now(), base: merged };
-            // 画面へも統合結果を反映。保存中に打った字は base=data との再マージで温存する
-            setProject((cur) => (cur && cur.id === data.id ? { ...merge3(data, cur, merged), collab: true } : cur));
+            const r = await authFetch("/api/collab/upsert", { id: data.id, project: merged, baseUpdatedAt: e.data.updatedAt || 0 }, scope.token);
+            if (!scopeCurrent(scope)) return false;
+            collabBaseRef.current[data.id] = { updatedAt: r?.updatedAt || Date.now(), base: merged };
+            setProject((cur) => cur?.id === data.id ? { ...merge3(data, cur, merged), collab: true } : cur);
             showToast("他のメンバーの編集と統合しました");
-            return true;
-          } catch (e2) { console.error("collab競合マージ", e2); noteSaveError(e2); return false; }
-        }
-        console.error("collab保存", e); if (!noteSaveError(e)) { try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} } return false;
+          }
+        } else await scope.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
+        if (!scopeCurrent(scope)) return false;
+        scope.baselines ||= new Map(); scope.baselines.set(data.id, sig);
+        return true;
+      } catch (e) {
+        if (scopeCurrent(scope)) { console.error("案件保存", e); noteSaveError(e); }
+        return false;
       }
-    } else {
-      try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); return true; } catch (e) { console.error(e); noteSaveError(e); return false; }
-    }
+    });
+    saveQueueRef.current.set(queueKey, task);
+    return task;
   };
 
   /* 保存が通るたびに、前回保存時点との差分を履歴へ積む。
@@ -5787,19 +5849,27 @@ export default function App() {
     if (id === activeId) { if (destination) setTab(destination); return; }
     // 現在のを即保存（保留中のautosaveタイマーは止めて二重・古い書き込みを防ぐ）
     clearTimeout(saveTimer.current);
-    if (project) await saveProjectData(project);
+    const scope = storageScopeRef.current;
+    const request = ++switchRequestRef.current;
+    if (!(await saveBeforeAccountChange())) return;
+    if (!scopeCurrent(scope) || request !== switchRequestRef.current) return;
     const entry = index.find((x) => x.id === id);
     try {
       if (entry && entry.collab) {
         const r = await collabGet(id);
         const data = { ...migrateProject(r.project), id, collab: true, collabRole: r.role, ownerEmail: r.ownerEmail, members: r.members };
-        setActiveId(id); setProject(data); setTab(destination || "script");
+        if (!scopeCurrent(scope) || request !== switchRequestRef.current || !(await saveBeforeAccountChange())) return;
+        if (!scopeCurrent(scope) || request !== switchRequestRef.current) return;
+        acceptProject(data); setTab(destination || "script");
       } else {
-        const r = await window.storage.get(STORE_PROJ(id));
-        const data = r && r.value ? migrateProject(JSON.parse(r.value)) : newProjectData("案件");
+        const saved = await readBootJSON(scope.storage, STORE_PROJ(id), bootProject);
+        if (saved.id && saved.id !== id) throw new Error("案件IDを確認できません");
+        const data = { ...migrateProject(saved), id };
         // 一覧の名前が正（ユーザーが見て付けた名前）。過去のリネームで本体だけ旧名の案件を開いた時に治す
         if (entry && entry.name && data.name !== entry.name) data.name = entry.name;
-        setActiveId(id); setProject(data); setTab(destination || "script");
+        if (!scopeCurrent(scope) || request !== switchRequestRef.current || !(await saveBeforeAccountChange())) return;
+        if (!scopeCurrent(scope) || request !== switchRequestRef.current) return;
+        acceptProject(data); setTab(destination || "script");
       }
     } catch (e) {
       if ((e && e.message) === "nf") { setBrokenIds((b) => ({ ...b, [id]: true })); showToast("この案件の本体データが見つかりません。企画一覧の右のゴミ箱から削除してください"); }
@@ -5823,17 +5893,21 @@ export default function App() {
   }, [project, index]);
 
   const createProject = async (template = true, channel = DEFAULT_CHANNEL, format = "documentary") => {
+    const scope = storageScopeRef.current;
+    if (!scopeCurrent(scope) || !scope.ready || !(await saveBeforeAccountChange())) return;
     const n = index.length + 1;
     const data = newProjectData((format === "talk" ? "トーク案件" : "案件") + n, channel, format);
     if (!template && format !== "talk") data.rows = [];
     // 本体を先に確定させ、書けたときだけ index に載せる（回線切れで本体だけ欠ける“幽霊案件”を作らない）
     try {
-      if (project) await saveProjectData(project);
-      await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
+      await scope.storage.set(STORE_PROJ(data.id), JSON.stringify(data));
     } catch (e) { showToast("案件を保存できませんでした（通信）。回線を確認してもう一度お試しください"); return; }
     const idx = [...index, { id: data.id, name: data.name, channel: data.channel, createdAt: data.createdAt }];
-    setIndex(idx); persistIndex(idx);
-    setActiveId(data.id); setProject(data); setTab("overview"); setView("editor");
+    if (!scopeCurrent(scope)) return;
+    try { await scope.storage.set(STORE_INDEX, JSON.stringify(idx.filter((x) => !x.collab))); }
+    catch (_) { showToast("案件一覧を保存できませんでした。案件本体は保存先に残しています。"); return; }
+    if (!scopeCurrent(scope)) return;
+    setIndex(idx); acceptProject(data); setTab("overview"); setView("editor");
     setNewMenu(false); setView("editor");
     showToast(format === "talk" ? "トーク台本を作成しました" : "案件を作成しました");
     if (isStaff && MG_SESSION) openSchedModal(data.id, "", data.channel);
@@ -7167,6 +7241,12 @@ export default function App() {
   /* chanLive中：案件クリック→該当案件のライブセッションへ（編集ボタンを挟まず全タブ直接編集） */
   const openChanCase = (c) => { if (!c || !c.edit) return; setCasePickerOpen(false); setChanActiveCase(c.id); startLiveSession(c.edit.liveId, c.edit.editToken); };
   const startLiveSession = (liveId, token) => {
+    // Direct live links bypass loadAll; retain owner persistence with an account-bound scope.
+    if (!scopeCurrent(storageScopeRef.current)) {
+      storageScopeRef.current = { token: MG_SESSION, storage: MG_SESSION ? storageForToken(MG_SESSION) : LOCAL_STORAGE_SHIM, ready: true, baselines: new Map() };
+      lastChSaveRef.current = JSON.stringify(channelInfo);
+    }
+    const liveScope = storageScopeRef.current;
     setView("editor"); setLoaded(false);
     try { if (liveWS.current) liveWS.current.close(); } catch (e) {}
     let ws;
@@ -7175,6 +7255,7 @@ export default function App() {
     liveWS.current = ws;
     let inited = false;
     ws.onmessage = (e) => {
+      if (liveWS.current !== ws || !scopeCurrent(liveScope)) return;
       let m; try { m = JSON.parse(e.data); } catch (_) { return; }
       if (m.t === "init" || (m.t === "full" && m.project)) {
         const proj = m.project ? migrateProject(m.project) : newProjectData("共同編集");
@@ -7194,11 +7275,13 @@ export default function App() {
                 let own = null;
                 // collab正本を先に照会する（保存失敗時の個人ストレージ退避コピーが所有判定を乗っ取り、
                 // 書き戻し先が個人側へ誤ルーティングされるのを防ぐ＝Codex指摘）
-                try { const c = await collabGet(proj.id); if (c && c.project) { own = migrateProject(c.project); liveCollabRef.current = true; } } catch (e) {}
+                try { const c = await authFetch("/api/collab/get", { id: proj.id }, liveScope.token); if (c && c.project) { own = migrateProject(c.project); liveCollabRef.current = true; } } catch (e) {}
                 if (!own) {
-                  try { const r = await window.storage.get(STORE_PROJ(proj.id)); if (r && r.value) own = migrateProject(JSON.parse(r.value)); } catch (e) {}
+                  try { const r = await liveScope.storage.get(STORE_PROJ(proj.id)); if (r && r.value) own = migrateProject(JSON.parse(r.value)); } catch (e) {}
                 }
-                if (!own) return;
+                if (!own || !scopeCurrent(liveScope) || liveWS.current !== ws) return;
+                liveScope.baselines ||= new Map();
+                liveScope.baselines.set(own.id, JSON.stringify(cleanProj(own)));
                 liveOwnerRef.current = true;
                 if ((own.updatedAt || 0) > (proj.updatedAt || 0)) {
                   // 丸ごと置換でなく3方向マージ（base=DO版）：本体で変えた項目だけをDO版へ接ぎ木する。
@@ -9527,7 +9610,22 @@ export default function App() {
       {renderHelpChat()}
     </div>
   );
-  if (!loaded || !project) return <div className="min-h-screen flex items-center justify-center text-stone-500 text-sm">読み込み中…</div>;
+  if (!loaded || !project) return <div className="min-h-screen flex items-center justify-center p-6 text-stone-700 text-sm"><div className="max-w-lg space-y-4" role="status">
+    <h1 className="text-lg font-bold">ものがたりっち！</h1>
+    {bootState.status === "loading" ? <p>読み込み中…</p> : <>
+      {bootState.error && <p role="alert">{bootState.error}</p>}
+      {bootState.status === "recovery" && <><button className="border rounded px-4 py-2" onClick={() => {
+        const url = URL.createObjectURL(new Blob([bootState.unsaved], { type: "application/json" }));
+        const a = document.createElement("a"); a.href = url; a.download = "monogataritch-unsaved-" + bootState.data.id + ".json"; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }}>未保存コピーをダウンロード</button><button className="block underline" onClick={() => {
+        const scope = storageScopeRef.current; if (!scopeCurrent(scope)) return;
+        scope.ready = true; acceptProject(bootState.data); setView("editor"); setLoaded(true); setBootState({ status: "ready", error: "" });
+      }}>保存済みの案件を開く（未保存コピーを残す）</button></>}
+      {bootState.status === "error" && <button className="border rounded px-4 py-2" onClick={loadAll}>読み込みを再試行</button>}
+      {bootState.status === "empty" && <><p>{bootState.legacy ? "以前のデータが見つかりました。元のデータを残したまま案件として保存できます。" : "新しい案件を作成できます。作成するまで保存データは変更しません。"}</p><button disabled={bootState.busy} className="border rounded px-4 py-2" onClick={createBootProject}>{bootState.busy ? "保存中…" : bootState.legacy ? "以前のデータを案件として保存して開く" : "新しい案件を作成"}</button></>}
+      {user ? <button className="block underline" onClick={logout}>ログアウトしてこの端末のデータを開く</button> : <><button className="block underline" onClick={() => setShowAccount(true)}>Googleでログイン</button>{showAccount && <div ref={gbtnRef} />}</>}
+    </>}
+  </div></div>;
 
   /* ---------- Claude連携 ---------- */
   const buildClaudePrompt = () => {
