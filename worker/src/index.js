@@ -1822,7 +1822,7 @@ ${qList}
           for (const ad of admins) {
             const nk = "notif:" + ad;
             const list = (await env.SNAPS.get(nk, "json")) || [];
-            list.unshift({ id: item.id, at: item.at, type: "question", read: false, caseId, caseName: caseName || "（案件なし）", phase: "question",
+            list.unshift({ id: item.id, at: item.at, type: "question", read: false, answered: false, caseId, channel, caseName: caseName || "（案件なし）", phase: "question",
               title: "確認依頼：" + item.askedByName, deadline: "", guides: [{ source: "AIがAKさんに回した質問", points: [item.akQuestion, item.reason ? "理由：" + item.reason : ""].filter(Boolean) }] });
             await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
             if (env.BOT_API_URL && env.BOT_API_KEY) {
@@ -1869,7 +1869,7 @@ ${qList}
         for (const ad of admins) {
           const nk = "notif:" + ad;
           const list = (await env.SNAPS.get(nk, "json")) || [];
-          if (list.some((n) => n.id === it.id && !n.read)) await env.SNAPS.put(nk, JSON.stringify(list.map((n) => (n.id === it.id ? { ...n, read: true } : n))));
+          if (list.some((n) => n.id === it.id)) await env.SNAPS.put(nk, JSON.stringify(list.map((n) => (n.id === it.id ? { ...n, read: true, answered: true } : n))));
         }
         // 質問した人へ：アプリ内通知＋メール
         if (it.askedBy) {
