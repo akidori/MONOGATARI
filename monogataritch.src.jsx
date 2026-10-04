@@ -4523,6 +4523,14 @@ function IntentCasePicker({ theme, intent, rows, recentIds, mineIds, channelIcon
   );
 }
 
+/* 文中の https:// のURLだけをリンクにする（AIの回答・AKの回答に動画などのURLが入るため。2026-10-04） */
+function LinkText({ text }) {
+  const parts = String(text || "").split(/(https?:\/\/[^\s　）」』、。]+)/g);
+  return parts.map((t, i) => (i % 2 === 1
+    ? <a key={i} href={t} target="_blank" rel="noopener noreferrer" className="underline break-all" style={{ color: "#2563EB" }}>{t}</a>
+    : <React.Fragment key={i}>{t}</React.Fragment>));
+}
+
 /* AIが「AKへ」回した質問に、AKがアプリ内で答える（2026-10-04 学習ループ）。
    適用範囲を選ぶと、次から同じ範囲の質問でAIが資料として使う（knowledge/qa.md と同じ扱い） */
 const ANSWER_SCOPES = [
@@ -12956,11 +12964,11 @@ export default function App() {
                         <>
                           <div className="text-[11px] font-bold mb-1 px-1.5 py-0.5 rounded inline-block" style={{ background: "#FCF0DC", color: "#D97706" }}>AKさんに確認を送りました</div>
                           {f["AKへの理由"] && <div className="text-[12px] text-stone-500 whitespace-pre-wrap">理由：{f["AKへの理由"].trim()}</div>}
-                          {f["資料にある手順"] && f["資料にある手順"].trim() && <div className="mt-1.5 whitespace-pre-wrap"><span className="text-[11px] font-bold text-stone-500">資料にあること：</span>{f["資料にある手順"].trim()}</div>}
+                          {f["資料にある手順"] && f["資料にある手順"].trim() && <div className="mt-1.5 whitespace-pre-wrap"><span className="text-[11px] font-bold text-stone-500">資料にあること：</span><LinkText text={f["資料にある手順"].trim()} /></div>}
                         </>
                       ) : (
                         <>
-                          <div className="whitespace-pre-wrap leading-relaxed">{(f["回答"] || e.text).trim()}</div>
+                          <div className="whitespace-pre-wrap leading-relaxed"><LinkText text={(f["回答"] || e.text).trim()} /></div>
                           {f["出典"] && <div className="mt-1.5 text-[11px] text-stone-400 whitespace-pre-wrap">出典：{f["出典"].trim()}</div>}
                         </>
                       )}
@@ -13012,7 +13020,7 @@ export default function App() {
                       {n.guides.map((g, gi) => (
                         <div key={gi} className="mt-1.5">
                           <div className="text-[11px] font-bold text-stone-500">{g.source}</div>
-                          <ul className="mt-0.5 space-y-0.5">{g.points.map((p, pi) => <li key={pi} className="text-[11.5px] text-stone-600 leading-snug">・{p}</li>)}</ul>
+                          <ul className="mt-0.5 space-y-0.5">{g.points.map((p, pi) => <li key={pi} className="text-[11.5px] text-stone-600 leading-snug">・<LinkText text={p} /></li>)}</ul>
                         </div>
                       ))}
                     </details>
