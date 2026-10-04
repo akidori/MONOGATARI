@@ -4523,6 +4523,64 @@ function IntentCasePicker({ theme, intent, rows, recentIds, mineIds, channelIcon
   );
 }
 
+/* AIが「AKへ」回した質問に、AKがアプリ内で答える（2026-10-04 学習ループ）。
+   適用範囲を選ぶと、次から同じ範囲の質問でAIが資料として使う（knowledge/qa.md と同じ扱い） */
+const ANSWER_SCOPES = [
+  ["この案件限定", "この案件の質問にだけ使う"],
+  ["このチャンネル共通", "同じチャンネルの案件で使う"],
+  ["全案件共通", "どの案件の質問でも使う"],
+  ["記録しない", "本人に返すだけ（AIは覚えない）"],
+];
+function AgentAnswerDialog({ theme, n, onClose, onSent }) {
+  const [answer, setAnswer] = useState("");
+  const [scope, setScope] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const send = async () => {
+    if (!answer.trim() || !scope || busy) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch(SHARE_API + "/api/agent/answer", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION }, body: JSON.stringify({ id: n.id, answer: answer.trim(), scope }) });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) throw new Error((d && d.error) || ("HTTP " + r.status));
+      onSent();
+    } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+  };
+  const points = ((n.guides || [])[0] || {}).points || [];
+  return (
+    <div className="fixed inset-0 z-[75] bg-black/35 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="mg-pop w-full sm:w-[520px] max-h-[90vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-[10.5px] font-bold px-1.5 py-0.5 rounded" style={{ background: "#EFEAFD", color: "#6D28D9" }}>{n.title}</span>
+          <span className="text-[12px] text-stone-500 truncate">{n.caseName}</span>
+          <button onClick={onClose} title="閉じる" className="ml-auto w-8 h-8 rounded-lg grid place-items-center text-stone-500 hover:bg-stone-100"><Icon name="close" className="w-4 h-4" /></button>
+        </div>
+        <div className="rounded-xl bg-stone-50 border border-stone-200 px-3 py-2.5 mb-3">
+          {points.map((p, i) => <p key={i} className={"text-[13px] leading-relaxed " + (i ? "text-stone-500 mt-1" : "text-stone-800 font-bold")}>{p}</p>)}
+        </div>
+        <label className="block text-[12px] font-bold text-stone-600 mb-1">回答（質問した人に届きます）</label>
+        <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} rows={4} maxLength={4000} autoFocus
+          className="w-full rounded-xl border border-stone-300 px-3 py-2 text-[14px] focus:outline-none focus:border-stone-500" placeholder="例：当日本人から引き出す。撮影前に聞いて埋めない。" />
+        <div className="text-[12px] font-bold text-stone-600 mt-3 mb-1.5">次からAIにも使わせる範囲</div>
+        <div className="grid grid-cols-2 gap-1.5">
+          {ANSWER_SCOPES.map(([k, d]) => (
+            <button key={k} onClick={() => setScope(k)} className="text-left rounded-xl border px-2.5 py-2"
+              style={scope === k ? { borderColor: theme.accent, background: theme.accent + "10" } : { borderColor: "#E7E5E4" }}>
+              <span className="block text-[12.5px] font-bold text-stone-800">{k}</span>
+              <span className="block text-[11px] text-stone-500 leading-snug">{d}</span>
+            </button>
+          ))}
+        </div>
+        {err && <p className="mt-2 text-[12px] text-rose-600">{err}</p>}
+        <button onClick={send} disabled={!answer.trim() || !scope || busy}
+          className="mt-3 w-full h-10 rounded-xl text-[14px] font-bold text-white disabled:opacity-40" style={{ background: theme.accent }}>
+          {busy ? "送信中…" : "回答を送る"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [index, setIndex] = useState([]);       // [{id,name,createdAt}]
   const [activeId, setActiveId] = useState(null);
@@ -4709,6 +4767,7 @@ export default function App() {
   const [memberInvite, setMemberInvite] = useState({ email: "", ids: {} }); // メンバー画面の招待フォーム（メール＋付与する案件id）
   const [notifs, setNotifs] = useState(null);          // アプリ内通知 {items, unread}（工程の締切リマインド等。Worker /api/notifications）
   const [showNotifs, setShowNotifs] = useState(false);
+  const [answerFor, setAnswerFor] = useState(null); // AKがAIの確認依頼に答えているときの通知
   const [homeIntent, setHomeIntent] = useState(null); // ホーム「何をしますか？」で案件を選んでいる最中のやりたいこと
   const [askOpen, setAskOpen] = useState(false);       // AIに質問（ものがたりっちAIエージェント）パネル
   const [askInput, setAskInput] = useState("");
@@ -8234,7 +8293,7 @@ export default function App() {
     try {
       const r = await fetch(SHARE_API + "/api/agent/ask", {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
-        body: JSON.stringify({ question: q, caseId: inCase ? project.id : "", caseName: inCase ? project.name : "", context: inCase ? buildAgentContext(project) : "" }),
+        body: JSON.stringify({ question: q, caseId: inCase ? project.id : "", caseName: inCase ? project.name : "", channel: inCase ? (project.channel || DEFAULT_CHANNEL) : "", context: inCase ? buildAgentContext(project) : "" }),
       });
       const d = await r.json().catch(() => null);
       if (!r.ok || !d) throw new Error((d && d.error) || ("HTTP " + r.status));
@@ -12932,7 +12991,7 @@ export default function App() {
             {!notifs || !notifs.items.length ? (
               <p className="text-[12.5px] text-stone-500 px-4 py-6 text-center">通知はありません。担当している工程の締切の前日（ここだけ）・当日と超過（メールも・1日1通まで）にお知らせします。</p>
             ) : notifs.items.map((n) => {
-              const tone = n.type === "question" ? { bg: "#EFEAFD", fg: "#6D28D9" } : (n.type === "uploaded" || n.type === "received" || n.type === "downloaded") ? { bg: "#E3F4EA", fg: "#15803D" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
+              const tone = n.type === "question" || n.type === "answer" ? { bg: "#EFEAFD", fg: "#6D28D9" } : (n.type === "uploaded" || n.type === "received" || n.type === "downloaded") ? { bg: "#E3F4EA", fg: "#15803D" } : n.phase === "over" || n.phase === "stale" ? { bg: "#FBE5EA", fg: "#DC2645" } : n.phase === "today" ? { bg: "#FCF0DC", fg: "#D97706" } : { bg: "#E3EBFC", fg: "#2563EB" };
               const inIndex = index.some((x) => x.id === n.caseId);
               return (
                 <div key={n.id} className="px-4 py-3 border-b border-stone-100 last:border-0" style={n.read ? { opacity: 0.6 } : undefined}>
@@ -12943,8 +13002,8 @@ export default function App() {
                   </div>
                   <div className={"text-[13px] font-bold text-stone-800 " + (n.type === "digest" ? "leading-snug" : "truncate")}>{n.caseName}</div>
                   {Array.isArray(n.guides) && n.guides.length > 0 && (
-                    <details className="mt-1" open={n.type === "digest" && !n.read}>
-                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : n.type === "uploaded" ? "アップされた動画" : (n.type === "received" || n.type === "downloaded") ? "内容" : n.type === "digest" ? "一覧を見る" : "この工程で押さえること"}</summary>
+                    <details className="mt-1" open={(n.type === "digest" || n.type === "answer") && !n.read}>
+                      <summary className="text-[11.5px] font-bold cursor-pointer" style={{ color: theme.main }}>{n.type === "question" ? "質問の内容" : n.type === "answer" ? "回答を見る" : n.type === "uploaded" ? "アップされた動画" : (n.type === "received" || n.type === "downloaded") ? "内容" : n.type === "digest" ? "一覧を見る" : "この工程で押さえること"}</summary>
                       {n.guides.map((g, gi) => (
                         <div key={gi} className="mt-1.5">
                           <div className="text-[11px] font-bold text-stone-500">{g.source}</div>
@@ -12954,6 +13013,7 @@ export default function App() {
                     </details>
                   )}
                   <div className="flex gap-2 mt-1.5">
+                    {n.type === "question" && isStaff && !n.read && <button onClick={() => { setShowNotifs(false); setAnswerFor(n); }} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: "#6D28D9" }}>回答する</button>}
                     {inIndex && <button onClick={() => { markNotifsRead([n.id]); setShowNotifs(false); openCase(n.caseId); }} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: theme.accent }}>案件を開く</button>}
                     {!n.read && <button onClick={() => markNotifsRead([n.id])} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600">既読にする</button>}
                   </div>
@@ -12963,6 +13023,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {answerFor && <AgentAnswerDialog theme={theme} n={answerFor} onClose={() => setAnswerFor(null)}
+        onSent={() => { setAnswerFor(null); showToast("回答を送りました（質問した人に届きます）"); loadNotifs(); }} />}
 
       {/* ===== ホーム画面（入口・チャンネル一覧。中身はここから開かないと出ない） ===== */}
       {view === "home" && (

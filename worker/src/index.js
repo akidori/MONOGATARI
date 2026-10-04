@@ -20,6 +20,7 @@ const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIP
 // ものがたりっちAIエージェント（質問に答える）。指示書の正本は agent/PROMPT.md（品質ループで改善中）
 import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
 import QA_MD from "../../knowledge/qa.md";
+import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD } from "./agentqa.js";
 const AGENT_SYSTEM = AGENT_PROMPT_MD
   + "\n\n# 資料（これ以外を根拠にしない）\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD
   + "\n\n## knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md（公開前チェック）\n\n" + REGULATION_MD
@@ -1764,6 +1765,7 @@ ${qList}
         if (context.length > 40000) return json({ error: "案件の資料が大きすぎます" }, 413);
         const caseId = (b.caseId || "").toString().slice(0, 80);
         const caseName = (b.caseName || "").toString().slice(0, 120);
+        const channel = (b.channel || "").toString().slice(0, 80);
         const me = lc(u.email);
         // 1人1日60問まで（コストの上限）
         const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
@@ -1773,6 +1775,8 @@ ${qList}
         await env.SNAPS.put(cntKey, String(cnt + 1), { expirationTtl: 2 * 86400 });
 
         const userText = "【案件資料】\n" + (context || "（開いている案件なし）") + "\n\n【質問】\n" + question;
+        // AKがアプリから答えた回答のうち、この質問に当てはまるもの（全案件共通・同じチャンネル・同じ案件）を資料に足す
+        const qaExtra = qaSystemBlock((await env.SNAPS.get("agentq:qa", "json")) || [], { caseId, channel });
         let data;
         try {
           const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1784,7 +1788,7 @@ ${qList}
               fallbacks: "default",
               output_config: { effort: "medium" },
               // 指示書＋資料は毎回同じなのでキャッシュする（案件資料と質問は messages 側）
-              system: [{ type: "text", text: AGENT_SYSTEM, cache_control: { type: "ephemeral" } }],
+              system: [{ type: "text", text: AGENT_SYSTEM, cache_control: { type: "ephemeral" } }, ...(qaExtra ? [{ type: "text", text: qaExtra }] : [])],
               messages: [{ role: "user", content: userText }],
             }),
           });
@@ -1800,12 +1804,14 @@ ${qList}
         }
         if (!text) return json({ error: "AIの回答が空でした。もう一度試してください" }, 502);
         const verdict = /判定[:：]\s*AKへ/.test(text) ? "AKへ" : "回答";
+        // 継続判断用：日別に「直接答えた」「AKへ回した」を数える（2週間ごとの比率を /api/agent/stats で見る）
+        try { const sk = "agentq:stat:" + today; await env.SNAPS.put(sk, JSON.stringify(bumpStat(await env.SNAPS.get(sk, "json"), verdict)), { expirationTtl: 120 * 86400 }); } catch (e) {}
 
         if (verdict === "AKへ") {
           const pick = (label) => { const m = text.match(new RegExp(label + "[:：]\\s*([^\\n]+)")); return m ? m[1].trim() : ""; };
           const item = {
             id: "q_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
-            askedBy: me, askedByName: u.name || me, caseId, caseName, question,
+            askedBy: me, askedByName: u.name || me, caseId, caseName, channel, question, status: "open",
             reason: pick("AKへの理由"), akQuestion: pick("AKに渡す質問文") || question,
           };
           const inbox = (await env.SNAPS.get("agentq:inbox", "json")) || [];
@@ -1824,7 +1830,7 @@ ${qList}
                 await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
                   method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
                   body: JSON.stringify({ to: ad, subject: "【ものがたりっち】確認依頼：" + (caseName || "案件なし") + "（" + item.askedByName + "）",
-                    body: item.askedByName + "さんからの質問を、AIが資料だけでは答えられないためAKさんに回しました。\n\n質問：" + question + "\n\nAIの整理：" + item.akQuestion + (item.reason ? "\n理由：" + item.reason : "") + (caseId ? "\n\n案件を開く：" + appOrigin + "/?case=" + encodeURIComponent(caseId) : "") + "\n\n回答は本人に直接伝えてください。同じ質問が今後も来そうなら knowledge/qa.md に追記すると、次からAIが答えられます。\nBird Flip / ものがたりっち！",
+                    body: item.askedByName + "さんからの質問を、AIが資料だけでは答えられないためAKさんに回しました。\n\n質問：" + question + "\n\nAIの整理：" + item.akQuestion + (item.reason ? "\n理由：" + item.reason : "") + (caseId ? "\n\n案件を開く：" + appOrigin + "/?case=" + encodeURIComponent(caseId) : "") + "\n\nものがたりっちの通知（ベル）の「回答する」から答えると、質問した人に届きます。適用範囲を選んでおくと、次から同じ種類の質問にAIが答えられます。\nBird Flip / ものがたりっち！",
                     audit_target: "monogataritch:agentq:" + item.id }),
                 });
               } catch (e) { /* 通知は残る */ }
@@ -1832,6 +1838,77 @@ ${qList}
           }
         }
         return json({ verdict, text });
+      }
+
+      // ===== AIの学習ループ（2026-10-04）: AKへ回った質問にAKがアプリで答える → 本人に届く → 次からAIが使う =====
+      // GET /api/agent/inbox → { items, scopes }（管理者のみ。新しい順・最大200件）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "agent" && parts[2] === "inbox" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        return json({ items: (await env.SNAPS.get("agentq:inbox", "json")) || [], scopes: [...QA_SCOPES, QA_NO_RECORD] });
+      }
+      // POST /api/agent/answer { id, answer, scope } → { ok, item }（管理者のみ）
+      // scope が「記録しない」以外なら、回答を agentq:qa に足し、次から同じ範囲の質問でAIが資料として使う
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "agent" && parts[2] === "answer" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const inbox = (await env.SNAPS.get("agentq:inbox", "json")) || [];
+        const r = applyAnswer(inbox, (b.id || "").toString(), { answer: b.answer, scope: (b.scope || "").toString(), by: lc(u.email) });
+        if (r.error) return json({ error: r.error }, r.status);
+        await env.SNAPS.put("agentq:inbox", JSON.stringify(r.inbox));
+        if (r.qa) {
+          const qa = (await env.SNAPS.get("agentq:qa", "json")) || [];
+          await env.SNAPS.put("agentq:qa", JSON.stringify([...qa.filter((e) => e.id !== r.qa.id), r.qa].slice(-300)));
+        }
+        const it = r.item;
+        // 管理者側の「確認依頼」通知は既読にする
+        const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean);
+        for (const ad of admins) {
+          const nk = "notif:" + ad;
+          const list = (await env.SNAPS.get(nk, "json")) || [];
+          if (list.some((n) => n.id === it.id && !n.read)) await env.SNAPS.put(nk, JSON.stringify(list.map((n) => (n.id === it.id ? { ...n, read: true } : n))));
+        }
+        // 質問した人へ：アプリ内通知＋メール
+        if (it.askedBy) {
+          const nk = "notif:" + it.askedBy;
+          const list = (await env.SNAPS.get(nk, "json")) || [];
+          list.unshift({ id: "ans_" + it.id, at: Date.now(), type: "answer", read: false, caseId: it.caseId || null, caseName: it.caseName || "（案件なし）", phase: "answer",
+            title: "AKさんから回答", deadline: "", guides: [{ source: "あなたの質問", points: [it.question] }, { source: "AKさんの回答", points: [it.answer] }] });
+          await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
+          if (env.BOT_API_URL && env.BOT_API_KEY) {
+            const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+            try {
+              await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
+                method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
+                body: JSON.stringify({ to: it.askedBy, subject: "【ものがたりっち】AKさんから回答：" + (it.caseName || "質問"),
+                  body: "AIに聞いた質問に、AKさんが答えました。\n\n質問：" + it.question + "\n\n回答：" + it.answer + (it.caseId ? "\n\n案件を開く：" + appOrigin + "/?case=" + encodeURIComponent(it.caseId) : "") + "\n\nBird Flip / ものがたりっち！",
+                  audit_target: "monogataritch:agentq:" + it.id + ":answer" }),
+              });
+            } catch (e) { /* 通知は残る */ }
+          }
+        }
+        return json({ ok: true, item: it });
+      }
+      // GET /api/agent/qa → { entries, markdown }（管理者のみ。knowledge/qa.md へ写す時用に同じ形式で返す）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "agent" && parts[2] === "qa" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        const entries = (await env.SNAPS.get("agentq:qa", "json")) || [];
+        return json({ entries, markdown: qaToMarkdown(entries) });
+      }
+      // GET /api/agent/stats?days=14 → { 回答, AKへ, total, directRate, days }（管理者のみ。マニュアル「継続判断」用）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "agent" && parts[2] === "stats" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!isStaff(u, env)) return json({ error: "管理者のみ" }, 403);
+        const n = Math.min(90, Math.max(1, parseInt(url.searchParams.get("days") || "14", 10) || 14));
+        const days = [];
+        for (let i = 0; i < n; i++) days.push(await env.SNAPS.get("agentq:stat:" + new Date(Date.now() + 9 * 3600 * 1000 - i * 86400000).toISOString().slice(0, 10), "json"));
+        return json({ ...sumStats(days), days: n });
       }
 
       // ===== アプリ内通知（2026-09-26）: 工程の締切リマインドなど。KV notif:<email> に最新50件 =====
