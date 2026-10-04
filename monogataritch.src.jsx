@@ -4428,6 +4428,101 @@ function TodayTodo({ theme, cases, onOpenCase }) {
   );
 }
 
+/* ===== ホームの「何をしますか？」（2026-10-04 AK「ホーム開いたら何をするのか？を選択できるように。みんな操作方法がわかってない」） =====
+   やりたいこと → （案件が要るものは）どの案件か、の2タップで、その案件の該当タブを直接開く */
+const HOME_INTENTS = [
+  { key: "script", icon: "file", label: "構成を確認する", sub: "構成台本を見る・直す", tab: "script" },
+  { key: "review", icon: "upload", label: "動画をアップする", sub: "書き出した動画を出す・修正を見る", tab: "review" },
+  { key: "assets", icon: "folder", label: "素材を入れる", sub: "撮影素材・資料を渡す", tab: "assets" },
+  { key: "ask", icon: "sparkle", label: "質問する", sub: "台本・撮影・編集で迷ったら" },
+  { key: "new", icon: "plus", label: "新しい案件をつくる", sub: "一日密着・トークなど" },
+  { key: "learn", icon: "book", label: "やり方を見る", sub: "工程ごとのマニュアル" },
+];
+
+function HomeIntents({ theme, onPick }) {
+  return (
+    <section className="mb-6">
+      <h2 className="text-[17px] font-black text-stone-800 mb-3">何をしますか？</h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+        {HOME_INTENTS.map((it, i) => (
+          <button key={it.key} onClick={(e) => onPick(it, e)}
+            className="group flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 rounded-2xl bg-white border border-stone-200 shadow-sm px-3 sm:px-3.5 py-3 sm:py-3.5 text-left hover:border-stone-400 hover:shadow transition-all min-w-0">
+            <span className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl grid place-items-center shrink-0 text-white" style={{ background: i < 3 ? theme.accent : theme.main }}>
+              <Icon name={it.icon} className="w-5 h-5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[13.5px] sm:text-[14px] font-black text-stone-800 leading-tight">{it.label}</span>
+              <span className="hidden sm:block text-[11.5px] text-stone-500 leading-snug mt-0.5">{it.sub}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* 案件を選ぶ（担当→最近触った→その他。完了は検索した時だけ出す） */
+function IntentCasePicker({ theme, intent, rows, recentIds, mineIds, channelIconOf, onPick, onClose }) {
+  const [q, setQ] = useState("");
+  const inputRef = useRef(null);
+  useEffect(() => { try { inputRef.current && inputRef.current.focus({ preventScroll: true }); } catch (e) {} }, []);
+  useEffect(() => { const h = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose]);
+  const query = q.trim().toLowerCase();
+  const hit = (r) => !query || (r.name || "").toLowerCase().includes(query) || (r.channel || "").toLowerCase().includes(query);
+  const pool = rows.filter((r) => hit(r) && (query || r.status !== "完了"));
+  const mine = new Set(mineIds || []);
+  const rank = (r) => { const i = recentIds.indexOf(r.id); return i >= 0 ? i : 1000 - (r.updatedAt || 0) / 1e13; };
+  const groups = [
+    ["あなたの担当", pool.filter((r) => mine.has(r.id)).sort((a, b) => rank(a) - rank(b))],
+    ["最近開いた案件", pool.filter((r) => !mine.has(r.id) && recentIds.includes(r.id)).sort((a, b) => rank(a) - rank(b))],
+    ["そのほかの案件", pool.filter((r) => !mine.has(r.id) && !recentIds.includes(r.id)).sort((a, b) => rank(a) - rank(b))],
+  ].filter(([, xs]) => xs.length);
+  const hiddenDone = !query ? rows.filter((r) => r.status === "完了").length : 0;
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/35 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="mg-pop w-full sm:w-[520px] max-h-[85vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 pt-4 pb-3 border-b border-stone-100 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="w-8 h-8 rounded-lg grid place-items-center shrink-0 text-white" style={{ background: theme.accent }}><Icon name={intent.icon} className="w-4 h-4" /></span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11.5px] font-bold text-stone-500">{intent.label}</div>
+              <div className="text-[15px] font-black text-stone-800 leading-tight">どの案件ですか？</div>
+            </div>
+            <button onClick={onClose} title="閉じる" className="w-8 h-8 rounded-lg grid place-items-center text-stone-500 hover:bg-stone-100"><Icon name="close" className="w-4 h-4" /></button>
+          </div>
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2">
+            <Icon name="search" className="w-4 h-4 text-stone-500 shrink-0" />
+            <input ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)} placeholder="案件名・チャンネルで探す"
+              className="flex-1 min-w-0 text-[14px] bg-transparent focus:outline-none" />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto mg-scroll px-2 py-2">
+          {groups.length === 0 && (
+            <div className="px-3 py-6 text-center text-[13px] text-stone-500">{rows.length ? "「" + q + "」に合う案件はありません" : "まだ案件がありません。「新しい案件をつくる」から作れます"}</div>
+          )}
+          {groups.map(([label, xs]) => (
+            <div key={label} className="mb-2">
+              <div className="px-2 py-1 text-[11px] font-bold tracking-wide text-stone-400">{label}</div>
+              {xs.slice(0, 40).map((r) => (
+                <button key={r.id} onClick={() => onPick(r.id)}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl text-left hover:bg-stone-50">
+                  <span className="w-7 h-7 rounded-lg grid place-items-center shrink-0 bg-stone-100 text-[14px]">{channelIconOf(r.channel) || "📁"}</span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-[14px] font-bold text-stone-800 truncate">{r.name || "（無題）"}</span>
+                    <span className="block text-[11.5px] text-stone-500 truncate">{r.channel}{r.status ? "・" + r.status : ""}{r.dl != null && r.status !== "完了" ? (r.dl < 0 ? "・" + (-r.dl) + "日遅れ" : r.dl === 0 ? "・今日締切" : r.dl <= 7 ? "・あと" + r.dl + "日" : "") : ""}</span>
+                  </span>
+                  <span className="text-stone-300 shrink-0">›</span>
+                </button>
+              ))}
+            </div>
+          ))}
+          {hiddenDone > 0 && <div className="px-3 pb-2 text-[11.5px] text-stone-400">完了した案件（{hiddenDone}件）は、名前で探すと出ます</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [index, setIndex] = useState([]);       // [{id,name,createdAt}]
   const [activeId, setActiveId] = useState(null);
@@ -4614,6 +4709,7 @@ export default function App() {
   const [memberInvite, setMemberInvite] = useState({ email: "", ids: {} }); // メンバー画面の招待フォーム（メール＋付与する案件id）
   const [notifs, setNotifs] = useState(null);          // アプリ内通知 {items, unread}（工程の締切リマインド等。Worker /api/notifications）
   const [showNotifs, setShowNotifs] = useState(false);
+  const [homeIntent, setHomeIntent] = useState(null); // ホーム「何をしますか？」で案件を選んでいる最中のやりたいこと
   const [askOpen, setAskOpen] = useState(false);       // AIに質問（ものがたりっちAIエージェント）パネル
   const [askInput, setAskInput] = useState("");
   const [askBusy, setAskBusy] = useState(false);
@@ -12970,15 +13066,24 @@ export default function App() {
               <span className="min-w-0"><span className="block text-[12.5px] font-black text-stone-700">タイプ診断</span><span className="block text-[10.5px] text-stone-400 leading-tight">あなたに合った制作の流れ</span></span>
             </button>
           </aside>
-          <button onClick={() => setShowLearn(true)} title="学習（工程ごとのマニュアル）"
-            className="lg:hidden fixed bottom-[72px] left-4 z-40 h-11 pl-3 pr-4 rounded-full shadow-lg inline-flex items-center gap-1.5 text-[12.5px] font-bold text-white" style={{ background: theme.main }}>
-            <Icon name="book" className="w-4 h-4" />学習
-          </button>
+          {/* スマホの「学習」ボタンは「何をしますか？」の「やり方を見る」に統合（2026-10-04） */}
           <button onClick={() => setShowCreator(true)} title="クリエイタータイプ診断"
             className="lg:hidden fixed bottom-5 left-4 z-40 h-11 pl-3 pr-4 rounded-full shadow-lg inline-flex items-center gap-1.5 text-[12.5px] font-bold text-white" style={{ background: theme.accent }}>
             <Icon name="sparkle" className="w-4 h-4" />タイプ診断
           </button>
           <main className="flex-1 min-w-0 py-7">
+            <HomeIntents theme={theme} onPick={(it, e) => {
+              if (it.tab) { setHomeIntent(it); return; }
+              if (it.key === "ask") { if (user) setAskOpen(true); else { showToast("質問はログインすると使えます"); setShowAccount(true); } return; }
+              if (it.key === "new") { setAddMenu({ channel: DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); return; }
+              if (it.key === "learn") setShowLearn(true);
+            }} />
+            {homeIntent && (
+              <IntentCasePicker theme={theme} intent={homeIntent} rows={homeSections.rows} recentIds={recentIds}
+                mineIds={((myWork && myWork.cases) || []).map((w) => w.caseId)} channelIconOf={channelIconOf}
+                onClose={() => setHomeIntent(null)}
+                onPick={(id) => { const t = homeIntent.tab; setHomeIntent(null); switchProject(id, t); }} />
+            )}
             {/* 全案件 横断検索＋新規（1行に統合） */}
             <div className="flex items-center gap-2 mb-6">
             <div className="relative flex-1 min-w-0">
@@ -13013,10 +13118,7 @@ export default function App() {
                 </>
               )}
             </div>
-            <button onClick={(e) => setAddMenu({ channel: DEFAULT_CHANNEL, x: e.clientX, y: e.clientY })}
-              className="shrink-0 h-9 px-3.5 rounded-xl inline-flex items-center gap-1.5 text-[13px] font-bold text-white shadow-sm" style={{ background: theme.accent }}>
-              <Icon name="plus" className="w-3.5 h-3.5" /> 新規案件
-            </button>
+            {/* 新規案件ボタンは「何をしますか？」の「新しい案件をつくる」に統合（2026-10-04） */}
             <button onClick={() => { const ch = window.prompt("新しいチャンネル（クライアント）名"); if (ch && ch.trim()) createChannel(ch.trim()); }}
               title="チャンネルを追加" className="shrink-0 h-9 px-3 rounded-xl inline-flex items-center gap-1 text-[13px] font-bold border border-stone-300 bg-white text-stone-600 hover:bg-stone-50">
               <Icon name="folder" className="w-3.5 h-3.5" />＋
