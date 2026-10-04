@@ -1871,7 +1871,10 @@ ${qList}
           "- 案件資料（取材メモ・規定・NG）に書かれた決まりは守られているかも見る。資料に無い事実を前提に減点しない\n" +
           "- 良い点も短く挙げる（直さなくていい所が分かるように）\n" +
           "- 結果は必ず report_review ツールを1回だけ呼んで返す（本文に書かない）\n" +
-          "- 各項目は 2＝できている／1＝一部ズレ／0＝大きくズレている。判断材料が台本に無い項目は 1 にして、その旨を書く\n" +
+          "- 各項目は 2＝できている／1＝一部ズレ／0＝大きくズレている。台本に判断材料が無い項目（書きかけ・抜粋・省略された部分にしか関係しない項目）は score を null にして採点せず、comment にその旨を書く（判断材料が無いことを減点にしない）\n" +
+          "- severity は high＝動画の核や入口の約束が崩れる・資料の決まり（NG事項・反転の主体は演者本人など）に反する／mid＝構成のルールから外れていて直した方がよい／low＝目安から少し外れる・直すと良くなる\n" +
+          "- 指摘は重い順に最大15件。同じ場面・同じ項目の指摘は1件にまとめる。機械で数えたチェックと同じ内容は繰り返さない（判断を足す時だけ書く）\n" +
+          "- ★の付いたセリフは仮置き（撮影当日に本人から引き出す候補）。★で気づき・転換（反転）を構成側が書いている場合は、マニュアル「反転の主体は演者本人」に反するとして指摘してよい\n" +
           "\n# 採点する項目\n" + SCRIPT_CRITERIA.map((c) => "- " + c.key + "（" + c.label + "・根拠：" + c.source + "）：" + c.ask).join("\n") +
           "\n\n# 資料\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD +
           "\n\n## tools/SCRIPT_GEN_PROMPT.md（「構成のルール（厳守）」節だけを使う）\n\n" + SCRIPT_GEN_MD +
@@ -1885,7 +1888,7 @@ ${qList}
               summary: { type: "string", description: "全体の講評を2〜3文。いちばん直すべき点を先に" },
               criteria: { type: "array", items: { type: "object", properties: {
                 key: { type: "string", enum: SCRIPT_CRITERIA.map((c) => c.key) },
-                score: { type: "integer", enum: [0, 1, 2] },
+                score: { type: ["integer", "null"], enum: [0, 1, 2, null], description: "台本に判断材料が無い時は null" },
                 comment: { type: "string", description: "その点数の理由を1〜2文" },
               }, required: ["key", "score", "comment"] } },
               findings: { type: "array", items: { type: "object", properties: {
@@ -1921,8 +1924,8 @@ ${qList}
         const use = (data.content || []).find((c) => c.type === "tool_use");
         const r = (use && use.input) || null;
         if (!r || !Array.isArray(r.criteria)) return json({ error: "採点結果を読めませんでした。もう一度試してください" }, 502);
-        const criteria = SCRIPT_CRITERIA.map((c) => { const x = r.criteria.find((y) => y && y.key === c.key); return { key: c.key, label: c.label, source: c.source, score: x ? x.score : null, comment: x ? x.comment || "" : "" }; });
-        const findings = (Array.isArray(r.findings) ? r.findings : []).slice(0, 60);
+        const criteria = SCRIPT_CRITERIA.map((c) => { const x = r.criteria.find((y) => y && y.key === c.key); return { key: c.key, label: c.label, source: c.source, score: x && Number.isInteger(x.score) && x.score >= 0 && x.score <= 2 ? x.score : null, comment: x ? x.comment || "" : "" }; });
+        const findings = (Array.isArray(r.findings) ? r.findings : []).slice(0, 15);
         return json({ score: reviewScore(criteria.filter((c) => c.score != null)), summary: r.summary || "", criteria, findings, good: (r.good || []).slice(0, 3) });
       }
 
