@@ -4563,13 +4563,18 @@ function AgentAnswerDialog({ theme, n, onClose, onSent }) {
           className="w-full rounded-xl border border-stone-300 px-3 py-2 text-[14px] focus:outline-none focus:border-stone-500" placeholder="例：当日本人から引き出す。撮影前に聞いて埋めない。" />
         <div className="text-[12px] font-bold text-stone-600 mt-3 mb-1.5">次からAIにも使わせる範囲</div>
         <div className="grid grid-cols-2 gap-1.5">
-          {ANSWER_SCOPES.map(([k, d]) => (
-            <button key={k} onClick={() => setScope(k)} className="text-left rounded-xl border px-2.5 py-2"
+          {ANSWER_SCOPES.map(([k, d]) => {
+            // 案件・チャンネルの手がかりが無い質問では、その範囲は選べない（選んでも使われないため）
+            const off = (k === "この案件限定" && !n.caseId) || (k === "このチャンネル共通" && !n.channel);
+            return (
+            <button key={k} onClick={() => !off && setScope(k)} disabled={off} title={off ? "この質問には案件・チャンネルの情報が無いので選べません" : undefined}
+              className="text-left rounded-xl border px-2.5 py-2 disabled:opacity-40"
               style={scope === k ? { borderColor: theme.accent, background: theme.accent + "10" } : { borderColor: "#E7E5E4" }}>
               <span className="block text-[12.5px] font-bold text-stone-800">{k}</span>
               <span className="block text-[11px] text-stone-500 leading-snug">{d}</span>
             </button>
-          ))}
+            );
+          })}
         </div>
         {err && <p className="mt-2 text-[12px] text-rose-600">{err}</p>}
         <button onClick={send} disabled={!answer.trim() || !scope || busy}
@@ -13013,7 +13018,7 @@ export default function App() {
                     </details>
                   )}
                   <div className="flex gap-2 mt-1.5">
-                    {n.type === "question" && isStaff && !n.read && <button onClick={() => { setShowNotifs(false); setAnswerFor(n); }} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: "#6D28D9" }}>回答する</button>}
+                    {n.type === "question" && isStaff && !n.answered && <button onClick={() => { setShowNotifs(false); setAnswerFor(n); }} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: "#6D28D9" }}>回答する</button>}
                     {inIndex && <button onClick={() => { markNotifsRead([n.id]); setShowNotifs(false); openCase(n.caseId); }} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: theme.accent }}>案件を開く</button>}
                     {!n.read && <button onClick={() => markNotifsRead([n.id])} className="text-[11.5px] font-bold px-2.5 py-1 rounded-lg border border-stone-200 text-stone-600">既読にする</button>}
                   </div>
@@ -13138,7 +13143,7 @@ export default function App() {
             <HomeIntents theme={theme} onPick={(it, e) => {
               if (it.tab) { setHomeIntent(it); return; }
               if (it.key === "ask") { if (user) setAskOpen(true); else { showToast("質問はログインすると使えます"); setShowAccount(true); } return; }
-              if (it.key === "new") { setAddMenu({ channel: DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); return; }
+              if (it.key === "new") { const r = e.currentTarget.getBoundingClientRect(); setAddMenu({ channel: DEFAULT_CHANNEL, x: r.left + 12, y: r.bottom + 4 }); return; }
               if (it.key === "learn") setShowLearn(true);
             }} />
             {homeIntent && (

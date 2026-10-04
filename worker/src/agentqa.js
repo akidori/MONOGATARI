@@ -26,6 +26,9 @@ export function applyAnswer(inbox, id, { answer, scope, by, now = Date.now() }) 
   if (i < 0) return { error: "質問が見つかりません", status: 404 };
   const cur = inbox[i];
   if (cur.status === "answered") return { error: "この質問には回答済みです", status: 409 };
+  // 当てはめる手がかりが無い範囲は選べない（選んでも二度と使われない回答になるため）
+  if (scope === "この案件限定" && !cur.caseId) return { error: "案件を開かずに聞かれた質問なので「この案件限定」は選べません", status: 400 };
+  if (scope === "このチャンネル共通" && !cur.channel) return { error: "チャンネルが分からない質問なので「このチャンネル共通」は選べません", status: 400 };
   const item = { ...cur, status: "answered", answer: ans, scope, answeredBy: by || "", answeredAt: now };
   const next = inbox.slice(); next[i] = item;
   const qa = scope === QA_NO_RECORD ? null : {

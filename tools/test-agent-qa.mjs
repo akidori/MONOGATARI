@@ -20,6 +20,10 @@ const now = Date.parse("2026-10-04T03:00:00Z"); // JST 12:00
   assert.equal(applyAnswer(inbox, "q1", { answer: "x", scope: "なんでも" }).status, 400);
   assert.equal(applyAnswer(inbox, "nope", { answer: "x", scope: "全案件共通" }).status, 404);
   assert.equal(applyAnswer(inbox, "q1", { answer: "x".repeat(4001), scope: "全案件共通" }).status, 413);
+  // 手がかりの無い範囲は選べない（q2 は案件もチャンネルも無い）
+  assert.equal(applyAnswer(inbox, "q2", { answer: "x", scope: "この案件限定" }).status, 400);
+  assert.equal(applyAnswer(inbox, "q2", { answer: "x", scope: "このチャンネル共通" }).status, 400);
+  assert.equal(applyAnswer(inbox, "q1", { answer: "x", scope: "このチャンネル共通" }).item.status, "answered");
   // 「記録しない」は本人に返すだけで、AIの資料には入れない
   const r2 = applyAnswer(inbox, "q2", { answer: "今回は経費でOK", scope: QA_NO_RECORD, now });
   assert.equal(r2.qa, null); assert.equal(r2.item.status, "answered");
