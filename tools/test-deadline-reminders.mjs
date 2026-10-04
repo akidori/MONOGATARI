@@ -36,13 +36,21 @@ assert.ok(g[0].source.includes("構成のルール"));
 assert.ok(guidesFor("最終修正", docs)[0].source.includes("公開前チェック"));
 assert.ok(guidesFor("修正", docs)[0].source.includes("構成台本制作マニュアル"));
 
-// 計画：編集者の工程だけ・オーナーは除く・紐付け無し/編集者無しは飛ばす
+// 計画：見るのは各案件の「今の工程（一番手前の未完了）」だけ（2026-09-29 ec997f8）。
+// 編集者の工程だけ・オーナーは除く・紐付け無し/編集者無しは飛ばす・先の編集工程の締切では急かさない
 const deliverables = [
   { id: "dl1", title: "A", mgProjectId: "p1", productionStatus: "active", steps: [
-    { id: "s1", stepName: "撮影", defaultRole: "Camera", status: "pending", deadline: "2026-10-01" },
-    { id: "s2", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-10-02" },
-    { id: "s3", stepName: "修正", defaultRole: "Editor", status: "completed", deadline: "2026-09-30" },
-    { id: "s4", stepName: "最終修正", defaultRole: "Editor", status: "pending", deadline: "2026-09-28" },
+    { id: "s1", stepName: "撮影", defaultRole: "Camera", status: "completed", deadline: "2026-09-25", stepOrder: 1 },
+    { id: "s3", stepName: "修正", defaultRole: "Editor", status: "completed", deadline: "2026-09-30", stepOrder: 2 },
+    { id: "s2", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-10-02", stepOrder: 3 },
+  ] },
+  { id: "dl1b", title: "A（ショート）", mgProjectId: "p1", productionStatus: "active", steps: [
+    { id: "s4", stepName: "最終修正", defaultRole: "Editor", status: "pending", deadline: "2026-09-28", stepOrder: 1 },
+  ] },
+  // 今の工程が撮影（編集者の工程ではない）なら、先の本編集の締切が近くても送らない
+  { id: "dl5", title: "A（撮影待ち）", mgProjectId: "p1", productionStatus: "active", steps: [
+    { id: "x5", stepName: "撮影", defaultRole: "Camera", status: "pending", deadline: "2026-09-30", stepOrder: 1 },
+    { id: "y5", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-10-01", stepOrder: 2 },
   ] },
   { id: "dl2", title: "B", mgProjectId: null, productionStatus: "active", steps: [{ id: "x", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-10-01" }] },
   { id: "dl3", title: "C", mgProjectId: "p3", productionStatus: "on_hold", steps: [{ id: "y", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-10-01" }] },
@@ -88,7 +96,7 @@ const now = Date.parse("2026-09-30T23:00:00Z"); // JST 10/01 08:00
 {
   const { kv, SNAPS } = mkKV([["col:p1", JSON.stringify(cases.p1)]]);
   const mails = [];
-  const fetchImpl = mkFetch(deliverables.slice(0, 1), [], mails);
+  const fetchImpl = mkFetch(deliverables.slice(0, 3), [], mails);
   const env = { REMINDERS_MODE: "on", STUDIO_AGENT_KEY: "k", BOT_API_URL: "https://bot", BOT_API_KEY: "b", SNAPS, APP_ORIGIN: "https://app" };
   const dry = await runDeadlineReminders(env, docs, { dryRun: true, now, fetchImpl });
   assert.equal(dry.sent.length, 2); assert.equal(dry.mails.length, 1); assert.equal(mails.length, 0);
@@ -111,7 +119,7 @@ const now = Date.parse("2026-09-30T23:00:00Z"); // JST 10/01 08:00
 {
   const { kv, SNAPS } = mkKV([["col:p1", JSON.stringify(cases.p1)]]);
   const mails = [];
-  const fetchImpl = mkFetch(deliverables.slice(0, 1), [], mails);
+  const fetchImpl = mkFetch(deliverables.slice(0, 3), [], mails);
   const env = { STUDIO_AGENT_KEY: "k", SNAPS, APP_ORIGIN: "https://app" };
   const r = await runDeadlineReminders(env, docs, { now, fetchImpl, adminEmails: ["ak@x.com"] });
   assert.equal(r.mode, "preview"); assert.equal(mails.length, 0); assert.equal(kv.has("notif:ed@x.com"), false);
@@ -126,28 +134,33 @@ const now = Date.parse("2026-09-30T23:00:00Z"); // JST 10/01 08:00
   assert.equal(off.skipped, "REMINDERS_MODE=off");
 }
 
-// 超過4日以上：編集者には送らずAKに1回だけ（まとめて1通）／Studio OSの編集担当がいればその人だけ／届かない担当者をAKへ
+// 超過4日以上：編集者には送らずAKに1回だけ（まとめて1通）／Studio OSの編集担当がいればその人だけ／
+// 招待されていない担当にも送る（開くリンク付き。2026-09-29 53e4fbb で「届かない担当者をAKへ」から変更）
 {
   const dl = [{ id: "dl9", title: "E", mgProjectId: "p9", productionStatus: "active",
     assignments: [{ role: "Editor", memberId: "mb_2" }, { role: "Director", memberId: "mb_1" }],
     steps: [
       { id: "t1", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-09-20" },
-      { id: "t2", stepName: "修正", defaultRole: "Editor", status: "pending", deadline: "2026-10-01" },
     ] },
+    { id: "dl7", title: "E（別納品）", mgProjectId: "p9", productionStatus: "active",
+      assignments: [{ role: "Editor", memberId: "mb_2" }, { role: "Director", memberId: "mb_1" }],
+      steps: [{ id: "t2", stepName: "修正", defaultRole: "Editor", status: "pending", deadline: "2026-10-01" }] },
     { id: "dl8", title: "F", mgProjectId: "p8", productionStatus: "active", assignments: [{ role: "Editor", memberId: "mb_3" }],
-      steps: [{ id: "u1", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-09-10" }] }];
+      steps: [{ id: "u1", stepName: "本編集", defaultRole: "Editor", status: "pending", deadline: "2026-10-01" }] }];
   const kc = { p9: { name: "二人編集", ownerEmail: "ak@x.com", members: ["ak@x.com", "a@x.com", "b@x.com"] }, p8: { name: "未招待", ownerEmail: "ak@x.com", members: ["ak@x.com"] } };
-  const pl = await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01", memberEmailById: { mb_2: "B@x.com", mb_3: "c@x.com" }, adminEmails: ["ak@x.com"] });
+  const pl = await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01", memberEmailById: { mb_2: "B@x.com", mb_3: "c@x.com" }, adminEmails: ["ak@x.com"], openUrlFor: async (id) => "https://app/#edit-" + id });
   const stale = pl.find((r) => r.stepId === "t1"), cur = pl.find((r) => r.stepId === "t2");
   assert.deepEqual(stale.to, ["ak@x.com"]); assert.equal(stale.forAdmin, true); assert.equal(stale.key, "p9:t1:stale:2026-09-20");
   assert.ok(composeEmail(stale, "https://app").body.includes("自動の催促は止めました"));
   assert.deepEqual(cur.to, ["b@x.com"]); // 担当の編集者だけ
-  const mis = pl.find((r) => r.kind === "mismatch");
-  assert.equal(mis.caseId, "p8"); assert.deepEqual(mis.missing, ["c@x.com"]); // 未招待の担当者はAKへ
-  assert.equal(pl.find((r) => r.stepId === "u1"), undefined); // 編集者のいない案件の催促は無し
-  // オーナー（AK）自身が編集担当なら「届かない担当」にしない
-  const pl3 = await planReminders({ deliverables: dl.slice(1), loadCase: async (id) => kc[id], docs, today: "2026-10-01", memberEmailById: { mb_3: "AK@x.com" }, adminEmails: ["ak@x.com"] });
-  assert.equal(pl3.find((r) => r.kind === "mismatch"), undefined);
+  assert.equal(pl.find((r) => r.kind === "mismatch"), undefined); // 「届かない担当」はもう出さない
+  const un = pl.find((r) => r.stepId === "u1");
+  assert.deepEqual(un.to, ["c@x.com"]); assert.equal(un.openUrl, "https://app/#edit-p8"); // 未招待の担当者にも、開くリンク付きで送る
+  assert.equal(pl.find((r) => r.stepId === "t2").openUrl, null); // 招待済みならリンクは要らない
+  assert.ok(composeDigest([un], "https://app", "c@x.com").body.includes("https://app/#edit-p8"));
+  // オーナー（AK）自身が編集担当で、ほかに編集者がいなければ送らない
+  const pl3 = await planReminders({ deliverables: dl.filter((x) => x.id === "dl8"), loadCase: async (id) => kc[id], docs, today: "2026-10-01", memberEmailById: { mb_3: "AK@x.com" }, adminEmails: ["ak@x.com"] });
+  assert.equal(pl3.length, 0);
   const pl2 = await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01" });
   assert.deepEqual(pl2.find((r) => r.stepId === "t2").to, ["a@x.com", "b@x.com"]); // 担当不明なら全編集者
   assert.equal(pl2.find((r) => r.stepId === "t1"), undefined); // 管理者未設定なら超過4日以上は誰にも送らない
@@ -157,12 +170,28 @@ const now = Date.parse("2026-09-30T23:00:00Z"); // JST 10/01 08:00
   const f2 = mkFetch(dl, [{ id: "mb_2", email: "b@x.com" }, { id: "mb_3", email: "c@x.com" }], sentMails);
   const e2 = { REMINDERS_MODE: "on", STUDIO_AGENT_KEY: "k", BOT_API_URL: "https://bot", BOT_API_KEY: "b", SNAPS: SN };
   await runDeadlineReminders(e2, docs, { now, fetchImpl: f2, adminEmails: ["ak@x.com"] });
-  assert.deepEqual(sentMails.map((m) => m.to).sort(), ["ak@x.com", "b@x.com"]);
+  assert.deepEqual(sentMails.map((m) => m.to).sort(), ["ak@x.com", "b@x.com", "c@x.com"]);
   const akMail = sentMails.find((m) => m.to === "ak@x.com");
-  assert.ok(akMail.body.includes("二人編集") && akMail.body.includes("c@x.com"));
+  assert.ok(akMail.body.includes("二人編集") && akMail.body.includes("自動の催促は止めました"));
   assert.equal(JSON.parse(kv2.get("notif:ak@x.com")).length, 1); // AKのアプリ内通知もまとめて1件
   await runDeadlineReminders(e2, docs, { now: now + 86400000, fetchImpl: f2, adminEmails: ["ak@x.com"] });
   assert.equal(sentMails.filter((m) => m.to === "ak@x.com").length, 1); // 翌日もAKへは送らない
+}
+
+// 先方チェックで止まっている案件：編集者には送らず、AKへ「先方へ催促」としてまとめる（2026-09-29 ec997f8）
+{
+  const dl = [{ id: "dc1", title: "G", mgProjectId: "pc", productionStatus: "active", steps: [
+    { id: "c1", stepName: "初稿", defaultRole: "Editor", status: "completed", deadline: "2026-09-25", stepOrder: 1 },
+    { id: "c2", stepName: "先方チェック", defaultRole: "Client", status: "pending", deadline: "2026-09-29", stepOrder: 2 },
+    { id: "c3", stepName: "修正", defaultRole: "Editor", status: "pending", deadline: "2026-10-01", stepOrder: 3 },
+  ] }];
+  const kc = { pc: { name: "先方待ち", ownerEmail: "ak@x.com", members: ["ak@x.com", "ed@x.com"] } };
+  const pl = await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01", adminEmails: ["ak@x.com"] });
+  assert.equal(pl.length, 1);
+  assert.equal(pl[0].kind, "client_wait"); assert.deepEqual(pl[0].to, ["ak@x.com"]); assert.equal(pl[0].days, 2);
+  assert.ok(composeEmail(pl[0], "https://app").body.includes("先方への催促をお願いします"));
+  // 管理者が未設定なら誰にも送らない
+  assert.equal((await planReminders({ deliverables: dl, loadCase: async (id) => kc[id], docs, today: "2026-10-01" })).length, 0);
 }
 
 // 編集者のダッシュボード：今やること・早い/遅れ
