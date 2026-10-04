@@ -51,6 +51,9 @@ assert.equal(mechanicalCheck(mk([scene({ type: "解説系", sec: 60, script: "�
 // 点数：各0〜2点を10点満点に
 assert.equal(reviewScore([{ score: 2 }, { score: 1 }, { score: 2 }, { score: 1 }]), 7.5);
 assert.equal(reviewScore([]), null);
+assert.equal(reviewScore([{ score: 2 }, { score: null }, { score: 1 }]), 7.5); // 判断材料なし（null）は平均から外す
+// 秒数の合計の表示：分は切り捨て（90秒＝1分30秒）
+assert.ok(mechanicalText(mechanicalCheck({ rate: 5, rows: [{ kind: "scene", type: "訴求", sec: 90, script: "あ".repeat(450) }] })).includes("1分30秒"));
 assert.equal(CRITERIA.length, 8); assert.equal(SECTION_TYPES.length, 5);
 
 console.log("script check tests passed");

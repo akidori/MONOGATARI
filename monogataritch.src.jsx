@@ -4585,7 +4585,7 @@ function ScriptCheckPanel({ theme, project, context, loggedIn, onJump, onClose }
                     <div key={c.key} className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[12.5px] font-bold text-stone-800 flex-1 min-w-0 truncate">{c.label}</span>
-                        <span className="flex gap-0.5">{[0, 1].map((i) => <span key={i} className="w-3.5 h-2 rounded-sm" style={{ background: c.score != null && c.score > i ? (c.score === 2 ? "#16A34A" : "#D97706") : "#E7E5E4" }} />)}</span>
+                        {c.score == null ? <span className="text-[10.5px] text-stone-400">判断材料なし</span> : <span className="flex gap-0.5">{[0, 1].map((i) => <span key={i} className="w-3.5 h-2 rounded-sm" style={{ background: c.score > i ? (c.score === 2 ? "#16A34A" : "#D97706") : "#E7E5E4" }} />)}</span>}
                       </div>
                       {c.comment && <p className="mt-0.5 text-[11.5px] text-stone-500 leading-snug">{c.comment}</p>}
                     </div>
@@ -8388,8 +8388,16 @@ export default function App() {
     const wz = p.wizard || {};
     const wm = Object.entries(wz.meta || {}).filter(([, v]) => str(v)).map(([k, v]) => k + "：" + str(v));
     if (wm.length) L.push("【質問ウィザードの前提】\n" + wm.join("\n"));
-    const wa = Object.values(wz.answers || {}).map(str).filter(Boolean);
-    if (wa.length) L.push("【質問13などの答え】\n" + wa.map((a, i) => "・" + a).join("\n"));
+    // 質問の番号と問いを添える（どの答えが何の問いか分からないとAIが当てはめを誤るため。2026-10-04）
+    const wa = Object.entries(wz.answers || {}).filter(([, v]) => str(v)).map(([k, v]) => { const q = MIGRATED_WIZARD_QUESTIONS.find((x) => x.num === k); return "・" + k + (q ? "（" + q.text + "）" : "") + "：" + str(v); });
+    if (wa.length) L.push("【質問13などの答え】\n" + wa.join("\n"));
+    const prod = (meta && typeof meta.prod === "object" && meta.prod) || null;
+    if (prod) {
+      const pl = [["目標尺（分）", prod.targetMin], ["CV", prod.cv], ["目的", prod.purpose], ["企画の軸", prod.planAxis], ["撮影の決定期限", prod.shootDecideBy]].filter(([, v]) => str(v)).map(([k, v]) => k + "：" + str(v));
+      const tl = (Array.isArray(prod.talents) ? prod.talents : []).map((t) => str(t && t.name)).filter(Boolean);
+      if (tl.length) pl.push("出演者：" + tl.join("、"));
+      if (pl.length) L.push("【制作の情報】\n" + pl.join("\n"));
+    }
     const hear = (p.hearing || []).map((sec) => { const it = (sec.items || []).filter((x) => str(x.value)).map((x) => "・" + x.label + "：" + str(x.value)); return it.length ? "［" + sec.title + "］\n" + it.join("\n") : ""; }).filter(Boolean);
     if (hear.length) L.push("【取材メモ（ヒアリング）】\n" + hear.join("\n"));
     const man = (p.manuals || []).filter((m) => str(m.title) || str(m.body)).map((m) => "・［" + (m.cat || "") + "］" + str(m.title) + (str(m.body) ? "：" + str(m.body) : ""));
@@ -8400,7 +8408,7 @@ export default function App() {
     } else {
       let n = 0;
       const rows = (p.rows || []).map((r) => {
-        if (r.kind === "scene") { n++; return "#" + n + " ［" + (r.type || "") + "］" + (r.sec ? r.sec + "秒 " : "") + str(r.label) + (str(r.script) ? "\n" + str(r.script) : ""); }
+        if (r.kind === "scene") { n++; const role = { digest: "【ダイジェスト候補】", peak: "【ピーク】", cv: "【CV】" }[r.role] || ""; return "#" + n + " ［" + (r.type || "") + "］" + (r.sec ? r.sec + "秒 " : "") + role + str(r.label) + (str(r.script) ? "\n" + str(r.script) : ""); }
         const t = [str(r.time), str(r.name || r.label || r.title), str(r.address), str(r.note)].filter(Boolean).join(" ");
         return t ? "―― 場所：" + t : "";
       }).filter(Boolean);
@@ -8408,8 +8416,18 @@ export default function App() {
     }
     const open = ((p.review && p.review.comments) || []).filter((c) => c.status !== "完了").slice(-20).map((c) => "・［" + (c.category || "") + "／" + (c.priority || "") + "］" + str(c.text));
     if (open.length) L.push("【未完了の修正指摘】\n" + open.join("\n"));
+    // 長すぎる時は、台本以外（取材メモ・修正指摘など）から削る。台本が途中で切れると、山やラストが「無い」と誤って判断されるため
+    const LIMIT = 38000;
     let out = L.join("\n\n");
-    if (out.length > 38000) out = out.slice(0, 38000) + "\n（以下省略）";
+    if (out.length > LIMIT) {
+      const si = L.findIndex((x) => x.startsWith("【台本"));
+      const script = si >= 0 ? L[si] : "";
+      const others = L.filter((_, i) => i !== si);
+      const room = Math.max(4000, LIMIT - script.length - 200);
+      let rest = others.join("\n\n");
+      if (rest.length > room) rest = rest.slice(0, room) + "\n（資料の残りは省略）";
+      out = rest + (script ? "\n\n" + (script.length > LIMIT - rest.length ? script.slice(0, LIMIT - rest.length) + "\n（台本の残りは省略。省略した部分は採点・判断しない）" : script) : "");
+    }
     return out;
   };
   const sendAsk = async () => {

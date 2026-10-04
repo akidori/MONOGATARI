@@ -84,6 +84,7 @@ export function mechanicalCheck(project) {
 
 /* AIの採点（各0〜2点）を10点満点に */
 export function reviewScore(criteria) {
+  // score が null（台本に判断材料が無く採点しなかった項目）は平均から外す
   const xs = (criteria || []).filter((c) => c && Number.isFinite(c.score));
   if (!xs.length) return null;
   const sum = xs.reduce((a, c) => a + Math.max(0, Math.min(2, c.score)), 0);
@@ -94,6 +95,6 @@ export function reviewScore(criteria) {
 export function mechanicalText(res) {
   if (!res || !res.supported) return "（トーク形式のため機械チェックなし）";
   const s = res.stats;
-  const head = `シーン${s.scenes}・秒数の合計${Math.round(s.totalSec / 60)}分${s.totalSec % 60}秒・★${s.stars}箇所・種類別 ` + Object.entries(s.typeCount).map(([k, v]) => `${k || "（空）"}${v}`).join(" ");
+  const head = `シーン${s.scenes}・秒数の合計${Math.floor(s.totalSec / 60)}分${s.totalSec % 60}秒・★${s.stars}箇所・種類別 ` + Object.entries(s.typeCount).map(([k, v]) => `${k || "（空）"}${v}`).join(" ");
   return head + (res.items.length ? "\n" + res.items.map((i) => `・${i.scene ? "#" + i.scene + " " : ""}${i.msg}`).join("\n") : "\n・機械で数えられる点の指摘は無し");
 }
