@@ -21,6 +21,7 @@ const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIP
 import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
 import QA_MD from "../../knowledge/qa.md";
 import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD } from "./agentqa.js";
+import { CRITERIA as SCRIPT_CRITERIA, reviewScore } from "../../src/script-check.js";
 const AGENT_SYSTEM = AGENT_PROMPT_MD
   + "\n\n# 資料（これ以外を根拠にしない）\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD
   + "\n\n## knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md（公開前チェック）\n\n" + REGULATION_MD
@@ -1838,6 +1839,91 @@ ${qList}
           }
         }
         return json({ verdict, text });
+      }
+
+      // ===== 台本チェック（2026-10-04）: 構成台本を構成のルール・マニュアルで採点する =====
+      // POST /api/script/review { caseId?, caseName?, channel?, context, checks } → { score, summary, criteria, findings }
+      // context は画面の buildAgentContext（台本・取材メモ・規定）、checks は src/script-check.js の機械チェックの結果（文章）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "script" && parts[2] === "review" && !parts[3]) {
+        const u = await requireUser(request, env);
+        if (!u) return json({ error: "unauthorized" }, 401);
+        if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定" }, 500);
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const context = (b.context || "").toString();
+        if (!context.trim()) return json({ error: "台本が空です" }, 400);
+        if (context.length > 60000) return json({ error: "台本が大きすぎます" }, 413);
+        const checks = (b.checks || "").toString().slice(0, 8000);
+        const caseId = (b.caseId || "").toString().slice(0, 80);
+        const channel = (b.channel || "").toString().slice(0, 80);
+        const me = lc(u.email);
+        const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+        const cntKey = "scriptreview:cnt:" + me + ":" + today;
+        const cnt = parseInt((await env.SNAPS.get(cntKey)) || "0", 10);
+        if (cnt >= 20) return json({ error: "今日の台本チェックの上限（20回）に達しました" }, 429);
+        await env.SNAPS.put(cntKey, String(cnt + 1), { expirationTtl: 2 * 86400 });
+
+        const qaExtra = qaSystemBlock((await env.SNAPS.get("agentq:qa", "json")) || [], { caseId, channel });
+        const system = "あなたは映像制作会社Bird Flipの構成チェック担当です。編集者・ディレクターが作った人物密着ドキュメンタリーの構成台本を、下の資料の決まりで採点し、ズレている所を場面番号と根拠つきで返します。\n" +
+          "\n# 守ること\n" +
+          "- 根拠は下の資料だけ。生成指示書は「構成のルール（厳守）」節だけを使い、出力スキーマ・前提条件の節は使わない。一般論や好みで減点しない\n" +
+          "- 指摘には必ず場面番号（#n）と根拠の節を付ける。どこがなぜズレているかを、本人が直せる粒度で1〜2文で書く\n" +
+          "- 直す方向は示してよいが、セリフ・ナレーション・テロップの文面を新しく書かない（★の仮置きセリフの扱いはマニュアルどおり）\n" +
+          "- 案件資料（取材メモ・規定・NG）に書かれた決まりは守られているかも見る。資料に無い事実を前提に減点しない\n" +
+          "- 良い点も短く挙げる（直さなくていい所が分かるように）\n" +
+          "- 結果は必ず report_review ツールを1回だけ呼んで返す（本文に書かない）\n" +
+          "- 各項目は 2＝できている／1＝一部ズレ／0＝大きくズレている。判断材料が台本に無い項目は 1 にして、その旨を書く\n" +
+          "\n# 採点する項目\n" + SCRIPT_CRITERIA.map((c) => "- " + c.key + "（" + c.label + "・根拠：" + c.source + "）：" + c.ask).join("\n") +
+          "\n\n# 資料\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD +
+          "\n\n## tools/SCRIPT_GEN_PROMPT.md（「構成のルール（厳守）」節だけを使う）\n\n" + SCRIPT_GEN_MD +
+          "\n\n## knowledge/qa.md（AKの回答ログ。適用範囲が当てはまるものは判断の基準にしてよい）\n\n" + QA_MD;
+        const userText = "【案件資料と構成台本】\n" + context + "\n\n【機械で数えたチェック（参考。数え間違いと思えば無視してよい）】\n" + (checks || "（なし）") + "\n\nこの構成台本を採点してください。";
+        const TOOL = {
+          name: "report_review", description: "構成台本の採点結果を返す",
+          input_schema: {
+            type: "object",
+            properties: {
+              summary: { type: "string", description: "全体の講評を2〜3文。いちばん直すべき点を先に" },
+              criteria: { type: "array", items: { type: "object", properties: {
+                key: { type: "string", enum: SCRIPT_CRITERIA.map((c) => c.key) },
+                score: { type: "integer", enum: [0, 1, 2] },
+                comment: { type: "string", description: "その点数の理由を1〜2文" },
+              }, required: ["key", "score", "comment"] } },
+              findings: { type: "array", items: { type: "object", properties: {
+                scene: { type: "integer", description: "場面番号（#n の n）。台本全体の指摘は 0" },
+                key: { type: "string", enum: SCRIPT_CRITERIA.map((c) => c.key) },
+                severity: { type: "string", enum: ["high", "mid", "low"] },
+                issue: { type: "string", description: "何がどうズレているか（1〜2文）" },
+                basis: { type: "string", description: "根拠の資料と節（例：構成のルール「B. 脳の順番」）" },
+                direction: { type: "string", description: "直す方向（文面は書かない）。無ければ空" },
+              }, required: ["scene", "key", "severity", "issue", "basis"] } },
+              good: { type: "array", items: { type: "string" }, description: "良い点（最大3つ）" },
+            },
+            required: ["summary", "criteria", "findings"],
+          },
+        };
+        let data;
+        try {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "anthropic-beta": "server-side-fallback-2026-07-01" },
+            body: JSON.stringify({
+              model: env.AGENT_MODEL || "claude-opus-5", max_tokens: 16000, fallbacks: "default",
+              output_config: { effort: "medium" },
+              system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }, ...(qaExtra ? [{ type: "text", text: qaExtra }] : [])],
+              // tool_choice で強制しない（新しいモデルやフォールバック先では強制が400になるため）。指示で report_review を呼ばせる
+              tools: [TOOL],
+              messages: [{ role: "user", content: userText }],
+            }),
+          });
+          data = await res.json();
+          if (!res.ok) return json({ error: (data && data.error && data.error.message) || ("AI " + res.status) }, 502);
+        } catch (e) { return json({ error: "AIに接続できませんでした" }, 502); }
+        const use = (data.content || []).find((c) => c.type === "tool_use");
+        const r = (use && use.input) || null;
+        if (!r || !Array.isArray(r.criteria)) return json({ error: "採点結果を読めませんでした。もう一度試してください" }, 502);
+        const criteria = SCRIPT_CRITERIA.map((c) => { const x = r.criteria.find((y) => y && y.key === c.key); return { key: c.key, label: c.label, source: c.source, score: x ? x.score : null, comment: x ? x.comment || "" : "" }; });
+        const findings = (Array.isArray(r.findings) ? r.findings : []).slice(0, 60);
+        return json({ score: reviewScore(criteria.filter((c) => c.score != null)), summary: r.summary || "", criteria, findings, good: (r.good || []).slice(0, 3) });
       }
 
       // ===== AIの学習ループ（2026-10-04）: AKへ回った質問にAKがアプリで答える → 本人に届く → 次からAIが使う =====
