@@ -68,7 +68,7 @@ export function qaSystemBlock(entries, ctx) {
 /* 継続判断用の日別カウンタ（2週間ごとの質問数と「直接答えた」対「AKへ回した」） */
 export function bumpStat(stat, verdict) {
   const s = { 回答: 0, AKへ: 0, ...(stat || {}) };
-  s[verdict === "AKへ" ? "AKへ" : "回答"] += 1;
+  if (verdict === "回答" || verdict === "AKへ") s[verdict] += 1;
   return s;
 }
 export function sumStats(days) {
