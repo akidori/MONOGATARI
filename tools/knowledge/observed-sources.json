@@ -1,0 +1,128 @@
+{
+  "note": "Read-only observations; hashes measured from the same pinned blobs, not independently approved digests. No source bodies or customer records.",
+  "sources": [
+    {
+      "source": {
+        "repository": "akidori/MONOGATARI",
+        "revision": "a8cd10d9c59013c7b38c3156c0f2317830681230",
+        "path": "knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md"
+      },
+      "sha256": "999ff399ad9a5bb666ba544504002b9262fbc1f0e6f2758170eab3cd9015d790",
+      "original_status": {
+        "present": true,
+        "value": "approved"
+      },
+      "issues": [
+        "APPROVAL_EVIDENCE_NOT_PROVIDED",
+        "MISSING_QA_SCOPE",
+        "MISSING_SCOPE"
+      ]
+    },
+    {
+      "source": {
+        "repository": "akidori/MONOGATARI",
+        "revision": "a8cd10d9c59013c7b38c3156c0f2317830681230",
+        "path": "knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md"
+      },
+      "sha256": "c852c432b2291f89ee2a2c7fac53935f162614886ce8545c92288b1cfe9d639c",
+      "original_status": {
+        "present": true,
+        "value": "approved"
+      },
+      "issues": [
+        "APPROVAL_EVIDENCE_NOT_PROVIDED",
+        "MISSING_QA_SCOPE",
+        "MISSING_SCOPE"
+      ]
+    },
+    {
+      "source": {
+        "repository": "akidori/MONOGATARI",
+        "revision": "a8cd10d9c59013c7b38c3156c0f2317830681230",
+        "path": "knowledge/qa.md"
+      },
+      "sha256": "7158418359949feeb043a0b0cd7edf86ce9540a6f6022cf9d9e899ebab0c8364",
+      "original_status": {
+        "present": false,
+        "value": null
+      },
+      "issues": [
+        "APPROVAL_EVIDENCE_NOT_PROVIDED",
+        "FRONTMATTER_MISSING_OR_UNCLOSED",
+        "MISSING_QA_SCOPE",
+        "MISSING_SCOPE",
+        "MISSING_STATUS"
+      ]
+    },
+    {
+      "source": {
+        "repository": "akidori/MONOGATARI",
+        "revision": "a8cd10d9c59013c7b38c3156c0f2317830681230",
+        "path": "tools/SCRIPT_GEN_PROMPT.md"
+      },
+      "sha256": "cce36752ff1f7b154bf752e13764b0b996de84507ce80886f346c7b9ac4f3cd8",
+      "original_status": {
+        "present": false,
+        "value": null
+      },
+      "issues": [
+        "APPROVAL_EVIDENCE_NOT_PROVIDED",
+        "FRONTMATTER_MISSING_OR_UNCLOSED",
+        "MISSING_QA_SCOPE",
+        "MISSING_SCOPE",
+        "MISSING_STATUS"
+      ]
+    },
+    {
+      "source": {
+        "repository": "akidori/birdflip-knowledge",
+        "revision": "042c6ba9dd9435e147a61b2430bc36ab166c0708",
+        "path": "Knowledge/Rule/Frontmatter規約 v2.md"
+      },
+      "sha256": "13ed534c1ee69649ffee6222b54839ec1e4d17290cd1e8a500ea84413117a7ba",
+      "original_status": {
+        "present": true,
+        "value": "draft"
+      },
+      "issues": [
+        "APPROVAL_EVIDENCE_NOT_PROVIDED",
+        "MISSING_QA_SCOPE",
+        "NONFINAL_STATUS"
+      ]
+    },
+    {
+      "source": {
+        "repository": "akidori/birdflip-knowledge",
+        "revision": "042c6ba9dd9435e147a61b2430bc36ab166c0708",
+        "path": "Manuals/process/README.md"
+      },
+      "sha256": "7bc72446af55596a981624b0eff72862a8bb84a937af28d756476d95868e6973",
+      "original_status": {
+        "present": true,
+        "value": "internal"
+      },
+      "issues": [
+        "APPROVAL_EVIDENCE_NOT_PROVIDED",
+        "MISSING_QA_SCOPE",
+        "MISSING_SCOPE"
+      ]
+    },
+    {
+      "source": {
+        "repository": "akidori/birdflip-knowledge",
+        "revision": "042c6ba9dd9435e147a61b2430bc36ab166c0708",
+        "path": "README.md"
+      },
+      "sha256": "8103f9e5ff88c012edea20d8a18bb77acc8519358ccbf6964de873c5a97ae2b6",
+      "original_status": {
+        "present": true,
+        "value": "validated"
+      },
+      "issues": [
+        "APPROVAL_EVIDENCE_NOT_PROVIDED",
+        "MISSING_QA_SCOPE",
+        "MISSING_SCOPE"
+      ]
+    }
+  ]
+}
