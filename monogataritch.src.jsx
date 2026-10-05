@@ -11460,7 +11460,7 @@ export default function App() {
                             <span className="text-[24px] leading-none font-semibold tabular-nums" style={{ fontFamily: mono, color: mainText }}>{sp.num}</span>
                             <span className="w-px h-8" style={{ background: hexA(mainText, 0.2) }} />
                           </span>
-                          <div className="min-w-0 flex-1 flex items-center gap-2.5">
+                          <div className="min-w-0 flex-[1_1_12rem] flex items-center gap-2.5">
                             <span className="shrink-0 grid place-items-center w-7 h-7 rounded-lg" style={{ background: hexA(mainText, 0.1), color: theme.accent }}>
                               <Icon name={secIcon} className="w-4 h-4" />
                             </span>
