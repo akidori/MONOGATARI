@@ -20,6 +20,54 @@ export const CRITERIA = [
   { key: "qa", label: "質問と答えのつながり", source: "マニュアル「必ず守るルール」・構成のルール「D. 原稿の書式」", ask: "質問→答えの組がその質問の答えになっているか。次の質問が前の答えから自然に出るか。唐突な話題転換が無いか。素材に無い事実・数字・固有名詞を作っていないか" },
 ];
 
+// 採点時に本人が明示する型。背骨の表示設定 mg:spineFw とは別。
+export const SCRIPT_RUBRIC_VERSION = "story-type-v1";
+export const SCRIPT_STORY_TYPES = [
+  { value: "pixar", label: "従来基準（ピクサー7段＋スパイン）" },
+  { value: "campbell", label: "キャンベル" },
+  { value: "cinderella", label: "シンデレラ" },
+  { value: "spine", label: "ストーリースパイン" },
+];
+const TYPE_DEPENDENT = new Set(["spine", "climax"]);
+export function scriptRubric(storyType) {
+  // 未指定の旧クライアントだけ従来基準へ。未知の明示値は拒否する。
+  const value = storyType == null || storyType === "" ? "pixar" : storyType;
+  const type = SCRIPT_STORY_TYPES.find((t) => t.value === value);
+  if (!type) return null;
+  const held = value !== "pixar";
+  const criteria = held ? CRITERIA.filter((c) => !TYPE_DEPENDENT.has(c.key)).map((c) => c.key === "qa" ? {
+    ...c, ask: c.ask + "。マニュアルの共通ルールとして、シーンが『だから』で繋がるか、反転の主体が演者本人かも確認する（特定の段数・段階・山の数は要求しない）",
+  } : c) : CRITERIA;
+  return { storyType: value, label: type.label, version: SCRIPT_RUBRIC_VERSION, held, criteria };
+}
+
+export function normalizeScriptReview(report, rubric) {
+  if (!rubric) throw new Error("不明な採点型です");
+  const allowed = new Set(rubric.criteria.map((c) => c.key));
+  const criteria = CRITERIA.map((c) => {
+    if (!allowed.has(c.key)) return { key: c.key, label: c.label, source: c.source, score: null, withheld: true, comment: "この物語タイプの正式基準が未整備のため採点保留（平均から除外）" };
+    const x = (Array.isArray(report.criteria) ? report.criteria : []).find((v) => v && v.key === c.key);
+    return { key: c.key, label: c.label, source: c.source, score: x && Number.isInteger(x.score) && x.score >= 0 && x.score <= 2 ? x.score : null, comment: x && typeof x.comment === "string" ? x.comment : "" };
+  });
+  const seen = new Set();
+  const findings = (Array.isArray(report.findings) ? report.findings : []).filter((f) => {
+    if (!f || !allowed.has(f.key) || !Number.isInteger(f.scene) || f.scene < 0 || !["high", "mid", "low"].includes(f.severity)) return false;
+    const id = f.scene + ":" + f.key;
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  }).slice(0, 15);
+  return { storyType: rubric.storyType, rubricVersion: rubric.version, rubricLabel: rubric.label,
+    score: reviewScore(criteria), summary: typeof report.summary === "string" ? report.summary : "", criteria, findings,
+    good: (Array.isArray(report.good) ? report.good : []).filter((g) => typeof g === "string").slice(0, 3) };
+}
+
+// 旧Workerが選択型を無視した応答は表示・保存しない。
+export const matchesScriptRubric = (result, storyType) => {
+  const rubric = scriptRubric(storyType);
+  return !!rubric && result?.rubricVersion === rubric.version && result?.storyType === rubric.storyType;
+};
+
 const stripTags = (s) => String(s || "").replace(/<[^>]+>/g, " ");
 
 /* 読み上げる文字数：映像指示（行全体が（…））・▶︎の狙い行・★取材の行・（笑いながら）等の補足は数えない */

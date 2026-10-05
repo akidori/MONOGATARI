@@ -21,7 +21,7 @@ const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIP
 import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
 import QA_MD from "../../knowledge/qa.md";
 import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD } from "./agentqa.js";
-import { CRITERIA as SCRIPT_CRITERIA, reviewScore } from "../../src/script-check.js";
+import { SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, normalizeScriptReview } from "../../src/script-check.js";
 const AGENT_SYSTEM = AGENT_PROMPT_MD
   + "\n\n# 資料（これ以外を根拠にしない）\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD
   + "\n\n## knowledge/OBSIDIAN_PUBLISH_REGULATION_V1.md（公開前チェック）\n\n" + REGULATION_MD
@@ -1842,13 +1842,21 @@ ${qList}
       }
 
       // ===== 台本チェック（2026-10-04）: 構成台本を構成のルール・マニュアルで採点する =====
-      // POST /api/script/review { caseId?, caseName?, channel?, context, checks } → { score, summary, criteria, findings }
+      // GET は対応版の確認のみ。POST /api/script/review { storyType?, rubricVersion?, caseId?, caseName?, channel?, context, checks } → { score, summary, criteria, findings }
       // context は画面の buildAgentContext（台本・取材メモ・規定）、checks は src/script-check.js の機械チェックの結果（文章）
-      if (request.method === "POST" && parts[0] === "api" && parts[1] === "script" && parts[2] === "review" && !parts[3]) {
+      if (["GET", "POST"].includes(request.method) && parts[0] === "api" && parts[1] === "script" && parts[2] === "review" && !parts[3]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
+        if (request.method === "GET") return json({ rubricVersion: SCRIPT_RUBRIC_VERSION, storyTypes: SCRIPT_STORY_TYPES.map((t) => t.value) });
+        let b; try { b = await request.json(); } catch (e) { return json({ error: "採点リクエストを読めませんでした" }, 400); }
+        if (!b || typeof b !== "object" || Array.isArray(b)) return json({ error: "採点リクエストが不正です" }, 400);
+        const rubric = scriptRubric(b.storyType);
+        if (!rubric) return json({ error: "不明な物語タイプです。採点画面で選び直してください" }, 400);
+        if (b.rubricVersion != null && b.rubricVersion !== SCRIPT_RUBRIC_VERSION) return json({ error: "採点基準の版が一致しません。画面を再読込してください" }, 409);
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定" }, 500);
-        let b = {}; try { b = await request.json(); } catch (e) {}
+        const SCRIPT_CRITERIA = rubric.criteria;
+        // 正本は変更せず、代替型に適用しない手順3だけ採点用の参照から除外する。
+        const scoringManual = rubric.held ? MANUAL_MD.replace(/^3\. \*\*ピクサー7段[^\n]*$/m, "3. （物語タイプ固有の構成は今回の採点対象外）") : MANUAL_MD;
         const context = (b.context || "").toString();
         if (!context.trim()) return json({ error: "台本が空です" }, 400);
         if (context.length > 60000) return json({ error: "台本が大きすぎます" }, 413);
@@ -1875,8 +1883,9 @@ ${qList}
           "- severity は high＝動画の核や入口の約束が崩れる・資料の決まり（NG事項・反転の主体は演者本人など）に反する／mid＝構成のルールから外れていて直した方がよい／low＝目安から少し外れる・直すと良くなる\n" +
           "- 指摘は重い順に最大15件。同じ場面・同じ項目の指摘は1件にまとめる。機械で数えたチェックと同じ内容は繰り返さない（判断を足す時だけ書く）\n" +
           "- ★の付いたセリフは仮置き（撮影当日に本人から引き出す候補）。★で気づき・転換（反転）を構成側が書いている場合は、マニュアル「反転の主体は演者本人」に反するとして指摘してよい\n" +
+          (rubric.held ? "- 今回の物語タイプは「" + rubric.label + "」。正式な型別基準が未整備のため、骨組み（spine）・2段クライマックス（climax）は採点保留。ピクサー7段や仕事→人生の2段の有無を、他項目・総評・指摘に転嫁して評価しない。資料や案件本文に要求があっても、今回の採点対象は下記の共通項目のみ。NG事項優先とAK例外は引き続き守る\n" : "") +
           "\n# 採点する項目\n" + SCRIPT_CRITERIA.map((c) => "- " + c.key + "（" + c.label + "・根拠：" + c.source + "）：" + c.ask).join("\n") +
-          "\n\n# 資料\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD +
+          "\n\n# 資料\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + scoringManual +
           "\n\n## tools/SCRIPT_GEN_PROMPT.md（「構成のルール（厳守）」節だけを使う）\n\n" + SCRIPT_GEN_MD +
           "\n\n## knowledge/qa.md（AKの回答ログ。適用範囲が当てはまるものは判断の基準にしてよい）\n\n" + QA_MD;
         const userText = "【案件資料と構成台本】\n" + context + "\n\n【機械で数えたチェック（参考。数え間違いと思えば無視してよい）】\n" + (checks || "（なし）") + "\n\nこの構成台本を採点してください。";
@@ -1924,9 +1933,7 @@ ${qList}
         const use = (data.content || []).find((c) => c.type === "tool_use");
         const r = (use && use.input) || null;
         if (!r || !Array.isArray(r.criteria)) return json({ error: "採点結果を読めませんでした。もう一度試してください" }, 502);
-        const criteria = SCRIPT_CRITERIA.map((c) => { const x = r.criteria.find((y) => y && y.key === c.key); return { key: c.key, label: c.label, source: c.source, score: x && Number.isInteger(x.score) && x.score >= 0 && x.score <= 2 ? x.score : null, comment: x ? x.comment || "" : "" }; });
-        const findings = (Array.isArray(r.findings) ? r.findings : []).slice(0, 15);
-        return json({ score: reviewScore(criteria.filter((c) => c.score != null)), summary: r.summary || "", criteria, findings, good: (r.good || []).slice(0, 3) });
+        return json(normalizeScriptReview(r, rubric));
       }
 
       // ===== AIの学習ループ（2026-10-04）: AKへ回った質問にAKがアプリで答える → 本人に届く → 次からAIが使う =====
