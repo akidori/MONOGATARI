@@ -89,6 +89,36 @@ class SourceManifestTests(unittest.TestCase):
         self.assertIn('REPLACEMENT_REQUIRES_REVIEW', r['issues'])
         self.assertEqual(r['metadata']['supersedes']['value'], 'stable-rule')
 
+    def test_git_replace_cannot_change_pinned_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            def git(*args):
+                return subprocess.check_output(['git', '-C', tmp, *args], stderr=subprocess.DEVNULL).decode().strip()
+            git('init')
+            revisions = []
+            for status in ('draft', 'approved'):
+                Path(tmp, 'rule.md').write_bytes(self.document(f'id: synthetic-rule\nstatus: {status}'))
+                git('add', 'rule.md')
+                git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-m', status)
+                revisions.append(git('rev-parse', 'HEAD'))
+            original, replacement = revisions
+            raw = self.document('id: synthetic-rule\nstatus: draft')
+            spec = {**self.spec, 'checkout': tmp, 'revision': original, 'path': 'rule.md',
+                    'expected_sha256': hashlib.sha256(raw).hexdigest()}
+            baseline = build_manifest([spec])
+            # Exercise replacements independently at every object read layer.
+            pairs = [(kind, git('rev-parse', original + suffix), git('rev-parse', replacement + suffix))
+                     for kind, suffix in [('commit', ''), ('tree', '^{tree}'), ('blob', ':rule.md')]]
+            for kind, old, new in pairs:
+                with self.subTest(kind=kind):
+                    git('replace', old, new)
+                    try:
+                        # Control: ordinary Git reads really see the replaced bytes.
+                        self.assertIn('status: approved', git('show', original + ':rule.md'))
+                        self.assertEqual(snapshot(spec), raw)
+                        self.assertEqual(build_manifest([spec]), baseline)
+                    finally:
+                        git('replace', '-d', old)
+
     def test_actual_local_git_pinning_and_determinism(self):
         with tempfile.TemporaryDirectory() as tmp:
             def git(*args):

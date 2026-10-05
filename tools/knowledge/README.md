@@ -29,7 +29,9 @@ recorded SHA-256 of the original bytes:
 ]
 ```
 
-Missing objects fail locally; the tool never fetches. Dirty working files, symlinks,
+Missing objects fail locally; the tool never fetches. All Git reads disable object
+replacement (`GIT_NO_REPLACE_OBJECTS=1`), so local `refs/replace` cannot substitute
+commit, tree, or blob contents under a pinned identity. Dirty working files, symlinks,
 branch names, and traversal paths are not accepted as source bytes. The repository
 label is supplied by the operator; it is not authenticated against a remote.
 Output contains pinned identity, exact-byte SHA-256, selected original metadata,

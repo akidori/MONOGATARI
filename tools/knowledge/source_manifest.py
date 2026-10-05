@@ -39,7 +39,8 @@ def git(checkout, *args):
     # Git >=2.48: missing promisor objects must fail, not trigger network retrieval.
     result = subprocess.run(['git', '--no-lazy-fetch', '-C', checkout, *args],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
-                            env={**os.environ, 'GIT_NO_LAZY_FETCH': '1', 'GIT_TERMINAL_PROMPT': '0'})
+                            env={**os.environ, 'GIT_NO_LAZY_FETCH': '1', 'GIT_TERMINAL_PROMPT': '0',
+                                 'GIT_NO_REPLACE_OBJECTS': '1'})
     if result.returncode:
         raise ValueError('LOCAL_GIT_OBJECT_UNAVAILABLE')
     return result.stdout
