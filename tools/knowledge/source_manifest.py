@@ -9,6 +9,11 @@ import sys
 
 import yaml  # Existing upstream knowledge lint dependency; missing dependency must fail closed.
 
+MAX_INPUT_BYTES = 1024 * 1024
+MAX_SOURCE_BYTES = 2 * 1024 * 1024
+MAX_YAML_BYTES = 64 * 1024
+MAX_YAML_DEPTH = 32
+
 FIELDS = ('id', 'knowledge_id', 'status', 'approval', 'approved', 'approved_by',
           'scope', 'qa_scope', 'client', 'project', 'project_id', 'studio_os_case_id',
           'channel', 'tags', 'supersedes', 'superseded_by')
@@ -17,7 +22,14 @@ class StrictLoader(yaml.SafeLoader):
     def compose_node(self, parent, index):
         if self.check_event(yaml.AliasEvent):
             raise ValueError('YAML_ALIAS_UNSUPPORTED')
-        return super().compose_node(parent, index)
+        depth = getattr(self, '_manifest_depth', 0)
+        if depth >= MAX_YAML_DEPTH:
+            raise ValueError('YAML_DEPTH_LIMIT')
+        self._manifest_depth = depth + 1
+        try:
+            return super().compose_node(parent, index)
+        finally:
+            self._manifest_depth = depth
 
     def construct_mapping(self, node, deep=False):
         keys = set()
@@ -68,10 +80,15 @@ def snapshot(spec):
     mode, kind, blob = info.split()
     if found_path.decode('utf-8') != path or mode not in (b'100644', b'100755') or kind != b'blob':
         raise ValueError('NOT_REGULAR_SOURCE')
-    return git(checkout, 'cat-file', 'blob', blob.decode('ascii'))
+    blob_id = blob.decode('ascii')
+    if int(git(checkout, 'cat-file', '-s', blob_id)) > MAX_SOURCE_BYTES:
+        raise ValueError('SOURCE_SIZE_LIMIT')
+    return git(checkout, 'cat-file', 'blob', blob_id)
 
 
 def record(spec, raw):
+    if len(raw) > MAX_SOURCE_BYTES:
+        raise ValueError('SOURCE_SIZE_LIMIT')
     issues = []
     digest = hashlib.sha256(raw).hexdigest()
     expected = spec.get('expected_sha256')
@@ -88,15 +105,20 @@ def record(spec, raw):
         if not match:
             issues.append('FRONTMATTER_MISSING_OR_UNCLOSED')
         else:
+            if len(match.group(1).encode('utf-8')) > MAX_YAML_BYTES:
+                raise ValueError('YAML_SIZE_LIMIT')
             parsed = yaml.load(match.group(1), Loader=StrictLoader)
             if not isinstance(parsed, dict) or any(not isinstance(k, str) for k in parsed):
                 raise ValueError('METADATA_NOT_MAPPING')
             metadata = {k: parsed[k] for k in FIELDS if k in parsed}
             # JSON-compatible scalar/list/map only; do not serialize custom objects or nonfinite numbers.
             json.dumps(metadata, allow_nan=False)
-    except (UnicodeError, yaml.YAMLError, ValueError, TypeError) as error:
+    except (UnicodeError, yaml.YAMLError, ValueError, TypeError, RecursionError) as error:
         code = str(error) if str(error) in {'YAML_ALIAS_UNSUPPORTED', 'YAML_MERGE_UNSUPPORTED',
-                                          'DUPLICATE_METADATA_KEY', 'METADATA_NOT_MAPPING'} else 'METADATA_PARSE_ERROR'
+                                          'DUPLICATE_METADATA_KEY', 'METADATA_NOT_MAPPING',
+                                          'YAML_SIZE_LIMIT', 'YAML_DEPTH_LIMIT'} else 'METADATA_PARSE_ERROR'
+        if isinstance(error, RecursionError):
+            code = 'YAML_DEPTH_LIMIT'
         issues.append(code)
         metadata = {}
     for key in ('status', 'scope', 'qa_scope'):
@@ -146,6 +168,14 @@ def record(spec, raw):
 
 
 def build_manifest(specs):
+    if not isinstance(specs, list) or not specs or any(not isinstance(s, dict) for s in specs):
+        raise ValueError('INVALID_INPUT')
+    identities = set()
+    for spec in specs:
+        identity = json.dumps([spec.get(k) for k in ('repository', 'revision', 'path')], sort_keys=True)
+        if identity in identities:
+            raise ValueError('DUPLICATE_SOURCE_IDENTITY')
+        identities.add(identity)
     records = []
     for spec in specs:
         raw = snapshot(spec)  # Invalid identity/missing bytes is a fatal error, not an empty source.
@@ -167,12 +197,17 @@ def build_manifest(specs):
 
 if __name__ == '__main__':
     try:
-        specs = json.load(sys.stdin)
-        if not isinstance(specs, list) or not specs or any(not isinstance(s, dict) for s in specs):
-            raise ValueError('INVALID_INPUT')
+        raw_input = sys.stdin.buffer.read(MAX_INPUT_BYTES + 1)
+        if len(raw_input) > MAX_INPUT_BYTES:
+            raise ValueError('INPUT_SIZE_LIMIT')
+        specs = json.loads(raw_input)
         output = build_manifest(specs)
         print(json.dumps(output, ensure_ascii=False, indent=2, sort_keys=True, allow_nan=False))
         sys.exit(2 if any(e['issues'] for e in output['records']) else 0)
-    except (ValueError, TypeError, KeyError, OSError):
-        print('source manifest failed: invalid input or unavailable local source; no manifest emitted', file=sys.stderr)
+    except (ValueError, TypeError, KeyError, OSError, RecursionError) as error:
+        code = str(error) if str(error) in {'INPUT_SIZE_LIMIT', 'SOURCE_SIZE_LIMIT',
+                                          'DUPLICATE_SOURCE_IDENTITY'} else 'INVALID_INPUT_OR_LOCAL_SOURCE'
+        if isinstance(error, RecursionError):
+            code = 'INPUT_DEPTH_LIMIT'
+        print(f'source manifest failed: {code}; no manifest emitted', file=sys.stderr)
         sys.exit(1)

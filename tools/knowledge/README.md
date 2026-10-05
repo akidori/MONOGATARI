@@ -43,6 +43,18 @@ Exit codes: `1` means invalid input/unavailable source with no manifest emitted;
 This prototype always records missing approval evidence or an approval-review hold,
 so successful inventories currently exit `2`. This is not a deployment gate.
 
+Limits are deliberately fixed for this offline prototype: CLI input 1 MiB,
+each source blob 2 MiB (checked before reading its contents), frontmatter 64 KiB,
+and YAML composition depth 32. Input/blob overflow rejects the run with
+`INPUT_SIZE_LIMIT`/`SOURCE_SIZE_LIMIT` and no manifest. Excessive JSON recursion
+returns `INPUT_DEPTH_LIMIT` without a traceback. Frontmatter size/depth overflow
+records `YAML_SIZE_LIMIT`/`YAML_DEPTH_LIMIT`, preserves the source hash, and leaves
+parsed metadata unavailable for review. No text is truncated or rewritten.
+Duplicate `(repository, revision, path)` inputs are rejected before source reads
+with `DUPLICATE_SOURCE_IDENTITY`, even when their expected hashes agree. This
+avoids order-dependent handling of contradictory expected hashes or checkouts.
+These limits are not a general resource sandbox for untrusted Git repositories.
+
 ## Interpretation and limits
 
 - Absent and explicit null metadata remain distinguishable. Status strings are
