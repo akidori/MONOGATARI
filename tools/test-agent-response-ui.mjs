@@ -1,5 +1,6 @@
 // Render the actual chat log JSX and execute sendAsk with synthetic state/fetch only.
 import assert from 'node:assert/strict';
+import { invalidFenceResponses, ambiguousVerdictResponses } from './fixtures/agent-fences.mjs';
 import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -15,6 +16,7 @@ const show = (entry) => renderToStaticMarkup(React.createElement(React.Fragment,
 const answer = '判定: 回答\n回答: 合成の正常回答\n出典: 合成資料';
 const ak = '判定: AKへ\nAKへの理由: 合成の理由\nAKに渡す質問文: 合成の質問';
 for (const entry of [
+  ...[...invalidFenceResponses, ...ambiguousVerdictResponses].map((text) => ({ verdict: "AKへ", text, notified: true })),
   { verdict: '回答', text: '回答: UNSAFE_RAW\n出典: 合成資料' },
   { verdict: null, text: 'UNSAFE_RAW' }, { verdict: '回答', text: '判定: 不明\n回答: UNSAFE_RAW' },
   { verdict: 'AKへ', text: 'UNSAFE_RAW', notified: true },
@@ -32,6 +34,7 @@ const send = new AsyncFunction('fetch', 'parseAgentResponse', 'setAskLog', 'setA
 const askInput='合成質問', askBusy=false, user={}, MG_SESSION='fixture', view='home', project=null, SHARE_API='https://fixture.invalid';
 ${body}`);
 for (const [status, data, success] of [
+  ...[...invalidFenceResponses, ...ambiguousVerdictResponses].map((text) => [200, { verdict: "AKへ", text, notified: true }, false]),
   [502, { code: 'AGENT_RESPONSE_INVALID', verdict: null, error: '形式検証エラー。通知は送っていません。' }, false],
   [200, { verdict: '回答', text: '回答: UNSAFE_RAW\n出典: 合成資料' }, false],
   [200, { verdict: 'AKへ', text: answer }, false],

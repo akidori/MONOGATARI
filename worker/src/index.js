@@ -1803,7 +1803,7 @@ ${qList}
         if (data.stop_reason === "refusal") {
           text = "判定: AKへ\nAKへの理由: 資料に書いていないこと（AIでは答えられない質問でした）\nAKに渡す質問文: " + (caseName ? "「" + caseName + "」について：" : "") + question;
         } else {
-          text = (Array.isArray(data.content) ? data.content : []).filter((c) => c && c.type === "text" && typeof c.text === "string").map((c) => c.text).join("\n").trim();
+          text = (Array.isArray(data.content) ? data.content : []).filter((c) => c && c.type === "text" && typeof c.text === "string").map((c) => c.text).join("\n");
         }
         const parsed = parseAgentResponse(text);
         const validationError = data.stop_reason === "max_tokens" ? "TRUNCATED_RESPONSE" : parsed.error;

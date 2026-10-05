@@ -29,3 +29,9 @@
 ## PR49との統合
 
 PR49の`51e1885`は取り込んでいない。両PRとも同じmainが基点で、機能依存はない。Workerは同じファイルのimport付近を変更するが、こちらは`/api/agent/ask`、PR49は`/api/script/review`の変更。同時統合時は双方のimport・package.jsonのテスト列を保持し、生成物app.jsはソースから再buildする。画面全体やWorker全体を一方の版で置換しない。PR35/36・StudioOS・DB migration・認証設定・正式ナレッジ・本番を変更していない。
+
+## 独立レビュー指摘の境界修正
+
+`e8f17baf`ではフェンス終端の接尾辞（例：```not-a-closing-fence）を誤って受理し、引用内の判定があってもAK通知へ進めることを再現した。終端は同種・同数以上のフェンス、0〜3個の先頭スペース、末尾のASCIIスペース/タブだけに限定した。Workerとparserで検証前の末尾trimを除去し、終端の全角空白を削って受理する経路も閉じた。
+
+U+2028/U+2029/CR単独は改行として分割し、引用外の字下げされた判定行も重複判定として拒否する。正常な行内引用・blockquote・閉じたコード引用の互換性は維持。共通合成fixtureの不正フェンス10件・曖昧判定6件をparser/実Workerルート/UIへ通し、502・null・検証コード、統計/inbox/通知/メールへの進行なし、本文非表示と履歴未保存を確認した。正常な終端5件もparser/routeで確認。`npm test`、`npm run test:agent-ui`、build、Workerバンドルが成功。実外部通信なし。

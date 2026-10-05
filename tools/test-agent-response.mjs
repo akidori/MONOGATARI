@@ -1,5 +1,6 @@
 // Synthetic reproduction and regression: never calls a real provider, inbox, or notifier.
 import assert from 'node:assert/strict';
+import { invalidFenceResponses, validFenceResponses, ambiguousVerdictResponses } from './fixtures/agent-fences.mjs';
 import { readFileSync } from 'node:fs';
 import { parseAgentResponse } from '../src/agent-response.js';
 import { bumpStat, qaSystemBlock } from '../worker/src/agentqa.js';
@@ -12,7 +13,7 @@ const oldVerdict = (text) => /判定[:：]\s*AKへ/.test(text) ? 'AKへ' : '回�
 assert.equal(oldVerdict(missing), '回答');
 assert.equal(oldVerdict('判定: 不明'), '回答');
 assert.equal(oldVerdict(quoted), 'AKへ');
-const invalid = [missing, 'わかりません', '判定: 不明', '判定: 回答\n出典だけ', '', ' ', null,
+const invalid = [...invalidFenceResponses, ...ambiguousVerdictResponses, missing, 'わかりません', '判定: 不明', '判定: 回答\n出典だけ', '', ' ', null,
   '判定: 回答\n回答:\n出典: 合成資料', '判定: 回答\n回答: 合成回答\n出典:',
   answer + '\n判定: AKへ', answer + '\n判定: 回答', answer + '\n出典: 二重',
   '前置き\n' + answer, '```\n' + answer + '\n```', '引用「' + answer + '」',
@@ -20,9 +21,12 @@ const invalid = [missing, 'わかりません', '判定: 不明', '判定: 回�
   '判定: AKへ\nAKへの理由: お金', '判定: AKへ\nAKに渡す質問文: 合成質問',
   toAk + '\n回答: できます', '判定: 回答\n回答: 引用\n```\n合成\n出典: x',
 ];
-const valid = [answer, toAk, quoted, answer.replaceAll(':', '：').replaceAll('\n', '\r\n'),
+const valid = [...validFenceResponses, answer, toAk, quoted, answer.replaceAll(':', '：').replaceAll('\n', '\r\n'),
   '判定: 回答\n回答: 引用例\n```text\n判定: AKへ\n回答: 引用内\n```\n出典: 合成資料',
   '判定: 回答\n回答: 引用例\n> 判定: AKへ\n出典: 合成資料'];
+for (const text of ambiguousVerdictResponses) assert.equal(parseAgentResponse(text).error, "DUPLICATE_VERDICT");
+for (const sep of ["\r", "\u2028", "\u2029"]) assert.equal(parseAgentResponse(answer.replaceAll("\n", sep)).error, null);
+for (const text of invalidFenceResponses) assert.equal(parseAgentResponse(text).error, "UNCLOSED_QUOTE");
 for (const text of invalid) { const p = parseAgentResponse(text); assert.equal(p.verdict, null); assert.ok(p.error); assert.deepEqual(p.fields, {}); }
 for (const text of valid) assert.equal(parseAgentResponse(text).error, null);
 assert.equal(parseAgentResponse(quoted).verdict, '回答');
@@ -58,6 +62,8 @@ for (const text of invalid) {
   const r = await call(text);
   assert.equal(r.status, 502); assert.equal(r.data.verdict, null); assert.equal(r.data.notified, false);
   assert.equal(r.data.code, 'AGENT_RESPONSE_INVALID'); assert.ok(r.data.validationError);
+  if (invalidFenceResponses.includes(text)) assert.equal(r.data.validationError, 'UNCLOSED_QUOTE');
+  if (ambiguousVerdictResponses.includes(text)) assert.equal(r.data.validationError, 'DUPLICATE_VERDICT');
   assert.equal(r.data.text, undefined); // never return unvalidated free text
   assert.equal(r.requests.length, 1); // no notifier calls
   assert.equal(r.writes.length, 1); assert.ok(r.writes[0].startsWith('agentq:cnt:')); // attempted AI call still costs quota
