@@ -34,9 +34,12 @@ function Fixture(){
 const initial=[{id:'fixture-location',kind:'location',label:'合成ロケーションのタイトルを確認する',time:'13:00',day:1,done:false,unknown:'keep'}, {id:'fixture-scene',kind:'scene',type:'インサート',sec:5,script:'（合成の外観）\\n（合成の作業風景）\\n（合成の道具）',insertChecks:{}}];
 const [rows,setRows]=useState(()=>JSON.parse(localStorage.getItem('fixture-rows')||'null')||initial);
 window.fixtureRows=()=>rows;
+const [isNarrow,setIsNarrow]=useState(()=>matchMedia('(max-width: 640px)').matches);
+useEffect(()=>{const mq=matchMedia('(max-width: 640px)');const update=()=>setIsNarrow(mq.matches);mq.addEventListener('change',update);return ()=>mq.removeEventListener('change',update);},[]);
+window.fixtureIsNarrow=()=>isNarrow;
 const updateRow=(id,patch)=>setRows(rs=>rs.map(v=>v.id===id?{...v,...patch}:v));
 const r=rows[0],scenes=rows.slice(1),theme={main:'#171719',accent:'#e9b956'},mainText='#fff',mono='monospace';
-const g={idx:0},sp={num:'01',title:r.label,prefix:'',suffix:''},lc={secSum:275,scenes},sub='合成インサート',secIcon='pin',isNarrow=innerWidth<=640,maxDay=1,isDragOver=false,flashId=null;
+const g={idx:0},sp={num:'01',title:r.label,prefix:'',suffix:''},lc={secSum:275,scenes},sub='合成インサート',secIcon='pin',maxDay=1,isDragOver=false,flashId=null;
 const dayOf=r=>r.day,dropZoneProps=()=>({}),rowDragProps=()=>({}),setRowMenu=()=>{},SECTION_TYPES={'インサート':{dot:'#334155'}},k='インサート';
 ${day}
 return <main style={{padding:16,maxWidth:1200,margin:'auto'}}>${header}
@@ -56,8 +59,18 @@ await page.route('**/*',route=>route.request().url().startsWith(origin)?route.co
 await page.goto(origin);await page.waitForTimeout(300);
 const metrics=()=>page.evaluate(()=>{const h=document.querySelector('[data-toc]'),t=h.querySelector('textarea');return {height:h.getBoundingClientRect().height,titleWidth:t.clientWidth,overflow:document.documentElement.scrollWidth>innerWidth,clipped:t.scrollHeight>t.clientHeight+1}});
 const m=await metrics();assert.ok(m.height<160 && m.titleWidth>=180,JSON.stringify({width,...m}));assert.equal(m.overflow,false);assert.equal(m.clipped,false);
+const assertControlsInside=async()=>{
+const controls=await page.evaluate(()=>{const header=document.querySelector('[data-toc]'),box=header.getBoundingClientRect();return [...header.querySelectorAll('textarea,input,select,button')].map(el=>{const r=el.getBoundingClientRect();return {tag:el.tagName,inside:r.width>0&&r.height>0&&r.left>=box.left-0.5&&r.right<=box.right+0.5&&r.top>=box.top-0.5&&r.bottom<=box.bottom+0.5};});});
+assert.equal(controls.length,4);assert.ok(controls.every(c=>c.inside),JSON.stringify({width,controls}));
+};
+await assertControlsInside();
+// Negative control: overflow:hidden must not hide a clipped control from this assertion.
+await page.locator('[data-toc] button').evaluate(el=>el.style.transform='translateX(1000px)');
+await assert.rejects(assertControlsInside);
+await page.locator('[data-toc] button').evaluate(el=>el.style.transform='');
+await assertControlsInside();
 const initial=await page.evaluate(()=>window.fixtureRows());
-for(const w of [430,375,width]){await page.setViewportSize({width:w,height:900});await page.waitForTimeout(60);assert.ok((await metrics()).height<160);}
+for(const w of [1440,640,641,430,375,width]){await page.setViewportSize({width:w,height:900});await page.waitForFunction(expected=>window.fixtureIsNarrow()===expected,w<=640);await page.waitForTimeout(60);assert.ok((await metrics()).height<160);await assertControlsInside();}
 assert.deepEqual(await page.evaluate(()=>window.fixtureRows()),initial); // resize never changes saved fields
 await page.screenshot({path:'/tmp/mobile-location-fixed-'+width+'.png',fullPage:true});
 const card=page.locator('[data-scene="fixture-scene"]');
@@ -70,11 +83,16 @@ await page.getByRole('button',{name:'チェックリストに戻る'}).click();a
 assert.equal(await card.getByRole('checkbox').first().isChecked(),true);
 await page.getByTitle('このロケを撮影完了にする').click();assert.equal(await page.locator('[data-scene]').count(),0);
 await page.getByTitle('撮影完了を取り消す').click();assert.equal(await card.getByRole('checkbox').first().isChecked(),true);
-const title=page.locator('[data-toc] textarea');await title.fill('長い合成タイトルを編集しても文字が途切れず表示されることを確認する');await title.blur();await page.waitForTimeout(300);
-assert.equal((await metrics()).clipped,false);assert.ok((await metrics()).height<200);
+const editedTitle='長い合成タイトルを編集しても文字が途切れず表示されることを確認する';
+const title=page.locator('[data-toc] textarea');await title.fill(editedTitle);await title.blur();await page.waitForTimeout(300);
+assert.equal((await metrics()).clipped,false);assert.ok((await metrics()).height<200);await assertControlsInside();
+const time=page.locator('[data-toc] input[type=time]'),daySelect=page.locator('[data-toc] select');
+await time.fill('14:25');await time.blur();await daySelect.selectOption('2');
+await assertControlsInside();
 await page.getByRole('button',{name:'インサート',exact:true}).click();assert.equal(await page.locator('[data-scene]').count(),2);
-const state=await page.evaluate(()=>window.fixtureRows());assert.equal(state[0].time,'13:00');assert.equal(state[0].day,1);assert.equal(state[0].unknown,'keep');assert.equal(state[1].sec,5);
+const state=await page.evaluate(()=>window.fixtureRows());assert.equal(state[0].time,'14:25');assert.equal(state[0].day,2);assert.equal(state[0].label,editedTitle);assert.equal(state[0].unknown,'keep');assert.equal(state[1].sec,5);
 await page.getByRole('button',{name:'合成JSONを保存'}).click();await page.reload();await page.locator('[data-toc]').waitFor();assert.deepEqual(await page.evaluate(()=>window.fixtureRows()),state);
+assert.equal(await title.inputValue(),editedTitle);assert.equal(await time.inputValue(),'14:25');assert.equal(await daySelect.inputValue(),'2');await assertControlsInside();
 await page.evaluate(()=>scrollTo(0,document.body.scrollHeight));await page.getByRole('button',{name:'合成JSONを保存'}).click();assert.deepEqual(errors,[]);
 console.log(JSON.stringify({width,...m,interactions:'passed'}));await page.close();
 }
