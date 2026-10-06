@@ -21,6 +21,7 @@ const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIP
 import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
 import QA_MD from "../../knowledge/qa.md";
 import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD } from "./agentqa.js";
+import { parseAgentResponse } from "../../src/agent-response.js";
 import { CRITERIA as SCRIPT_CRITERIA, reviewScore } from "../../src/script-check.js";
 const AGENT_SYSTEM = AGENT_PROMPT_MD
   + "\n\n# 資料（これ以外を根拠にしない）\n\n## knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md（マニュアル）\n\n" + MANUAL_MD
@@ -1797,19 +1798,28 @@ ${qList}
           if (!res.ok) return json({ error: (data && data.error && data.error.message) || ("AI " + res.status) }, 502);
         } catch (e) { return json({ error: "AIに接続できませんでした" }, 502); }
 
+        if (!data || typeof data !== "object") data = {};
         let text = "";
         if (data.stop_reason === "refusal") {
           text = "判定: AKへ\nAKへの理由: 資料に書いていないこと（AIでは答えられない質問でした）\nAKに渡す質問文: " + (caseName ? "「" + caseName + "」について：" : "") + question;
         } else {
-          text = (data.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n").trim();
+          text = (Array.isArray(data.content) ? data.content : []).filter((c) => c && c.type === "text" && typeof c.text === "string").map((c) => c.text).join("\n");
         }
-        if (!text) return json({ error: "AIの回答が空でした。もう一度試してください" }, 502);
-        const verdict = /判定[:：]\s*AKへ/.test(text) ? "AKへ" : "回答";
+        const parsed = parseAgentResponse(text);
+        const validationError = data.stop_reason === "max_tokens" ? "TRUNCATED_RESPONSE" : parsed.error;
+        if (validationError) {
+          // 本文・質問・顧客情報をログへ出さず、形式エラーを情報不足/確定回答と区別して監査可能にする。
+          console.warn("agent_response_validation_failed", validationError);
+          return json({ code: "AGENT_RESPONSE_INVALID", validationError, verdict: null, notified: false,
+            error: "AIの回答形式を検証できないため保留しました。AKへの通知は送っていません。もう一度試してください" }, 502);
+        }
+        const verdict = parsed.verdict;
+        let notified = false;
         // 継続判断用：日別に「直接答えた」「AKへ回した」を数える（2週間ごとの比率を /api/agent/stats で見る）
         try { const sk = "agentq:stat:" + today; await env.SNAPS.put(sk, JSON.stringify(bumpStat(await env.SNAPS.get(sk, "json"), verdict)), { expirationTtl: 120 * 86400 }); } catch (e) {}
 
         if (verdict === "AKへ") {
-          const pick = (label) => { const m = text.match(new RegExp(label + "[:：]\\s*([^\\n]+)")); return m ? m[1].trim() : ""; };
+          const pick = (label) => parsed.fields[label]?.trim() || "";
           const item = {
             id: "q_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
             askedBy: me, askedByName: u.name || me, caseId, caseName, channel, question, status: "open",
@@ -1826,6 +1836,7 @@ ${qList}
             list.unshift({ id: item.id, at: item.at, type: "question", read: false, answered: false, caseId, channel, caseName: caseName || "（案件なし）", phase: "question",
               title: "確認依頼：" + item.askedByName, deadline: "", guides: [{ source: "AIがAKさんに回した質問", points: [item.akQuestion, item.reason ? "理由：" + item.reason : ""].filter(Boolean) }] });
             await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
+            notified = true; // アプリ内通知の保存成功。メールの配信保証ではない。
             if (env.BOT_API_URL && env.BOT_API_KEY) {
               try {
                 await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
@@ -1838,7 +1849,7 @@ ${qList}
             }
           }
         }
-        return json({ verdict, text });
+        return json({ verdict, text, notified });
       }
 
       // ===== 台本チェック（2026-10-04）: 構成台本を構成のルール・マニュアルで採点する =====

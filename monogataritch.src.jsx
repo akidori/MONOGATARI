@@ -7,6 +7,7 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
+import { parseAgentResponse } from "./src/agent-response.js";
 import { mechanicalCheck, mechanicalText, CRITERIA as SCRIPT_CRITERIA } from "./src/script-check.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
@@ -8443,20 +8444,13 @@ export default function App() {
       });
       const d = await r.json().catch(() => null);
       if (!r.ok || !d) throw new Error((d && d.error) || ("HTTP " + r.status));
-      const entry = { q, verdict: d.verdict, text: d.text, at: Date.now(), caseName: inCase ? project.name : "" };
+      const parsed = parseAgentResponse(d.text);
+      if (parsed.error || parsed.verdict !== d.verdict) throw new Error("回答形式の検証に失敗しました。回答は保留し、通知状況は確認できません。再試行してください");
+      const entry = { q, verdict: d.verdict, text: d.text, notified: d.notified === true, at: Date.now(), caseName: inCase ? project.name : "" };
       setAskLog((log) => { const nx = [...log, entry].slice(-20); try { localStorage.setItem("mg:askLog", JSON.stringify(nx)); } catch (e) {} return nx; });
       setAskInput("");
     } catch (e) { showToast("答えを取得できませんでした：" + (e.message || e)); }
     finally { setAskBusy(false); }
-  };
-  /* エージェントの出力（判定: / 回答: / 出典: …）を項目に分ける */
-  const parseAgentText = (t) => {
-    const out = {}; let cur = null;
-    for (const line of (t || "").split("\n")) {
-      const m = line.match(/^(判定|回答|出典|AKへの理由|資料にある手順|AKに渡す質問文)[:：]\s*(.*)$/);
-      if (m) { cur = m[1]; out[cur] = m[2]; } else if (cur) out[cur] += "\n" + line;
-    }
-    return out;
   };
 
   const markNotifsRead = async (ids) => {
@@ -13091,21 +13085,23 @@ export default function App() {
                 </div>
               )}
               {askLog.map((e, i) => {
-                const f = parseAgentText(e.text);
+                const parsed = parseAgentResponse(e.text);
+                const valid = !parsed.error && parsed.verdict === e.verdict;
+                const f = parsed.fields;
                 const toAk = e.verdict === "AKへ";
                 return (
                   <div key={i} className="space-y-1.5">
                     <div className="flex justify-end"><div className="max-w-[88%] text-[13px] rounded-2xl rounded-br-sm px-3 py-2 whitespace-pre-wrap text-white" style={{ background: theme.accent }}>{e.q}</div></div>
                     <div className="bg-white border border-stone-200 rounded-2xl rounded-bl-sm px-3 py-2.5 text-[13px] text-stone-700">
-                      {toAk ? (
+                      {!valid ? <p>回答形式を検証できないため、この回答は保留しています。通知状況は確認できません。再試行してください。</p> : toAk ? (
                         <>
-                          <div className="text-[11px] font-bold mb-1 px-1.5 py-0.5 rounded inline-block" style={{ background: "#FCF0DC", color: "#D97706" }}>AKさんに確認を送りました</div>
+                          <div className="text-[11px] font-bold mb-1 px-1.5 py-0.5 rounded inline-block" style={{ background: "#FCF0DC", color: "#D97706" }}>{e.notified === true ? "AKさんへのアプリ内通知を保存しました" : "AKさんへの確認が必要です（通知状況は未確認）"}</div>
                           {f["AKへの理由"] && <div className="text-[12px] text-stone-500 whitespace-pre-wrap">理由：{f["AKへの理由"].trim()}</div>}
                           {f["資料にある手順"] && f["資料にある手順"].trim() && <div className="mt-1.5 whitespace-pre-wrap"><span className="text-[11px] font-bold text-stone-500">資料にあること：</span><LinkText text={f["資料にある手順"].trim()} /></div>}
                         </>
                       ) : (
                         <>
-                          <div className="whitespace-pre-wrap leading-relaxed"><LinkText text={(f["回答"] || e.text).trim()} /></div>
+                          <div className="whitespace-pre-wrap leading-relaxed"><LinkText text={f["回答"].trim()} /></div>
                           {f["出典"] && <div className="mt-1.5 text-[11px] text-stone-400 whitespace-pre-wrap">出典：{f["出典"].trim()}</div>}
                         </>
                       )}
