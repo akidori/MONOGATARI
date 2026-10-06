@@ -39,7 +39,7 @@ const start = source.indexOf('      // ===== 台本チェック（2026-10-04）'
 const end = source.indexOf('      // ===== AIの学習ループ', start);
 assert.ok(start >= 0 && end > start);
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const route = new AsyncFunction('request', 'env', 'parts', 'requireUser', 'json', 'lc', 'fetch', 'SCRIPT_RUBRIC_VERSION', 'SCRIPT_STORY_TYPES', 'scriptRubric', 'normalizeScriptReview', 'MANUAL_MD', 'SCRIPT_GEN_MD', 'QA_MD', 'qaSystemBlock', source.slice(start, end));
+const route = new AsyncFunction('request', 'env', 'parts', 'requireUser', 'json', 'lc', 'fetch', 'SCRIPT_RUBRIC_VERSION', 'SCRIPT_STORY_TYPES', 'scriptRubric', 'normalizeScriptReview', 'MANUAL_MD', 'SCRIPT_GEN_MD', 'QA_MD', 'qaSystemBlock', 'channelRules', source.slice(start, end));
 const docs = ['../knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md', '../tools/SCRIPT_GEN_PROMPT.md', '../knowledge/qa.md'].map((p) => readFileSync(new URL(p, import.meta.url), 'utf8'));
 async function call(body, { method = 'POST', auth = true, invalidJson = false, aiReport = report, aiFail = false } = {}) {
   const calls = [], writes = [];
@@ -53,7 +53,7 @@ async function call(body, { method = 'POST', auth = true, invalidJson = false, a
     calls.push(JSON.parse(options.body));
     if (aiFail) throw new Error('synthetic offline');
     return new Response(JSON.stringify({ content: [{ type: 'tool_use', input: aiReport }] }));
-  }, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, normalizeScriptReview, ...docs, qaSystemBlock);
+  }, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, normalizeScriptReview, ...docs, qaSystemBlock, async () => '');
   return { status: response.status, data: await response.json(), calls, writes };
 }
 for (const storyType of [undefined, '', null, ...SCRIPT_STORY_TYPES.map((t) => t.value)]) {
