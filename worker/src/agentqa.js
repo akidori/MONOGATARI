@@ -77,3 +77,17 @@ export function sumStats(days) {
   const total = t.回答 + t.AKへ;
   return { ...t, total, directRate: total ? Math.round((t.回答 / total) * 100) : null };
 }
+
+/* AKの回答をナレッジの提案（birdflip-knowledge へのPR＝入口B /api/knowledge_propose_write）にする形（2026-10-06、Issue #40）。
+   案件限定の回答はその案件だけの話なので提案しない（null）。チャンネル共通・全案件共通だけ。マージはAKがGitHubで行う */
+export function qaKnowledgeProposal(qa) {
+  if (!qa || !["このチャンネル共通", "全案件共通"].includes(qa.scope)) return null;
+  const title = qaSummary(qa.question).replace(/[\\/:*?"<>|#]/g, " ").trim() || "編集者からの質問";
+  return {
+    type: "qa", domain: "Production", title,
+    summary: qaSummary(qa.answer),
+    body: `# ${title}\n\nQ.\n${qa.question}\n\nA.\n${qa.answer}\n\n- 適用範囲：${qa.scope}${qa.channel ? `（${qa.channel}）` : ""}\n- きっかけ：${qa.caseName || "（案件なし）"}で編集者がAIに聞き、AIが資料では答えられずAKに回した質問（${qa.date}）`,
+    source: "monogataritch:agentq:" + qa.id,
+    tags: ["qa", "編集", "ものがたりっち"],
+  };
+}

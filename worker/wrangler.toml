@@ -72,3 +72,9 @@ fallthrough = true
 [[services]]
 binding = "KNOWLEDGE_API"
 service = "birdflip-knowledge-api"
+
+# 遥（公式LINE、birdflip-cron）からAKへ送る口（/line/push-ak）。送れるのは「AIが答えられなかった質問」だけ（Issue #40）。
+# 鍵は MG_LINE_KEY（この用途専用。birdflip-cron にも同じ値を入れる）
+[[services]]
+binding = "HARUKA"
+service = "birdflip-cron"
