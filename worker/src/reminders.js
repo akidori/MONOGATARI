@@ -195,7 +195,7 @@ const digestNotification = (id, title, caseName, sections, now) => ({
 });
 
 /* アプリ内通知の保存：工程ごとに1件（同じ工程の古い段階は置き換え）、最大50件 */
-async function pushNotifs(env, to, notifs) {
+export async function pushNotifs(env, to, notifs) {
   const nk = "notif:" + to;
   let list = (await env.SNAPS.get(nk, "json")) || [];
   for (const n of notifs) {
@@ -205,7 +205,7 @@ async function pushNotifs(env, to, notifs) {
   await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
 }
 
-async function sendMail(env, fetchImpl, to, mail, audit) {
+export async function sendMail(env, fetchImpl, to, mail, audit) {
   if (!(env.BOT_API_URL && env.BOT_API_KEY)) return false;
   try {
     const r = await fetchImpl(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
