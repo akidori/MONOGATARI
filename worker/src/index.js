@@ -20,6 +20,7 @@ const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIP
 // ものがたりっちAIエージェント（質問に答える）。指示書の正本は agent/PROMPT.md（品質ループで改善中）
 import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
 import QA_MD from "../../knowledge/qa.md";
+import { runShootDecideReminders } from "./shoot-decide.js";
 import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD } from "./agentqa.js";
 import { parseAgentResponse } from "../../src/agent-response.js";
 import { SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, normalizeScriptReview } from "../../src/script-check.js";
@@ -3573,6 +3574,8 @@ load();
     // 毎朝8:00 JST（23:00 UTC）の1本で、締切リマインド＋掃除をまとめて回す。
     // 2026-09-29: CF無料プランのcron上限（アカウント全体5本）に当たり2本目が登録できなかったため統合。
     ctx.waitUntil(runDeadlineReminders(env, REMINDER_DOCS, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean), openUrlFor: async (id) => { const l = await editorShareUrlFor(env, id); return l ? l.url : null; } }));
+    // 撮影日を決める期限の日に、AKへ知らせる（先方への文面は下書きだけ。Issue #39）
+    ctx.waitUntil(runShootDecideReminders(env, { adminEmails: (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean) }));
     ctx.waitUntil(cleanupExpired(env));
     ctx.waitUntil(purgeOldStreamVideos(env));
   },
