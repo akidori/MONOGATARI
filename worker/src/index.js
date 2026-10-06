@@ -63,6 +63,7 @@ function redactForNonAdmin(snap, opts = {}) {
   // 2026-10-02: 制作の情報（演者の本名・読み・公開名、担当編集、目的・CV）は編集者だけに見せる。
   // 正しい編集者用トークン（&up=）が付いている時だけ残し、先方・演者・AI用JSONからは消す（レビュー指摘：本名が漏れ得た）
   if (p.meta && p.meta.prod !== undefined && !opts.editor) delete p.meta.prod;
+  if (p.meta && p.meta.handoffGaps !== undefined) delete p.meta.handoffGaps; // 社内の記録（Issue #38）。共有リンクには出さない
   if (Array.isArray(p.rows)) {
     for (const row of p.rows) { if (row && row.spine !== undefined) delete row.spine; }
   }

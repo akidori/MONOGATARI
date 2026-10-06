@@ -7,6 +7,7 @@ import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
+import { handoffMissing, addHandoffGap } from "./src/handoff-check.js";
 import { parseAgentResponse } from "./src/agent-response.js";
 import { mechanicalCheck, mechanicalText, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, matchesScriptRubric } from "./src/script-check.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
@@ -3780,14 +3781,14 @@ function stepsToLearnGroups(data) {
    納期は Studio OS が正本（投稿日から逆算）なのでここには持たない。ここは制作の中身：演者・撮影日・完成尺・目的とCV・企画の軸・担当編集者。
    保存先は project.meta.prod。新規案件ウィザードの2ページ目と、概要タブのカードで同じ部品を使う。
    撮影日が未定なら「いつまでに決めるか」を入れる（その日を過ぎたら概要タブで赤く出す） */
-const emptyProd = () => ({ talents: [{ name: "", reading: "", call: "", publicName: "" }], shootDecideBy: "", targetMin: "", purpose: "", cv: "", planAxis: "", editor: "" });
+const emptyProd = () => ({ talents: [{ name: "", reading: "", call: "", publicName: "" }], shootDecideBy: "", targetMin: "", purpose: "", cv: "", planAxis: "", editor: "", promanUrl: "" });
 const prodOf = (meta) => {
   // 形が崩れた値（AIやMCPが入れた文字列・数値など）でも描画で落ちないようにそろえる（2026-10-02 レビュー）
   const raw = (meta && meta.prod && typeof meta.prod === "object") ? meta.prod : {};
   const s = (x) => (x == null ? "" : String(x));
   const ts = Array.isArray(raw.talents) ? raw.talents : (raw.talents ? [raw.talents] : []);
   const talents = ts.map((x) => (x && typeof x === "object" ? { name: s(x.name), reading: s(x.reading), call: s(x.call), publicName: s(x.publicName) } : { name: s(x), reading: "", call: "", publicName: "" }));
-  return { ...emptyProd(), shootDecideBy: s(raw.shootDecideBy), targetMin: s(raw.targetMin), purpose: s(raw.purpose), cv: s(raw.cv), planAxis: s(raw.planAxis), editor: s(raw.editor), talents: talents.length ? talents : emptyProd().talents };
+  return { ...emptyProd(), shootDecideBy: s(raw.shootDecideBy), targetMin: s(raw.targetMin), purpose: s(raw.purpose), cv: s(raw.cv), planAxis: s(raw.planAxis), editor: s(raw.editor), promanUrl: s(raw.promanUrl), talents: talents.length ? talents : emptyProd().talents };
 };
 /* 端末の日付（日本時間）で YYYY-MM-DD。toISOString は UTC なので朝9時まで前日になる */
 const localYmd = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
@@ -3801,7 +3802,7 @@ function prodMissing(meta) {
   if (!(p.planAxis || "").trim()) out.push("企画の軸");
   return out;
 }
-function ProdInfoForm({ meta, onMeta }) {
+function ProdInfoForm({ meta, onMeta, promanFallback = "" }) {
   const p = prodOf(meta);
   const set = (k, v) => onMeta("prod", { ...p, [k]: v });
   const setT = (i, k, v) => set("talents", p.talents.map((x, j) => (j === i ? { ...x, [k]: v } : x)));
@@ -3852,6 +3853,10 @@ function ProdInfoForm({ meta, onMeta }) {
         <label className={lbl}>企画の軸（仮でよい）</label>
         <input className={inp} value={p.planAxis} onChange={(e) => set("planAxis", e.target.value)} placeholder="例：どん底で社長になった人が「好き」を職業にする仕組みを作った" />
         <p className="text-[11px] text-stone-400 mt-0.5">サムネの文言は「企画・サムネ」タブに入れます</p>
+      </div>
+      <div>
+        <label className={lbl}>プロマネのURL（Premiereのプロジェクト一式）</label>
+        <input className={inp} value={p.promanUrl} onChange={(e) => set("promanUrl", e.target.value)} placeholder={promanFallback ? "空欄ならチャンネル共通：" + promanFallback : "https://drive.google.com/..."} style={{ fontFamily: "ui-monospace, monospace" }} />
       </div>
     </div>
   );
@@ -4863,6 +4868,7 @@ export default function App() {
   const [newMenu, setNewMenu] = useState(false);           // 新規案件のタイプ選択
   const [shareMenu, setShareMenu] = useState(false);       // 共有ボタンのメニュー（発行/台本コピー）
   const [shareAudience, setShareAudience] = useState(null); // 動画共有先の選択（先方／編集者）
+  const [handoffWarn, setHandoffWarn] = useState(null);     // 編集者用リンクの前の必須6項目の警告 {missing, go}
   const [shareMore, setShareMore] = useState(false);       // 共有メニュー「その他」の折りたたみ
   const [aiMenu, setAiMenu] = useState(false);             // AIボタンのメニュー（校正/反映）
   const [thumbTest, setThumbTest] = useState(null);        // サムネ目立ちテスト {pid, keyword, myImage, items[], myPos, busy, reveal}
@@ -7748,12 +7754,29 @@ export default function App() {
     } catch (e) { showToast("公開前チェックを完了できませんでした：" + (e.message || e)); }
     finally { setPreflightBusy(false); }
   };
+  /* 編集者用リンク（アップ枠つき）を出す前の必須6項目（Issue #38）。足りなければ警告を出して true を返す。
+     止めはしない：「それでも発行」で go を実行し、空欄のまま渡したことを meta.handoffGaps に残す（1日まとめで拾う用） */
+  const guardEditorHandoff = (go) => {
+    const missing = handoffMissing(project.meta, curChannelInfo, globalManuals);
+    if (!missing.length) return false;
+    setHandoffWarn({ missing, go });
+    return true;
+  };
+  const confirmHandoffWarn = async () => {
+    const w = handoffWarn;
+    setHandoffWarn(null);
+    if (!w) return;
+    await w.go();
+    setProject((p) => (p ? { ...p, meta: { ...(p.meta || {}), handoffGaps: addHandoffGap(p.meta, { at: Date.now(), by: (user && user.email) || "", missing: w.missing }) } } : p));
+  };
   /* t を渡すとそのタブだけ／省略で案件まるごと。未発行なら発行してからコピー。
      08-22 AK指示: 従来は納品(deliver)/動画確認(review)/案件まるごとの3経路だけがゲート対象で、
      構成台本・香盤表・素材などタブ単体の共有は素通りしていた。共有はどの経路でも「先方にこの
      案件の中身を見せる」行為として同じリスクを持つため、tの値に関わらず全経路をゲートする。 */
-  const copyShareUrl = async (t, preflightDone = false, audience = "") => {
+  const copyShareUrl = async (t, preflightDone = false, audience = "", handoffOk = false) => {
     if (t === "review" && !audience) { setShareAudience("review"); return; }
+    // 案件まるごと（t無し）は &up= 付き＝編集者用リンク。必須6項目を先に確かめる
+    if (!t && !handoffOk && guardEditorHandoff(() => copyShareUrl(t, preflightDone, audience, true))) return;
     if (!preflightDone && !(await checkPublishGate())) return openPublishPreflight(() => copyShareUrl(t, true, audience));
     const had = !!project.shareId;
     // 既存リンクでも必ず再発行してから渡す。動画確認の版など最新状態をスナップに反映するため
@@ -7787,7 +7810,9 @@ export default function App() {
     return shareUrl(id, project.shareReadToken || shareReadTokRef.current) + (panes.length ? "&tabs=" + panes.join(",") : "") + (startPane ? "&start=" + startPane : "") + (up ? "&up=" + up : "");
   };
   /* 受け渡しボタン押下：最新スナップを発行 → スコープ付きリンク＋文面をクリップボードへ */
-  const doHandoff = async (h) => {
+  const doHandoff = async (h, handoffOk = false) => {
+    if (!h) return;
+    if ((h.id === "editor" || h.upload === true) && !handoffOk && guardEditorHandoff(() => doHandoff(h, true))) return;
     const id = await publishShare(true); // 最新状態を共有スナップに反映してから渡す
     if (!id) return;
     const url = buildHandoffUrl(id, h.tabs, h.start, h.id === "editor" || h.upload === true);
@@ -10653,8 +10678,21 @@ export default function App() {
                     {miss.length ? <span className="text-[12px] font-bold text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">未入力：{miss.join("・")}</span> : <span className="text-[12px] text-emerald-700">そろっています</span>}
                     {lateDecide && <span className="text-[12px] font-bold text-rose-600 bg-rose-50 rounded-full px-2 py-0.5">撮影日を決める期限（{p.shootDecideBy}）を過ぎています。先方に確認を</span>}
                   </summary>
-                  <div className="mt-3"><ProdInfoForm meta={project.meta} onMeta={setMeta} /></div>
+                  <div className="mt-3"><ProdInfoForm meta={project.meta} onMeta={setMeta} promanFallback={curChannelInfo.promanUrl || ""} /></div>
                 </details>
+              );
+            })()}
+            {/* 編集者に渡す前の必須6項目（Issue #38）。チャンネル単位の4つは下の「チャンネル基本情報」「コンセプト設計」「競合チャンネル」で1回入れれば同じチャンネルの案件すべてに効く */}
+            {(() => {
+              const hm = handoffMissing(project.meta, curChannelInfo, globalManuals);
+              const gaps = Array.isArray(project.meta && project.meta.handoffGaps) ? project.meta.handoffGaps : [];
+              return (
+                <div className="mb-4 rounded-2xl border border-stone-200 bg-white px-4 py-3 flex items-center gap-2 flex-wrap">
+                  <span className="text-[14px] font-bold text-stone-800">編集者に渡す前の6項目</span>
+                  {hm.length ? <span className="text-[12px] font-bold text-amber-700 bg-amber-50 rounded-full px-2 py-0.5">未入力：{hm.join("・")}</span> : <span className="text-[12px] text-emerald-700">そろっています</span>}
+                  {gaps[0] && <span className="text-[12px] text-stone-500">空欄のまま渡した記録：{gaps.length}件（最後 {new Date(gaps[0].at).toLocaleDateString("ja-JP")}）</span>}
+                  {(curChannelInfo.manualUrl || "").trim() && <a href={curChannelInfo.manualUrl} target="_blank" rel="noopener noreferrer" className="ml-auto text-[12px] font-bold underline text-stone-600">マニュアルを開く</a>}
+                </div>
               );
             })()}
             <div className="mb-4">
@@ -10776,7 +10814,7 @@ export default function App() {
               {cardHead("コンセプト設計")}
               <div className="p-4 space-y-3">
                 {[
-                  ["concept", "コンセプト", "このチャンネルで何を発信するか。一言で言うと？"],
+                  ["concept", "コンセプト・世界観", "このチャンネルで何を発信するか。どんな世界観で見せるか"],
                   ["target", "ターゲット", "誰に届けるか（年齢・性別・悩み・状況など）"],
                   ["purpose", "CV先・チャンネルの目的", "最終的に何につなげるか（自社サービス送客／集客／採用／ブランディング 等）"],
                 ].map(([key, label, ph]) => (
@@ -13493,7 +13531,7 @@ export default function App() {
               <h2 className="text-[16px] font-black text-stone-800 mb-1">制作の情報</h2>
               <p className="text-[12px] text-stone-500 mb-4">編集者が最初に知りたいことです。分かる所だけで大丈夫です。あとから概要タブで直せます。</p>
               {project && project.id === schedModal.projId
-                ? <ProdInfoForm meta={project.meta} onMeta={setMeta} />
+                ? <ProdInfoForm meta={project.meta} onMeta={setMeta} promanFallback={curChannelInfo.promanUrl || ""} />
                 : <p className="text-[13px] text-stone-500">この案件を開いてから、概要タブで入れてください。</p>}
               <div className="flex justify-end mt-4"><button onClick={() => setSchedModal(null)} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white" style={{ background: theme.main }}>完了</button></div>
             </>) : !schedModal.steps ? (<>
@@ -14743,6 +14781,26 @@ export default function App() {
       })()}
 
       {/* ===== 動画共有先の選択 ===== */}
+      {handoffWarn && (
+        <div className="fixed inset-0 z-[206] bg-black/45 flex items-center justify-center p-4" onClick={() => setHandoffWarn(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-stone-200" style={{ background: theme.main, color: mainText }}>
+              <h3 className="text-sm font-bold">編集者に渡す前に、まだ空欄があります</h3>
+              <p className="text-[11px] opacity-70 mt-0.5">概要タブで埋めてから渡すのがおすすめです</p>
+            </div>
+            <div className="p-5">
+              <ul className="space-y-1.5">
+                {handoffWarn.missing.map((m) => <li key={m} className="text-[13px] font-bold text-amber-800 bg-amber-50 rounded-lg px-3 py-1.5">{m}</li>)}
+              </ul>
+              <p className="mt-3 text-[12px] text-stone-500 leading-relaxed">「それでも発行」を押すと、空欄のまま渡したことを記録します。</p>
+              <div className="mt-4 flex gap-2 justify-end flex-wrap">
+                <button onClick={() => { setHandoffWarn(null); setTab("overview"); }} className="text-[13px] font-bold px-4 py-2 rounded-lg text-white" style={{ background: theme.accent, color: accentText }}>概要タブで埋める</button>
+                <button onClick={confirmHandoffWarn} className="text-[13px] font-bold px-4 py-2 rounded-lg border border-stone-300 text-stone-700 hover:bg-stone-50">それでも発行</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {shareAudience && (
         <div className="fixed inset-0 z-[205] bg-black/45 flex items-center justify-center p-4" onClick={() => setShareAudience(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={(e) => e.stopPropagation()}>
