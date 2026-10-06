@@ -24,6 +24,8 @@ const MUST = [
   ["アップの残り時間表示", "const mkEta"],
   ["学習タブ: 音声同期の手順", 'id: "edit-sync", title: "素材を並べて音声を合わせる"'],
   ["学習タブ: テロップを横の中央にそろえる", 'id: "telop-center"'],
+  // 2026-10-06 追加
+  ["編集者用リンクの前の必須6項目の警告（Issue #38）", "const guardEditorHandoff"],
 ];
 // 一度やめたもの（AK指示で撤去済み）。戻ってきたら merge で古い画面に巻き戻った印
 const MUST_NOT = [
