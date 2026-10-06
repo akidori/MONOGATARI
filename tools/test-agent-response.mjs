@@ -39,7 +39,13 @@ const start = source.indexOf('      if (request.method === "POST" && parts[0] ==
 const end = source.indexOf('      // ===== 台本チェック', start);
 assert.ok(start >= 0 && end > start);
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const route = new AsyncFunction('request', 'env', 'parts', 'requireUser', 'json', 'lc', 'fetch', 'qaSystemBlock', 'AGENT_SYSTEM', 'parseAgentResponse', 'bumpStat', 'console', source.slice(start, end));
+// AKへ回す処理は escalateToAk / pushAkLine に共通化した（2026-10-06）。同じ差し替えた fetch で組み立てて渡す
+const escStart = source.indexOf('async function escalateToAk(');
+const escEnd = source.indexOf('/* birdflip-knowledge-api を呼ぶ', escStart);
+assert.ok(escStart >= 0 && escEnd > escStart);
+const makeEscalate = (lc, fetch) => new Function('lc', 'fetch', source.slice(escStart, escEnd) + '\nreturn escalateToAk;')(lc, fetch);
+const routeBody = new AsyncFunction('request', 'env', 'parts', 'requireUser', 'json', 'lc', 'fetch', 'qaSystemBlock', 'AGENT_SYSTEM', 'parseAgentResponse', 'bumpStat', 'console', 'escalateToAk', source.slice(start, end));
+const route = (request, env, parts, requireUser, json, lc, fetch, ...rest) => routeBody(request, env, parts, requireUser, json, lc, fetch, ...rest, makeEscalate(lc, fetch));
 async function call(text, options = {}) {
   const writes = [], requests = [], audit = [], kv = new Map();
   const result = await route(new Request('https://fixture.invalid/api/agent/ask', { method: 'POST', body: JSON.stringify({ question: '合成質問', context: '合成の質問13と回答', caseName: '合成案件' }) }), {

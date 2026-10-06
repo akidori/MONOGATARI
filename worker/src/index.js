@@ -22,7 +22,8 @@ import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
 import QA_MD from "../../knowledge/qa.md";
 import { clientScopeSnap } from "../../src/client-scope.js";
 import { runShootDecideReminders } from "./shoot-decide.js";
-import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD } from "./agentqa.js";
+import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD, qaKnowledgeProposal } from "./agentqa.js";
+import { directorDigestText, pendingFromMarkdown } from "./director-digest.js";
 import { parseAgentResponse } from "../../src/agent-response.js";
 import { SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, normalizeScriptReview } from "../../src/script-check.js";
 const AGENT_SYSTEM = AGENT_PROMPT_MD
@@ -55,6 +56,65 @@ const json = (obj, status = 200) =>
 // share.htmlが単に描画していないだけで無フィルタのまま漏れていた。
 // ここでは「絶対にクライアントへ見せてはいけない」と指示書で名指しされた最小限のフィールドだけを
 // 除外する（安全側の最小修正。hearing/plans等の共有前提で見せているデータは対象外＝挙動を変えない）。
+/* ===== AIが答えられなかった質問をAKへ回す（2026-10-06 共通化、Issue #40） =====
+   アプリの「AIに質問」と、Premiereプラグインの「困ったら聞く」の両方から呼ぶ。
+   受付箱（agentq:inbox）に入れ、AKにアプリ内通知とメール、遥（公式LINE）からAKへ1通。返り値はアプリ内通知を保存できたか */
+async function escalateToAk(env, item) {
+  const caseId = item.caseId || "", caseName = item.caseName || "", channel = item.channel || "", question = item.question || "";
+  let notified = false;
+  const inbox = (await env.SNAPS.get("agentq:inbox", "json")) || [];
+  inbox.unshift(item);
+  await env.SNAPS.put("agentq:inbox", JSON.stringify(inbox.slice(0, 200)));
+  const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean);
+  const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+  for (const ad of admins) {
+    const nk = "notif:" + ad;
+    const list = (await env.SNAPS.get(nk, "json")) || [];
+    list.unshift({ id: item.id, at: item.at, type: "question", read: false, answered: false, caseId, channel, caseName: caseName || "（案件なし）", phase: "question",
+      title: "確認依頼：" + item.askedByName, deadline: "", guides: [{ source: "AIがAKさんに回した質問", points: [item.akQuestion, item.reason ? "理由：" + item.reason : ""].filter(Boolean) }] });
+    await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
+    notified = true; // アプリ内通知の保存成功。メールの配信保証ではない。
+    if (env.BOT_API_URL && env.BOT_API_KEY) {
+      try {
+        await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
+          method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
+          body: JSON.stringify({ to: ad, subject: "【ものがたりっち】確認依頼：" + (caseName || "案件なし") + "（" + item.askedByName + "）",
+            body: item.askedByName + "さんからの質問を、AIが資料だけでは答えられないためAKさんに回しました。\n\n質問：" + question + "\n\nAIの整理：" + item.akQuestion + (item.reason ? "\n理由：" + item.reason : "") + (caseId ? "\n\n案件を開く：" + appOrigin + "/?case=" + encodeURIComponent(caseId) : "") + "\n\nものがたりっちの通知（ベル）の「回答する」から答えると、質問した人に届きます。適用範囲を選んでおくと、次から同じ種類の質問にAIが答えられます。\nBird Flip / ものがたりっち！",
+            audit_target: "monogataritch:agentq:" + item.id }),
+        });
+      } catch (e) { /* 通知は残る */ }
+    }
+  }
+  // 遥（公式LINE）からAKへ。自動のLINEはこれと朝9時のまとめの2つだけ（AK決定 2026-10-06）
+  await pushAkLine(env, "mg-question", "【ものがたりっち】AIが答えられなかった質問\n" +
+    "案件：" + (caseName || "（案件なし）") + (channel ? "（" + channel + "）" : "") + "\n" +
+    (item.step ? "工程：" + item.step + "\n" : "") +
+    "質問した人：" + (item.askedByName || item.askedBy || "不明") + "\n" +
+    "質問：" + question.slice(0, 600) + (item.reason ? "\nAIの整理：" + item.reason.slice(0, 200) : "") +
+    "\n\nアプリの通知（ベル）の「回答する」から答えると、質問した人に届き、ナレッジの提案（PR）も作ります。\n" + appOrigin + (caseId ? "/?case=" + encodeURIComponent(caseId) : "/"));
+  return notified;
+}
+
+/* 遥（公式LINE、birdflip-cron の /line/push-ak）からAKへ送る。kind は mg-question / mg-daily の2つだけ（cron側でも同じ2つに絞っている）。
+   Worker同士は workers.dev 直fetchが弾かれる（1042）ので Service Binding（HARUKA）で呼ぶ。鍵は MG_LINE_KEY（この用途専用） */
+async function pushAkLine(env, kind, text) {
+  if (!env.HARUKA || !env.MG_LINE_KEY || !text) return false;
+  try {
+    const r = await env.HARUKA.fetch(new Request("https://birdflip-cron/line/push-ak?key=" + encodeURIComponent(env.MG_LINE_KEY), {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, text: String(text).slice(0, 4800) }),
+    }));
+    const j = await r.json().catch(() => null);
+    return !!(r.ok && j && j.ok);
+  } catch (e) { return false; }
+}
+
+/* birdflip-knowledge-api を呼ぶ（Service Binding 優先。workers.dev 直fetchは同じアカウントだと弾かれる） */
+async function knowledgeFetch(env, path, init = {}) {
+  const u = "https://birdflip-knowledge-api.aki-surf89315.workers.dev" + path;
+  const i = { ...init, headers: { ...(init.headers || {}), authorization: "Bearer " + env.KNOWLEDGE_API_TOKEN } };
+  return env.KNOWLEDGE_API ? env.KNOWLEDGE_API.fetch(u, i) : fetch(u, i);
+}
+
 const LEARN_CACHE = { data: null, at: 0, sha: "" };
 function redactForNonAdmin(snap, opts = {}) {
   if (!snap || !snap.project) return snap;
@@ -1631,6 +1691,76 @@ ${qList}
         } catch (e) { return json({ ok: false, reason: String(e.message || e) }); }
       }
 
+      // POST /api/agent/escalate { proj?, caseName?, channel?, step?, question, askedByName?, reason? }（Bearer MCP_WRITE_KEY＝Premiereのプラグインのサーバー）
+      // プラグインの「困ったら聞く」でAIが答えられなかった質問を、アプリの「AIに質問」と同じ受付箱へ入れてAKに回す（Issue #40）
+      if (request.method === "POST" && parts[0] === "api" && parts[1] === "agent" && parts[2] === "escalate" && !parts[3]) {
+        const auth = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!env.MCP_WRITE_KEY || auth !== env.MCP_WRITE_KEY) return json({ error: "forbidden" }, 403);
+        const b = await request.json().catch(() => ({}));
+        const question = String(b.question || "").trim().slice(0, 2000);
+        if (!question) return json({ error: "質問が空です" }, 400);
+        const proj = String(b.proj || "").trim();
+        // 1日30件まで（壊れたプラグインがAKのLINEを埋めないように）
+        const today = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+        const ck = "agentq:esc:" + today;
+        const cnt = parseInt((await env.SNAPS.get(ck)) || "0", 10);
+        if (cnt >= 30) return json({ ok: false, reason: "今日の上限（30件）に達しました" }, 429);
+        await env.SNAPS.put(ck, String(cnt + 1), { expirationTtl: 2 * 86400 });
+        const name = String(b.askedByName || "").trim().slice(0, 60) || "編集者（プラグイン）";
+        const item = {
+          id: "q_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
+          askedBy: "", askedByName: name, caseId: /^[A-Za-z0-9]{3,32}$/.test(proj) ? proj : "", caseName: String(b.caseName || "").slice(0, 120),
+          channel: String(b.channel || "").slice(0, 80), question, status: "open", reason: String(b.reason || "").slice(0, 300),
+          akQuestion: question, step: String(b.step || "").slice(0, 40), via: "plugin",
+        };
+        const notified = await escalateToAk(env, item);
+        return json({ ok: true, id: item.id, notified });
+      }
+
+      // GET /api/agent/director-digest（Bearer MG_LINE_KEY＝birdflip-cron が毎朝9時台に1回呼ぶ）→ { text }。何も無ければ text:""（送らない）
+      if (request.method === "GET" && parts[0] === "api" && parts[1] === "agent" && parts[2] === "director-digest" && !parts[3]) {
+        const auth = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+        if (!env.MG_LINE_KEY || auth !== env.MG_LINE_KEY) return json({ error: "forbidden" }, 403);
+        const now = Date.now(), dayAgo = now - 86400000;
+        const today = new Date(now + 9 * 3600 * 1000).toISOString().slice(0, 10);
+        const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean);
+        const openQuestions = ((await env.SNAPS.get("agentq:inbox", "json")) || []).filter((q) => q && q.status === "open");
+        // 編集者が読んでいない通知（1日以上）。KVの一覧は1日1回だけ（無料枠：list 1,000回/日）
+        const ignored = [];
+        try {
+          const ls = await env.SNAPS.list({ prefix: "notif:", limit: 200 });
+          for (const k of ls.keys) {
+            const who = k.name.slice(6);
+            if (!who || admins.includes(who)) continue;
+            const list = (await env.SNAPS.get(k.name, "json")) || [];
+            const old = list.filter((n) => n && !n.read && n.at && n.at < dayAgo);
+            if (old.length) ignored.push({ who, count: old.length, title: (old[old.length - 1].caseName || "") + " " + (old[old.length - 1].title || "") });
+          }
+        } catch (e) {}
+        // 空欄のまま編集者に渡した案件（前の日から今まで。Issue #38 の記録）
+        const gaps = [];
+        try {
+          const res = await env.DB.prepare("SELECT proj_id, value FROM mg_kv WHERE proj_id IS NOT NULL AND json_valid(value) AND json_extract(value,'$.meta.handoffGaps[0].at') >= ? ORDER BY updated_at DESC").bind(dayAgo).all();
+          const seen = new Set();
+          for (const row of (res && res.results) || []) {
+            if (seen.has(row.proj_id)) continue; seen.add(row.proj_id);
+            let p; try { p = JSON.parse(row.value); } catch (e) { continue; }
+            const g = ((p.meta && p.meta.handoffGaps) || [])[0];
+            if (g && g.at >= dayAgo) gaps.push({ caseName: p.name || row.proj_id, missing: Array.isArray(g.missing) ? g.missing : [] });
+          }
+        } catch (e) {}
+        // ★AK確認待ち（編集者向けFAQ）
+        let pending = [];
+        if (env.KNOWLEDGE_API_TOKEN) {
+          try {
+            const r = await knowledgeFetch(env, "/api/file?path=" + encodeURIComponent("Manuals/faq/editor-faq.md"));
+            if (r.ok) pending = pendingFromMarkdown(await r.text(), "Manuals/faq/editor-faq.md");
+          } catch (e) {}
+        }
+        const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
+        return json({ text: directorDigestText({ today, openQuestions, ignored, gaps, pending, appOrigin }) });
+      }
+
       // GET /api/studio/schedule?proj= → { linked, publishDate, steps }
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "studio" && parts[2] === "schedule") {
         const u = await requireUser(request, env);
@@ -1839,31 +1969,9 @@ ${qList}
           const item = {
             id: "q_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), at: Date.now(),
             askedBy: me, askedByName: u.name || me, caseId, caseName, channel, question, status: "open",
-            reason: pick("AKへの理由"), akQuestion: pick("AKに渡す質問文") || question,
+            reason: pick("AKへの理由"), akQuestion: pick("AKに渡す質問文") || question, step: (b.step || "").toString().slice(0, 40),
           };
-          const inbox = (await env.SNAPS.get("agentq:inbox", "json")) || [];
-          inbox.unshift(item);
-          await env.SNAPS.put("agentq:inbox", JSON.stringify(inbox.slice(0, 200)));
-          const admins = (env.ADMIN_EMAILS || env.LEGACY_STREAM_OWNER_EMAIL || "").split(",").map(lc).filter(Boolean);
-          const appOrigin = (env.APP_ORIGIN || "https://monogataritch.pages.dev").replace(/\/$/, "");
-          for (const ad of admins) {
-            const nk = "notif:" + ad;
-            const list = (await env.SNAPS.get(nk, "json")) || [];
-            list.unshift({ id: item.id, at: item.at, type: "question", read: false, answered: false, caseId, channel, caseName: caseName || "（案件なし）", phase: "question",
-              title: "確認依頼：" + item.askedByName, deadline: "", guides: [{ source: "AIがAKさんに回した質問", points: [item.akQuestion, item.reason ? "理由：" + item.reason : ""].filter(Boolean) }] });
-            await env.SNAPS.put(nk, JSON.stringify(list.slice(0, 50)));
-            notified = true; // アプリ内通知の保存成功。メールの配信保証ではない。
-            if (env.BOT_API_URL && env.BOT_API_KEY) {
-              try {
-                await fetch(env.BOT_API_URL.replace(/\/$/, "") + "/api/email/send", {
-                  method: "POST", headers: { "content-type": "application/json", "X-API-Key": env.BOT_API_KEY },
-                  body: JSON.stringify({ to: ad, subject: "【ものがたりっち】確認依頼：" + (caseName || "案件なし") + "（" + item.askedByName + "）",
-                    body: item.askedByName + "さんからの質問を、AIが資料だけでは答えられないためAKさんに回しました。\n\n質問：" + question + "\n\nAIの整理：" + item.akQuestion + (item.reason ? "\n理由：" + item.reason : "") + (caseId ? "\n\n案件を開く：" + appOrigin + "/?case=" + encodeURIComponent(caseId) : "") + "\n\nものがたりっちの通知（ベル）の「回答する」から答えると、質問した人に届きます。適用範囲を選んでおくと、次から同じ種類の質問にAIが答えられます。\nBird Flip / ものがたりっち！",
-                    audit_target: "monogataritch:agentq:" + item.id }),
-                });
-              } catch (e) { /* 通知は残る */ }
-            }
-          }
+          notified = await escalateToAk(env, item);
         }
         return json({ verdict, text, notified });
       }
@@ -1985,6 +2093,16 @@ ${qList}
         if (r.qa) {
           const qa = (await env.SNAPS.get("agentq:qa", "json")) || [];
           await env.SNAPS.put("agentq:qa", JSON.stringify([...qa.filter((e) => e.id !== r.qa.id), r.qa].slice(-300)));
+          // チャンネル共通・全案件共通の回答は、ナレッジの提案（birdflip-knowledge へのPR）にもする（Issue #40）。失敗しても回答は保存済み
+          const prop = qaKnowledgeProposal(r.qa);
+          if (prop && env.KNOWLEDGE_API_TOKEN) {
+            try {
+              const kr = await knowledgeFetch(env, "/api/knowledge_propose_write", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(prop) });
+              const kj = await kr.json().catch(() => null);
+              if (kr.ok && kj && kj.pr_url) r.item.knowledgePr = kj.pr_url;
+              else console.warn("knowledge_propose_failed", kr.status);
+            } catch (e) { console.warn("knowledge_propose_failed", String(e.message || e)); }
+          }
         }
         const it = r.item;
         // 管理者側の「確認依頼」通知は既読にする
