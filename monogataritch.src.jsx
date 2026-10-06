@@ -8,7 +8,7 @@ import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
 import { parseAgentResponse } from "./src/agent-response.js";
-import { mechanicalCheck, mechanicalText, CRITERIA as SCRIPT_CRITERIA } from "./src/script-check.js";
+import { mechanicalCheck, mechanicalText, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, matchesScriptRubric } from "./src/script-check.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
@@ -4534,21 +4534,33 @@ function ScriptCheckPanel({ theme, project, context, loggedIn, onJump, onClose }
   const scenes = useMemo(() => (project.rows || []).filter((r) => r && r.kind === "scene"), [project]);
   const storeKey = "mg:scriptReview:" + project.id;
   const [review, setReview] = useState(() => { try { return JSON.parse(localStorage.getItem(storeKey) || "null"); } catch (e) { return null; } });
+  // 今回の採点だけの明示選択。生成型や端末共通の背骨設定を推測せず、案件を自動保存しない。
+  const [storyType, setStoryType] = useState("pixar");
+  const rubric = scriptRubric(storyType);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   useEffect(() => { const h = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose]);
   const run = async () => {
-    if (busy) return;
+    if (busy || !rubric) return;
     setBusy(true); setErr("");
     try {
+      // 旧Workerへ型を無視した有料採点を送らない。確認GETはカウントもAIも使わない。
+      const capability = await fetch(SHARE_API + "/api/script/review", { headers: { Authorization: "Bearer " + MG_SESSION }, cache: "no-store" }).catch(() => null);
+      const supported = capability ? await capability.json().catch(() => null) : null;
+      if (!alive.current) return;
+      if (!capability?.ok || supported?.rubricVersion !== SCRIPT_RUBRIC_VERSION || !Array.isArray(supported.storyTypes) || !supported.storyTypes.includes(storyType)) throw new Error("採点基準を確認できませんでした。サーバー更新後に再試行してください（採点は未実行）。");
       const r = await fetch(SHARE_API + "/api/script/review", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
-        body: JSON.stringify({ caseId: project.id, caseName: project.name, channel: project.channel || "", context, checks: mechanicalText(mech) }) });
+        body: JSON.stringify({ storyType, rubricVersion: SCRIPT_RUBRIC_VERSION, caseId: project.id, caseName: project.name, channel: project.channel || "", context, checks: mechanicalText(mech) }) });
       const d = await r.json().catch(() => null);
       if (!r.ok || !d) throw new Error((d && d.error) || ("HTTP " + r.status));
+      if (!alive.current) return;
+      if (!matchesScriptRubric(d, storyType)) throw new Error("選択した型と採点結果の基準が一致しないため、結果を保存しませんでした。再読込してください。");
       const v = { ...d, at: Date.now() };
       setReview(v);
       try { localStorage.setItem(storeKey, JSON.stringify(v)); } catch (e) {}
-    } catch (e) { setErr(e.message || String(e)); } finally { setBusy(false); }
+    } catch (e) { if (alive.current) setErr(e.message || String(e)); } finally { if (alive.current) setBusy(false); }
   };
   const jump = (n, rowId) => { const id = rowId || (n && scenes[n - 1] ? scenes[n - 1].id : null); if (id) onJump(id); };
   const Badge = ({ lv }) => { const [bg, fg, t] = SEV[lv] || SEV.info; return <span className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: bg, color: fg }}>{t}</span>; };
@@ -4569,14 +4581,21 @@ function ScriptCheckPanel({ theme, project, context, loggedIn, onJump, onClose }
               <h3 className="text-[13px] font-black text-stone-800">AIの採点</h3>
               {review && review.at && <span className="text-[11px] text-stone-400">{new Date(review.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
             </div>
+            <label className="block text-[12px] font-bold text-stone-700 mb-2">今回の採点に使う物語タイプ
+              <select aria-label="今回の採点に使う物語タイプ" value={storyType} disabled={busy} onChange={(e) => { setStoryType(e.target.value); setErr(""); }} className="block w-full mt-1 rounded-lg border border-stone-300 bg-white p-2 text-[12px]">
+                {SCRIPT_STORY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </label>
+            <p className="mb-2 text-[11.5px] text-stone-500">{rubric?.held ? "骨組み・2段クライマックスは正式基準が未整備のため採点保留（平均から除外）。共通項目だけ採点します。" : "未選択・旧データは従来のピクサー7段＋スパインの基準で採点します。"} この選択は今回の採点だけに使います。開き直した時は従来基準に戻ります。</p>
             {!loggedIn ? <p className="text-[12.5px] text-stone-500">ログインすると、AIで採点できます。</p> : (
-              <button onClick={run} disabled={busy} className="w-full h-10 rounded-xl text-[13.5px] font-bold text-white disabled:opacity-50" style={{ background: theme.accent }}>
+              <button onClick={run} disabled={busy || !rubric} className="w-full h-10 rounded-xl text-[13.5px] font-bold text-white disabled:opacity-50" style={{ background: theme.accent }}>
                 {busy ? "採点しています…（1分ほど）" : review ? "もう一度採点する" : "AIで採点する"}
               </button>
             )}
             {err && <p className="mt-2 text-[12px] text-rose-600">{err}</p>}
             {review && (
               <div className="mt-3 space-y-3">
+                <p className="text-[11.5px] text-stone-600">表示中の結果：{review.rubricVersion ? (scriptRubric(review.storyType)?.label || "不明な型") : "従来基準（型の記録なし）"}{review.rubricVersion && !matchesScriptRubric(review, storyType) ? "（現在の選択とは異なる結果です）" : ""}</p>
                 <div className="rounded-xl bg-white border border-stone-200 px-3 py-3">
                   <div className="flex items-baseline gap-1"><span className="text-[28px] font-black text-stone-800 tabular-nums">{review.score != null ? review.score.toFixed(1) : "—"}</span><span className="text-[12px] text-stone-500">/ 10</span></div>
                   <p className="mt-1 text-[13px] text-stone-700 leading-relaxed whitespace-pre-wrap">{review.summary}</p>
@@ -4586,7 +4605,7 @@ function ScriptCheckPanel({ theme, project, context, loggedIn, onJump, onClose }
                     <div key={c.key} className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <span className="text-[12.5px] font-bold text-stone-800 flex-1 min-w-0 truncate">{c.label}</span>
-                        {c.score == null ? <span className="text-[10.5px] text-stone-400">判断材料なし</span> : <span className="flex gap-0.5">{[0, 1].map((i) => <span key={i} className="w-3.5 h-2 rounded-sm" style={{ background: c.score > i ? (c.score === 2 ? "#16A34A" : "#D97706") : "#E7E5E4" }} />)}</span>}
+                        {c.score == null ? <span className="text-[10.5px] text-stone-400">{c.withheld ? "型の基準未整備" : "判断材料なし"}</span> : <span className="flex gap-0.5">{[0, 1].map((i) => <span key={i} className="w-3.5 h-2 rounded-sm" style={{ background: c.score > i ? (c.score === 2 ? "#16A34A" : "#D97706") : "#E7E5E4" }} />)}</span>}
                       </div>
                       {c.comment && <p className="mt-0.5 text-[11.5px] text-stone-500 leading-snug">{c.comment}</p>}
                     </div>
@@ -4631,7 +4650,7 @@ function ScriptCheckPanel({ theme, project, context, loggedIn, onJump, onClose }
               )}
             </>)}
           </section>
-          <p className="text-[11px] text-stone-400 leading-relaxed">採点の根拠は、構成のルール（セクション5種・脳の順番・引き出し方・原稿の書式）、マニュアル（前提4CHECK・ピクサー7段・必ず守るルール）、qa.md（AKの回答）です。点数は目安で、最後に判断するのは人です。誤字・内容の重複・質問と回答の逆転などの校正は、行メニューの「AI校正チェック」で見られます。</p>
+          <p className="text-[11px] text-stone-400 leading-relaxed">採点の根拠は、構成のルール（セクション5種・脳の順番・引き出し方・原稿の書式）、マニュアル（前提4CHECK・必ず守るルール、従来基準ではピクサー7段・2段クライマックス）、qa.md（AKの回答）です。点数は目安で、最後に判断するのは人です。誤字・内容の重複・質問と回答の逆転などの校正は、行メニューの「AI校正チェック」で見られます。</p>
         </div>
       </div>
     </div>
@@ -13171,7 +13190,7 @@ export default function App() {
       )}
 
       {scriptCheckOpen && project && view === "editor" && (
-        <ScriptCheckPanel theme={theme} project={project} context={buildAgentContext(project)} loggedIn={!!(user && MG_SESSION)}
+        <ScriptCheckPanel key={String(user?.email || "") + ":" + project.id} theme={theme} project={project} context={buildAgentContext(project)} loggedIn={!!(user && MG_SESSION)}
           onJump={(rowId) => { setScriptCheckOpen(false); setTab("script"); setTimeout(() => jumpToRow(rowId), 160); }}
           onClose={() => setScriptCheckOpen(false)} />
       )}
