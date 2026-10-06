@@ -26,6 +26,11 @@ const MUST = [
   ["学習タブ: テロップを横の中央にそろえる", 'id: "telop-center"'],
   // 2026-10-06 追加
   ["編集者用リンクの前の必須6項目の警告（Issue #38）", "const guardEditorHandoff"],
+  ["共有メニュー7区分：先方・演者用（範囲を絞った鍵）（Issue #37）", "const copyClientUrl"],
+  ["共有メニュー「その他」：同時編集の共有", "publishShareLive()"],
+  ["共有メニュー「その他」：受け渡しのカスタマイズ", "setShowHandoffEdit(true)"],
+  ["共有メニュー「その他」：構成をコピー", "copyKouseiText()"],
+  ["共有メニュー「その他」：動画確認・ファイル転送", "setShowMediaModal(true)"],
 ];
 // 一度やめたもの（AK指示で撤去済み）。戻ってきたら merge で古い画面に巻き戻った印
 const MUST_NOT = [

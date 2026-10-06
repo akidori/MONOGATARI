@@ -20,6 +20,7 @@ const REMINDER_DOCS = { manual: MANUAL_MD, regulation: REGULATION_MD, gen: SCRIP
 // ものがたりっちAIエージェント（質問に答える）。指示書の正本は agent/PROMPT.md（品質ループで改善中）
 import AGENT_PROMPT_MD from "../../agent/PROMPT.md";
 import QA_MD from "../../knowledge/qa.md";
+import { clientScopeSnap } from "../../src/client-scope.js";
 import { runShootDecideReminders } from "./shoot-decide.js";
 import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD } from "./agentqa.js";
 import { parseAgentResponse } from "../../src/agent-response.js";
@@ -949,7 +950,11 @@ ${qList}
         // 読取トークン(共有URLの ?r=)。新規snapは発行し閲覧に必須化。既存の旧snap(rtok無し)はgraceで従来通り読める＝配布済みリンク不破壊。
         let rtok = await env.SNAPS.get("rtok:" + id);
         if (!rtok && isNew) { rtok = rid(20); await env.SNAPS.put("rtok:" + id, rtok); }
-        return json({ id, token, uptok, rtok: rtok || null });
+        // 先方・演者用の鍵（?c=、Issue #37）：構成台本＋香盤表だけを返す。r= とは別の鍵なので、渡しても他のタブの中身は読めない。
+        // 無ければ発行（1共有につき1回だけ書く）
+        let ctok = await env.SNAPS.get("ctok:" + id);
+        if (!ctok) { ctok = rid(20); await env.SNAPS.put("ctok:" + id, ctok); }
+        return json({ id, token, uptok, rtok: rtok || null, ctok });
       }
 
       // POST /api/publish-channel { name, channelInfo, projects:[...], prevId?, token? } → チャンネル丸ごと公開
@@ -1094,6 +1099,15 @@ ${qList}
 
       // GET /api/snap/{id}?r=<rtok>
       if (request.method === "GET" && parts[0] === "api" && parts[1] === "snap" && parts[2] && !parts[3]) {
+        // 先方・演者用の鍵（?c=）で開かれた時は、構成台本＋香盤表の中身だけを返す（Issue #37）
+        const cParam = url.searchParams.get("c") || "";
+        if (cParam) {
+          const ctok = await env.SNAPS.get("ctok:" + parts[2]);
+          if (!ctok || cParam !== ctok) return json({ error: "unauthorized", auth_required: true }, 401);
+          const csnap = await env.SNAPS.get("snap:" + parts[2], "json");
+          if (!csnap) return json({ error: "not found" }, 404);
+          return json(clientScopeSnap(redactForNonAdmin(csnap, { editor: false })));
+        }
         const rtok = await env.SNAPS.get("rtok:" + parts[2]);
         const tParam = url.searchParams.get("token") || "";
         let isAdmin = false;
