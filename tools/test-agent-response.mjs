@@ -44,8 +44,8 @@ const escStart = source.indexOf('async function escalateToAk(');
 const escEnd = source.indexOf('/* birdflip-knowledge-api を呼ぶ', escStart);
 assert.ok(escStart >= 0 && escEnd > escStart);
 const makeEscalate = (lc, fetch) => new Function('lc', 'fetch', source.slice(escStart, escEnd) + '\nreturn escalateToAk;')(lc, fetch);
-const routeBody = new AsyncFunction('request', 'env', 'parts', 'requireUser', 'json', 'lc', 'fetch', 'qaSystemBlock', 'AGENT_SYSTEM', 'parseAgentResponse', 'bumpStat', 'console', 'escalateToAk', source.slice(start, end));
-const route = (request, env, parts, requireUser, json, lc, fetch, ...rest) => routeBody(request, env, parts, requireUser, json, lc, fetch, ...rest, makeEscalate(lc, fetch));
+const routeBody = new AsyncFunction('request', 'env', 'parts', 'requireUser', 'json', 'lc', 'fetch', 'qaSystemBlock', 'AGENT_SYSTEM', 'parseAgentResponse', 'bumpStat', 'console', 'escalateToAk', 'channelRules', source.slice(start, end));
+const route = (request, env, parts, requireUser, json, lc, fetch, ...rest) => routeBody(request, env, parts, requireUser, json, lc, fetch, ...rest, makeEscalate(lc, fetch), async () => '');
 async function call(text, options = {}) {
   const writes = [], requests = [], audit = [], kv = new Map();
   const result = await route(new Request('https://fixture.invalid/api/agent/ask', { method: 'POST', body: JSON.stringify({ question: '合成質問', context: '合成の質問13と回答', caseName: '合成案件' }) }), {

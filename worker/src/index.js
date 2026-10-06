@@ -24,6 +24,7 @@ import { clientScopeSnap } from "../../src/client-scope.js";
 import { runShootDecideReminders } from "./shoot-decide.js";
 import { applyAnswer, qaSystemBlock, qaToMarkdown, bumpStat, sumStats, QA_SCOPES, QA_NO_RECORD, qaKnowledgeProposal } from "./agentqa.js";
 import { directorDigestText, pendingFromMarkdown } from "./director-digest.js";
+import { channelKnowledgeBlock } from "./channel-knowledge.js";
 import { parseAgentResponse } from "../../src/agent-response.js";
 import { SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, normalizeScriptReview } from "../../src/script-check.js";
 const AGENT_SYSTEM = AGENT_PROMPT_MD
@@ -113,6 +114,12 @@ async function knowledgeFetch(env, path, init = {}) {
   const u = "https://birdflip-knowledge-api.aki-surf89315.workers.dev" + path;
   const i = { ...init, headers: { ...(init.headers || {}), authorization: "Bearer " + env.KNOWLEDGE_API_TOKEN } };
   return env.KNOWLEDGE_API ? env.KNOWLEDGE_API.fetch(u, i) : fetch(u, i);
+}
+
+/* 案件のチャンネルに合う編集ルール（Manuals/client-rules/、確認済みのものだけ）をAIの資料にする。鍵が無い・取れない時は空 */
+function channelRules(env, channel) {
+  if (!env.KNOWLEDGE_API_TOKEN) return Promise.resolve("");
+  return channelKnowledgeBlock(channel, (path) => knowledgeFetch(env, "/api/knowledge_get?path=" + encodeURIComponent(path)));
 }
 
 const LEARN_CACHE = { data: null, at: 0, sha: "" };
@@ -1925,6 +1932,7 @@ ${qList}
         const userText = "【案件資料】\n" + (context || "（開いている案件なし）") + "\n\n【質問】\n" + question;
         // AKがアプリから答えた回答のうち、この質問に当てはまるもの（全案件共通・同じチャンネル・同じ案件）を資料に足す
         const qaExtra = qaSystemBlock((await env.SNAPS.get("agentq:qa", "json")) || [], { caseId, channel });
+        const chRules = await channelRules(env, channel);
         let data;
         try {
           const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1935,8 +1943,8 @@ ${qList}
               max_tokens: 16000,
               fallbacks: "default",
               output_config: { effort: "medium" },
-              // 指示書＋資料は毎回同じなのでキャッシュする（案件資料と質問は messages 側）
-              system: [{ type: "text", text: AGENT_SYSTEM, cache_control: { type: "ephemeral" } }, ...(qaExtra ? [{ type: "text", text: qaExtra }] : [])],
+              // 指示書＋資料は毎回同じなのでキャッシュする（案件資料と質問は messages 側）。チャンネル別ルールもチャンネルごとに同じなのでキャッシュ
+              system: [{ type: "text", text: AGENT_SYSTEM, cache_control: { type: "ephemeral" } }, ...(chRules ? [{ type: "text", text: chRules, cache_control: { type: "ephemeral" } }] : []), ...(qaExtra ? [{ type: "text", text: qaExtra }] : [])],
               messages: [{ role: "user", content: userText }],
             }),
           });
@@ -2006,6 +2014,7 @@ ${qList}
         await env.SNAPS.put(cntKey, String(cnt + 1), { expirationTtl: 2 * 86400 });
 
         const qaExtra = qaSystemBlock((await env.SNAPS.get("agentq:qa", "json")) || [], { caseId, channel });
+        const chRules = await channelRules(env, channel);
         const system = "あなたは映像制作会社Bird Flipの構成チェック担当です。編集者・ディレクターが作った人物密着ドキュメンタリーの構成台本を、下の資料の決まりで採点し、ズレている所を場面番号と根拠つきで返します。\n" +
           "\n# 守ること\n" +
           "- 根拠は下の資料だけ。生成指示書は「構成のルール（厳守）」節だけを使い、出力スキーマ・前提条件の節は使わない。一般論や好みで減点しない\n" +
@@ -2056,7 +2065,7 @@ ${qList}
             body: JSON.stringify({
               model: env.AGENT_MODEL || "claude-opus-5", max_tokens: 16000, fallbacks: "default",
               output_config: { effort: "medium" },
-              system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }, ...(qaExtra ? [{ type: "text", text: qaExtra }] : [])],
+              system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }, ...(chRules ? [{ type: "text", text: chRules, cache_control: { type: "ephemeral" } }] : []), ...(qaExtra ? [{ type: "text", text: qaExtra }] : [])],
               // tool_choice で強制しない（新しいモデルやフォールバック先では強制が400になるため）。指示で report_review を呼ばせる
               tools: [TOOL],
               messages: [{ role: "user", content: userText }],
