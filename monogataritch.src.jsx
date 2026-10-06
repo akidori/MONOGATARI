@@ -5113,6 +5113,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [!!thumbLightbox]);
   const shareUpTokRef = useRef("");                          // 編集者用アップロードトークン（&up=）。publish応答から取得
+  const shareClientTokRef = useRef("");                      // 先方・演者用の鍵（&c=）。構成台本＋香盤表だけ読める。publish応答から取得（Issue #37）
   const shareReadTokRef = useRef("");                        // 閲覧用トークン（&r=）。新方式snapの共有URLに必須。publish応答から取得
   const shareTokenRef = useRef("");                          // 直近publishのshareToken。setProjectが非同期なのでアップ直後に最新tokenを引くため
   const [globalManuals, setGlobalManuals] = useState([]);    // 全体の決め事（スタジオ共通）
@@ -7487,6 +7488,7 @@ export default function App() {
       if (!data.id) throw new Error(data.error || "発行失敗");
       if (data.uptok) shareUpTokRef.current = data.uptok;   // 編集者URL用：&up= に乗せる
       if (data.rtok) shareReadTokRef.current = data.rtok;   // 閲覧URL用：&r= に乗せる（新方式snap）
+      if (data.ctok) shareClientTokRef.current = data.ctok; // 先方・演者用：&c= に乗せる（構成台本＋香盤表だけ）
       const next = { ...project, shareId: data.id, shareToken: data.token || project.shareToken, shareUpToken: data.uptok || project.shareUpToken, shareReadToken: data.rtok || project.shareReadToken };
       shareTokenRef.current = next.shareToken || "";   // setProjectは非同期。直後のアップが最新tokenを引けるよう保持
       setProject(next);
@@ -7821,8 +7823,6 @@ export default function App() {
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
   };
   const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", wizard: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル", manual: "適用レギュレーション" };
-  /* タブ共有バー（全タブ共通・右上に固定表示）のボタン文言 */
-  const TAB_SHARE_LABEL = { overview: "コンセプトを共有", plan: "企画を共有", hearing: "ヒアリングを共有", script: "台本を共有", kouban: "香盤表を共有", assets: "編集者用リンク（DL+アップ）", review: "確認URLをコピー", deliver: "納品セットを共有" };
   const HANDOFF_TAB_CHOICES = ["review", "manual", "script", "kouban", "assets", "plan", "hearing", "concept", "deliver"]; // 受け渡しで選べるタブ
   /* AI（Claude/GPT）に読ませる用リンク。share.html ではなくサーバー読み取り可能な JSON エンドポイントを渡す。
      #フラグメントは外部fetchで読めないので live URL は不可。/api/snap/{id} はトークン不要の読み取り専用JSON。 */
@@ -7847,6 +7847,33 @@ export default function App() {
       "get_script で読み、直すときは update_script を使ってください（baseUpdatedAt に get_script の updatedAt を付ける）。",
     ].join("\n");
     try { await navigator.clipboard.writeText(text); showToast("AI共有の文面をコピーしました。Claudeに貼ってください"); }
+    catch (e) { window.prompt("この文面をコピーしてください", text); }
+  };
+
+  /* 先方・演者用リンク（Issue #37）：構成台本＋香盤表だけ。公開前チェック必須。
+     &r=（全部読める鍵）は付けず、範囲を絞った鍵 &c= だけを付ける＝生データ（/api/snap）にも他のタブの中身が載らない */
+  const copyClientUrl = async (preflightDone = false) => {
+    if (!preflightDone && !(await checkPublishGate())) return openPublishPreflight(() => copyClientUrl(true));
+    const had = !!project.shareId;
+    const id = await publishShare(true);
+    if (!id) return;
+    const c = shareClientTokRef.current;
+    if (!c) { showToast("先方用の鍵を発行できませんでした。少し待ってからやり直してください"); return; }
+    const u = location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id + "&c=" + encodeURIComponent(c) + "&start=script";
+    setShareModal({ id, url: u, updated: had, tab: "script" });
+    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + "先方・演者用のリンク（構成台本と香盤表だけ）をコピーしました"); } catch (e) {}
+  };
+  /* AI読み込み用（Issue #37）：AI用リンク（JSON）とAI共有（MCP）を1つに。両方を1回でコピーする */
+  const copyAiAll = async () => {
+    const id = await publishShare(true);
+    if (!id) return;
+    const lines = ["ものがたりっちの案件「" + (project.name || "") + "」です。", "", "■ 読むだけ（JSON）", SHARE_API + "/api/snap/" + id];
+    if (MG_SESSION) {
+      const ok = await saveProjectData(project);
+      if (ok !== false) lines.push("", "■ 読み書き（MCP「monogataritch」）", "id: " + project.id, "get_script で読み、直すときは update_script を使ってください（baseUpdatedAt に get_script の updatedAt を付ける）。");
+    }
+    const text = lines.join("\n");
+    try { await navigator.clipboard.writeText(text); showToast("AI読み込み用の文面をコピーしました。Claude・GPTに貼ってください"); }
     catch (e) { window.prompt("この文面をコピーしてください", text); }
   };
 
@@ -10351,62 +10378,76 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                {/* ===== 2択だけ（2026-07-17 AK指示：このタブだけ／全体、それだけでいい） ===== */}
-                {TAB_SHARE_PANE[tab] && (
-                  <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
-                    <Icon name="folder" className="w-4 h-4 shrink-0 text-stone-600" />
-                    このタブだけ共有<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
-                  </button>
-                )}
-                <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
-                  <Icon name="share" className="w-4 h-4 shrink-0 text-stone-600" />
-                  全タブ共有<span className="text-[11px] text-stone-500 font-normal ml-auto">全タブ＋アップ枠</span>
-                </button>
-                {TAB_LABEL[tab] && (
-                  <button onClick={() => { setShareMenu(false); publishShareLive(tab); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
-                    <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-600" />
-                    このタブだけ編集共有<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
-                  </button>
-                )}
-                <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
-                  <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-600" />
-                  全タブ編集共有<span className="text-[11px] text-stone-500 font-normal ml-auto">{project.liveId ? "更新・同時編集" : "同時編集"}</span>
-                </button>
-                {handoffs.find((h) => h.upload || h.id === "upload") && (
-                  <button onClick={() => { setShareMenu(false); doHandoff(handoffs.find((h) => h.upload || h.id === "upload")); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5">
-                    <Icon name="upload" className="w-4 h-4 shrink-0 text-stone-600" />
-                    アップだけ<span className="text-[11px] text-stone-500 font-normal ml-auto">編集者が上げる用</span>
-                  </button>
-                )}
-                <button onClick={() => { setShareMenu(false); copyKouseiText(); }} className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5 border-t border-stone-100">
-                  <Icon name="copy" className="w-4 h-4 shrink-0 text-stone-600" />
-                  構成をコピー<span className="text-[11px] text-stone-500 font-normal ml-auto">テキスト・貼り付け用</span>
-                </button>
-                <div className="flex items-stretch border-t border-b border-stone-100">
-                  <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className="flex-1 text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5"><Icon name="file" className="w-4 h-4 shrink-0 text-stone-600" />台本コピー<span className="text-[11px] text-stone-500 font-normal ml-auto">CSV</span></button>
-                  <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 py-3 hover:bg-stone-50 text-[13px] font-bold text-stone-600 border-l border-stone-100">txt</button>
-                </div>
-                <button onClick={() => { setShareMenu(false); copyAiMcp(); }} title="ClaudeがMCPでこの台本を直接読み書きするための文面をコピー" className="w-full text-left px-3 py-3 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5 border-b border-stone-100">
-                  <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />
-                  AI共有<span className="text-[11px] text-stone-500 font-normal ml-auto">Claudeで読み書き</span>
-                </button>
-                {/* ===== その他（折りたたみ）：先方/演者・AI・動画確認・カスタマイズ ===== */}
+                {/* ===== 7区分のメニュー（2026-10-06、Issue #37）。相手ごとに1つ選ぶだけ。
+                     7区分に入らない機能（同時編集の共有・受け渡しのカスタマイズ・構成をコピー・動画確認とファイル転送など）は
+                     消さずに「その他」に残す（AK決定 2026-10-06） ===== */}
+                {(() => {
+                  const row = "w-full text-left px-3 py-2.5 hover:bg-stone-50 text-[14px] font-bold flex items-center gap-2.5";
+                  const sub = "text-[11px] text-stone-500 font-normal ml-auto text-right leading-tight";
+                  return (<>
+                    <button onClick={() => { setShareMenu(false); copyShareUrl(); }} className={row}>
+                      <Icon name="upload" className="w-4 h-4 shrink-0 text-stone-600" />編集者用<span className={sub}>全タブ・動画のアップ</span>
+                    </button>
+                    <button onClick={() => { setShareMenu(false); copyClientUrl(); }} className={row}>
+                      <Icon name="user" className="w-4 h-4 shrink-0 text-stone-600" />先方・演者用<span className={sub}>構成台本と香盤表だけ</span>
+                    </button>
+                    <button onClick={() => { setShareMenu(false); copyShareUrl("deliver"); }} className={row}>
+                      <Icon name="check" className="w-4 h-4 shrink-0 text-stone-600" />納品用<span className={sub}>納品タブ</span>
+                    </button>
+                    <button onClick={() => { setShareMenu(false); copyAiAll(); }} className={row}>
+                      <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />AI読み込み用<span className={sub}>Claude・GPT</span>
+                    </button>
+                    <div className="flex items-stretch">
+                      <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className={row + " flex-1"}><Icon name="file" className="w-4 h-4 shrink-0 text-stone-600" />台本コピー<span className={sub}>CSV</span></button>
+                      <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 hover:bg-stone-50 text-[13px] font-bold text-stone-600 border-l border-stone-100">txt</button>
+                    </div>
+                    <div className={row + " text-stone-400 cursor-default hover:bg-white"}>
+                      <Icon name="folder" className="w-4 h-4 shrink-0" />メガ便<span className={sub}>素材の大容量アップ・DL（準備中）</span>
+                    </div>
+                    <div className={row + " text-stone-400 cursor-default hover:bg-white border-b border-stone-100"}>
+                      <Icon name="pencil" className="w-4 h-4 shrink-0" />ディレクター用<span className={sub}>準備中</span>
+                    </div>
+                  </>);
+                })()}
+                {/* ===== その他（折りたたみ）：7区分に入らない機能 ===== */}
                 <button onClick={() => setShareMore((v) => !v)} className="w-full text-left px-3 py-2 hover:bg-stone-50 text-[12px] text-stone-600 flex items-center gap-2">
-                  <span className="text-[11px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他のリンク・書き出し
+                  <span className="text-[11px] w-3 inline-block">{shareMore ? "▾" : "▸"}</span> その他
                 </button>
                 {shareMore && (<>
+                  {TAB_SHARE_PANE[tab] && (
+                    <button onClick={() => { setShareMenu(false); copyShareUrl(tab); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                      <Icon name="folder" className="w-4 h-4 shrink-0 text-stone-600" />
+                      このタブだけ共有<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
+                    </button>
+                  )}
+                  {TAB_LABEL[tab] && (
+                    <button onClick={() => { setShareMenu(false); publishShareLive(tab); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                      <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-600" />
+                      このタブだけ編集共有<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[84px]">{TAB_LABEL[tab]}</span>
+                    </button>
+                  )}
+                  <button onClick={() => { setShareMenu(false); publishShareLive(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                    <Icon name="pencil" className="w-4 h-4 shrink-0 text-stone-600" />
+                    全タブ編集共有<span className="text-[11px] text-stone-500 font-normal ml-auto">{project.liveId ? "更新・同時編集" : "同時編集"}</span>
+                  </button>
+                  {handoffs.find((h) => h.upload || h.id === "upload") && (
+                    <button onClick={() => { setShareMenu(false); doHandoff(handoffs.find((h) => h.upload || h.id === "upload")); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                      <Icon name="upload" className="w-4 h-4 shrink-0 text-stone-600" />
+                      アップだけ<span className="text-[11px] text-stone-500 font-normal ml-auto">編集者が上げる用</span>
+                    </button>
+                  )}
+                  <button onClick={() => { setShareMenu(false); copyKouseiText(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
+                    <Icon name="copy" className="w-4 h-4 shrink-0 text-stone-600" />
+                    構成をコピー<span className="text-[11px] text-stone-500 font-normal ml-auto">テキスト・貼り付け用</span>
+                  </button>
                   {handoffs.filter((h) => !(h.upload || h.id === "upload")).map((h) => (
                     <button key={h.id} onClick={() => { setShareMenu(false); doHandoff(h); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
                       <span className="text-[14px] leading-none">{h.emoji || "📨"}</span>
                       {h.label}<span className="text-[11px] text-stone-500 font-normal ml-auto truncate max-w-[96px]">{(h.tabs || []).map((t) => TAB_LABEL[t]).filter(Boolean).join("・")}</span>
                     </button>
                   ))}
-                  <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left pl-7 pr-3 py-2 hover:bg-stone-50 text-[12px] text-stone-600 flex items-center gap-2 border-b border-stone-100">
+                  <button onClick={() => { setShareMenu(false); setShowHandoffEdit(true); }} className="w-full text-left pl-7 pr-3 py-2 hover:bg-stone-50 text-[12px] text-stone-600 flex items-center gap-2">
                     <Icon name="gear" className="w-3.5 h-3.5 shrink-0" /> 受け渡しをカスタマイズ
-                  </button>
-                  <button onClick={() => { setShareMenu(false); copyAiUrl(); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
-                    <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />
-                    AIに読ませる用<span className="text-[11px] text-stone-500 font-normal ml-auto">Claude/GPT</span>
                   </button>
                   <button onClick={() => { setShareMenu(false); setShowMediaModal(true); }} className="w-full text-left pl-7 pr-3 py-2.5 hover:bg-stone-50 text-[13px] font-bold flex items-center gap-2">
                     <Icon name="video" className="w-4 h-4 shrink-0 text-stone-600" /> 動画確認・ファイル転送
@@ -10551,16 +10592,7 @@ export default function App() {
           </div>
         )}
 
-        {/* ===== タブ共有ボタン（全タブ共通・常に右上の同じ位置）：今のタブの共有URLをコピー ===== */}
-        {TAB_SHARE_PANE[tab] && (
-          <div className="max-w-[1500px] mx-auto mb-4 flex justify-end">
-            <button onClick={() => copyShareUrl(tab)} disabled={sharing} title="このタブの共有URLをコピー"
-              className="text-[12px] font-bold px-3 py-1.5 rounded-lg text-white shadow inline-flex items-center gap-1.5 disabled:opacity-50" style={{ background: theme.accent, color: accentText }}>
-              <Icon name="share" className="w-3.5 h-3.5" />{sharing ? "発行中…" : TAB_SHARE_LABEL[tab]}
-            </button>
-          </div>
-        )}
-
+        {/* タブごとの共有ボタンは、ヘッダーの「共有」メニュー（7区分）に統合した（2026-10-06、Issue #37）。「このタブだけ共有」はメニューの「その他」にある */}
         {/* ===== 構成台本の指標（TOTAL尺・字数・字/秒・取り込み）：構成台本タブの中に内包 ===== */}
         {tab === "script" && (
           <div className={(stacked && project.format !== "talk" ? "max-w-[1400px]" : "max-w-[1500px]") + " mx-auto mb-4 rounded-lg border bg-white px-3 sm:px-4 py-2 flex items-center gap-3 flex-wrap text-[13px]"} style={{ borderColor: "rgba(17,24,39,0.06)" }}>
