@@ -10047,16 +10047,17 @@ export default function App() {
             </div>
           ) : (() => {
             const q = caseQuery.trim().toLowerCase();
+            /* 作業メニュー：縦8行だと一覧が押し下げられて探しづらいので、アイコン＋短い名前の4列で並べる（2026-10-07 AK「案件探しづらい」） */
             const caseTabs = (
-              <nav aria-label="この案件の作業メニュー" className="ml-6 mb-1.5 mt-0.5 border-l border-white/10 pl-1.5">
-                {tabItems.map(([key, icon, label]) => {
+              <nav aria-label="この案件の作業メニュー" className="ml-3 mb-1.5 mt-0.5 grid grid-cols-4 gap-0.5">
+                {tabItems.map(([key, icon, label, short]) => {
                   const on = view === "editor" && tab === key;
                   return (
-                    <button key={key} aria-current={on ? "page" : undefined}
+                    <button key={key} aria-current={on ? "page" : undefined} title={label}
                       onClick={() => { setTab(key); setView("editor"); if (isNarrow) setSidebarOpen(false); }}
-                      className={"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[13px] text-left transition-colors " + (on ? "font-bold bg-white/15" : "text-white/65 hover:bg-white/10 hover:text-white/90")}
+                      className={"flex flex-col items-center gap-0.5 px-0.5 py-1 rounded-md text-[11px] leading-tight transition-colors " + (on ? "font-bold bg-white/15" : "text-white/65 hover:bg-white/10 hover:text-white/90")}
                       style={on ? { color: mainText } : {}}>
-                      <Icon name={icon} className="w-3.5 h-3.5 shrink-0" style={{ color: on ? theme.accent : undefined }} /><span className="truncate">{label}</span>
+                      <Icon name={icon} className="w-3.5 h-3.5 shrink-0" style={{ color: on ? theme.accent : undefined }} /><span className="truncate max-w-full">{short || label}</span>
                     </button>
                   );
                 })}
