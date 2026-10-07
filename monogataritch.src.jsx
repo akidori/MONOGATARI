@@ -10394,6 +10394,10 @@ export default function App() {
                     <button onClick={() => { setShareMenu(false); copyShareUrl("deliver"); }} className={row}>
                       <Icon name="check" className="w-4 h-4 shrink-0 text-stone-600" />納品用<span className={sub}>納品タブ</span>
                     </button>
+                    {/* 動画だけ共有（2026-10-07 AK「動画だけ共有するボタンなくない？」）。「その他」に埋もれていたので表に出す。先方／編集者の選択は copyShareUrl("review") 側で出る */}
+                    <button onClick={() => { setShareMenu(false); copyShareUrl("review"); }} className={row}>
+                      <Icon name="video" className="w-4 h-4 shrink-0 text-stone-600" />動画確認用<span className={sub}>動画とコメントだけ</span>
+                    </button>
                     <button onClick={() => { setShareMenu(false); copyAiAll(); }} className={row}>
                       <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />AI読み込み用<span className={sub}>Claude・GPT</span>
                     </button>
