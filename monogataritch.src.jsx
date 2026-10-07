@@ -4983,6 +4983,19 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem("mg:sidebarW", String(sidebarW)); } catch (_) {} }, [sidebarW]);
   // サイドバーの⌘K(検索にフォーカス)・⌘N(新規案件メニュー)。08-24 AK提供モックアップ対応。
   const sidebarSearchRef = useRef(null);
+  /* 開いている案件の行まで、サイドバーを自動でスクロールする（2026-10-07 AK「案件探しづらい」）。
+     同じ案件が「最近開いた」とチャンネルの両方に出る時は、チャンネル側（後ろの行）に合わせる */
+  useEffect(() => {
+    if (!activeId) return;
+    const t = setTimeout(() => {
+      try {
+        const rows = document.querySelectorAll('[data-case-row="' + activeId + '"]');
+        const el = rows[rows.length - 1];
+        if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+      } catch (_) {}
+    }, 150);
+    return () => clearTimeout(t);
+  }, [activeId, sidebarOpen]);
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) { e.preventDefault(); setSidebarOpen(true); setCasePickerOpen(true); }
@@ -7114,7 +7127,8 @@ export default function App() {
   }, [index, boardCache, project, recentIds, activeId, studioStatus]);
 
   useEffect(() => {
-    if (!isStaff || !MG_SESSION || !index.length || (view !== "home" && view !== "analytics" && view !== "team")) return;
+    // 2026-10-07 AK「納品完了の案件がまだ表示されてる」：サイドバーでも使うため、画面によらず読む（管理者のみ）
+    if (!isStaff || !MG_SESSION || !index.length) return;
     let cancelled = false;
     (async () => {
       try {
@@ -7124,7 +7138,7 @@ export default function App() {
       } catch (_) {}
     })();
     return () => { cancelled = true; };
-  }, [isStaff, view, index.length]);
+  }, [isStaff, index.length]);
 
   /* アナリティクス（Phase 2）：読み込めた案件本体から集計する。グラフは最小限、気づきと次のアクションをセットで出す */
   const analytics = useMemo(() => {
@@ -10086,7 +10100,7 @@ export default function App() {
                     return (
                       <div key={p.id}>
                       <div
-                        role="button" tabIndex={0} aria-label={p.name + "を開く"}
+                        role="button" tabIndex={0} aria-label={p.name + "を開く"} data-case-row={p.id}
                         onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); switchProject(p.id); } }}
                         draggable
                         onDragStart={(e) => { e.stopPropagation(); setDragCaseId(p.id); e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", p.id); } catch (_) {} }}
@@ -10152,9 +10166,23 @@ export default function App() {
                 </div>
               );
             };
-            /* 完了は既定で畳む（2026-09-21 AK「完了した案件は非表示にできるように」）。見出しを押すと開閉、開閉は端末に覚える。検索中は畳まず一致を出す */
+            /* 2026-10-07 AK「左のタブの案件探しづらい」「納品完了の案件がまだ表示されてる」
+               ・Studio OSで完了（納品済み）になった案件は、チャンネルの状態に関係なく「完了」へ移す（管理者のみ。Studio OSに紐付いていない案件は今まで通り）
+               ・「完了」は既定で畳む（2026-09-21 AK）。見出しを押すと開閉、開閉は端末に覚える。検索中は畳まず一致を出す */
+            const caseDone = (id) => !!(studioStatus[id] && studioStatus[id].status === "完了");
+            const sectionGroups = (key) => {
+              if (key !== "done") return channelGroups.filter((g) => g.status === key)
+                .map((g) => ({ ...g, items: g.items.filter((x) => !caseDone(x.id)) }))
+                .filter((g) => g.items.length || !channelGroups.find((h) => h.channel === g.channel).items.length);
+              const out = [];
+              channelGroups.forEach((g) => {
+                const items = g.status === "done" ? g.items : g.items.filter((x) => caseDone(x.id));
+                if (items.length || (g.status === "done" && !g.items.length)) out.push({ ...g, items });
+              });
+              return out;
+            };
             // 開いている案件が入っているセクションは畳まない（作業メニューがその下にぶら下がるため）
-            const activeSection = (channelGroups.find((g) => g.items.some((x) => x.id === activeId)) || {}).status;
+            const activeSection = ([["active"], ["hold"], ["done"]].map(([k]) => k).find((k) => sectionGroups(k).some((g) => g.items.some((x) => x.id === activeId))));
             const isCollapsed = (key) => !q && key !== activeSection && (sectionCollapsed[key] === undefined ? key === "done" : !!sectionCollapsed[key]);
             const renderSectionHeader = (key, label, count) => (
               <button type="button" aria-expanded={!isCollapsed(key)} title={isCollapsed(key) ? label + "を表示" : label + "を隠す"}
@@ -10168,34 +10196,57 @@ export default function App() {
             if (q && !index.some((p) => ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q))) {
               return <p className="px-3 py-6 text-[13px] text-white/60">一致する案件がありません。別の名前で検索してください。</p>;
             }
+            /* 1行の案件（お気に入り・最近開いた・1件だけのチャンネルで使う）。右端にチャンネル名 */
+            const renderFlatCase = (p, lead, tabsUnder) => {
+              const active = p.id === activeId;
+              return (<React.Fragment key={p.id}>
+                <button data-case-row={p.id} onClick={() => switchProject(p.id)}
+                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCaseMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); }}
+                  className={"w-full text-left rounded-md mb-0.5 pl-2.5 pr-2 py-1.5 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
+                  style={{ borderLeftColor: active ? theme.accent : "transparent", color: mainText, ...(active ? { background: "rgba(255,255,255,0.12)" } : {}) }}>
+                  {lead}
+                  <span className={"flex-1 min-w-0 truncate text-[13.5px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{p.name}</span>
+                  <span className="text-[11px] text-white/35 truncate max-w-[96px]">{p.channel || DEFAULT_CHANNEL}</span>
+                </button>
+                {active && tabsUnder && caseTabs}
+              </React.Fragment>);
+            };
+            /* 最近開いた（2026-10-07 AK「探しづらい」）：検索していない時だけ、上に3件。お気に入りと重なるものは出さない */
+            const recentCases = q ? [] : recentIds.map((id) => index.find((x) => x.id === id)).filter((p) => p && !p.favorite).slice(0, 3);
+            const renderGroupOrFlat = (g) => {
+              // 1件だけのチャンネルは1行にまとめる（フォルダ行＋案件行の2行を使っていたため、一度に見える件数が少なかった）
+              const items = q && !g.channel.toLowerCase().includes(q) ? g.items.filter((x) => (x.name || "").toLowerCase().includes(q)) : g.items;
+              if (g.items.length === 1 && items.length === 1) {
+                const p = items[0];
+                return renderFlatCase(p, channelIconOf(g.channel)
+                  ? <span className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[13px] leading-none">{channelIconOf(g.channel)}</span>
+                  : <Icon name="folder" className="w-3.5 h-3.5 shrink-0 text-white/30" />, !activeIsFav);
+              }
+              return renderChannelGroup(g.channel, g.items);
+            };
             return (
               <>
+                {recentCases.length > 0 && (
+                  <div className="mb-1">
+                    {renderSectionHeader("recent", "最近開いた", recentCases.length)}
+                    {!isCollapsed("recent") && recentCases.map((p) => renderFlatCase(p, <Icon name="clock" className="w-3.5 h-3.5 shrink-0 text-white/35" />, false))}
+                  </div>
+                )}
                 {favoriteCases.length > 0 && (
                   <div className="mb-1">
                     {renderSectionHeader("favorites", "お気に入り", favoriteCases.length)}
-                    {!isCollapsed("favorites") && favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) => {
-                      const active = p.id === activeId;
-                      return (<React.Fragment key={p.id}>
-                        <button onClick={() => switchProject(p.id)}
-                          className={"w-full text-left rounded-md mb-0.5 pl-2.5 pr-2 py-1.5 flex items-center gap-2 transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
-                          style={{ borderLeftColor: active ? theme.accent : "transparent", color: mainText, ...(active ? { background: "rgba(255,255,255,0.12)" } : {}) }}>
-                          <Icon name="star" className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />
-                          <span className={"flex-1 min-w-0 truncate text-[14px] " + (active ? "font-semibold" : "font-medium opacity-80")}>{p.name}</span>
-                          <span className="text-[11px] text-white/30 truncate max-w-[64px]">{p.channel || DEFAULT_CHANNEL}</span>
-                        </button>
-                        {active && caseTabs}
-                      </React.Fragment>);
-                    })}
+                    {!isCollapsed("favorites") && favoriteCases.filter((p) => !q || ((p.name || "") + " " + (p.channel || DEFAULT_CHANNEL)).toLowerCase().includes(q)).map((p) =>
+                      renderFlatCase(p, <Icon name="star" className="w-3.5 h-3.5 shrink-0" style={{ color: "#f59e0b" }} />, true))}
                   </div>
                 )}
                 {SECTIONS.map(([key, label]) => {
-                  const groups = channelGroups.filter((g) => g.status === key);
+                  const groups = sectionGroups(key);
                   const caseCount = groups.reduce((n, g) => n + g.items.length, 0);
                   if (!groups.length) return null;
                   return (
                     <div key={key}>
                       {renderSectionHeader(key, label, caseCount)}
-                      {!isCollapsed(key) && groups.map((g) => renderChannelGroup(g.channel, g.items))}
+                      {!isCollapsed(key) && groups.map((g) => renderGroupOrFlat(g))}
                     </div>
                   );
                 })}
