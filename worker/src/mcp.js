@@ -388,7 +388,7 @@ async function listScripts(env) {
   if (done) for (const x of list) if (done.has(x.id)) x.done = true;
   return toolText({ scripts: list });
 }
-async function studioDoneProjIds(env) {
+export async function studioDoneProjIds(env) {
   if (!env.STUDIO_AGENT_KEY) return null;
   const ids = new Set();
   for (let page = 1; page <= 10; page++) {

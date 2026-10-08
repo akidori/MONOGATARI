@@ -10,7 +10,7 @@
    ============================================================ */
 
 import { DurableObject } from "cloudflare:workers";
-import { handleMcp } from "./mcp.js";
+import { handleMcp, studioDoneProjIds } from "./mcp.js";
 import { runDeadlineReminders, workForCase, jstDate, sectionsOf } from "./reminders.js";
 // 工程リマインドに添えるマニュアル（正本は knowledge/ と tools/。wrangler.toml の Text ルールで同梱）
 import MANUAL_MD from "../../knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md";
@@ -2307,6 +2307,12 @@ ${qList}
             if (!(j.data || []).length || page * 200 >= total) break;
           }
         } catch (e) { /* 取れた分だけ返す */ }
+        // 2026-10-08 AK「納品済みなのになんで出てんの？」：上の一覧（条件なし）には制作完了の案件が入ってこないため、
+        // MCP の list_scripts と同じく productionStatus=completed で取り直して「完了」を付ける（サイドバーが完了へ寄せる）
+        try {
+          const done = await studioDoneProjIds(env);
+          if (done) for (const id of done) if (want.has(id)) statuses[id] = { status: "完了", stepName: "" };
+        } catch (e) { /* 取れなければ今まで通り */ }
         return json({ statuses });
       }
 
