@@ -11903,7 +11903,8 @@ export default function App() {
             </div>
 
             <div className="space-y-1.5">
-              {boardCases.map((entry, pi) => {
+              {/* 2026-10-08 AK「新しい企画が一番上に来るようにしたい」：表示だけ新しい順（逆順）。#番号と保存順は変えない */}
+              {boardCases.map((entry, pi) => ({ entry, pi })).reverse().map(({ entry, pi }) => {
                 const isActive = entry.id === activeId;
                 const data = isActive ? project : boardCache[entry.id];
                 const p0 = boardPlan0(data);
@@ -11919,9 +11920,9 @@ export default function App() {
                     {/* スマホではタイトルが操作ボタンに押しつぶされて6文字ほどしか見えなかった（2026-09-26）→ タイトルだけ2段目に全幅で出す */}
                     <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-stone-50" onClick={() => openBoardCase(entry.id)}>
                       <div className="shrink-0 flex flex-col -my-1" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, -1); }} disabled={pi === 0} title="この企画を上へ"
+                        <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, 1); }} disabled={pi === boardCases.length - 1} title="この企画を上へ"
                           className="w-6 h-5 grid place-items-center rounded text-stone-600 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="up" className="w-3.5 h-3.5" /></button>
-                        <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, 1); }} disabled={pi === boardCases.length - 1} title="この企画を下へ"
+                        <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, -1); }} disabled={pi === 0} title="この企画を下へ"
                           className="w-6 h-5 grid place-items-center rounded text-stone-600 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="down" className="w-3.5 h-3.5" /></button>
                       </div>
                       <button onClick={(e) => { e.stopPropagation(); openBoardCase(entry.id); }} title={expanded ? "畳む" : "参考サムネを開く"}
