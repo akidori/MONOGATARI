@@ -4446,7 +4446,18 @@ const HOME_INTENTS = [
   { key: "learn", icon: "book", label: "やり方を見る", sub: "工程ごとのマニュアル" },
 ];
 
-function HomeIntents({ theme, onPick }) {
+function HomeIntents({ theme, onPick, compact }) {
+  // 2026-10-08 AK「ホーム画見ずらい」：管理者は大きな6つのボタンを小さなボタン1列に（編集者は今のまま）
+  if (compact) return (
+    <section className="mb-5 flex flex-wrap items-center gap-1.5">
+      {HOME_INTENTS.map((it) => (
+        <button key={it.key} onClick={(e) => onPick(it, e)} title={it.sub}
+          className="h-8 px-3 rounded-lg inline-flex items-center gap-1.5 text-[12.5px] font-bold bg-white border border-stone-200 text-stone-700 hover:bg-stone-50">
+          <Icon name={it.icon} className="w-3.5 h-3.5 text-stone-500" />{it.label}
+        </button>
+      ))}
+    </section>
+  );
   return (
     <section className="mb-6">
       <h2 className="text-[17px] font-black text-stone-800 mb-3">何をしますか？</h2>
@@ -4899,6 +4910,7 @@ export default function App() {
 
   // ホームの案件表示（2026-10-01 AK「ホームの案件管理はこんなUIで」＝表紙つきカードの並び）。"cards" | "channels"
   const [homeMode, setHomeMode] = useState(() => { try { return localStorage.getItem("mg:homeMode") || "cards"; } catch (e) { return "cards"; } });
+  const [homeFold, setHomeFold] = useState({});               // 管理者ホームの「保留」「完了」の開閉（既定は畳む）
   const [homeCh, setHomeCh] = useState("");                 // カード表示のチャンネル絞り込み（""=すべて）
   const [chShareMenu, setChShareMenu] = useState(null);    // チャンネル共有の種類選択（読取専用/編集つき）{channel,x,y}
   const [showCreator, setShowCreator] = useState(false); // クリエイタータイプ診断（どの画面からでも上に重ねて開く）
@@ -13397,7 +13409,7 @@ export default function App() {
                         ? <span className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[12px] leading-none">{channelIconOf(channel)}</span>
                         : <svg className="w-3.5 h-3.5 shrink-0 text-stone-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>}
                       <span className="flex-1 min-w-0 truncate">{channel}</span>
-                      <span className="text-[10.5px] text-stone-400 shrink-0">{items.length}</span>
+                      <span className="text-[10.5px] text-stone-400 shrink-0">{isStaff === true ? items.filter((x) => !(studioStatus[x.id] && studioStatus[x.id].status === "完了") && ((channelInfo[channel] || {}).status || "active") !== "done").length : items.length}</span>
                     </button>
                   ))}
                 </div>
@@ -13432,7 +13444,7 @@ export default function App() {
             <Icon name="sparkle" className="w-4 h-4" />タイプ診断
           </button>
           <main className="flex-1 min-w-0 py-7">
-            <HomeIntents theme={theme} onPick={(it, e) => {
+            <HomeIntents theme={theme} compact={isStaff === true} onPick={(it, e) => {
               if (it.tab) { setHomeIntent(it); return; }
               if (it.key === "ask") { if (user) setAskOpen(true); else { showToast("質問はログインすると使えます"); setShowAccount(true); } return; }
               if (it.key === "new") { const r = e.currentTarget.getBoundingClientRect(); setAddMenu({ channel: DEFAULT_CHANNEL, x: r.left + 12, y: r.bottom + 4 }); return; }
@@ -13535,6 +13547,57 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                  {isStaff === true ? (() => {
+                    /* 2026-10-08 AK「ホーム画見ずらい」：管理者は1行の一覧。進行中だけを工程の期限が近い順に。保留・完了は畳む（表示だけ） */
+                    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+                    const work = new Map(((myWork && myWork.cases) || []).map((w) => [w.caseId, w]));
+                    const chStatus = (x) => (channelInfo[x.channel || DEFAULT_CHANNEL] || {}).status || "active";
+                    const isDone = (x) => (studioStatus[x.id] && studioStatus[x.id].status === "完了") || chStatus(x) === "done";
+                    const dueOf = (x) => { const w = work.get(x.id); return (w && ((w.current && w.current.deadline) || w.finalDeadline)) || ""; };
+                    const active = cards.filter((x) => !isDone(x) && chStatus(x) !== "hold")
+                      .sort((a, b) => { const da = dueOf(a), db = dueOf(b); if (da && db) return da < db ? -1 : da > db ? 1 : 0; if (da) return -1; if (db) return 1; return order(a) - order(b); });
+                    const hold = cards.filter((x) => !isDone(x) && chStatus(x) === "hold");
+                    const done = cards.filter(isDone);
+                    const row = (x, dim) => {
+                      const w = work.get(x.id);
+                      const d = caseData(x.id);
+                      const step = (w && w.current && w.current.name) || (studioStatus[x.id] && studioStatus[x.id].stepName) || liveStatus(x.id, d);
+                      const due = dueOf(x);
+                      const late = due && due < today;
+                      return (
+                        <button key={x.id} onClick={() => openCase(x.id)}
+                          className={"w-full text-left flex items-center gap-3 px-3 py-2 border-b border-stone-100 last:border-0 hover:bg-stone-50 " + (dim ? "opacity-70" : "")}>
+                          <span className="flex-1 min-w-0 truncate text-[14px] font-bold text-stone-800">{x.name || "（無題）"}</span>
+                          {!homeCh && <span className="hidden sm:inline text-[11.5px] text-stone-500 truncate max-w-[160px]">{x.channel || DEFAULT_CHANNEL}</span>}
+                          <span className="text-[11.5px] font-bold px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 shrink-0">{step}</span>
+                          <span className={"text-[12px] tabular-nums shrink-0 w-[92px] text-right " + (late ? "font-bold text-red-600" : "text-stone-500")}>
+                            {due ? due.slice(5).replace("-", "/") + (late ? " 超過" : "") : ""}
+                          </span>
+                        </button>
+                      );
+                    };
+                    const fold = (key, label, list) => list.length > 0 && (
+                      <div className="mt-3">
+                        <button onClick={() => setHomeFold((v) => ({ ...v, [key]: !v[key] }))}
+                          className="flex items-center gap-1.5 text-[12.5px] font-bold text-stone-500 hover:text-stone-800 mb-1.5">
+                          <span className="text-[10.5px] transition-transform" style={{ transform: homeFold[key] ? "none" : "rotate(-90deg)" }}>▾</span>{label} {list.length}件
+                        </button>
+                        {homeFold[key] && <div className="rounded-xl bg-white border border-stone-200 overflow-hidden">{list.map((x) => row(x, true))}</div>}
+                      </div>
+                    );
+                    return (<>
+                      <div className="text-[12px] font-bold text-stone-500 mb-1.5">進行中 {active.length}件（工程の期限が近い順）</div>
+                      <div className="rounded-xl bg-white border border-stone-200 shadow-sm overflow-hidden">
+                        {active.length ? active.map((x) => row(x, false)) : <div className="px-3 py-3 text-[13px] text-stone-500">進行中の案件はありません</div>}
+                      </div>
+                      {fold("hold", "保留", hold)}
+                      {fold("done", "完了", done)}
+                      <button onClick={(e) => setAddMenu({ channel: homeCh || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY })}
+                        className="mt-3 h-8 px-3 rounded-lg inline-flex items-center gap-1 text-[12.5px] font-bold border border-dashed border-stone-300 text-stone-500 hover:text-stone-700">
+                        ＋ 新規案件
+                      </button>
+                    </>);
+                  })() : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
                     {cards.map((x) => {
                       const d = caseData(x.id);
@@ -13568,6 +13631,7 @@ export default function App() {
                       ＋ 新規案件
                     </button>
                   </div>
+                  )}
                 </>)}
               </>);
             })()}
