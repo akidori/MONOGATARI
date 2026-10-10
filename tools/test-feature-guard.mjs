@@ -31,6 +31,11 @@ const MUST = [
   ["共有メニュー「その他」：受け渡しのカスタマイズ", "setShowHandoffEdit(true)"],
   ["共有メニュー「その他」：構成をコピー", "copyKouseiText()"],
   ["共有メニュー「その他」：動画確認・ファイル転送", "setShowMediaModal(true)"],
+  // 2026-10-10 追加
+  ["ホーム「何をしますか？」（構成・動画・素材・質問・新規・やり方）", "const HOME_INTENTS"],
+  ["はじめてガイド（#start のURLで開く案内役）", "function StartGuide"],
+  ["構成の採点（台本チェック）", "function ScriptCheckPanel"],
+  ["AIの確認依頼にAKがアプリで答える", "function AgentAnswerDialog"],
 ];
 // 一度やめたもの（AK指示で撤去済み）。戻ってきたら merge で古い画面に巻き戻った印
 const MUST_NOT = [
