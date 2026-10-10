@@ -14,6 +14,8 @@ const publicFiles = [
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
 for (const file of publicFiles) await cp(path.join(root, file), path.join(dist, file));
+// はじめてガイドの画像（guide/）。#start のURLで開くガイドが使う
+await cp(path.join(root, "guide"), path.join(dist, "guide"), { recursive: true });
 
 const app = await readFile(path.join(dist, "app.js"));
 const version = createHash("sha256").update(app).digest("hex").slice(0, 12);

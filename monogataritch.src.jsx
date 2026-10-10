@@ -9,6 +9,7 @@ import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
 import { handoffMissing, addHandoffGap } from "./src/handoff-check.js";
 import { parseAgentResponse } from "./src/agent-response.js";
+import { START_TOPICS, START_GREETING, startUrl, parseStartHash, matchTopics, mediaOf } from "./src/start-guide.js";
 import { mechanicalCheck, mechanicalText, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, matchesScriptRubric } from "./src/script-check.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
@@ -4443,7 +4444,7 @@ const HOME_INTENTS = [
   { key: "assets", icon: "folder", label: "素材を入れる", sub: "撮影素材・資料を渡す", tab: "assets" },
   { key: "ask", icon: "sparkle", label: "質問する", sub: "台本・撮影・編集で迷ったら" },
   { key: "new", icon: "plus", label: "新しい案件をつくる", sub: "一日密着・トークなど" },
-  { key: "learn", icon: "book", label: "やり方を見る", sub: "工程ごとのマニュアル" },
+  { key: "learn", icon: "book", label: "やり方を見る", sub: "使い方の案内・困った時の質問" },
 ];
 
 function HomeIntents({ theme, onPick, compact }) {
@@ -4667,6 +4668,152 @@ function ScriptCheckPanel({ theme, project, context, loggedIn, onJump, onClose }
             </>)}
           </section>
           <p className="text-[11px] text-stone-400 leading-relaxed">採点の根拠は、構成のルール（セクション5種・脳の順番・引き出し方・原稿の書式）、マニュアル（前提4CHECK・必ず守るルール、従来基準ではピクサー7段・2段クライマックス）、qa.md（AKの回答）です。点数は目安で、最後に判断するのは人です。誤字・内容の重複・質問と回答の逆転などの校正は、行メニューの「AI校正チェック」で見られます。</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===== はじめてガイド（2026-10-10 AK「スタートアップURLを送ったらエージェントが出てきて、質問や使い方を教えてくれる」）=====
+   URL は <アプリ>#start（項目指定は #start=<id>）。ログイン不要で開ける。中身は src/start-guide.js の START_TOPICS。
+   質問はログインしていれば AI（/api/agent/ask）に聞き、答えのあとに近い項目（手順・画面・動画）を添える */
+function GuideMedia({ video, image, title }) {
+  const v = mediaOf(video), im = mediaOf(image);
+  return (
+    <>
+      {v && v.kind === "youtube" && <div className="aspect-video w-full rounded-xl overflow-hidden bg-black mb-3"><iframe src={v.url} className="w-full h-full" allowFullScreen title={title} loading="lazy" referrerPolicy="strict-origin-when-cross-origin" /></div>}
+      {v && v.kind === "video" && <div className="aspect-video w-full rounded-xl overflow-hidden bg-black mb-3"><video src={v.url} controls preload="metadata" className="w-full h-full" /></div>}
+      {v && v.kind === "link" && <a href={v.url} target="_blank" rel="noopener noreferrer" className="inline-block mb-3 text-[13px] font-bold underline" style={{ color: "#2563EB" }}>動画を見る</a>}
+      {im && im.kind === "image" && <a href={im.url} target="_blank" rel="noopener noreferrer" className="block mb-3"><img src={im.url} alt={title + "の画面"} loading="lazy" className="w-full rounded-xl border border-stone-200" /></a>}
+    </>
+  );
+}
+function GuideCard({ theme, topic, onOpen }) {
+  return (
+    <div className="rounded-2xl bg-white border border-stone-200 p-4">
+      <div className="flex items-start gap-2 mb-1">
+        <h3 className="flex-1 min-w-0 text-[15px] font-black text-stone-800">{topic.title}</h3>
+        {onOpen && topic.open && Object.keys(topic.open).length > 0 && <button onClick={() => onOpen(topic)} className="shrink-0 h-8 px-3 rounded-lg text-[12px] font-bold text-white" style={{ background: theme.accent }}>やってみる</button>}
+      </div>
+      <p className="text-[12.5px] text-stone-500 mb-3">{topic.summary}</p>
+      <GuideMedia video={topic.video} image={topic.image} title={topic.title} />
+      <ol className="list-decimal pl-5 space-y-1.5 text-[13.5px] text-stone-700 mb-3">{topic.steps.map((t, i) => <li key={i}>{t}</li>)}</ol>
+      {topic.points && topic.points.length > 0 && (
+        <div className="rounded-xl p-3 text-[12.5px] text-stone-700 space-y-1" style={{ background: "#FFF7E6" }}>
+          {topic.points.map((t, i) => <div key={i} className="flex gap-1.5"><Icon name="warn" className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" /><span>{t}</span></div>)}
+        </div>
+      )}
+      {(topic.links || []).map((l, i) => { const m = mediaOf(l.url); return m ? <a key={i} href={m.url} target="_blank" rel="noopener noreferrer" className="block mt-2 text-[12.5px] font-bold underline" style={{ color: "#2563EB" }}>{l.label || l.url}</a> : null; })}
+    </div>
+  );
+}
+function StartGuide({ theme, initialTopic, loggedIn, onClose, onLogin, onDo }) {
+  const [log, setLog] = useState([]);          // [{ q, text, verdict, topics }]
+  const [topicId, setTopicId] = useState(initialTopic || "");
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [copied, setCopied] = useState(false);
+  const endRef = useRef(null);
+  useEffect(() => { const h = (e) => { if (e.key === "Escape") onClose(); }; window.addEventListener("keydown", h); return () => window.removeEventListener("keydown", h); }, [onClose]);
+  useEffect(() => { try { endRef.current && endRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch (e) {} }, [log.length, topicId, busy]);
+  const topic = START_TOPICS.find((t) => t.id === topicId) || null;
+  const link = startUrl(window.location.origin, window.location.pathname);
+  const copyLink = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch (e) { window.prompt("このURLを送ってください", link); } };
+  const ask = async () => {
+    const q = input.trim();
+    if (!q || busy) return;
+    const topics = matchTopics(q);
+    if (!loggedIn) { setLog((l) => [...l, { q, text: "", verdict: "", topics, needLogin: true }]); setInput(""); return; }
+    setBusy(true); setErr("");
+    try {
+      const r = await fetch(SHARE_API + "/api/agent/ask", { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION }, body: JSON.stringify({ question: q, caseId: "", caseName: "", channel: "", context: "" }) });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d) throw new Error((d && d.error) || ("HTTP " + r.status));
+      setLog((l) => [...l, { q, text: d.text || "", verdict: d.verdict, topics }]); setInput("");
+    } catch (e) { setErr("答えを取得できませんでした：" + (e.message || e)); }
+    finally { setBusy(false); }
+  };
+  const fields = (t) => { const o = {}; let cur = null; for (const line of String(t || "").split("\n")) { const m = line.match(/^(判定|回答|出典|AKへの理由|資料にある手順|AKに渡す質問文)[:：]\s*(.*)$/); if (m) { cur = m[1]; o[cur] = m[2]; } else if (cur) o[cur] += "\n" + line; } return o; };
+  return (
+    <div className="fixed inset-0 z-[80] overflow-y-auto" style={{ background: "#E9E8E3" }}>
+      <header className="sticky top-0 z-10 shadow-sm" style={{ background: theme.main, color: "#fff" }}>
+        <div className="max-w-[760px] mx-auto px-4 py-3 flex items-center gap-2">
+          <img src="logo-header.png" alt="" className="w-8 h-8 rounded-lg" />
+          <span className="min-w-0 truncate font-black tracking-[0.06em] text-[14px] sm:text-[15px]">ものがたりっち！ はじめてガイド</span>
+          <button onClick={onClose} className="ml-auto shrink-0 whitespace-nowrap h-8 px-3 rounded-lg text-[12px] font-bold border border-white/25 hover:bg-white/10">アプリを開く</button>
+        </div>
+      </header>
+      <main className="max-w-[760px] mx-auto px-4 py-5 space-y-4">
+        {/* エージェントのあいさつと、やりたいこと */}
+        <div className="flex gap-2.5">
+          <span className="w-9 h-9 rounded-full grid place-items-center shrink-0 text-white" style={{ background: theme.accent }}><Icon name="sparkle" className="w-4.5 h-4.5" /></span>
+          <div className="min-w-0 flex-1">
+            <div className="rounded-2xl rounded-tl-sm bg-white border border-stone-200 px-4 py-3 text-[14px] text-stone-800 leading-relaxed">{START_GREETING}</div>
+            <div className="mt-2.5 flex flex-wrap gap-1.5">
+              {START_TOPICS.map((t) => (
+                <button key={t.id} onClick={() => setTopicId(t.id === topicId ? "" : t.id)}
+                  className="h-9 px-3.5 rounded-full text-[13px] font-bold border"
+                  style={t.id === topicId ? { background: theme.accent, color: "#fff", borderColor: theme.accent } : { background: "#fff", color: "#44403C", borderColor: "#D6D3D1" }}>{t.title}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+        {topic && <GuideCard theme={theme} topic={topic} onOpen={onDo} />}
+        {/* 質問と答え */}
+        {log.map((e, i) => {
+          const f = fields(e.text); const toAk = e.verdict === "AKへ";
+          return (
+            <div key={i} className="space-y-2">
+              <div className="flex justify-end"><div className="max-w-[88%] text-[13.5px] rounded-2xl rounded-br-sm px-3.5 py-2 whitespace-pre-wrap text-white" style={{ background: theme.accent }}>{e.q}</div></div>
+              <div className="flex gap-2.5">
+                <span className="w-9 h-9 rounded-full grid place-items-center shrink-0 text-white" style={{ background: theme.accent }}><Icon name="sparkle" className="w-4.5 h-4.5" /></span>
+                <div className="min-w-0 flex-1 space-y-2">
+                  {e.needLogin ? (
+                    <div className="rounded-2xl rounded-tl-sm bg-white border border-stone-200 px-4 py-3 text-[13.5px] text-stone-700">
+                      質問に直接答えるには、ログインが必要です。{e.topics.length ? "近い案内を下に出しました。" : "やりたいことのボタンから、手順を見られます。"}
+                      <button onClick={onLogin} className="ml-1 font-bold underline" style={{ color: theme.accent }}>ログインする</button>
+                    </div>
+                  ) : toAk ? (
+                    <div className="rounded-2xl rounded-tl-sm bg-white border border-stone-200 px-4 py-3 text-[13.5px] text-stone-700">
+                      <div className="text-[11px] font-bold mb-1 px-1.5 py-0.5 rounded inline-block" style={{ background: "#FCF0DC", color: "#D97706" }}>AKさんに確認を送りました</div>
+                      {f["AKへの理由"] && <div className="text-[12px] text-stone-500 whitespace-pre-wrap">理由：{f["AKへの理由"].trim()}</div>}
+                      {f["資料にある手順"] && f["資料にある手順"].trim() && <div className="mt-1.5 whitespace-pre-wrap"><span className="text-[11px] font-bold text-stone-500">資料にあること：</span><LinkText text={f["資料にある手順"].trim()} /></div>}
+                      <div className="mt-1.5 text-[12px] text-stone-500">答えが来たら、右上のベルに届きます。</div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl rounded-tl-sm bg-white border border-stone-200 px-4 py-3 text-[13.5px] text-stone-700">
+                      <div className="whitespace-pre-wrap leading-relaxed"><LinkText text={(f["回答"] || e.text).trim()} /></div>
+                      {f["出典"] && <div className="mt-1.5 text-[11px] text-stone-400 whitespace-pre-wrap">出典：{f["出典"].trim()}</div>}
+                    </div>
+                  )}
+                  {e.topics.map((t) => <GuideCard key={t.id} theme={theme} topic={t} onOpen={onDo} />)}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {busy && <div className="text-[12.5px] text-stone-500 px-12">資料を確認しています…</div>}
+        {err && <div className="text-[12.5px] text-rose-600 px-12">{err}</div>}
+        <div ref={endRef} />
+        {/* このURLを送る */}
+        <div className="rounded-2xl border border-dashed border-stone-300 px-4 py-3 text-[12.5px] text-stone-600">
+          <div className="font-bold text-stone-700 mb-1">新しく入る人には、このURLを送ってください</div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 min-w-0 truncate rounded-lg bg-white border border-stone-200 px-2.5 py-1.5 text-[12px]">{link}</code>
+            <button onClick={copyLink} className="shrink-0 h-8 px-3 rounded-lg text-[12px] font-bold border border-stone-300 bg-white hover:bg-stone-50">{copied ? "コピーしました" : "コピー"}</button>
+          </div>
+        </div>
+        <div className="h-24" />
+      </main>
+      {/* 質問の入力（下に固定） */}
+      <div className="fixed bottom-0 inset-x-0 border-t border-stone-300 bg-white/95 backdrop-blur">
+        <div className="max-w-[760px] mx-auto px-4 py-2.5 flex items-end gap-2">
+          <textarea value={input} onChange={(e) => setInput(e.target.value)} rows={1} maxLength={500}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); ask(); } }}
+            placeholder={loggedIn ? "困っていることを書いてください（例：動画のアップの仕方が分からない）" : "困っていることを書くと、近い案内を出します"}
+            className="flex-1 min-w-0 text-[14px] border border-stone-300 rounded-xl px-3 py-2 resize-none focus:outline-none focus:border-stone-500" />
+          <button onClick={ask} disabled={busy || !input.trim()} className="shrink-0 h-10 px-4 rounded-xl text-[13.5px] font-bold text-white disabled:opacity-40" style={{ background: theme.accent }}>聞く</button>
         </div>
       </div>
     </div>
@@ -4932,7 +5079,13 @@ export default function App() {
   const [memberInvite, setMemberInvite] = useState({ email: "", ids: {} }); // メンバー画面の招待フォーム（メール＋付与する案件id）
   const [notifs, setNotifs] = useState(null);          // アプリ内通知 {items, unread}（工程の締切リマインド等。Worker /api/notifications）
   const [showNotifs, setShowNotifs] = useState(false);
+  const [startGuide, setStartGuide] = useState(() => { try { const h = parseStartHash(window.location.hash); return h.open ? { topic: h.topic } : null; } catch (e) { return null; } }); // はじめてガイド（#start で開く）
   const [scriptCheckOpen, setScriptCheckOpen] = useState(false); // 台本チェックのパネル
+  useEffect(() => { // アプリを開いたまま #start のURLが貼られた時も、はじめてガイドを出す
+    const h = () => { const x = parseStartHash(window.location.hash); if (x.open) setStartGuide({ topic: x.topic }); };
+    window.addEventListener("hashchange", h);
+    return () => window.removeEventListener("hashchange", h);
+  }, []);
   const [answerFor, setAnswerFor] = useState(null); // AKがAIの確認依頼に答えているときの通知
   const [homeIntent, setHomeIntent] = useState(null); // ホーム「何をしますか？」で案件を選んでいる最中のやりたいこと
   const [askOpen, setAskOpen] = useState(false);       // AIに質問（ものがたりっちAIエージェント）パネル
@@ -13328,6 +13481,22 @@ export default function App() {
         </div>
       )}
 
+      {startGuide && (
+        <StartGuide theme={theme} initialTopic={startGuide.topic} loggedIn={!!(user && MG_SESSION)}
+          onClose={() => { setStartGuide(null); try { if (parseStartHash(window.location.hash).open) window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {} }}
+          onLogin={() => { setStartGuide(null); setShowAccount(true); }}
+          onDo={(t) => {
+            const o = t.open || {};
+            setStartGuide(null);
+            try { if (parseStartHash(window.location.hash).open) window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {}
+            if (o.needsCase) { setView("home"); setHomeIntent(HOME_INTENTS.find((x) => x.tab === o.tab) || null); }
+            else if (o.ask) { setView("home"); if (user) setAskOpen(true); else { showToast("質問はログインすると使えます"); setShowAccount(true); } }
+            else if (o.newCase) { setView("home"); setAddMenu({ channel: DEFAULT_CHANNEL, x: Math.max(12, window.innerWidth / 2 - 96), y: Math.max(80, window.innerHeight / 3) }); }
+            else if (o.learn) setShowLearn(true);
+            else if (o.account) setShowAccount(true);
+            else setView("home");
+          }} />
+      )}
       {scriptCheckOpen && project && view === "editor" && (
         <ScriptCheckPanel key={String(user?.email || "") + ":" + project.id} theme={theme} project={project} context={buildAgentContext(project)} loggedIn={!!(user && MG_SESSION)}
           onJump={(rowId) => { setScriptCheckOpen(false); setTab("script"); setTimeout(() => jumpToRow(rowId), 160); }}
@@ -13448,7 +13617,7 @@ export default function App() {
               if (it.tab) { setHomeIntent(it); return; }
               if (it.key === "ask") { if (user) setAskOpen(true); else { showToast("質問はログインすると使えます"); setShowAccount(true); } return; }
               if (it.key === "new") { const r = e.currentTarget.getBoundingClientRect(); setAddMenu({ channel: DEFAULT_CHANNEL, x: r.left + 12, y: r.bottom + 4 }); return; }
-              if (it.key === "learn") setShowLearn(true);
+              if (it.key === "learn") setStartGuide({ topic: "" });
             }} />
             {homeIntent && (
               <IntentCasePicker theme={theme} intent={homeIntent} rows={homeSections.rows} recentIds={recentIds}
