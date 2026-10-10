@@ -7890,7 +7890,7 @@ export default function App() {
       try { if (!next.collab && typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
       pr.studioGateToken = tok;   // 呼び出し元がこの後すぐ使えるように（setProjectは非同期）
       return tok;
-    } catch (e) { return null; }
+    } catch (e) { return e && e.code === 404 ? "unregistered" : null; }   // 404＝Studio OSに無い案件（MCP直作成など）。接続失敗(null)とは区別する
   };
   const checkPublishGate = async (p, silent = false) => {
     const pr = p || project;
@@ -8065,15 +8065,20 @@ export default function App() {
     if (skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("既に見つかっている懸念点だけは確認してください");
     setPreflightBusy(true);
     try {
-      if (!project.studioGateToken) await ensureStudioGate();
-      if (!project.studioGateToken) throw new Error("この案件のStudio OS連携情報がありません。Studio OSの案件画面から一度開くか、ログインし直してください");
-      const artifactHashes = await publishArtifactHashes();
-      const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/approve", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(buildPublishGatePayload({ projectId: project.id, gateToken: project.studioGateToken, artifactHashes })),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d?.error?.message || "承認記録を保存できませんでした");
+      const gate = project.studioGateToken ? "ok" : await ensureStudioGate();
+      if (gate === "unregistered") {
+        // Studio OSに無い案件（404）は承認記録の送り先が無い。記録は残さず共有へ進む（接続失敗・登録済みの承認失敗は従来どおり止める）
+        showToast("Studio OSに未登録の案件です。承認記録は残さずに共有します");
+      } else {
+        if (!project.studioGateToken) throw new Error("この案件のStudio OS連携情報がありません。Studio OSの案件画面から一度開くか、ログインし直してください");
+        const artifactHashes = await publishArtifactHashes();
+        const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/approve", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify(buildPublishGatePayload({ projectId: project.id, gateToken: project.studioGateToken, artifactHashes })),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d?.error?.message || "承認記録を保存できませんでした");
+      }
       const resume = preflight.resume;
       setPreflight(null);
       if (resume) await resume();
