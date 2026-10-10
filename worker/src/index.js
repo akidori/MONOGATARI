@@ -1999,7 +1999,7 @@ ${qList}
         if (!env.ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY 未設定" }, 500);
         const SCRIPT_CRITERIA = rubric.criteria;
         // 正本は変更せず、代替型に適用しない手順3だけ採点用の参照から除外する。
-        const scoringManual = rubric.held ? MANUAL_MD.replace(/^3\. \*\*ピクサー7段[^\n]*$/m, "3. （物語タイプ固有の構成は今回の採点対象外）") : MANUAL_MD;
+        const scoringManual = rubric.held ? MANUAL_MD.replace(/^3\. \*\*ピクサー7段[^\n]*$/gm, "3. （物語タイプ固有の構成は今回の採点対象外）") : MANUAL_MD;
         const context = (b.context || "").toString();
         if (!context.trim()) return json({ error: "台本が空です" }, 400);
         if (context.length > 60000) return json({ error: "台本が大きすぎます" }, 413);
