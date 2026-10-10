@@ -2582,6 +2582,18 @@ ${qList}
         }
         if (op === "set") {
           if (!b.key) return json({ error: "key がありません" }, 400);
+          // 個人案件の競合検知（2026-10-10）。AI（MCP update_script）や別タブが保存した後に、
+          // 古い版を開いたままの画面が丸ごと上書きして相手の更新を消していた（オヤマ様案件で実発生）。
+          // 画面が最後に見た版(baseUpdatedAt)と今の版が違えば、上書きせず409で現物を返す→画面側が3方向マージして再保存。
+          // baseUpdatedAt 未送信（旧画面・タブを閉じる時の即書込）は従来通り上書き。
+          if (b.baseUpdatedAt != null && /^monogataritch-proj-/.test(b.key)) {
+            const cur = await env.DB.prepare("SELECT value FROM mg_kv WHERE sub=? AND key=?").bind(u.sub, b.key).first();
+            if (cur && cur.value) {
+              let curAt = 0;
+              try { curAt = Number((JSON.parse(cur.value) || {}).updatedAt) || 0; } catch (_e) {}
+              if (curAt && curAt !== (Number(b.baseUpdatedAt) || 0)) return json({ conflict: true, value: cur.value, updatedAt: curAt }, 409);
+            }
+          }
           await upsert(b.key, (b.value == null ? "" : b.value).toString());
           return json({ ok: true });
         }

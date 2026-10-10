@@ -36,6 +36,8 @@ const MUST = [
   ["はじめてガイド（#start のURLで開く案内役）", "function StartGuide"],
   ["構成の採点（台本チェック）", "function ScriptCheckPanel"],
   ["AIの確認依頼にAKがアプリで答える", "function AgentAnswerDialog"],
+  ["個人案件の競合検知（AIや別タブの更新を、開いたままの画面が上書きしない）", "const persSyncRef"],
+  ["開いたままでも別の場所の更新を画面に取り込む", "別の場所（AIなど）からの更新を反映しました"],
 ];
 // 一度やめたもの（AK指示で撤去済み）。戻ってきたら merge で古い画面に巻き戻った印
 const MUST_NOT = [
