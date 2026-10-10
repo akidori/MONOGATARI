@@ -6102,6 +6102,7 @@ export default function App() {
         if (!p) continue;
         projects.push({
           id: x.id, name: p.name || x.name || "", theme: p.theme,
+          meta: { planDates: planDates(x.id, p) },
           plans: (p.plans || []).map((pl) => ({ title: pl.title || "", thumbText: pl.thumbText || "", thumbText2: pl.thumbText2 || "", note: pl.note || "",
             refs: (pl.refs || []).filter((r) => r && r.vid) })),
         });
@@ -7049,6 +7050,34 @@ export default function App() {
 
   const boardCases = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === curChannel);
   const boardPlan0 = (data) => (data && data.plans && data.plans[0]) || null;
+  /* 企画一覧に撮影日・初稿日・投稿日（2026-10-10 AK「この一覧で投稿日、撮影日、初稿日」）。
+     Studio OSの工程表（概要タブの「工程の日程」と同じ /api/studio/schedule）を案件ごとに読む。管理者のみ。表示だけ */
+  const [planSched, setPlanSched] = useState({}); // {caseId: {linked, publishDate, steps}}
+  useEffect(() => {
+    if (tab !== "plan" || !isStaff || !MG_SESSION) return;
+    const want = boardCases.map((x) => x.id).filter((id) => !planSched[id]);
+    if (!want.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const id of want) {
+        let v = { linked: false, steps: [] };
+        try {
+          const r = await fetch(SHARE_API + "/api/studio/schedule?proj=" + encodeURIComponent(id), { headers: { Authorization: "Bearer " + MG_SESSION } });
+          const d = await r.json();
+          if (d && d.linked) v = { linked: true, publishDate: d.publishDate || null, steps: d.steps || [] };
+        } catch (e) {}
+        if (cancelled) return;
+        setPlanSched((m) => ({ ...m, [id]: v }));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab, isStaff, curChannel, boardCases.length]);
+  const planDates = (id, data) => {
+    const sc = planSched[id] || {};
+    const step = (re) => ((sc.steps || []).find((st) => re.test(st.name || "")) || {}).deadline || "";
+    const shoot = ((data && data.meta && data.meta.shootDate) || "") || step(/撮影/);
+    return { shoot: (shoot || "").slice(0, 10), draft: step(/本編集|初稿/).slice(0, 10), publish: (sc.publishDate || "").slice(0, 10) };
+  };
   const saveBoardCaseSoon = (id) => {
     clearTimeout(boardSaveTimers.current[id]);
     boardSaveTimers.current[id] = setTimeout(() => { setBoardCache((c) => { if (c[id]) saveProjectData(c[id]); return c; }); }, 600);
@@ -12160,6 +12189,10 @@ export default function App() {
                         </div>
                       )}
                       <span className="flex-1 sm:hidden" />
+                      {(() => { const pd = planDates(entry.id, data); const f = (v) => (v ? v.slice(5).replace("-", "/") : "—"); return (pd.shoot || pd.draft || pd.publish) ? (
+                        <span className="hidden md:inline-flex shrink-0 flex-col text-[11.5px] leading-tight text-stone-500 tabular-nums" title="撮影日・初稿日（本編集の期限）・投稿日（Studio OSの工程表）">
+                          <span>撮影 <b className="text-stone-700">{f(pd.shoot)}</b></span><span>初稿 <b className="text-stone-700">{f(pd.draft)}</b></span><span>投稿 <b className="text-stone-700">{f(pd.publish)}</b></span>
+                        </span>) : null; })()}
                       <button onClick={(e) => { e.stopPropagation(); goScript(entry.id); }} title="この企画の構成台本を書く"
                         className="shrink-0 text-[12px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white" style={{ background: theme.main }}>
                         <Icon name="file" className="w-3.5 h-3.5" /><span className="hidden sm:inline">構成台本へ</span> →
