@@ -8111,7 +8111,7 @@ export default function App() {
     if (!id) return;
     const u = buildShareUrl(id, t);
     setShareModal({ id, url: u, updated: had, tab: t || "" });
-    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + (t ? "このタブの共有URL" : "案件まるごと（全タブ＋アップ枠つき）の共有URL") + "を発行してコピーしました"); } catch (e) {}
+    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + (t ? "このタブの共有URL" : "案件まるごと（全タブ＋アップ枠つき）の共有URL") + "を発行してコピーしました"); } catch (e) { showToast("URLは発行できましたが、コピーできませんでした。表示されているURLをコピーしてください"); }
   };
   /* 切り抜きショートだけをまとめて見せる先方用URL（mg-share workerの /shorts/{snap}?r=<rtok> ギャラリー
      ページ、全本を1画面で再生・DLできる）。ShortsPanelの「共有URL」ボタンから呼ばれる。
@@ -8185,7 +8185,7 @@ export default function App() {
     if (!c) { showToast("先方用の鍵を発行できませんでした。少し待ってからやり直してください"); return; }
     const u = location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id + "&c=" + encodeURIComponent(c) + "&start=script";
     setShareModal({ id, url: u, updated: had, tab: "script" });
-    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + "先方・演者用のリンク（構成台本と香盤表だけ）をコピーしました"); } catch (e) {}
+    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + "先方・演者用のリンク（構成台本と香盤表だけ）をコピーしました"); } catch (e) { showToast("URLは発行できましたが、コピーできませんでした。表示されているURLをコピーしてください"); }
   };
   /* AI読み込み用（Issue #37）：AI用リンク（JSON）とAI共有（MCP）を1つに。両方を1回でコピーする */
   const copyAiAll = async () => {
