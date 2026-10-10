@@ -6083,6 +6083,44 @@ export default function App() {
     finally { setChSharing(false); }
   };
 
+  /* 企画一覧だけを共有（2026-10-10 AK「このページだけ共有するボタンが欲しい」）。
+     タイトル・サムネ文言・メモ・参考サムネだけを送る（台本・素材・連絡先などの中身は送らない）ので、
+     案件ごとの公開前チェックは要らない。チャンネル共有とは別のリンク（planShareId）にして、既存の共有を上書きしない */
+  const publishPlanList = async (channel) => {
+    setChSharing(true);
+    try {
+      const ci = channelInfo[channel] || {};
+      const entries = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === channel);
+      const projects = [];
+      for (const x of entries) {
+        let p = null;
+        try {
+          if (x.id === activeId && project) p = project;
+          else if (x.collab) { const r = await collabGet(x.id); p = r.project || null; }
+          else { const r = await window.storage.get(STORE_PROJ(x.id)); if (r && r.value) p = JSON.parse(r.value); }
+        } catch (e) {}
+        if (!p) continue;
+        projects.push({
+          id: x.id, name: p.name || x.name || "", theme: p.theme,
+          plans: (p.plans || []).map((pl) => ({ title: pl.title || "", thumbText: pl.thumbText || "", thumbText2: pl.thumbText2 || "", note: pl.note || "",
+            refs: (pl.refs || []).filter((r) => r && r.vid) })),
+        });
+      }
+      const res = await fetch(SHARE_API + "/api/publish-channel", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: channel, channelInfo: { name: ci.name || channel }, projects, edit: false, prevId: ci.planShareId || null, token: ci.planShareToken || null }),
+      });
+      const d = await res.json();
+      if (!d.id) throw new Error(d.error || "発行に失敗しました");
+      setChannelInfo((c) => ({ ...c, [channel]: { ...emptyChannelInfo(), name: channel, ...(c[channel] || {}), planShareId: d.id, planShareToken: d.token || (c[channel] && c[channel].planShareToken) } }));
+      const base = location.origin + location.pathname.replace(/[^/]*$/, "");
+      const url = base + "share.html?ch=" + d.id + "&only=plan";
+      try { await navigator.clipboard.writeText(url); } catch (e) {}
+      showToast((ci.planShareId ? "企画一覧の共有リンクを最新にしてコピーしました" : "企画一覧だけの共有リンクをコピーしました") + "（台本の中身は見えません）");
+    } catch (e) { showToast("企画一覧の共有に失敗：" + (e.message || e)); }
+    finally { setChSharing(false); }
+  };
+
   /* チャンネル一覧からそのチャンネルを開く（最初の案件＋コンセプトタブ） */
   const openChannel = async (channel) => {
     const grp = channelGroups.find((g) => g.channel === channel);
@@ -12060,11 +12098,17 @@ export default function App() {
               <p className="text-[13px] text-stone-600 leading-relaxed max-w-2xl">
                 <span className="font-bold">「{curChannel}」の企画一覧</span>。1つの企画＝1本の動画＝1案件です。行をクリックすると参考サムネを展開、<span className="font-bold">「構成台本へ→」</span>でその企画の台本を書けます。
               </p>
+              <div className="shrink-0 flex items-center gap-1.5">
+              <button onClick={() => publishPlanList(curChannel)} disabled={chSharing} title="この企画一覧だけを共有するリンクをコピー（台本・素材の中身は見えない）"
+                className="text-[12px] font-bold px-3 py-2 rounded-lg border border-stone-300 bg-white text-stone-700 hover:bg-stone-50 inline-flex items-center gap-1 disabled:opacity-50">
+                <Icon name="link" className="w-3.5 h-3.5" />{chSharing ? "発行中…" : "この一覧を共有"}
+              </button>
               <button onClick={addBoardCase}
                 className="shrink-0 text-[12px] font-bold px-3 py-2 rounded-lg shadow inline-flex items-center gap-1"
                 style={{ background: theme.accent, color: accentText }}>
                 <Icon name="plus" className="w-3.5 h-3.5" />企画を追加
               </button>
+              </div>
             </div>
 
             <div className="space-y-1.5">
