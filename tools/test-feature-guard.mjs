@@ -34,6 +34,7 @@ const MUST = [
   // 2026-10-10 追加
   ["ホーム「何をしますか？」（構成・動画・素材・質問・新規・やり方）", "const HOME_INTENTS"],
   ["はじめてガイド（#start のURLで開く案内役）", "function StartGuide"],
+  ["Studio OS未登録の案件は承認記録なしで共有URLを出せる（404のみ。接続失敗は止める）", "Studio OSに未登録の案件です。承認記録は残さずに共有します"],
   ["構成の採点（台本チェック）", "function ScriptCheckPanel"],
   ["AIの確認依頼にAKがアプリで答える", "function AgentAnswerDialog"],
   ["個人案件の競合検知（AIや別タブの更新を、開いたままの画面が上書きしない）", "const persSyncRef"],
