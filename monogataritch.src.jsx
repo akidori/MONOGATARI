@@ -3,7 +3,7 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, use
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 import { buildStyledRuns, toggleInlineMarker } from "./src/inline-format.js";
-import { buildDocsExport } from "./src/docs-export.js";
+import { buildDocsExport, buildPrintHtml } from "./src/docs-export.js";
 import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
@@ -9987,6 +9987,28 @@ export default function App() {
       catch (e2) { showToast("コピーに失敗しました"); }
     }
   };
+  /* PDFで書き出し（2026-10-14 AK「文字というよりPDFで欲しい」）。紙面用のHTMLを見えない枠に流して印刷ダイアログを開く
+     ＝送信先「PDFに保存」でそのままPDFになる。文字は画像にならず、検索もコピーもできる */
+  const exportScriptPdf = () => {
+    const html = buildPrintHtml(project, { fmt, targetOf, sectionOf, dayOf, countChars, maxDay, personOf: (r) => (personOfRow[r.id] ? personLabel(personOfRow[r.id]) : "") });
+    const old = document.getElementById("mg-print-frame"); if (old) old.remove();
+    const f = document.createElement("iframe");
+    f.id = "mg-print-frame";
+    f.setAttribute("aria-hidden", "true");
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+    f.onload = () => {
+      // 保存ファイル名は開いている画面のタイトルから付くので、印刷の間だけ案件名にする
+      const prev = document.title;
+      document.title = (project.name || "構成台本").replace(/[\\/:*?"<>|]/g, "_") + "_構成台本";
+      const back = () => { document.title = prev; };
+      try { f.contentWindow.onafterprint = back; f.contentWindow.focus(); f.contentWindow.print(); }
+      catch (e) { back(); showToast("PDFの書き出しを開けませんでした"); }
+      setTimeout(back, 60000);
+    };
+    f.srcdoc = html;
+    document.body.appendChild(f);
+    showToast("印刷の画面で「PDFに保存」を選んでください");
+  };
   /* 構成表まるごとをプレーンテキストでクリップボードへ（時間・内容・シーン・原稿）。ファイル保存を挟まず即貼り付け用 */
   const copyKouseiText = async () => {
     if (project.format === "talk") { await exportTalkText(); return; }
@@ -10781,6 +10803,9 @@ export default function App() {
                     </button>
                     <button onClick={() => { setShareMenu(false); copyAiAll(); }} className={row}>
                       <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />AI読み込み用<span className={sub}>Claude・GPT</span>
+                    </button>
+                    <button onClick={() => { setShareMenu(false); exportScriptPdf(); }} className={row}>
+                      <Icon name="download" className="w-4 h-4 shrink-0 text-stone-600" />台本をPDFで<span className={sub}>送付・印刷用</span>
                     </button>
                     <div className="flex items-stretch">
                       <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className={row + " flex-1"}><Icon name="file" className="w-4 h-4 shrink-0 text-stone-600" />台本コピー<span className={sub}>CSV</span></button>

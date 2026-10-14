@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildDocsExport, docsLineFlag } from "../src/docs-export.js";
+import { buildDocsExport, buildPrintHtml, docsLineFlag } from "../src/docs-export.js";
 
 const h = {
   fmt: (s) => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(Math.round(s) % 60).padStart(2, "0"),
@@ -47,10 +47,28 @@ assert.ok(!/\*\*|!!|◼/.test(doc.text));
 assert.ok(!doc.html.includes("&nbsp;</p><h3"));
 assert.ok(doc.text.includes("Q. これは、毎朝\nやってるんですか？"));
 
-const talk = buildDocsExport({ name: "トーク", format: "talk", talk: { highlight: "", intro: "こんにちは", toc: ["一つ目", ""], body: [{ heading: "", script: "本文" }], cta: "" } }, h);
+const talk0 = { name: "トーク", format: "talk", talk: { highlight: "", intro: "こんにちは", toc: ["一つ目", ""], body: [{ heading: "", script: "本文" }], cta: "" } };
+const talk = buildDocsExport(talk0, h);
 assert.ok(talk.html.includes(">冒頭</h2>"));
 assert.ok(talk.html.includes("<li") && talk.html.includes("一つ目"));
 assert.ok(talk.html.includes(">本編1</h2>"));
 assert.ok(!talk.html.includes("ハイライト") && !talk.html.includes("CTA"));
+
+// PDF用の紙面：1枚で完結するHTML。ロケの帯・種別の色・Q.・赤字が入り、記号は残さない
+const proj = { name: "オヤマ様", rate: 5, meta: { shootDate: "10/20", titles: [], thumbs: [] }, rows: [
+  { kind: "location", id: "l1", label: "本社（朝）", day: 2, time: "10:00" },
+  { kind: "scene", id: "s1", label: "朝礼", type: "VLOG", sec: 30, person: "p1", script: "◼︎ 毎朝ですか？\n★取材：!!（回答）!!" },
+  { kind: "scene", id: "s2", label: "移動", type: "ブリッジ", sec: 20, script: "" },
+] };
+const pdf = buildPrintHtml(proj, { ...h, sectionOf: () => ({ color: "#D8762B", bg: "#FFF2E5", borderColor: "#F7D6B6" }) });
+assert.ok(pdf.startsWith("<!doctype html>"));
+assert.ok(pdf.includes("<title>オヤマ様_構成台本</title>"));
+assert.ok(pdf.includes('<span class="no">1</span><span class="name">本社（朝）</span><span class="side">2日目　10:00</span>'));
+assert.ok(pdf.includes("border-left-color:#D8762B"));
+assert.ok(pdf.includes('<span class="ql">Q.</span>毎朝ですか？'));
+assert.ok(pdf.includes('<span class="red">（回答）</span>'));
+assert.ok(pdf.includes("（原稿なし）"));
+assert.ok(!/\*\*|!!|◼/.test(pdf.split("</style>")[1]));
+assert.ok(buildPrintHtml(talk0, h).includes("トーク台本"));
 
 console.log("docs export tests passed");
