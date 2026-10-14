@@ -3,6 +3,7 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, use
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 import { buildStyledRuns, toggleInlineMarker } from "./src/inline-format.js";
+import { buildDocsExport } from "./src/docs-export.js";
 import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
@@ -9973,6 +9974,19 @@ export default function App() {
     dlFile((project.name || "構成台本") + "_台本.txt", L.join("\n").trim(), "text/plain;charset=utf-8");
     showToast("構成台本をtxtで保存しました");
   };
+  /* Googleドキュメントへ貼る用（2026-10-14 AK「Docsでも送れるような書き出し形式を」）。
+     見出し・太字・赤字つきでクリップボードへ載せる＝Docsで貼り付けるだけで台本の形になる。Word・メールでも同じ */
+  const copyForDocs = async () => {
+    const d = buildDocsExport(project, { fmt, targetOf, dayOf, countChars, maxDay, personOf: (r) => (personOfRow[r.id] ? personLabel(personOfRow[r.id]) : "") });
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([d.html], { type: "text/html" }), "text/plain": new Blob([d.text], { type: "text/plain" }) })]);
+      showToast("Docs用にコピーしました。Googleドキュメントで貼り付けてください");
+    } catch (e) {
+      // 書式つきコピーが使えない環境は、文字だけでも渡す
+      try { await navigator.clipboard.writeText(d.text); showToast("文字だけコピーしました（書式つきはこの環境では使えません）"); }
+      catch (e2) { showToast("コピーに失敗しました"); }
+    }
+  };
   /* 構成表まるごとをプレーンテキストでクリップボードへ（時間・内容・シーン・原稿）。ファイル保存を挟まず即貼り付け用 */
   const copyKouseiText = async () => {
     if (project.format === "talk") { await exportTalkText(); return; }
@@ -10771,6 +10785,7 @@ export default function App() {
                     <div className="flex items-stretch">
                       <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className={row + " flex-1"}><Icon name="file" className="w-4 h-4 shrink-0 text-stone-600" />台本コピー<span className={sub}>CSV</span></button>
                       <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 hover:bg-stone-50 text-[13px] font-bold text-stone-600 border-l border-stone-100">txt</button>
+                      <button onClick={() => { setShareMenu(false); copyForDocs(); }} title="Googleドキュメントに貼れる形でコピー（見出し・太字・赤字つき）" className="px-3 hover:bg-stone-50 text-[13px] font-bold text-stone-600 border-l border-stone-100">Docs</button>
                     </div>
                     <div className={row + " text-stone-400 cursor-default hover:bg-white"}>
                       <Icon name="folder" className="w-4 h-4 shrink-0" />メガ便<span className={sub}>素材の大容量アップ・DL（準備中）</span>
