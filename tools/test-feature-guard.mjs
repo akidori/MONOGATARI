@@ -34,8 +34,14 @@ const MUST = [
   // 2026-10-10 追加
   ["ホーム「何をしますか？」（構成・動画・素材・質問・新規・やり方）", "const HOME_INTENTS"],
   ["はじめてガイド（#start のURLで開く案内役）", "function StartGuide"],
+  ["Studio OS未登録の案件は承認記録なしで共有URLを出せる（404のみ。接続失敗は止める）", "Studio OSに未登録の案件です。承認記録は残さずに共有します"],
   ["構成の採点（台本チェック）", "function ScriptCheckPanel"],
   ["AIの確認依頼にAKがアプリで答える", "function AgentAnswerDialog"],
+  ["個人案件の競合検知（AIや別タブの更新を、開いたままの画面が上書きしない）", "const persSyncRef"],
+  ["開いたままでも別の場所の更新を画面に取り込む", "別の場所（AIなど）からの更新を反映しました"],
+  // 2026-10-14 追加
+  ["共有メニュー：台本をPDFで書き出し", "exportScriptPdf()"],
+  ["共有メニュー：台本をDocs用にコピー（見出し・太字・赤字つき）", "copyForDocs()"],
 ];
 // 一度やめたもの（AK指示で撤去済み）。戻ってきたら merge で古い画面に巻き戻った印
 const MUST_NOT = [

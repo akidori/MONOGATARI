@@ -3,6 +3,7 @@ import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Panel, use
 import "@xyflow/react/dist/style.css";
 import dagre from "dagre";
 import { buildStyledRuns, toggleInlineMarker } from "./src/inline-format.js";
+import { buildDocsExport, buildPrintHtml } from "./src/docs-export.js";
 import { getAppMode } from "./src/app-mode.js";
 import { buildPublishGatePayload } from "./src/publish-gate.js";
 import { auditShareProject } from "./src/share-audit.js";
@@ -5261,6 +5262,9 @@ export default function App() {
   const liveCollabRef = useRef(false);  // 上記所有がcollab案件（本体保存の宛先が /api/collab/upsert）か
   const liveOwnSaveTimer = useRef(null);
   const collabBaseRef = useRef({});     // {id:{updatedAt, base}} collab保存の競合検知用＝最後に見たサーバ版
+  // 個人案件（クラウド保存）の競合検知用＝開いている案件について、最後にサーバと一致していた版。
+  // AI（MCP）や別タブが保存した内容を、開いたままの画面が上書きして消さないため（2026-10-10）。
+  const persSyncRef = useRef({ id: null, updatedAt: 0, base: null });
   /* 動画確認＋ファイル転送 */
   const [showMediaModal, setShowMediaModal] = useState(false); // 動画/ファイル登録モーダル
   const [mediaTarget, setMediaTarget] = useState("project");   // 動画/ファイルの対象 "project"|planId
@@ -5710,6 +5714,49 @@ export default function App() {
      ・送る前に localStorage へも退避し、次回ロードで本体より新しければ復元（ネットが死んでても残す） */
   const projectLiveRef = useRef(null);
   projectLiveRef.current = project;
+  /* 個人案件の「サーバと一致していた版」を覚える。案件が切り替わって最初に画面へ載った内容＝読み込んだ直後の内容。 */
+  useEffect(() => {
+    if (!project || !project.id) return;
+    if (persSyncRef.current.id !== project.id) persSyncRef.current = { id: project.id, updatedAt: Number(project.updatedAt) || 0, base: project };
+  }, [project]);
+  /* 開いたままでも、別の場所（AIの update_script・別タブ）の更新を画面に取り込む（2026-10-10 AK「開いてても更新できるように」）。
+     20秒ごと＋画面に戻った時にサーバの版を見て、変わっていたら3方向マージで画面へ反映する。
+     自分が打っている途中の項目は残り、相手だけが変えた項目は相手の内容になる。個人案件（クラウド保存）だけが対象。 */
+  useEffect(() => {
+    if (!loaded || !user) return;
+    let busy = false, dead = false;
+    const check = async () => {
+      if (busy || dead || document.visibilityState !== "visible") return;
+      const p = projectLiveRef.current, sync = persSyncRef.current;
+      if (!p || !p.id || p.live || p.collab || !MG_SESSION || window.storage !== cloudStorage || sync.id !== p.id) return;
+      busy = true;
+      try {
+        const r = await authFetch("/api/kv/get", { key: STORE_PROJ(p.id) });
+        if (dead || !r || !r.value) return;
+        const remote = { ...JSON.parse(r.value), id: p.id };
+        const rAt = Number(remote.updatedAt) || 0;
+        const now = persSyncRef.current;
+        if (now.id !== p.id || !rAt || rAt === (now.updatedAt || 0)) return;   // 変わっていない／通信中に自分が保存した
+        const cur0 = projectLiveRef.current;
+        if (!cur0 || cur0.id !== p.id) return;
+        const clean = lastSaveSigRef.current === JSON.stringify(cleanProj(cur0));   // 未保存の手元の変更が無い
+        const merged = merge3(now.base || null, cur0, remote);
+        persSyncRef.current = { id: p.id, updatedAt: rAt, base: remote };
+        // 版の時刻だけ進んで中身が同じ（自分の別経路の保存など）なら、画面は触らない
+        const sigOf = (x) => JSON.stringify(cleanProj({ ...x, updatedAt: 0 }));
+        if (sigOf(merged) === sigOf(cur0)) return;
+        // 手元に変更が無ければ、取り込んだ内容をそのまま「保存済み」として扱う＝取り込んだだけで書き戻さない
+        if (clean) lastSaveSigRef.current = JSON.stringify(cleanProj(merged));
+        setProject((cur) => (cur && cur.id === p.id ? (cur === cur0 ? merged : merge3(now.base || null, cur, remote)) : cur));
+        showToast("別の場所（AIなど）からの更新を反映しました");
+      } catch (e) { /* 通信失敗は次の回で拾う */ }
+      finally { busy = false; }
+    };
+    const t = setInterval(check, 20000);
+    const onVis = () => { if (document.visibilityState === "visible") check(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { dead = true; clearInterval(t); document.removeEventListener("visibilitychange", onVis); };
+  }, [loaded, user]);
   useEffect(() => {
     const flush = () => {
       const p = projectLiveRef.current;
@@ -5747,7 +5794,13 @@ export default function App() {
             method: "POST", keepalive: true,
             headers: { "Content-Type": "application/json", Authorization: "Bearer " + MG_SESSION },
             body: JSON.stringify(body),
-          }).then((r) => { if (r && r.ok) done(); }, () => {});
+          }).then((r) => {
+            if (r && r.ok) {
+              done();
+              // 競合検知の基準も進める（進めないと、戻ってきた後の保存が自分の即書込と競合扱いになる）
+              if (!data.collab && persSyncRef.current.id === data.id) persSyncRef.current = { id: data.id, updatedAt: data.updatedAt, base: data };
+            }
+          }, () => {});
         } catch (e) {}
       } else {
         try { localStorage.setItem("mg:" + STORE_PROJ(data.id), json); done(); } catch (e) {}
@@ -5924,6 +5977,32 @@ export default function App() {
         console.error("collab保存", e); if (!noteSaveError(e)) { try { await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); } catch (_) {} } return false;
       }
     } else {
+      // 個人案件（クラウド）で、いま開いている案件の保存だけ競合検知つきにする。
+      // サーバの版が画面の知らない版に変わっていたら（AIの update_script・別タブ）、409で現物が返る→3方向マージして再保存。
+      const sync = persSyncRef.current;
+      if (MG_SESSION && window.storage === cloudStorage && sync.id === data.id && !data.live) {
+        const key = STORE_PROJ(data.id);
+        try {
+          await authFetch("/api/kv/set", { key, value: JSON.stringify(data), baseUpdatedAt: sync.updatedAt || 0 });
+          persSyncRef.current = { id: data.id, updatedAt: data.updatedAt, base: data };
+          return true;
+        } catch (e) {
+          if (e.code === 409 && e.data && e.data.value) {
+            try {
+              const remote = { ...JSON.parse(e.data.value), id: data.id };
+              const merged = { ...merge3(sync.base || null, data, remote), id: data.id, updatedAt: Date.now() };
+              await authFetch("/api/kv/set", { key, value: JSON.stringify(merged), baseUpdatedAt: Number(remote.updatedAt) || 0 });
+              persSyncRef.current = { id: data.id, updatedAt: merged.updatedAt, base: merged };
+              const brought = JSON.stringify(cleanProj({ ...merged, updatedAt: 0 })) !== JSON.stringify(cleanProj({ ...data, updatedAt: 0 }));
+              // 画面へも統合結果を反映。保存中に打った字は base=data との再マージで温存する
+              setProject((cur) => (cur && cur.id === data.id ? merge3(data, cur, merged) : cur));
+              if (brought) showToast("別の場所（AIなど）からの更新と統合しました");
+              return true;
+            } catch (e2) { console.error("個人保存の競合マージ", e2); noteSaveError(e2); return false; }
+          }
+          console.error(e); noteSaveError(e); return false;
+        }
+      }
       try { if (typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(data.id), JSON.stringify(data)); return true; } catch (e) { console.error(e); noteSaveError(e); return false; }
     }
   };
@@ -7816,7 +7895,7 @@ export default function App() {
       try { if (!next.collab && typeof window.storage !== "undefined") await window.storage.set(STORE_PROJ(next.id), JSON.stringify(next)); } catch (e) {}
       pr.studioGateToken = tok;   // 呼び出し元がこの後すぐ使えるように（setProjectは非同期）
       return tok;
-    } catch (e) { return null; }
+    } catch (e) { return e && e.code === 404 ? "unregistered" : null; }   // 404＝Studio OSに無い案件（MCP直作成など）。接続失敗(null)とは区別する
   };
   const checkPublishGate = async (p, silent = false) => {
     const pr = p || project;
@@ -7991,15 +8070,20 @@ export default function App() {
     if (skipAi && (preflight.concerns || []).some((c) => !preflight.acknowledged[c.id])) return showToast("既に見つかっている懸念点だけは確認してください");
     setPreflightBusy(true);
     try {
-      if (!project.studioGateToken) await ensureStudioGate();
-      if (!project.studioGateToken) throw new Error("この案件のStudio OS連携情報がありません。Studio OSの案件画面から一度開くか、ログインし直してください");
-      const artifactHashes = await publishArtifactHashes();
-      const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/approve", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(buildPublishGatePayload({ projectId: project.id, gateToken: project.studioGateToken, artifactHashes })),
-      });
-      const d = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(d?.error?.message || "承認記録を保存できませんでした");
+      const gate = project.studioGateToken ? "ok" : await ensureStudioGate();
+      if (gate === "unregistered") {
+        // Studio OSに無い案件（404）は承認記録の送り先が無い。記録は残さず共有へ進む（接続失敗・登録済みの承認失敗は従来どおり止める）
+        showToast("Studio OSに未登録の案件です。承認記録は残さずに共有します");
+      } else {
+        if (!project.studioGateToken) throw new Error("この案件のStudio OS連携情報がありません。Studio OSの案件画面から一度開くか、ログインし直してください");
+        const artifactHashes = await publishArtifactHashes();
+        const r = await fetch("https://studio-os-5dm.pages.dev/api/v1/public/publish-gate/approve", {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify(buildPublishGatePayload({ projectId: project.id, gateToken: project.studioGateToken, artifactHashes })),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d?.error?.message || "承認記録を保存できませんでした");
+      }
       const resume = preflight.resume;
       setPreflight(null);
       if (resume) await resume();
@@ -8037,7 +8121,7 @@ export default function App() {
     if (!id) return;
     const u = buildShareUrl(id, t);
     setShareModal({ id, url: u, updated: had, tab: t || "" });
-    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + (t ? "このタブの共有URL" : "案件まるごと（全タブ＋アップ枠つき）の共有URL") + "を発行してコピーしました"); } catch (e) {}
+    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + (t ? "このタブの共有URL" : "案件まるごと（全タブ＋アップ枠つき）の共有URL") + "を発行してコピーしました"); } catch (e) { showToast("URLは発行できましたが、コピーできませんでした。表示されているURLをコピーしてください"); }
   };
   /* 切り抜きショートだけをまとめて見せる先方用URL（mg-share workerの /shorts/{snap}?r=<rtok> ギャラリー
      ページ、全本を1画面で再生・DLできる）。ShortsPanelの「共有URL」ボタンから呼ばれる。
@@ -8111,7 +8195,7 @@ export default function App() {
     if (!c) { showToast("先方用の鍵を発行できませんでした。少し待ってからやり直してください"); return; }
     const u = location.origin + location.pathname.replace(/[^/]*$/, "") + "share.html?id=" + id + "&c=" + encodeURIComponent(c) + "&start=script";
     setShareModal({ id, url: u, updated: had, tab: "script" });
-    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + "先方・演者用のリンク（構成台本と香盤表だけ）をコピーしました"); } catch (e) {}
+    try { await navigator.clipboard.writeText(u); showToast((preflightDone ? "問題ありません。" : "") + "先方・演者用のリンク（構成台本と香盤表だけ）をコピーしました"); } catch (e) { showToast("URLは発行できましたが、コピーできませんでした。表示されているURLをコピーしてください"); }
   };
   /* AI読み込み用（Issue #37）：AI用リンク（JSON）とAI共有（MCP）を1つに。両方を1回でコピーする */
   const copyAiAll = async () => {
@@ -9894,6 +9978,41 @@ export default function App() {
     dlFile((project.name || "構成台本") + "_台本.txt", L.join("\n").trim(), "text/plain;charset=utf-8");
     showToast("構成台本をtxtで保存しました");
   };
+  /* Googleドキュメントへ貼る用（2026-10-14 AK「Docsでも送れるような書き出し形式を」）。
+     見出し・太字・赤字つきでクリップボードへ載せる＝Docsで貼り付けるだけで台本の形になる。Word・メールでも同じ */
+  const copyForDocs = async () => {
+    const d = buildDocsExport(project, { fmt, targetOf, dayOf, countChars, maxDay, personOf: (r) => (personOfRow[r.id] ? personLabel(personOfRow[r.id]) : "") });
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "text/html": new Blob([d.html], { type: "text/html" }), "text/plain": new Blob([d.text], { type: "text/plain" }) })]);
+      showToast("Docs用にコピーしました。Googleドキュメントで貼り付けてください");
+    } catch (e) {
+      // 書式つきコピーが使えない環境は、文字だけでも渡す
+      try { await navigator.clipboard.writeText(d.text); showToast("文字だけコピーしました（書式つきはこの環境では使えません）"); }
+      catch (e2) { showToast("コピーに失敗しました"); }
+    }
+  };
+  /* PDFで書き出し（2026-10-14 AK「文字というよりPDFで欲しい」）。紙面用のHTMLを見えない枠に流して印刷ダイアログを開く
+     ＝送信先「PDFに保存」でそのままPDFになる。文字は画像にならず、検索もコピーもできる */
+  const exportScriptPdf = () => {
+    const html = buildPrintHtml(project, { fmt, targetOf, sectionOf, dayOf, countChars, maxDay, personOf: (r) => (personOfRow[r.id] ? personLabel(personOfRow[r.id]) : "") });
+    const old = document.getElementById("mg-print-frame"); if (old) old.remove();
+    const f = document.createElement("iframe");
+    f.id = "mg-print-frame";
+    f.setAttribute("aria-hidden", "true");
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+    f.onload = () => {
+      // 保存ファイル名は開いている画面のタイトルから付くので、印刷の間だけ案件名にする
+      const prev = document.title;
+      document.title = (project.name || "構成台本").replace(/[\\/:*?"<>|]/g, "_") + "_構成台本";
+      const back = () => { document.title = prev; };
+      try { f.contentWindow.onafterprint = back; f.contentWindow.focus(); f.contentWindow.print(); }
+      catch (e) { back(); showToast("PDFの書き出しを開けませんでした"); }
+      setTimeout(back, 60000);
+    };
+    f.srcdoc = html;
+    document.body.appendChild(f);
+    showToast("印刷の画面で「PDFに保存」を選んでください");
+  };
   /* 構成表まるごとをプレーンテキストでクリップボードへ（時間・内容・シーン・原稿）。ファイル保存を挟まず即貼り付け用 */
   const copyKouseiText = async () => {
     if (project.format === "talk") { await exportTalkText(); return; }
@@ -10685,9 +10804,13 @@ export default function App() {
                     <button onClick={() => { setShareMenu(false); copyAiAll(); }} className={row}>
                       <Icon name="robot" className="w-4 h-4 shrink-0 text-stone-600" />AI読み込み用<span className={sub}>Claude・GPT</span>
                     </button>
+                    <button onClick={() => { setShareMenu(false); exportScriptPdf(); }} className={row}>
+                      <Icon name="download" className="w-4 h-4 shrink-0 text-stone-600" />台本をPDFで<span className={sub}>送付・印刷用</span>
+                    </button>
                     <div className="flex items-stretch">
                       <button onClick={() => { setShareMenu(false); (project.format === "talk" ? exportTalkText : exportScriptCSV)(); }} className={row + " flex-1"}><Icon name="file" className="w-4 h-4 shrink-0 text-stone-600" />台本コピー<span className={sub}>CSV</span></button>
                       <button onClick={() => { setShareMenu(false); exportScriptTxt(); }} title="台本をtxtで保存" className="px-3 hover:bg-stone-50 text-[13px] font-bold text-stone-600 border-l border-stone-100">txt</button>
+                      <button onClick={() => { setShareMenu(false); copyForDocs(); }} title="Googleドキュメントに貼れる形でコピー（見出し・太字・赤字つき）" className="px-3 hover:bg-stone-50 text-[13px] font-bold text-stone-600 border-l border-stone-100">Docs</button>
                     </div>
                     <div className={row + " text-stone-400 cursor-default hover:bg-white"}>
                       <Icon name="folder" className="w-4 h-4 shrink-0" />メガ便<span className={sub}>素材の大容量アップ・DL（準備中）</span>
