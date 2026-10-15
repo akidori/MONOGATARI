@@ -16,7 +16,7 @@ assert.notEqual(snapshotSignature({ ...project, rows: [] }, channel, []), base);
 // 事故の再現: チャンネルURLと競合チャンネルを入れたら再発行が走らなければならない
 assert.notEqual(snapshotSignature(project, { ...channel, url: "https://youtube.com/@x" }, []), base, "チャンネルURLの変更を拾えていない");
 assert.notEqual(snapshotSignature(project, { ...channel, competitors: [{ name: "MOSH" }] }, []), base, "競合チャンネルの変更を拾えていない");
-for (const f of ["concept", "target", "purpose", "promanUrl", "manualUrl", "checklistUrl"]) {
+for (const f of ["concept", "target", "purpose", "brandPromise", "channelArtUrl", "iconUrl", "editStyle", "mainColor", "promanUrl", "manualUrl", "checklistUrl"]) {
   assert.notEqual(snapshotSignature(project, { ...channel, [f]: "v" }, []), base, `${f} の変更を拾えていない`);
 }
 assert.notEqual(snapshotSignature(project, { ...channel, manuals: [{ title: "t" }] }, []), base);

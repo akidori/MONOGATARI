@@ -72,6 +72,11 @@
     </div>
   </section>
 
+  <aside class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 leading-relaxed mb-5" role="note">
+    <b>このAI設定の使い道</b><br>
+    APIキーはこのブラウザの localStorage に保存されます。接続テストやGemini生成テストを実行すると、キーと入力内容は選択したAI提供元へブラウザから直接送信されます。ものがたりっち本体の台本作成・校正などには反映されず、本体AIは運営側の共通APIを使います。利用者自身のAIキーを本体へ接続する機能はまだありません。
+  </aside>
+
   <!-- Gemini（ヒーロー） -->
   <section class="card p-5 mb-5 ring-2 ring-indigo-500/30">
     <div class="flex items-start gap-3">
@@ -81,7 +86,7 @@
           <h2 class="font-bold">Gemini 連携</h2>
           <span class="text-[11px] font-semibold bg-indigo-600 text-white px-2 py-0.5 rounded-full">メイン</span>
         </div>
-        <p class="text-sm text-slate-500 mt-1">最上位モデルでフル連携。APIキーを入れて「接続テスト」で確認できます。</p>
+        <p class="text-sm text-slate-500 mt-1">このページの接続テストとGemini生成テストで使います。台本作成・校正など、ものがたりっち本体のAI設定には反映されません。</p>
 
         <label class="block text-xs font-semibold text-slate-500 mt-4 mb-1">APIキー</label>
         <div class="flex items-center gap-2">
@@ -137,7 +142,7 @@
       <span class="text-slate-500"><svg class="ico ico-lg" viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 11-7 7 5 5 0 017-7zm0 0L15 8m0 0l3 3 3-3-3-3"/></svg></span>
       <div class="flex-1">
         <h2 class="font-bold">その他のAI連携</h2>
-        <p class="text-sm text-slate-500 mt-1">Claude / GPT も予備として登録できます。</p>
+        <p class="text-sm text-slate-500 mt-1">Claude / GPT の接続テスト用です。ものがたりっち本体のAI処理には使われません。</p>
 
         <!-- Claude -->
         <div class="mt-4 border border-slate-200 rounded-xl p-4">
@@ -244,9 +249,6 @@
     <span id="saveStatus" class="text-sm text-slate-500"></span>
   </div>
 
-  <footer class="text-center text-xs text-slate-400 mt-8">
-    キーはこの端末のブラウザ内（localStorage）にのみ保存され、外部には送信されません。
-  </footer>
 </div>
 
 <script>

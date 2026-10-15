@@ -9,6 +9,7 @@ import { auditShareProject } from "./src/share-audit.js";
 import { snapshotSignature } from "./src/snap-signature.js";
 import { handoffMissing, addHandoffGap } from "./src/handoff-check.js";
 import { parseAgentResponse } from "./src/agent-response.js";
+import PlanBoardCard from "./src/plan-board-card.jsx";
 import { START_TOPICS, START_GREETING, startUrl, parseStartHash, matchTopics, mediaOf } from "./src/start-guide.js";
 import { mechanicalCheck, mechanicalText, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, matchesScriptRubric } from "./src/script-check.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
@@ -177,7 +178,7 @@ const histSnapshot = (p) => {
   });
   return o;
 };
-const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", competitors: [], icon: "", clientNotes: "", manuals: [], promanUrl: "", manualUrl: "", checklistUrl: "" });
+const emptyChannelInfo = () => ({ name: "", url: "", concept: "", target: "", purpose: "", brandPromise: "", channelArtUrl: "", iconUrl: "", editStyle: "", mainColor: "", competitors: [], icon: "", clientNotes: "", manuals: [], promanUrl: "", manualUrl: "", checklistUrl: "" });
 /* チャンネルアイコンに選べる絵文字 */
 const CHANNEL_ICONS = ["📁","🎬","🎥","🎙️","🎤","📺","🎮","📷","🎨","💡","🔥","⭐","🚀","💼","🏆","⚽","🏀","🍳","💪","🐦","🐱","🐶","🌸","🌙","🎯","💰","📚","🧠","❤️","✨","🎸","🍜","🧳","👑","🛠️","🌍"];
 const emptyCompetitor = () => ({ url: "", vid: "", name: "", subs: 0, note: "" });
@@ -495,7 +496,7 @@ const migrateProject = (p) => {
 
 /* ===== 企画・サムネ：YouTube参考動画まわりのヘルパー ===== */
 const emptyRef = () => ({ url: "", vid: "", title: "", channel: "", views: 0, subs: 0, likes: 0, uploadDate: "", duration: "" });
-const newPlan = () => ({ id: uid(), title: "", title2: "", thumbText: "", thumbText2: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], thumbImages: [], video: null, files: [], shareId: null, shareToken: null });
+const newPlan = () => ({ id: uid(), title: "", title2: "", thumbText: "", thumbText2: "", storyCore: "", viewerPromise: "", storyFlow: "", inspirationSources: "", sourceMaterials: "", note: "", refs: [emptyRef(), emptyRef(), emptyRef(), emptyRef(), emptyRef()], thumbImages: [], video: null, files: [], shareId: null, shareToken: null });
 const ytIdFromUrl = (url) => { const m = (url || "").match(/(?:v=|\/embed\/|\/shorts\/|youtu\.be\/|\/v\/)([a-zA-Z0-9_-]{11})/); return m ? m[1] : ((url || "").trim().match(/^[a-zA-Z0-9_-]{11}$/) ? url.trim() : null); };
 const parseDur = (iso) => { const m = (iso || "").match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/); if (!m) return ""; const h = +(m[1] || 0), mi = +(m[2] || 0), s = +(m[3] || 0); return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(s).padStart(2, "0"); };
 const fmtNum = (n) => { n = Number(n) || 0; if (n >= 1e8) return (n / 1e8).toFixed(1) + "億"; if (n >= 1e4) return (n / 1e4).toFixed(n >= 1e5 ? 0 : 1) + "万"; return n.toLocaleString(); };
@@ -1400,7 +1401,7 @@ const Icon = React.memo(function Icon({ name, className = "w-4 h-4", style, stro
 });
 
 /* 入力内容に応じて高さが伸びる textarea（全文が常に見える） */
-function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title, readOnly, autoFocus, singleLine, style }) {
+function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80, onBlur, title, readOnly, autoFocus, singleLine, style, rows = 2, "aria-label": ariaLabel }) {
   const ref = useRef(null);
   const resize = (el) => { if (!el) return; el.style.height = "auto"; el.style.height = Math.max(minHeight, el.scrollHeight) + "px"; };
   /* トグルで開くタイプの入力欄向け。開いてもフォーカスがトグルのボタンに残っていると、
@@ -1426,7 +1427,7 @@ function AutoTextarea({ value, onChange, placeholder, className, minHeight = 80,
     return () => ro.disconnect();
   }, []);
   return (
-    <textarea ref={ref} {...ime} value={val} placeholder={placeholder} className={className} title={title} readOnly={readOnly}
+    <textarea ref={ref} {...ime} aria-label={ariaLabel} rows={rows} value={val} placeholder={placeholder} className={className} title={title} readOnly={readOnly}
       style={{ overflow: "hidden", resize: "none", minHeight, ...(style || {}) }}
       // singleLine＝見た目は折り返すが改行は入れない（長い名前が切れないように。2026-09-26 香盤表のロケ名）
       onKeyDown={singleLine ? (e) => { if (e.key === "Enter" && !(e.nativeEvent && e.nativeEvent.isComposing)) e.preventDefault(); } : undefined}
@@ -5128,7 +5129,8 @@ export default function App() {
       resumePages.current = v && typeof v === "object" && !Array.isArray(v) ? v : {};
     } catch (_) { resumePages.current = {}; }
   }
-  const [sidebarW, setSidebarW] = useState(() => { const n = parseInt(localStorage.getItem("mg:sidebarW") || "", 10); return (n >= 220 && n <= 420) ? n : 280; });
+  const [sidebarW, setSidebarW] = useState(() => { const n = parseInt(localStorage.getItem("mg:sidebarW:compact") || "", 10); return (n >= 180 && n <= 320) ? n : 200; });
+  const [sidebarExpandedChannels, setSidebarExpandedChannels] = useState({});
   const [caseQuery, setCaseQuery] = useState("");           // 案件名の絞り込み（案件が増えても探せる）
   const resizingRef = useRef(false);
   useEffect(() => { setCasePickerOpen(false); }, [activeId]);
@@ -5145,7 +5147,7 @@ export default function App() {
       .filter((k) => !LIVE_ONLY_TABS || LIVE_ONLY_TABS.includes(k));
     if (!valid.includes(tab)) setTab(valid[0] || "overview");
   }, [project && project.format, project && project.id, tab]);
-  useEffect(() => { try { localStorage.setItem("mg:sidebarW", String(sidebarW)); } catch (_) {} }, [sidebarW]);
+  useEffect(() => { try { localStorage.setItem("mg:sidebarW:compact", String(sidebarW)); } catch (_) {} }, [sidebarW]);
   // サイドバーの⌘K(検索にフォーカス)・⌘N(新規案件メニュー)。08-24 AK提供モックアップ対応。
   const sidebarSearchRef = useRef(null);
   /* 開いている案件の行まで、サイドバーを自動でスクロールする（2026-10-07 AK「案件探しづらい」）。
@@ -5171,7 +5173,7 @@ export default function App() {
   }, []);
   // サイドバー幅のドラッグ。ポインタイベントをwindowで拾う＝速く動かしても外れない
   useEffect(() => {
-    const onMove = (e) => { if (!resizingRef.current) return; e.preventDefault(); setSidebarW(Math.max(220, Math.min(420, e.clientX))); };
+    const onMove = (e) => { if (!resizingRef.current) return; e.preventDefault(); setSidebarW(Math.max(180, Math.min(320, e.clientX))); };
     const onUp = () => { if (!resizingRef.current) return; resizingRef.current = false; document.body.style.cursor = ""; document.body.style.userSelect = ""; };
     window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
     return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
@@ -6103,7 +6105,7 @@ export default function App() {
         projects.push({
           id: x.id, name: p.name || x.name || "", theme: p.theme,
           meta: { planDates: planDates(x.id, p) },
-          plans: (p.plans || []).map((pl) => ({ title: pl.title || "", thumbText: pl.thumbText || "", thumbText2: pl.thumbText2 || "", note: pl.note || "",
+          plans: (p.plans || []).map((pl) => ({ title: pl.title || "", thumbText: pl.thumbText || "", thumbText2: pl.thumbText2 || "", storyCore: pl.storyCore || "", viewerPromise: pl.viewerPromise || "", storyFlow: pl.storyFlow || "", inspirationSources: pl.inspirationSources || "", sourceMaterials: pl.sourceMaterials || "", note: pl.note || "",
             refs: (pl.refs || []).filter((r) => r && r.vid) })),
         });
       }
@@ -6132,6 +6134,7 @@ export default function App() {
   /* チャンネル名クリック → そのチャンネルの企画一覧（案件ボード）を開く */
   const openChannelBoard = async (channel) => {
     setView("editor");
+    if (isNarrow) setSidebarOpen(false);
     const items = index.filter((x) => (x.channel || DEFAULT_CHANNEL) === channel);
     if (project && (project.channel || DEFAULT_CHANNEL) === channel) { setTab("plan"); return; }
     if (items[0]) { await switchProject(items[0].id); setTab("plan"); }
@@ -6234,6 +6237,7 @@ export default function App() {
     // チャンネル編集モード：storageでなく該当案件のライブセッションを開く
     if (chanLive) { const c = chanLive.cases.find((x) => x.id === id); if (c) { openChanCase(c); return; } }
     setView("editor");
+    if (isNarrow) setSidebarOpen(false);
     pushRecent(id);
     setCasePickerOpen(false);
     setCaseQuery("");
@@ -7076,7 +7080,7 @@ export default function App() {
     const sc = planSched[id] || {};
     const step = (re) => ((sc.steps || []).find((st) => re.test(st.name || "")) || {}).deadline || "";
     const shoot = ((data && data.meta && data.meta.shootDate) || "") || step(/撮影/);
-    return { shoot: (shoot || "").slice(0, 10), draft: step(/本編集|初稿/).slice(0, 10), publish: (sc.publishDate || "").slice(0, 10) };
+    return { shoot, draft: step(/本編集|初稿/), publish: sc.publishDate || "" };
   };
   const saveBoardCaseSoon = (id) => {
     clearTimeout(boardSaveTimers.current[id]);
@@ -10186,7 +10190,7 @@ export default function App() {
       {/* ===== 案件サイドバー ===== */}
       {APP_MODE.showProjectNavigation && (
       <aside
-        className="fixed top-0 left-0 h-full z-40 flex flex-col border-r border-white/10"
+        className="mg-sidebar fixed top-0 left-0 h-full z-40 flex flex-col border-r border-white/10"
         style={{
           width: sidebarW,
           background: theme.main,
@@ -10199,7 +10203,7 @@ export default function App() {
           <button onClick={() => setView("home")} title="ホーム（チャンネル一覧）へ"
             className="w-full flex items-center gap-2 px-1.5 py-1 rounded-lg hover:bg-white/10 transition-colors">
             <img src="logo-header.png" alt="" className="w-7 h-7 rounded-lg shrink-0" />
-            <span className="font-black tracking-[0.08em] text-[14px]" style={{ color: mainText }}>ものがたりっち！</span>
+            <span className="font-bold tracking-normal text-[13px] whitespace-nowrap" style={{ color: mainText }}>ものがたりっち！</span>
             <svg className="w-4 h-4 ml-auto text-white/30 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
           </button>
         </div>
@@ -10302,11 +10306,15 @@ export default function App() {
               const items = q && !channel.toLowerCase().includes(q) ? allItems.filter((x) => (x.name || "").toLowerCase().includes(q)) : allItems;
               if (q && !items.length && !channel.toLowerCase().includes(q)) return null;
               const hasActive = items.some((x) => x.id === activeId);
+              const channelExpanded = !!q || hasActive || !!sidebarExpandedChannels[channel];
               return (
                 <div key={channel} className="mb-0.5">
                   {/* チャンネル見出し（タップでそのチャンネルの台本一覧を開閉） */}
                   <div className="group/ch flex items-center gap-1 px-1.5 py-1.5 rounded-lg hover:bg-white/10 cursor-pointer select-none"
                     onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ channel, x: e.clientX, y: e.clientY }); }}>
+                    <button type="button" aria-label={channel + (channelExpanded ? "の一覧を閉じる" : "の一覧を開く")} aria-expanded={channelExpanded}
+                      disabled={hasActive && !q} onClick={() => setSidebarExpandedChannels((v) => ({ ...v, [channel]: !channelExpanded }))}
+                      className="shrink-0 w-3 h-5 text-[11px] text-white/40" style={{ transform: channelExpanded ? "none" : "rotate(-90deg)" }}>▾</button>
                     {channelIconOf(channel) ? (
                       <button title="アイコンを変更" onClick={(e) => { e.stopPropagation(); setIconPick({ channel, x: e.clientX, y: e.clientY }); }}
                         className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[13px] leading-none hover:scale-125 transition-transform">{channelIconOf(channel)}</button>
@@ -10315,12 +10323,12 @@ export default function App() {
                         <Icon name="folder" className="w-3.5 h-3.5 text-white/30" />
                       </button>
                     )}
-                    <span className={"flex-1 min-w-0 truncate text-[13.5px] cursor-pointer hover:underline " + (hasActive ? "font-bold" : "font-semibold opacity-60")}
+                    <button type="button" className={"mg-sidebar-channel flex-1 min-w-0 truncate text-[12px] text-left hover:underline " + (hasActive ? "font-bold" : "font-semibold opacity-60")}
                       style={{ color: mainText }}
-                      title="このチャンネルの企画・サムネ一覧を開く"
+                      title={channel + "の企画一覧を開く"}
                       onClick={(e) => { e.stopPropagation(); setCasePickerOpen(false); openChannelBoard(channel); }}>
                       {channel}
-                    </span>
+                    </button>
                     <span className="text-[11px] text-white/30 group-hover/ch:text-white/60 tabular-nums transition-colors">{items.length}</span>
                     <div className="flex gap-0.5 opacity-0 group-hover/ch:opacity-100 transition-opacity shrink-0">
                       <button title={channel === DEFAULT_CHANNEL ? "このフォルダに名前を付ける（クライアント名など）" : "フォルダ名を変更"} onClick={(e) => { e.stopPropagation(); renameChannel(channel); }} className="w-5 h-5 grid place-items-center rounded hover:bg-white/20 text-[11px] text-white/60">✎</button>
@@ -10328,7 +10336,7 @@ export default function App() {
                   </div>
 
                   {/* 案件（人物）リスト */}
-                  {items.map((p) => {
+                  {channelExpanded && items.map((p) => {
                     const active = p.id === activeId;
                     return (
                       <div key={p.id}>
@@ -10342,15 +10350,15 @@ export default function App() {
                         onDragEnd={() => { setDragCaseId(null); setDragOverCaseId(null); }}
                         className={"group/p rounded-md mb-0.5 ml-3 pl-2.5 pr-2 py-1.5 cursor-pointer transition-colors border-l-2 " + (active ? "" : "hover:bg-white/10")}
                         style={{
-                          borderLeftColor: active ? theme.accent : "rgba(255,255,255,0.14)",
+                          borderLeftColor: active ? theme.accent : "transparent",
                           color: mainText,
-                          ...(active ? { background: "rgba(255,255,255,0.12)" } : {}),
+                          ...(active ? { background: "rgba(255,255,255,0.08)" } : {}),
                           ...(dragCaseId === p.id ? { opacity: 0.4 } : {}),
                           ...(dragOverCaseId === p.id && dragCaseId !== p.id ? { boxShadow: "inset 0 2px 0 0 " + theme.accent } : {}),
                         }}
                         onClick={() => switchProject(p.id)}
                         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCaseMenu({ id: p.id, channel: p.channel || DEFAULT_CHANNEL, x: e.clientX, y: e.clientY }); }}
-                        title="右クリックで操作（名前変更・複製・移動・削除）">
+                        title={p.name + "（右クリックで名前変更・複製・移動・削除）"}>
                         <div className="flex items-center gap-2">
                           <span title="ドラッグして並び替え" className="shrink-0 -ml-0.5 opacity-0 group-hover/p:opacity-60 text-white/40 cursor-grab"><Icon name="grip" className="w-3 h-3" /></span>
                           {renamingId === p.id ? (
@@ -10447,14 +10455,6 @@ export default function App() {
             /* 最近開いた（2026-10-07 AK「探しづらい」）：検索していない時だけ、上に3件。お気に入りと重なるものは出さない */
             const recentCases = q ? [] : recentIds.map((id) => index.find((x) => x.id === id)).filter((p) => p && !p.favorite).slice(0, 3);
             const renderGroupOrFlat = (g) => {
-              // 1件だけのチャンネルは1行にまとめる（フォルダ行＋案件行の2行を使っていたため、一度に見える件数が少なかった）
-              const items = q && !g.channel.toLowerCase().includes(q) ? g.items.filter((x) => (x.name || "").toLowerCase().includes(q)) : g.items;
-              if (g.items.length === 1 && items.length === 1) {
-                const p = items[0];
-                return renderFlatCase(p, channelIconOf(g.channel)
-                  ? <span className="w-3.5 h-3.5 shrink-0 grid place-items-center text-[13px] leading-none">{channelIconOf(g.channel)}</span>
-                  : <Icon name="folder" className="w-3.5 h-3.5 shrink-0 text-white/30" />, !activeIsFav);
-              }
               return renderChannelGroup(g.channel, g.items);
             };
             return (
@@ -10564,10 +10564,10 @@ export default function App() {
       <div className="pb-28" style={{ marginLeft: APP_MODE.showProjectNavigation && sidebarOpen && !isNarrow ? sidebarW : 0, transition: "margin-left 0.3s cubic-bezier(0.22, 1, 0.36, 1)" }}>
 
       {/* ===== ツールバー ===== */}
-      <header ref={headerRef} className="sticky top-0 z-20 shadow-lg" style={{ background: theme.main, color: mainText }}>
+      <header ref={headerRef} className={"sticky top-0 z-20 shadow-lg" + (tab === "plan" ? " mg-plan-toolbar" : "")} style={{ background: theme.main, color: mainText }}>
         {/* 2026-09-26 AK「アイコン関連は一列に」：スマホは1段目＝メニューと案件名、2段目＝アイコンを1列。PCは全部1行 */}
-        <div className="max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
-          <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto sm:flex-1">
+        <div className="mg-plan-toolbar-row max-w-[1500px] mx-auto px-3 sm:px-4 pt-2.5 pb-1.5 flex items-center gap-2 sm:gap-3 flex-wrap sm:flex-nowrap">
+          <div className="mg-plan-toolbar-title flex items-center gap-2 min-w-0 w-full sm:w-auto sm:flex-1">
           {/* Fボード埋め込み・編集リンク（?live=/?ch=）ではハンバーガーを出さない（ゲストに案件ツリーは無い） */}
           {APP_MODE.showProjectNavigation && (
           <button onClick={() => setSidebarOpen((s) => !s)} title="作業メニュー"
@@ -10590,7 +10590,7 @@ export default function App() {
           )}
           </div>
           {/* カテゴリ（チャンネル）チップはヘッダーから撤去（2026-07-23 AK指示）。変更は左の案件ツリー側で行う */}
-          <div className="flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
+          <div className="mg-plan-toolbar-actions flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
           {/* Googleアカウント（チャンネル名の右横） */}
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
             className="w-8 h-8 rounded-full grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden shrink-0" style={{ color: mainText }}>
@@ -10809,11 +10809,11 @@ export default function App() {
         )}
       </header>
 
-      <div className="max-w-[1500px] mx-auto flex">
+      <div className={(tab === "plan" ? "w-full" : "max-w-[1500px]") + " mx-auto flex"}>
         {/* 工程タブの縦レールは廃止（2026-07-31）。案件一覧と工程が左右2本に分かれていたのを
             サイドバーのツリー1本に統合した＝視線の横移動が消え、本文の幅がレール分(188px)広がる。
             モバイルは従来どおりヘッダーの横バーで切り替える。 */}
-      {!isNarrow && tocItems.length >= 3 && (
+      {!isNarrow && tab !== "plan" && tocItems.length >= 3 && (
         <aside className="hidden sm:block shrink-0 sticky self-start w-10 h-fit z-40" style={{ top: "50%", transform: "translateY(-50%)" }} aria-label="このページの目次">
           <div className="group relative flex flex-col items-center gap-0.5">
             {/* 線だけだと何か分からないので見出しを付ける（2026-09-26） */}
@@ -10847,7 +10847,7 @@ export default function App() {
           </div>
         </aside>
       )}
-      <main ref={mainRef} className="flex-1 min-w-0 px-3 sm:px-5 pt-5" style={uiZoom !== 1 ? { zoom: uiZoom } : undefined}>
+      <main ref={mainRef} className={"flex-1 min-w-0 pt-5 " + (tab === "plan" ? "mg-plan-main" : "px-3 sm:px-5")} style={uiZoom !== 1 ? { zoom: uiZoom } : undefined}>
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
         {sched && (
@@ -11145,6 +11145,17 @@ export default function App() {
                       className="mt-1 w-full h-20 text-[14px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2 focus:outline-none focus:border-stone-400 resize-y" />
                   </label>
                 ))}
+                <div className="border-t border-stone-100 pt-3">
+                  <div className="text-[12px] font-bold text-stone-600 mb-2">世界観の見本</div>
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {[["brandPromise", "チャンネル名・ひとこと", "例）人生の障がいを希望に変える、100のチャンネル。"], ["channelArtUrl", "チャンネルアートの参考URL", "画像・Drive・デザイン資料のURL"], ["iconUrl", "アイコンの参考URL", "画像・Drive・デザイン資料のURL"], ["mainColor", "メインカラー", "例）#E63946／深い赤"], ["editStyle", "編集イメージ", "テンポ、色、テロップ、音、余白など。参考動画があればURLも"]].map(([key, label, ph]) => (
+                      <label key={key} className="block">
+                        <span className="text-[11px] font-bold text-stone-500">{label}</span>
+                        {key === "editStyle" ? <textarea value={curChannelInfo[key] || ""} onChange={(e) => updateChannelInfo({ [key]: e.target.value })} rows={3} placeholder={ph} className="mt-1 w-full text-[13px] leading-relaxed border border-stone-200 rounded-lg px-3 py-2 resize-y" /> : <input value={curChannelInfo[key] || ""} onChange={(e) => updateChannelInfo({ [key]: e.target.value })} placeholder={ph} className="mt-1 w-full text-[13px] border border-stone-200 rounded-lg px-3 py-2" />}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -11188,7 +11199,7 @@ export default function App() {
                             onKeyDown={(e) => { if (e.key === "Enter") e.target.blur(); }}
                             className="w-full text-[10.5px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" style={{ fontFamily: mono }} />
                           <input value={c.note || ""} onChange={(e) => updateCompetitor(i, { note: e.target.value })}
-                            placeholder="メモ"
+                            placeholder="参考にする点・避けたい点"
                             className="w-full text-[11px] border border-stone-200 rounded px-1.5 py-1 focus:outline-none focus:border-stone-400" />
                         </div>
                       </div>
@@ -12125,7 +12136,7 @@ export default function App() {
           <>
             <div className="flex items-start justify-between mb-3 flex-wrap gap-2">
               <p className="text-[13px] text-stone-600 leading-relaxed max-w-2xl">
-                <span className="font-bold">「{curChannel}」の企画一覧</span>。1つの企画＝1本の動画＝1案件です。行をクリックすると参考サムネを展開、<span className="font-bold">「構成台本へ→」</span>でその企画の台本を書けます。
+                <span className="font-bold">「{curChannel}」の企画一覧</span>。タイトル・参考動画・予定をまとめて確認できます。
               </p>
               <div className="shrink-0 flex items-center gap-1.5">
               <button onClick={() => publishPlanList(curChannel)} disabled={chSharing} title="この企画一覧だけを共有するリンクをコピー（台本・素材の中身は見えない）"
@@ -12140,7 +12151,7 @@ export default function App() {
               </div>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="mg-plan-board">
               {/* 2026-10-08 AK「新しい企画が一番上に来るようにしたい」：表示だけ新しい順（逆順）。#番号と保存順は変えない */}
               {boardCases.map((entry, pi) => ({ entry, pi })).reverse().map(({ entry, pi }) => {
                 const isActive = entry.id === activeId;
@@ -12148,98 +12159,24 @@ export default function App() {
                 const p0 = boardPlan0(data);
                 const expanded = isActive && !collapseActive;
                 const hasMulti = !!(data && data.plans && data.plans.length > 1);
-                const title = p0 ? p0.title : "";
-                const thumbText = p0 ? p0.thumbText : "";
-                const thumbText2 = p0 ? p0.thumbText2 || "" : "";
-                const firstVid = p0 && p0.refs ? (p0.refs.find((r) => r.vid) || {}).vid : "";
+                const references = (data && data.plans ? data.plans.flatMap((pl) => pl.refs || []) : []).filter((r) => r.vid).slice(0, 5);
+                const currentStep = ((planSched[entry.id] || {}).steps || []).find((st) => st.status !== "completed" && st.status !== "skipped");
+                const linkedStatus = studioStatus[entry.id];
+                const status = linkedStatus ? (linkedStatus.status === "完了" ? "完了" : linkedStatus.stepName || linkedStatus.status) : currentStep ? currentStep.name : data ? inferStatus(data) : "読み込み中";
                 return (
-                  <section key={entry.id} data-toc={title || entry.name || ("企画 #" + (pi + 1))} className={"rounded-xl border bg-white overflow-hidden " + (isActive ? "border-stone-400 shadow-sm" : "border-stone-200")}>
-                    {/* コンパクト1行ヘッダ：#N ＋ タイトル ＋ サムネ文言 ＋ 操作 */}
-                    {/* スマホではタイトルが操作ボタンに押しつぶされて6文字ほどしか見えなかった（2026-09-26）→ タイトルだけ2段目に全幅で出す */}
-                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 px-2.5 py-2 cursor-pointer hover:bg-stone-50" onClick={() => openBoardCase(entry.id)}>
-                      <div className="shrink-0 flex flex-col -my-1" onClick={(e) => e.stopPropagation()}>
-                        <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, 1); }} disabled={pi === boardCases.length - 1} title="この企画を上へ"
-                          className="w-6 h-5 grid place-items-center rounded text-stone-600 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="up" className="w-3.5 h-3.5" /></button>
-                        <button onClick={(e) => { e.stopPropagation(); moveCaseInChannel(entry.id, -1); }} disabled={pi === 0} title="この企画を下へ"
-                          className="w-6 h-5 grid place-items-center rounded text-stone-600 hover:bg-stone-200 disabled:opacity-25 disabled:hover:bg-transparent"><Icon name="down" className="w-3.5 h-3.5" /></button>
-                      </div>
-                      <button onClick={(e) => { e.stopPropagation(); openBoardCase(entry.id); }} title={expanded ? "畳む" : "参考サムネを開く"}
-                        className="shrink-0 w-6 h-6 grid place-items-center rounded-lg text-[12px] font-bold tabular-nums"
-                        style={{ background: isActive ? theme.accent : "#f5f5f4", color: isActive ? accentText : "#78716c" }}>
-                        #{pi + 1}
-                      </button>
-                      {firstVid
-                        ? <img src={"https://img.youtube.com/vi/" + firstVid + "/default.jpg"} alt="" className="shrink-0 w-12 h-7 object-cover rounded" />
-                        : <div className="shrink-0 w-12 h-7 rounded bg-stone-100 grid place-items-center text-[11px] text-stone-300"><Icon name="image" className="w-3.5 h-3.5" /></div>}
-                      {data ? (
-                        <input value={title} onClick={(e) => e.stopPropagation()} onChange={(e) => updateBoardTitle(entry.id, "title", e.target.value)}
-                          placeholder={"タイトル案（例：30歳で会社を捨てた男の末路）"}
-                          className="order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 text-[14px] font-bold bg-transparent border-0 border-b border-stone-100 sm:border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-0.5 py-1 placeholder:text-stone-400" />
-                      ) : brokenIds[entry.id] ? (
-                        <span className="order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 truncate text-[14px] font-bold text-rose-500">{entry.name}（本体データ無し → 右のゴミ箱で削除）</span>
-                      ) : <span className="order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 truncate text-[14px] font-bold text-stone-500">{entry.name}（読み込み中…）</span>}
-                      {data && (
-                        <div className="hidden md:flex flex-col gap-1 w-44 shrink-0 -my-0.5" onClick={(e) => e.stopPropagation()}>
-                          <input value={thumbText} onChange={(e) => updateBoardTitle(entry.id, "thumbText", e.target.value)}
-                            placeholder="サムネ文言①"
-                            className="w-full text-[13px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
-                          <input value={thumbText2} onChange={(e) => updateBoardTitle(entry.id, "thumbText2", e.target.value)}
-                            placeholder="サムネ文言②"
-                            className="w-full text-[13px] font-bold text-stone-600 bg-stone-50 rounded-lg border border-transparent hover:border-stone-200 focus:border-stone-400 focus:outline-none px-2 py-1" />
-                        </div>
-                      )}
-                      <span className="flex-1 sm:hidden" />
-                      {(() => { const pd = planDates(entry.id, data); const f = (v) => (v ? v.slice(5).replace("-", "/") : "—"); return (pd.shoot || pd.draft || pd.publish) ? (
-                        <span className="hidden md:inline-flex shrink-0 flex-col text-[11.5px] leading-tight text-stone-500 tabular-nums" title="撮影日・初稿日（本編集の期限）・投稿日（Studio OSの工程表）">
-                          <span>撮影 <b className="text-stone-700">{f(pd.shoot)}</b></span><span>初稿 <b className="text-stone-700">{f(pd.draft)}</b></span><span>投稿 <b className="text-stone-700">{f(pd.publish)}</b></span>
-                        </span>) : null; })()}
-                      <button onClick={(e) => { e.stopPropagation(); goScript(entry.id); }} title="この企画の構成台本を書く"
-                        className="shrink-0 text-[12px] font-bold px-2.5 py-1.5 rounded-lg inline-flex items-center gap-1 text-white" style={{ background: theme.main }}>
-                        <Icon name="file" className="w-3.5 h-3.5" /><span className="hidden sm:inline">構成台本へ</span> →
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); deleteBoardCase(entry.id); }} title="この企画（案件）を削除"
-                        className="shrink-0 w-7 h-7 rounded-lg grid place-items-center text-stone-500 hover:bg-red-50 hover:text-red-500"><Icon name="trash" className="w-3.5 h-3.5" /></button>
-                      <span className="shrink-0 w-4 text-center text-[11px] text-stone-500 transition-transform" style={{ transform: expanded ? "none" : "rotate(-90deg)" }}>▾</span>
-                    </div>
-
-                    {/* 折り畳み時：参考サムネを横並びで一覧表示（サムネ君風・クリックで展開して編集） */}
-                    {!expanded && (() => {
-                      const refs = (data && data.plans ? data.plans.flatMap((pl) => pl.refs || []) : []).filter((r) => r.vid);
-                      if (!refs.length) return null;
-                      return (
-                        <div className="px-2.5 pb-2.5 flex gap-2 overflow-x-auto cursor-pointer" onClick={() => openBoardCase(entry.id)}>
-                          {refs.map((rf, ri) => {
-                            const sc = rf.uploadDate ? scoreVideo(rf, Date.now()) : null;
-                            return (
-                              <div key={ri} className="shrink-0 w-48">
-                                <div className="relative">
-                                  <img src={"https://img.youtube.com/vi/" + rf.vid + "/mqdefault.jpg"} alt="" className="w-full aspect-video object-cover rounded-md border border-stone-200" />
-                                  {sc && <span className="absolute top-1 left-1 text-[11px] font-bold text-white px-1.5 py-0.5 rounded" style={{ background: GRADE_COLOR[sc.grade] }}>{sc.grade}</span>}
-                                  {sc && <span className="absolute top-1 right-1 text-[11px] font-bold text-white bg-black/70 px-1.5 py-0.5 rounded" style={{ fontFamily: mono }}>{sc.ratioStr}</span>}
-                                </div>
-                                <div className="text-[11px] font-bold leading-tight mt-1 line-clamp-2 text-stone-600">{rf.title}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-
-                    {/* 旧データ：複数企画案を持つ案件 → 分割導線 */}
-                    {hasMulti && (
-                      <div className="mx-2.5 mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800 flex items-center justify-between gap-2">
-                        <span>この案件には企画案が<span className="font-bold">{data.plans.length}件</span>入っています。1企画＝1案件にするには分けてください。</span>
-                        <button onClick={() => splitExtraPlans(entry.id)} className="shrink-0 text-[12px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600">別々の案件に分ける</button>
-                      </div>
-                    )}
-
-                    {/* アクティブ案件のみ展開：参考サムネ＋メモ */}
-                    {expanded && p0 && (() => {
+                  <PlanBoardCard key={entry.id} entry={entry} number={pi + 1} data={data} dates={planDates(entry.id, data)}
+                    status={status} statusTitle={linkedStatus || currentStep ? "Studio OSの進展状況" : "制作データから表示した状況"}
+                    active={isActive} references={references} Textarea={AutoTextarea}
+                    onChange={(field, value) => updateBoardTitle(entry.id, field, value)}
+                    onOpenReferences={() => { if (!isActive) openBoardCase(entry.id); else setCollapseActive(false); }}
+                    onScript={() => goScript(entry.id)} onMoveUp={() => moveCaseInChannel(entry.id, 1)} onMoveDown={() => moveCaseInChannel(entry.id, -1)}
+                    canMoveUp={pi < boardCases.length - 1} canMoveDown={pi > 0} onDelete={() => deleteBoardCase(entry.id)}
+                    score={scoreVideo} gradeColor={GRADE_COLOR} mono={mono} broken={brokenIds[entry.id]}
+                    referenceEditor={expanded && p0 ? (() => {
                       const pl = project.plans[0];
                       return (
-                        <div className="px-3 pb-3 pt-1 border-t border-stone-100">
-                          <div className="text-[12px] font-bold text-stone-600 mb-2">参考サムネ・動画（5本まで）</div>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                        <div className="px-1 pb-1 pt-1">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
                             {pl.refs.map((rf, ri) => {
                               const busy = refBusy[pl.id + ":" + ri];
                               // 空き枠は最初の1つだけ出す（5枠すべて開くとスマホで1.5画面を占め、企画一覧が埋もれていた）
@@ -12270,6 +12207,7 @@ export default function App() {
                                       </div>
                                     </div>
                                   )}
+                                  {rf.vid && <label className="px-2 pt-2"><span className="block text-[10px] font-bold text-stone-500 mb-1">この動画から参考にする点</span><textarea value={rf.note || ""} onChange={(e) => updatePlanRef(pl.id, ri, { note: e.target.value })} rows={2} className="w-full text-[12px] border border-stone-200 rounded-lg px-2 py-1.5 resize-y" placeholder="構成・演出・サムネなど、参考にしたい要素を1つ" /></label>}
                                   <div className="p-1.5 mt-auto">
                                     <input
                                       defaultValue={rf.url}
@@ -12286,8 +12224,16 @@ export default function App() {
 
                         </div>
                       );
-                    })()}
-                  </section>
+                    })() : null}>
+                    {/* 旧データ：複数企画案を持つ案件 → 分割導線 */}
+                    {hasMulti && (
+                      <div className="mx-2.5 mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800 flex items-center justify-between gap-2">
+                        <span>この案件には企画案が<span className="font-bold">{data.plans.length}件</span>入っています。1企画＝1案件にするには分けてください。</span>
+                        <button onClick={() => splitExtraPlans(entry.id)} className="shrink-0 text-[12px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 text-white hover:bg-amber-600">別々の案件に分ける</button>
+                      </div>
+                    )}
+
+                  </PlanBoardCard>
                 );
               })}
             </div>
@@ -13309,7 +13255,7 @@ export default function App() {
       {/* ===== アカウント / ログイン モーダル ===== */}
       {showAccount && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowAccount(false)}>
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[92vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="px-5 py-3 flex items-center justify-between" style={{ background: theme.main, color: mainText }}>
               <h3 className="text-sm font-bold tracking-wider inline-flex items-center gap-1.5"><Icon name="user" className="w-4 h-4" />アカウント</h3>
               <button onClick={() => setShowAccount(false)} className="w-7 h-7 rounded-lg grid place-items-center hover:bg-white/15"><Icon name="close" className="w-4 h-4" /></button>
@@ -13326,8 +13272,20 @@ export default function App() {
                       <div className="text-[13px] text-stone-600 truncate">{user.email}</div>
                     </div>
                   </div>
-                  <div className="mt-3 text-[13px] text-emerald-800 bg-emerald-50 rounded-lg px-3 py-2 leading-relaxed flex items-start gap-1.5">
-                    <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5" /><span><span className="font-bold">クラウド同期中</span>。案件はこのアカウントに保存され、スマホ・PC どの端末でも同じ案件を開けます。</span>
+                  <div className="mt-3 text-[12px] text-emerald-900 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5 leading-relaxed flex items-start gap-2">
+                    <Icon name="cloud" className="w-4 h-4 shrink-0 mt-0.5" /><span><span className="font-bold">クラウド同期中</span>。案件・台本はものがたりっちのCloudflareに保存され、スマホ・PCから開けます。</span>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-3">
+                    <div className="text-[12px] font-black text-amber-950">現在の保存先と費用負担</div>
+                    <div className="mt-1.5 space-y-1 text-[11.5px] leading-relaxed text-stone-700">
+                      <div><b>案件・台本：</b>運営Cloudflare</div>
+                      <div><b>素材：</b>{connections ? (connections.googleDrive?.provider === "Google Drive" ? "運営Google Drive" : "運営R2") : "保存先を確認中…"}（あなた自身のDriveではありません）</div>
+                      <div><b>AI・YouTube調査：</b>運営側の共通API</div>
+                      <div><b>確認動画：</b>{cfStream.connected ? "接続中のあなたのCloudflare Stream" : "自分のStreamを接続すると、容量・料金を自分の契約へ分けられます"}</div>
+                    </div>
+                    <div className="mt-2 border-t border-amber-200/80 pt-2 text-[10.5px] leading-relaxed text-stone-600">
+                      利用者自身のDriveやAIキーを保存先・処理先に選ぶ機能は、まだ用意されていません。下の連携一覧で各サービスの状態を確認できます。
+                    </div>
                   </div>
                   <div className="mt-3 rounded-xl border border-stone-200 p-3">
                     <div className="flex items-start gap-2">
@@ -13371,7 +13329,7 @@ export default function App() {
                             ["ログイン状態", connections.session, "checkCircle"],
                             ["案件・台本", connections.projectStorage, "file"],
                             ["確認動画", connections.video, "video"],
-                            ["Google Drive", connections.googleDrive, "folder"],
+                            ["素材・納品ファイル", connections.googleDrive, "folder"],
                             ["AI機能", connections.ai, "sparkle"],
                             ["YouTube調査", connections.youtube, "search"],
                             ["共同編集・コメント", connections.collaboration, "user"],

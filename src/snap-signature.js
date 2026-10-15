@@ -19,7 +19,7 @@ export const SHARE_FIELDS = [
 // icon / status / clientNotes / チャンネル共有のトークン類は載らないので入れない
 // （入れると、表示に出ない値をいじるたびに無駄な再発行とKV書込が走る）。
 export const CHANNEL_SNAP_FIELDS = [
-  "name", "url", "concept", "target", "purpose",
+  "name", "url", "concept", "target", "purpose", "brandPromise", "channelArtUrl", "iconUrl", "editStyle", "mainColor",
   "promanUrl", "manualUrl", "checklistUrl", "competitors", "manuals",
 ];
 

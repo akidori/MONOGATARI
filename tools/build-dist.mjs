@@ -22,7 +22,7 @@ const version = createHash("sha256").update(app).digest("hex").slice(0, 12);
 
 const indexPath = path.join(dist, "index.html");
 const index = (await readFile(indexPath, "utf8"))
-  .replace(/app\.js\?v=[^"']+/, `app.js?v=${version}`);
+  .replace(/(app\.js|app\.css|tailwind\.css)\?v=[^"']+/g, (_, file) => `${file}?v=${version}`);
 await writeFile(indexPath, index);
 
 const swPath = path.join(dist, "sw.js");

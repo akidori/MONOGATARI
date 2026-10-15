@@ -1484,10 +1484,12 @@ ${qList}
             purpose: legacyAllowed ? "既存の運営Streamを使用可能" : "動画利用前に自分のStream接続が必要",
           },
           googleDrive: {
-            provider: "Google Drive",
-            connected: false,
-            owner: "自分",
-            purpose: "未実装（現在、案件・動画の保存先には使っていません）",
+            provider: driveEnabled(env) ? "Google Drive" : "Cloudflare R2",
+            connected: true,
+            owner: "運営",
+            purpose: driveEnabled(env)
+              ? "素材・納品ファイルを運営アカウントへ保存（利用者自身のDriveではありません）"
+              : "素材・納品ファイルは運営R2へ保存されます",
           },
           ai: {
             provider: "Anthropic Claude",
@@ -4125,6 +4127,7 @@ function slimCI(ci) {
   return {
     name: ci.name || "", url: ci.url || "", concept: ci.concept || "",
     target: ci.target || "", purpose: ci.purpose || "",
+    brandPromise: ci.brandPromise || "", channelArtUrl: ci.channelArtUrl || "", iconUrl: ci.iconUrl || "", editStyle: ci.editStyle || "", mainColor: ci.mainColor || "",
     // 編集者向け作業リンク（share.htmlが&up=時に表示）。落とすと共有ページに一切出ない（parity不変条件）
     promanUrl: ci.promanUrl || "", manualUrl: ci.manualUrl || "", checklistUrl: ci.checklistUrl || "",
     competitors: (ci.competitors || []).map((c) => ({ name: c.name || "", url: c.url || "", subs: c.subs || 0, videos: c.videos || 0, note: c.note || "", thumb: c.thumb || "" })),
