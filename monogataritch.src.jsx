@@ -14,7 +14,6 @@ import PlanBoardCard from "./src/plan-board-card.jsx";
 import "./src/workspace-ui.css";
 import { START_TOPICS, START_GREETING, startUrl, parseStartHash, matchTopics, mediaOf } from "./src/start-guide.js";
 import { mechanicalCheck, mechanicalText, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, matchesScriptRubric } from "./src/script-check.js";
-import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
 import { CREATOR_STEPS, CREATOR_SKILLS, CREATOR_QUESTIONS, CREATOR_AXES, CREATOR_SOFTWARE, CREATOR_YEARS, PORTFOLIO_ROLES, MBTI_TYPES, BRAIN_TYPES, safeEmail, creatorType, peakSlot, blockHours, estimateHours, stepAdvice, profileComplete, hoursOn, safeUrl, publicProfile, encodeProfile, decodeProfile, matchPosting, profilePrompt, monthlyCapacity, weeklyHours } from "./src/creator-type.js";
 
 /* ============================================================
@@ -4328,117 +4327,6 @@ function CreatorDiagnosis({ theme, userEmail }) {
   );
 }
 
-/* ===== 今日やること（2026-09-29 AK「アドネス的な今日やるTODOチェックみたいなUI」）=====
-   自動＝自分の番の工程で遅れ・今日締切・あと2日以内（/api/my-work）。手動＝自分で足したTODO（未完了は翌日に持ち越し）。
-   保存は window.storage "today-todo-v1"。判定は src/today-todo.js（テストは tools/test-today-todo.mjs）
-   自動のTODOは工程を手順に分けて「次：〇〇」を出し、開くとチェックリストになる（一番上のTODOは最初から開いておく） */
-const todayYmd = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-function TodayTodo({ theme, cases, onOpenCase }) {
-  const [state, setState] = useState(null);
-  const [text, setText] = useState("");
-  const [showDone, setShowDone] = useState(false);
-  const [openIds, setOpenIds] = useState(null); // null＝まだ触っていない（一番上の自動TODOだけ開く）
-  const today = todayYmd();
-  useEffect(() => {
-    (async () => {
-      let v = null;
-      try { const r = window.storage && await window.storage.get(TODAY_STORE); v = r && r.value ? JSON.parse(r.value) : null; } catch (e) {}
-      setState(todayRollover(v, todayYmd()));
-    })();
-  }, []);
-  const saveRef = useRef(null);
-  const update = (fn) => setState((cur) => {
-    const nx = fn(todayRollover(cur, todayYmd()));
-    clearTimeout(saveRef.current);
-    saveRef.current = setTimeout(() => { try { window.storage && window.storage.set(TODAY_STORE, JSON.stringify(nx)); } catch (e) {} }, 400);
-    return nx;
-  });
-  if (!state) return null;
-  const list = todayList(state.date === today ? state : todayRollover(state, today), cases);
-  const doneN = list.done.length;
-  const pct = list.total ? Math.round((doneN / list.total) * 100) : 0;
-  const d = new Date();
-  const BADGE = { "遅れ": { bg: "#FBE5EA", fg: "#DC2645" }, "今日": { bg: "#FCE9D6", fg: "#C2410C" }, "もうすぐ": { bg: "#FCF0DC", fg: "#B45309" } };
-  const add = () => { if (!text.trim()) return; update((s) => todayAdd(s, text)); setText(""); };
-  const firstAuto = list.open.find((x) => x.auto);
-  const isOpen = (id) => (openIds ? openIds.has(id) : !!firstAuto && firstAuto.id === id);
-  const toggleOpen = (id) => setOpenIds((cur) => {
-    const nx = new Set(cur || (firstAuto ? [firstAuto.id] : []));
-    if (nx.has(id)) nx.delete(id); else nx.add(id);
-    return nx;
-  });
-  const Row = ({ x }) => (
-    <div className="group flex items-start gap-2.5 px-4 py-2.5 hover:bg-stone-50">
-      <button onClick={() => update((s) => todayToggle(s, x.id))} aria-label={x.done ? "未完了に戻す" : "完了にする"}
-        className="mt-[1px] w-[18px] h-[18px] rounded-full border-2 shrink-0 grid place-items-center transition-colors"
-        style={x.done ? { background: theme.accent, borderColor: theme.accent } : { borderColor: "#C9C5BF" }}>
-        {x.done && <svg viewBox="0 0 24 24" className="w-3 h-3" fill="none" stroke="#fff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}
-      </button>
-      <div className="min-w-0 flex-1">
-        <div className={"text-[13.5px] leading-snug break-words " + (x.done ? "line-through text-stone-400" : "text-stone-800")}>
-          {x.auto ? <button onClick={() => onOpenCase(x.caseId)} className="text-left hover:underline">{x.text}</button> : x.text}
-        </div>
-        {(x.auto || x.carried) && !x.done && (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            {x.auto && <span className="text-[10.5px] font-bold px-1.5 py-[1px] rounded" style={{ background: (BADGE[x.pace] || BADGE["もうすぐ"]).bg, color: (BADGE[x.pace] || BADGE["もうすぐ"]).fg }}>{x.badge}</span>}
-            {x.auto && <span className="text-[10.5px] text-stone-400">担当の工程から自動</span>}
-            {x.carried && <span className="text-[10.5px] text-stone-400">前日から持ち越し</span>}
-          </div>
-        )}
-        {x.auto && !x.done && x.next && (
-          <button onClick={() => toggleOpen(x.id)} className="mt-1 flex items-center gap-1.5 text-left max-w-full">
-            <span className="text-[10.5px] font-bold px-1.5 py-[1px] rounded text-white shrink-0" style={{ background: theme.accent }}>次</span>
-            <span className="text-[12.5px] text-stone-700 truncate">{x.next.title}</span>
-            <span className="text-[11px] text-stone-400 shrink-0">{todayFmtSec(x.next.sec)}</span>
-            <span className="text-[11px] text-stone-400 shrink-0 ml-1">手順 {x.stepsDone}/{x.steps.length} {isOpen(x.id) ? "▾" : "▸"}</span>
-          </button>
-        )}
-        {x.auto && !x.done && isOpen(x.id) && (
-          <div className="mt-1.5 mb-0.5">
-            {x.steps.map((st, i) => (
-              <label key={i} className="flex items-center gap-2 py-[3px] cursor-pointer">
-                <input type="checkbox" checked={st.done} onChange={() => update((s) => todayToggleStep(s, x.id, i, x.steps.length))}
-                  className="w-3.5 h-3.5 shrink-0" style={{ accentColor: theme.accent }} />
-                <span className={"text-[12.5px] min-w-0 flex-1 " + (st.done ? "line-through text-stone-400" : st === x.next ? "font-bold text-stone-800" : "text-stone-600")}>{st.title}</span>
-                <span className="text-[11px] text-stone-400 shrink-0">{todayFmtSec(st.sec)}</span>
-              </label>
-            ))}
-            <div className="h-1 bg-stone-100 rounded-full overflow-hidden mt-1.5"><div className="h-full rounded-full transition-all" style={{ width: Math.round((x.stepsDone / x.steps.length) * 100) + "%", background: theme.accent }} /></div>
-          </div>
-        )}
-      </div>
-      {!x.auto && <button onClick={() => update((s) => todayRemove(s, x.id))} title="削除" className="opacity-0 group-hover:opacity-100 text-stone-300 hover:text-[#DC2645] shrink-0 px-1 text-[13px]">×</button>}
-    </div>
-  );
-  return (
-    <section className="bg-white border border-stone-200 rounded-xl shadow-sm mb-6 overflow-hidden">
-      <div className="px-4 pt-3.5 pb-2.5 flex items-center gap-2">
-        <h2 className="text-[14px] font-black text-stone-800">今日やること</h2>
-        <span className="text-[12px] text-stone-400">{d.getMonth() + 1}/{d.getDate()}（{"日月火水木金土"[d.getDay()]}）</span>
-        <span className="ml-auto text-[12px] font-bold text-stone-500">{doneN}/{list.total}</span>
-      </div>
-      <div className="h-1 bg-stone-100 mx-4 rounded-full overflow-hidden mb-1"><div className="h-full rounded-full transition-all" style={{ width: pct + "%", background: theme.accent }} /></div>
-      <div className="divide-y divide-stone-100">
-        {list.open.map((x) => <Row key={x.id} x={x} />)}
-        {list.total === 0 && <div className="px-4 py-3 text-[12.5px] text-stone-400">今日やることを書き出しておきましょう</div>}
-        {list.total > 0 && list.open.length === 0 && <div className="px-4 py-3 text-[12.5px] font-bold" style={{ color: "#15803D" }}>今日の分はぜんぶ終わりました</div>}
-      </div>
-      <div className="flex items-center gap-2 px-4 py-2.5 border-t border-stone-100">
-        <span className="text-stone-300 text-[16px] leading-none">＋</span>
-        <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) add(); }}
-          placeholder="今日やることを追加（Enter）" className="flex-1 min-w-0 text-[13px] bg-transparent focus:outline-none placeholder:text-stone-400" />
-        {text.trim() && <button onClick={add} className="text-[12px] font-bold px-2.5 py-1 rounded-lg text-white" style={{ background: theme.accent }}>追加</button>}
-      </div>
-      {doneN > 0 && (
-        <div className="border-t border-stone-100">
-          <button onClick={() => setShowDone((v) => !v)} className="w-full text-left px-4 py-2 text-[12px] font-bold text-stone-400 hover:text-stone-600">完了 {doneN}件 {showDone ? "▾" : "▸"}</button>
-          {showDone && <div className="divide-y divide-stone-100">{list.done.map((x) => <Row key={x.id} x={x} />)}</div>}
-        </div>
-      )}
-    </section>
-  );
-}
-
 /* ===== ホームの「何をしますか？」（2026-10-04 AK「ホーム開いたら何をするのか？を選択できるように。みんな操作方法がわかってない」） =====
    やりたいこと → （案件が要るものは）どの案件か、の2タップで、その案件の該当タブを直接開く */
 const HOME_INTENTS = [
@@ -7446,14 +7334,10 @@ export default function App() {
   // 暦日の差（今日=0・明日=1・昨日=-1）。以前は「締切日の23:59までの残り時間」を切り上げていたため、
   // 2日前の締切が「1日遅れ」、12日後が「あと13日」と1日ずれていた（2026-09-26）
   const daysLeft = (d) => { if (!d) return null; const t = new Date(String(d).slice(0, 10) + "T00:00:00").getTime(); if (isNaN(t)) return null; const n = new Date(); return Math.round((t - new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime()) / 86400000); };
-  /* ホームの作業セクション（今日やること/確認待ち/期限近い/最近触った）を算出 */
+  /* ホームの案件候補を算出（作業を選ぶ画面で使用） */
   const homeSections = useMemo(() => {
     const rows = index.map((x) => { const d = caseData(x.id); return { id: x.id, name: (d && d.name) || x.name, channel: x.channel || DEFAULT_CHANNEL, collab: x.collab, status: liveStatus(x.id, d), deadline: (d && d.deadline) || "", nextAction: (d && d.nextAction) || "", updatedAt: (d && d.updatedAt) || x.createdAt || 0, dl: daysLeft(d && d.deadline) }; });
-    const review = rows.filter((r) => r.status === "確認中");
-    const due = rows.filter((r) => r.dl != null && r.dl <= 7 && r.status !== "完了").sort((a, b) => a.dl - b.dl);
-    const todo = rows.filter((r) => r.status !== "完了" && (r.nextAction.trim() || (r.dl != null && r.dl <= 3))).sort((a, b) => (a.dl == null ? 99 : a.dl) - (b.dl == null ? 99 : b.dl)).slice(0, 8);
-    const recent = recentIds.map((id) => rows.find((r) => r.id === id)).filter(Boolean).slice(0, 6);
-    return { rows, review, due, todo, recent };
+    return { rows };
   }, [index, boardCache, project, recentIds, activeId, studioStatus]);
 
   useEffect(() => {
@@ -13665,6 +13549,7 @@ export default function App() {
             if (o.needsCase) { setView("home"); setHomeIntent(HOME_INTENTS.find((x) => x.tab === o.tab) || null); }
             else if (o.ask) { setView("home"); if (user) setAskOpen(true); else { showToast("質問はログインすると使えます"); setShowAccount(true); } }
             else if (o.newCase) { setView("home"); setAddMenu({ channel: DEFAULT_CHANNEL, x: Math.max(12, window.innerWidth / 2 - 96), y: Math.max(80, window.innerHeight / 3) }); }
+            else if (o.team) setView("team");
             else if (o.learn) setShowLearn(true);
             else if (o.account) setShowAccount(true);
             else setView("home");
@@ -13856,8 +13741,7 @@ export default function App() {
               </div>
             )}
 
-            {/* 2026-09-29 AK「ホーム画面さっきのシンプルなものに戻して」：あなたの担当・今日の仕事は「担当と納期」へ移し、続きから開くは外した */}
-            {user && <TodayTodo theme={theme} cases={(myWork && myWork.cases) || []} onOpenCase={(id) => openCase(id)} />}
+            {/* 担当と納期は専用画面で確認する。ホームには案件を選ぶ導線だけを置く。 */}
             {(() => {
               const setMode = (m) => { setHomeMode(m); try { localStorage.setItem("mg:homeMode", m); } catch (e) {} };
               const STATUS_COLOR = { "完了": ["#E7F6EC", "#15803D"], "確認中": ["#FEF3E2", "#B45309"], "編集中": ["#E8F0FE", "#1D4ED8"], "企画中": ["#F3E8FF", "#7E22CE"], "未着手": ["#F1F0EE", "#78716C"] };
