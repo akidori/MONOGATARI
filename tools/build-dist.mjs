@@ -18,12 +18,17 @@ for (const file of publicFiles) await cp(path.join(root, file), path.join(dist, 
 await cp(path.join(root, "guide"), path.join(dist, "guide"), { recursive: true });
 
 const app = await readFile(path.join(dist, "app.js"));
-const version = createHash("sha256").update(app).digest("hex").slice(0, 12);
+const version = createHash("sha256").update(app)
+  .update(await readFile(path.join(dist, "app.css")))
+  .update(await readFile(path.join(dist, "tailwind.css")))
+  .digest("hex").slice(0, 12);
 
-const indexPath = path.join(dist, "index.html");
+for (const page of ["index.html", "settings.html"]) {
+const indexPath = path.join(dist, page);
 const index = (await readFile(indexPath, "utf8"))
   .replace(/(app\.js|app\.css|tailwind\.css)\?v=[^"']+/g, (_, file) => `${file}?v=${version}`);
 await writeFile(indexPath, index);
+}
 
 const swPath = path.join(dist, "sw.js");
 const sw = (await readFile(swPath, "utf8"))

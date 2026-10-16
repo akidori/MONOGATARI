@@ -1,0 +1,61 @@
+/* Editing surfaces only: home, public shares and the plan board keep their own layout. */
+.mg-workspace,.mg-settings {
+  --work-surface:#f5f3f0;
+  --work-border:#d6d3d1;
+  --work-focus:#9f1239;
+}
+.mg-workspace .mg-work-card,.mg-settings .card { border-radius:20px; box-shadow:none; }
+.mg-workspace .mg-work-card-heading { min-height:52px; padding-top:12px; padding-bottom:12px; background:#fafaf9; flex-wrap:wrap; }
+.mg-workspace .mg-work-card-heading h2 { min-width:0; }
+/* Text actions have room to tap; scene grips, timestamps and media controls keep their geometry. */
+.mg-workspace button:is(.px-3,.px-4,.px-2\.5),
+.mg-settings button,.mg-settings header a {
+  min-height:40px; height:auto; border-radius:999px; line-height:1.5;
+  transition:background-color 120ms ease,box-shadow 120ms ease;
+}
+.mg-workspace button:is(.px-3,.px-4,.px-2\.5):active:not(:disabled),
+.mg-settings button:active:not(:disabled) { box-shadow:inset 0 0 0 2px #29252433; }
+.mg-workspace button:disabled,.mg-settings button:disabled { cursor:not-allowed; }
+.mg-workspace :is(input:not([type]),input[type="text"],input[type="url"],input[type="date"],input[type="password"],select).border,
+.mg-settings :is(input,select) {
+  min-height:44px; min-width:0; border-radius:12px; border-color:var(--work-border);
+  background:var(--work-surface); color:#292524;
+}
+.mg-workspace textarea.border,.mg-settings textarea {
+  border-radius:12px; border-color:var(--work-border); background:#fafaf9; line-height:1.7;
+}
+.mg-workspace :is(input,textarea).border:focus,.mg-settings :is(input,textarea):focus { background:#fff; }
+.mg-workspace :is(button,a,input,textarea,select,summary,[role="button"]):focus-visible,
+.mg-settings :is(button,a,input,textarea,select,summary):focus-visible {
+  outline:3px solid var(--work-focus); outline-offset:2px;
+}
+.mg-workspace details>summary,.mg-settings details>summary { min-height:44px; padding-top:10px; padding-bottom:10px; }
+.mg-workspace .border-dashed { border-color:#a8a29e; border-radius:16px; }
+.mg-work-nav button { min-height:44px; border-radius:10px; }
+.mg-work-nav button[aria-current="page"] { box-shadow:inset 0 0 0 1px #ffffff55; }
+.mg-work-nav button:focus-visible,.mg-work-mobile-nav button:focus-visible { outline:2px solid currentColor; outline-offset:-3px; }
+.mg-settings { background:#f5f3f0; }
+.mg-settings .card { border-color:#e7e5e4; }
+.mg-settings .card .flex-1 { min-width:0; }
+.mg-settings header a { padding:8px 12px; background:#fff; border:1px solid #d6d3d1; white-space:nowrap; }
+@media(max-width:640px) {
+  .mg-workspace .mg-work-card,.mg-settings .card { border-radius:16px; }
+  .mg-workspace button:is(.px-3,.px-4,.px-2\.5),.mg-settings button { min-height:44px; }
+  .mg-workspace :is(input:not([type]),input[type="text"],input[type="url"],input[type="date"],input[type="password"],select).border,
+  .mg-workspace textarea.border,.mg-settings :is(input,select,textarea) { font-size:16px; }
+  .mg-settings header { flex-wrap:wrap; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .mg-workspace.mg-tab-in,.mg-workspace .mg-pop { animation:none; }
+  .mg-workspace button,.mg-settings button { transition:none; }
+}
+.mg-workspace .mg-file-action { position:relative; min-height:44px; display:inline-flex; align-items:center; justify-content:center; border-radius:999px; }
+.mg-workspace .mg-file-action:focus-within { outline:3px solid var(--work-focus); outline-offset:3px; }
+.mg-workspace .mg-prod-form input[type="number"] { min-height:44px; border-radius:12px; background:var(--work-surface); }
+.mg-workspace button:focus-visible { opacity:1; }
+@media(max-width:380px) {
+  .mg-workspace .mg-prod-form .grid-cols-2 { grid-template-columns:minmax(0,1fr); }
+}
+@media(pointer:coarse) {
+  .mg-workspace button.opacity-0 { opacity:1; }
+}

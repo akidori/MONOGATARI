@@ -20,6 +20,16 @@ if (!appPath) throw new Error("production index has no versioned app.js URL");
 const localApp = await readFile(path.join(dist, "app.js"));
 const remoteApp = Buffer.from(await (await fetch(`${origin}/${appPath}`)).arrayBuffer());
 assertMatch("app.js", localApp, remoteApp);
+// CSS has independent content changes; verify the exact URLs used by each page.
+for (const file of ["app.css", "tailwind.css"]) {
+  const assetPath = remoteIndex.toString("utf8").match(new RegExp(file.replace(".", "\\.") + "\\?v=[^\"']+"))?.[0];
+  if (!assetPath) throw new Error(`production index has no versioned ${file} URL`);
+  assertMatch(file, await readFile(path.join(dist, file)), Buffer.from(await (await fetch(`${origin}/${assetPath}`)).arrayBuffer()));
+}
+const localSettings = await readFile(path.join(dist, "settings.html"));
+const remoteSettings = Buffer.from(await (await fetch(`${origin}/settings.html?verify=${Date.now()}`)).arrayBuffer());
+assertMatch("settings.html", localSettings, remoteSettings);
+
 
 const localSw = await readFile(path.join(dist, "sw.js"));
 const remoteSw = Buffer.from(await (await fetch(`${origin}/sw.js?verify=${Date.now()}`)).arrayBuffer());

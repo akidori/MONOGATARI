@@ -11,6 +11,7 @@ import { snapshotSignature } from "./src/snap-signature.js";
 import { handoffMissing, addHandoffGap } from "./src/handoff-check.js";
 import { parseAgentResponse } from "./src/agent-response.js";
 import PlanBoardCard from "./src/plan-board-card.jsx";
+import "./src/workspace-ui.css";
 import { START_TOPICS, START_GREETING, startUrl, parseStartHash, matchTopics, mediaOf } from "./src/start-guide.js";
 import { mechanicalCheck, mechanicalText, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, matchesScriptRubric } from "./src/script-check.js";
 import { TODAY_STORE, rollover as todayRollover, addManual as todayAdd, toggle as todayToggle, removeManual as todayRemove, todoList as todayList, toggleStep as todayToggleStep, fmtSec as todayFmtSec } from "./src/today-todo.js";
@@ -2733,9 +2734,9 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
           <div className="text-[14px] font-bold text-stone-600 mb-1">確認用の動画を追加</div>
           <p className="text-[12px] text-stone-500 mb-4">mp4をここにドラッグ&ドロップ、または下のボタンから。0.5〜4倍速で試写しながら修正コメントを管理できます。</p>
           <div className="flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
-            <label className="flex-1 text-[13px] font-bold px-4 py-2.5 rounded-lg shadow cursor-pointer text-white" style={{ background: main }}>
+            <label className="mg-file-action flex-1 text-[13px] font-bold px-4 py-2.5 rounded-lg shadow cursor-pointer text-white" style={{ background: main }}>
               ⬆ mp4をアップロード
-              <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
+              <input type="file" accept="video/*" className="sr-only" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
             </label>
           </div>
           <div className="flex items-center gap-2 max-w-md mx-auto mt-2">
@@ -2797,9 +2798,9 @@ function ReviewBoard({ versions, trashedVersions, comments, main, accent, accent
             })}
           </React.Fragment>);
         })()}
-        <label className="shrink-0 px-3.5 py-1.5 rounded-lg text-[13px] font-bold text-white cursor-pointer flex items-center gap-1 shadow-sm hover:opacity-90" style={{ background: main }} title="動画をアップ（ここにドラッグ&ドロップでも追加できます）">
+        <label className="mg-file-action shrink-0 px-3.5 py-1.5 rounded-lg text-[13px] font-bold text-white cursor-pointer flex items-center gap-1 shadow-sm hover:opacity-90" style={{ background: main }} title="動画をアップ（ここにドラッグ&ドロップでも追加できます）">
           <span className="text-[14px] leading-none">⬆</span>動画を追加
-          <input type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
+          <input type="file" accept="video/*" className="sr-only" onChange={(e) => { const f = e.target.files && e.target.files[0]; if (f) onUploadVideo(f); e.target.value = ""; }} />
         </label>
       </div>
       {/* 修正サマリー */}
@@ -3812,7 +3813,7 @@ function ProdInfoForm({ meta, onMeta, promanFallback = "" }) {
   const inp = "w-full border border-stone-300 rounded-lg px-2.5 py-1.5 text-[13px]";
   const lbl = "block text-[12px] font-bold text-stone-600 mb-1";
   return (
-    <div className="space-y-3">
+    <div className="mg-prod-form space-y-3">
       <div>
         <label className={lbl}>演者（テロップに出る名前と呼び方）</label>
         {p.talents.map((x, i) => (
@@ -5065,6 +5066,20 @@ export default function App() {
   const [showCreator, setShowCreator] = useState(false); // クリエイタータイプ診断（どの画面からでも上に重ねて開く）
   const [showLearn, setShowLearn] = useState(false); // 学習（工程ごとのマニュアル。診断と同じく上に重ねて開く）
   const [view, setView] = useState("home");                // "home"(入口・一覧) | "editor"(案件編集) | "knowledge"(ナレッジ)
+  // Keep the active step visible when opening a deep link or restoring a session.
+  useEffect(() => {
+    if (!loaded || view !== "editor") return;
+    const frame = requestAnimationFrame(() => {
+      const nav = document.querySelector(".mg-work-mobile-nav");
+      const selected = nav && nav.querySelector('[aria-current="page"]');
+      const scroller = nav && nav.firstElementChild;
+      if (selected && scroller && scroller.clientWidth) {
+        const a = selected.getBoundingClientRect(), b = scroller.getBoundingClientRect();
+        scroller.scrollLeft += a.left - b.left - (b.width - a.width) / 2;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [tab, loaded, view]);
   // チャンネル単位の編集者ライブモード（index.html?ch=… ＝ログイン不要で当該クライアントの案件だけ・全タブ直接編集）
   const [chanLive, setChanLive] = useState(null);          // {id,name,channelInfo,cases:[{id,name,format,edit:{liveId,editToken}}]}
   const [chanActiveCase, setChanActiveCase] = useState(null); // chanLive中に開いている案件id（サイドバー強調用）
@@ -10280,12 +10295,12 @@ export default function App() {
 
   const metaInput = "block w-full bg-transparent text-[14px] px-3 py-2 focus:outline-none placeholder:text-stone-400";
   const opBtn = "w-6 h-6 grid place-items-center rounded-md text-stone-500 hover:bg-stone-200 hover:text-stone-700 text-[12px] leading-none transition-colors";
-  const cardCls = "bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden";
+  const cardCls = "mg-work-card bg-white rounded-2xl shadow-sm border border-stone-200/70 overflow-hidden";
   /* data-toc＝右端の目次レールが拾う目印。カード見出しは全タブ共通なので、ここに付ければ
      どのタブでも自動で目次が生える（個別タブに目次を作り込まない＝増改築でズレない） */
   const cardHead = (label, right, onClick) => (
     <div onClick={onClick} data-toc={typeof label === "string" ? label : undefined}
-      className={"px-4 py-2 flex items-center gap-2 border-b border-stone-100 " + (onClick ? "cursor-pointer select-none hover:bg-stone-50 transition-colors" : "")}>
+      className={"mg-work-card-heading px-4 py-2 flex items-center gap-2 border-b border-stone-100 " + (onClick ? "cursor-pointer select-none hover:bg-stone-50 transition-colors" : "")}>
       <span className="w-1.5 h-4 rounded-full" style={{ background: theme.accent }} />
       <h2 className="text-[15px] font-bold text-stone-900 flex-1">{label}</h2>
       {right}
@@ -10404,7 +10419,7 @@ export default function App() {
             const q = caseQuery.trim().toLowerCase();
             /* 作業メニュー：縦8行だと一覧が押し下げられて探しづらいので、アイコン＋短い名前の4列で並べる（2026-10-07 AK「案件探しづらい」） */
             const caseTabs = (
-              <nav aria-label="この案件の作業メニュー" className="ml-3 mb-1.5 mt-0.5 grid grid-cols-4 gap-0.5">
+              <nav aria-label="この案件の作業メニュー" className="mg-work-nav ml-3 mb-1.5 mt-0.5 grid grid-cols-4 gap-0.5">
                 {tabItems.map(([key, icon, label, short]) => {
                   const on = view === "editor" && tab === key;
                   return (
@@ -10887,11 +10902,11 @@ export default function App() {
         </div>
         {/* タブ：モバイルのみ横スクロールバー（詰め込まずフルラベルで読める。PCは左の縦レールへ移設） */}
         {/* 右端がタブの途中で切れて続きがあると気づきにくかった（2026-09-26）→ 右端をぼかし、押したタブは見える位置まで寄せる */}
-        <div className="sm:hidden relative">
+        <div className="mg-work-mobile-nav sm:hidden relative">
         <div className="overflow-x-auto" style={{ WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
           <div className="flex gap-1 px-2 pr-8 w-max">
             {tabItems.map(([k, ic, label]) => (
-              <button key={k} onClick={(e) => { setTab(k); try { e.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); } catch (_) {} }}
+              <button key={k} aria-current={tab === k ? "page" : undefined} onClick={(e) => { setTab(k); try { e.currentTarget.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); } catch (_) {} }}
                 className={"shrink-0 inline-flex items-center gap-1.5 whitespace-nowrap px-3.5 py-2.5 rounded-t-lg text-[13.5px] font-bold tracking-wide transition-colors " + (tab === k ? "" : "opacity-75")}
                 style={tab === k ? { background: "#E9E8E3", color: "#1C1C1E" } : { color: mainText }}>
                 <Icon name={ic} className="w-4 h-4 shrink-0" />
@@ -10970,7 +10985,7 @@ export default function App() {
           </div>
         </aside>
       )}
-      <main ref={mainRef} className={"flex-1 min-w-0 pt-5 " + (tab === "plan" ? "mg-plan-main" : "px-3 sm:px-5")} style={uiZoom !== 1 ? { zoom: uiZoom } : undefined}>
+      <main ref={mainRef} data-workspace-tab={tab} className={"flex-1 min-w-0 pt-5 " + (tab === "plan" ? "mg-plan-main" : "mg-workspace px-3 sm:px-5")} style={uiZoom !== 1 ? { zoom: uiZoom } : undefined}>
 
         {/* ===== 進行ストリップ（全タブ共通）：日程の正本＝Flip Board。ここは読み取りの「窓」 ===== */}
         {sched && (
@@ -12634,9 +12649,9 @@ export default function App() {
                     style={dragCat === cat ? { borderColor: theme.accent, background: "#fafaf8" } : {}}>
                     <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
                       <h3 className="text-[14px] font-bold text-stone-800">{ASSET_CAT_ICON[cat]} {cat} <span className="text-stone-500 font-normal">{items.length}</span></h3>
-                      <label title={project.shareId ? "ファイルを選んでアップ" : "共有リンクを一度発行するとアップできます"} className={"text-[12px] font-bold px-2.5 py-1.5 rounded-lg shadow-sm cursor-pointer " + (project.shareId ? "" : "pointer-events-none")} style={project.shareId ? { background: theme.main, color: "#fff" } : { background: "#E7E5E4", color: "#57534E" }}>
+                      <label title={project.shareId ? "ファイルを選んでアップ" : "共有リンクを一度発行するとアップできます"} className={"mg-file-action text-[12px] font-bold px-2.5 py-1.5 rounded-lg shadow-sm cursor-pointer " + (project.shareId ? "" : "pointer-events-none")} style={project.shareId ? { background: theme.main, color: "#fff" } : { background: "#E7E5E4", color: "#57534E" }}>
                         ＋ファイル
-                        <input type="file" multiple className="hidden" onChange={(e) => { const fs = Array.from(e.target.files || []); uploadAssets(fs, cat); e.target.value = ""; }} />
+                        <input type="file" multiple disabled={!project.shareId} className="sr-only" onChange={(e) => { const fs = Array.from(e.target.files || []); uploadAssets(fs, cat); e.target.value = ""; }} />
                       </label>
                     </div>
                     <p className="text-[12px] mb-2" style={dragCat === cat ? { color: theme.accent, fontWeight: 700 } : { color: "#78716C" }}>{dragCat === cat ? "📥 ここにドロップしてアップロード" : ASSET_CAT_DESC[cat]}{!project.shareId && dragCat !== cat && <span className="block text-stone-600 font-bold mt-0.5">共有リンクを一度発行するとアップできます</span>}</p>

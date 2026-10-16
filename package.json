@@ -12,7 +12,8 @@
     "test:plan-ui": "node tools/test-plan-board-ui.mjs",
     "deploy": "npm run build:dist && wrangler pages deploy dist --project-name monogataritch --branch main",
     "verify:prod": "node tools/verify-deploy.mjs",
-    "preview": "npm run build:dist && wrangler pages dev dist"
+    "preview": "npm run build:dist && wrangler pages dev dist",
+    "test:workspace-ui": "node tools/test-workspace-ui.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.11.3",
