@@ -43,7 +43,7 @@ export default function PlanBoardCard({ entry, number, data, dates, status, stat
           <div className="mg-plan-actions-menu">
             <button type="button" disabled={!canMoveUp} onClick={onMoveUp}>上へ移動</button>
             <button type="button" disabled={!canMoveDown} onClick={onMoveDown}>下へ移動</button>
-            <button type="button" onClick={onDelete}>この企画を削除</button>
+            <button type="button" className="mg-plan-delete" onClick={onDelete}>この企画を削除</button>
           </div>
         </details>
       </div>
@@ -61,7 +61,8 @@ export default function PlanBoardCard({ entry, number, data, dates, status, stat
             <span key={key} title={label + "：" + (dates[key] || "未定")}><span className="mg-plan-date-label">{label}</span> {compactPlanDate(dates[key])}</span>
           ))}
         </div>
-      <div className="mg-plan-ref-heading"><span>ベンチマーク</span><button type="button" disabled={!data} onClick={() => { setCopyStatus(""); intentDialog.current.showModal(); }}>企画の意図</button><button type="button" onClick={openEditor}>参考動画を編集</button></div>
+      <div className="mg-plan-card-tools"><button type="button" className="mg-plan-brief-open" disabled={!data} onClick={() => { setCopyStatus(""); intentDialog.current.showModal(); }}>企画の意図</button>
+      <div className="mg-plan-ref-heading"><span>ベンチマーク</span><button type="button" onClick={openEditor}>参考動画を編集</button></div></div>
       {references.length ? <div className={"mg-plan-reference-grid" + (allReferences ? " is-expanded" : "")}>
         {references.map((ref, i) => {
           const scored = ref.uploadDate ? score(ref, Date.now()) : null;

@@ -1,4 +1,10 @@
-.mg-plan-board { min-width:0; }
+/* Surface hierarchy inspired by M3 Expressive; retain the app's warm neutral palette. */
+.mg-plan-board { min-width:0; --plan-ink:#292524; --plan-muted:#57534e; --plan-surface:#f5f3f0; --plan-outline:#d6d3d1; }
+.mg-plan-card :is(button,summary,input,textarea):focus-visible { outline:3px solid #9f1239; outline-offset:3px; }
+.mg-plan-card button:disabled { cursor:not-allowed; opacity:.45; }
+.mg-plan-card button { transition:background-color 120ms ease,box-shadow 120ms ease; }
+.mg-plan-card button:active:not(:disabled) { box-shadow:inset 0 0 0 2px #29252433; }
+@media(prefers-reduced-motion:reduce) { .mg-plan-card button { transition:none; } }
 .mg-plan-main { padding-left:16px; padding-right:16px; }
 .mg-plan-toolbar { container-type:inline-size; container-name:plan-toolbar; }
 @container plan-toolbar (max-width:720px) {
@@ -10,33 +16,38 @@
 .mg-sidebar .group\/ch>span { font-size:12px; }
 .mg-sidebar .group\/p { margin-left:10px; padding-left:8px; padding-right:6px; }
 .mg-sidebar .group\/p span { font-size:12px; }
-.mg-plan-card { padding:12px 16px; margin-bottom:10px; background:#fff; border:1px solid #e7e5e4; border-radius:9px; min-width:0; }
-.mg-plan-card.is-active { border-color:#b9b5ad; }
-.mg-plan-meta { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:8px 12px; align-items:center; margin-bottom:6px; }
+.mg-plan-card { padding:18px 20px; margin-bottom:16px; background:#fff; border:1px solid #e7e5e4; border-radius:20px; min-width:0; }
+.mg-plan-card.is-active { border-color:#a8a29e; box-shadow:0 0 0 1px #a8a29e; }
+.mg-plan-meta { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; gap:8px 12px; align-items:center; margin-bottom:12px; }
 .mg-plan-number { font-size:11px; color:#78716c; white-space:nowrap; }
 .mg-plan-dates { display:flex; flex-wrap:wrap; gap:4px 14px; font-size:12px; color:#57534e; min-width:0; font-variant-numeric:tabular-nums; margin-top:7px; }
 .mg-plan-dates>span { overflow-wrap:anywhere; }
 .mg-plan-date-label { font-size:11px; color:#78716c; }
-.mg-plan-status { font-size:11px; padding:2px 7px; background:#f5f5f4; border-radius:4px; color:#57534e; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mg-plan-script { white-space:nowrap; padding:4px 5px; border-radius:4px; min-height:28px; font-size:12px; color:#57534e; }
-.mg-plan-script:hover,.mg-plan-ref-heading button:hover { background:#f5f5f4; color:#1c1917; }
+.mg-plan-status { font-size:11px; padding:5px 10px; background:#f5f3f0; border-radius:999px; color:#57534e; max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mg-plan-script { white-space:nowrap; padding:8px 12px; border-radius:999px; min-height:40px; font-size:12px; font-weight:700; color:#fff; background:#292524; }
+.mg-plan-script:hover { background:#44403c; color:#fff; }
+.mg-plan-ref-heading button:hover,.mg-plan-brief-open:hover { background:#e7e5e4; }
 .mg-plan-script-short { display:none; }
 .mg-plan-actions { position:relative; }
-.mg-plan-actions summary { display:grid; place-items:center; width:28px; height:28px; list-style:none; border-radius:4px; cursor:pointer; color:#78716c; }
+.mg-plan-actions summary { display:grid; place-items:center; width:40px; height:40px; list-style:none; border-radius:999px; background:#f5f3f0; cursor:pointer; color:#78716c; }
 .mg-plan-actions summary::-webkit-details-marker { display:none; }
-.mg-plan-actions-menu { position:absolute; top:100%; right:0; z-index:10; min-width:150px; background:#fff; border:1px solid #e7e5e4; border-radius:8px; padding:4px; box-shadow:0 8px 20px #0002; }
-.mg-plan-actions-menu button { display:block; padding:8px; text-align:left; width:100%; font-size:12px; border-radius:4px; }
+.mg-plan-actions-menu { position:absolute; top:100%; right:0; z-index:10; min-width:150px; background:#fff; border:1px solid #e7e5e4; border-radius:16px; padding:6px; box-shadow:0 8px 24px #0002; }
+.mg-plan-actions-menu button { display:block; padding:10px 12px; min-height:44px; text-align:left; width:100%; font-size:13px; border-radius:10px; }
 .mg-plan-actions-menu button:hover { background:#f5f5f4; }
+.mg-plan-actions-menu .mg-plan-delete { color:#b91c1c; }
 .mg-plan-actions-menu button:disabled { opacity:.35; }
-.mg-plan-title { display:block; width:100%; min-width:0; font-size:16px; line-height:1.6; font-weight:600; padding:0; background:transparent; border:0; border-radius:3px; color:#292524; }
+.mg-plan-title { display:block; width:100%; min-width:0; font-size:18px; line-height:1.6; font-weight:600; padding:0; background:transparent; border:0; border-radius:3px; color:#292524; }
 .mg-plan-title:focus { outline:1px solid #a8a29e; outline-offset:2px; }
 .mg-plan-copies { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 8px; margin-top:6px; }
-.mg-plan-copy { display:flex; min-width:0; gap:8px; align-items:center; padding:3px 8px; background:#f5f5f4; border-radius:4px; }
+.mg-plan-copy { display:flex; min-width:0; gap:8px; align-items:center; padding:10px 12px; min-height:44px; background:#f5f3f0; border-radius:12px; }
 .mg-plan-copy>span { font-size:11px; white-space:nowrap; color:#78716c; }
 .mg-plan-copy input { width:100%; min-width:0; font-size:12px; line-height:1.6; color:#57534e; background:transparent; padding:0; border:0; }
 .mg-plan-copy input:focus { outline:1px solid #a8a29e; }
-.mg-plan-ref-heading { display:flex; align-items:center; justify-content:space-between; gap:8px; margin:9px 0 5px; font-size:11px; color:#78716c; }
-.mg-plan-ref-heading button { font-size:11px; padding:3px 5px; border-radius:3px; }
+.mg-plan-ref-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; margin:14px 0 8px; font-size:12px; color:#78716c; }
+.mg-plan-ref-heading button,.mg-plan-brief-open { font-size:12px; font-weight:600; padding:8px 12px; min-height:40px; border-radius:999px; background:#f5f3f0; color:#44403c; }
+.mg-plan-card-tools { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin:12px 0 8px; }
+.mg-plan-card-tools .mg-plan-ref-heading { margin:0; }
+.mg-plan-brief-open { border:1px solid #d6d3d1; background:#fff; }
 .mg-plan-reference-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
 .mg-plan-reference { display:block; min-width:0; text-align:left; border-radius:5px; }
 .mg-plan-thumbnail { position:relative; display:block; aspect-ratio:16/9; }
@@ -45,15 +56,17 @@
 .mg-plan-duration { position:absolute; bottom:3px; right:3px; padding:0 3px; border-radius:3px; background:#000b; color:#fff; font-size:11px; }
 .mg-plan-reference-title { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; height:36px; font-size:12px; line-height:18px; margin-top:5px; color:#57534e; overflow-wrap:anywhere; }
 .mg-plan-reference-toggle { display:none; }
-.mg-plan-empty { color:#78716c; font-size:12px; padding:8px 0; }
-.mg-plan-dialog { width:min(1100px,calc(100% - 24px)); max-height:85dvh; border:1px solid #d6d3d1; border-radius:12px; padding:16px; background:#fff; color:#292524; }
+.mg-plan-empty { color:#57534e; font-size:13px; padding:14px; width:100%; min-height:48px; border:1px dashed #a8a29e; border-radius:12px; text-align:left; background:#fafaf9; }
+.mg-plan-dialog { width:min(1100px,calc(100% - 24px)); max-height:85dvh; border:1px solid #d6d3d1; border-radius:24px; padding:20px; background:#fff; color:#292524; overscroll-behavior:contain; }
 .mg-plan-dialog::backdrop { background:#1c191760; }
-.mg-plan-dialog-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:14px; }
-.mg-plan-dialog-heading button { padding:8px 12px; border-radius:6px; font-size:12px; background:#f5f5f4; }
+.mg-plan-dialog-heading { position:sticky; top:-20px; z-index:2; background:#fff; padding:12px 0; display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:14px; }
+.mg-plan-dialog-heading button { padding:10px 16px; min-height:44px; border-radius:999px; font-size:13px; background:#f5f3f0; }
 .mg-plan-dialog-title { font-size:12px; margin:6px 0 12px; color:#78716c; overflow-wrap:anywhere; }
 @media(max-width:640px) {
  .mg-plan-main { padding-left:10px; padding-right:10px; }
- .mg-plan-card { padding:10px 12px; }
+ .mg-plan-card { padding:14px 12px; border-radius:16px; }
+ .mg-plan-script { padding:8px; }
+ .mg-plan-title { font-size:16px; }
  .mg-plan-meta { grid-template-columns:minmax(0,1fr) auto auto auto; gap:4px 6px; }
  .mg-plan-dates { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-bottom:4px; }
  .mg-plan-status { grid-column:2; grid-row:1; max-width:90px; }
@@ -68,7 +81,8 @@
  .mg-plan-reference:not(:first-child) { display:none; }
  .mg-plan-reference-grid.is-expanded .mg-plan-reference { display:grid; }
  .mg-plan-reference-toggle { display:block; padding:6px 0; min-height:44px; font-size:12px; color:#78716c; text-align:left; }
- .mg-plan-dialog { padding:12px; }
+ .mg-plan-dialog { padding:12px; border-radius:20px; max-height:90dvh; }
+ .mg-plan-dialog-heading { top:-12px; }
 }
 @media(pointer:coarse) {
  .mg-plan-script,.mg-plan-actions summary,.mg-plan-ref-heading button,.mg-plan-dialog-heading button { min-height:44px; }
@@ -93,3 +107,9 @@
 .mg-plan-skill-copy { font-size:12px; color:#57534e; padding:10px 0; }
 .mg-plan-skill-copy:disabled { opacity:.4; }
 @media(pointer:coarse) { .mg-plan-intent-text { font-size:16px; } }
+
+.mg-plan-dates { gap:2px; margin-top:12px; }
+.mg-plan-dates>span { background:#f5f3f0; padding:8px 10px; flex:1; min-width:0; }
+.mg-plan-dates>span:first-child { border-radius:10px 0 0 10px; }
+.mg-plan-dates>span:last-child { border-radius:0 10px 10px 0; }
+.mg-plan-date-label { display:block; margin-bottom:2px; color:#57534e; }
