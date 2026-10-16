@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: ["./monogataritch.src.jsx", "./*.html"],
+  content: ["./monogataritch.src.jsx", "./src/**/*.{js,jsx}", "./*.html"],
   theme: {
     extend: {
       // 和文は字面が詰まっているので、欧文前提の字間（wider=0.05em, widest=0.1em）だと

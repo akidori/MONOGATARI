@@ -11,6 +11,7 @@ import { snapshotSignature } from "./src/snap-signature.js";
 import { handoffMissing, addHandoffGap } from "./src/handoff-check.js";
 import { parseAgentResponse } from "./src/agent-response.js";
 import PlanBoardCard from "./src/plan-board-card.jsx";
+import EditWorkflow from "./src/edit-workflow.jsx";
 import "./src/workspace-ui.css";
 import { START_TOPICS, START_GREETING, startUrl, parseStartHash, matchTopics, mediaOf } from "./src/start-guide.js";
 import { mechanicalCheck, mechanicalText, SCRIPT_RUBRIC_VERSION, SCRIPT_STORY_TYPES, scriptRubric, matchesScriptRubric } from "./src/script-check.js";
@@ -400,6 +401,7 @@ const newProjectData = (name = "新規案件", channel = DEFAULT_CHANNEL, format
   timeFormat: "tc",
   rows: format === "talk" ? [] : templateRows(),
   talk: format === "talk" ? newTalk() : null,
+  editWorkflow: { overall: "", sections: {} },
   plans: [],
   hearing: HEARING_TEMPLATE(),
   wizard: newWizard(),
@@ -477,6 +479,7 @@ const migrateProject = (p) => {
     talk: p.format === "talk"
       ? { ...newTalk(), ...(p.talk || {}), toc: (p.talk && p.talk.toc && p.talk.toc.length) ? p.talk.toc : [""], body: (p.talk && p.talk.body && p.talk.body.length) ? p.talk.body : [newTalkBody()] }
       : (p.talk || null),
+    editWorkflow: { overall: "", ...(p.editWorkflow || {}), sections: { ...((p.editWorkflow && p.editWorkflow.sections) || {}) } },
     hearing: (Array.isArray(p.hearing) && p.hearing.length) ? p.hearing : HEARING_TEMPLATE(),
     wizard: { ...newWizard(), ...(p.wizard || {}), meta: { ...newWizard().meta, ...((p.wizard && p.wizard.meta) || {}) }, answers: (p.wizard && p.wizard.answers && typeof p.wizard.answers === "object") ? p.wizard.answers : {} },
     assets: assetsFromLegacy(p),
@@ -4856,7 +4859,7 @@ export default function App() {
   };
   const [spineDrag, setSpineDrag] = useState(null);          // 背骨のD&D {from, over}（ロケブロックごと並べ替え）
   const [deliverBusy, setDeliverBusy] = useState(false);
-  const [saveState, setSaveState] = useState("ok");   // ok | error（クラウド保存の状態。回線断のsilent lost可視化）
+  const [saveState, setSaveState] = useState("ok");   // ok | pending | saving | error | quota
   const [showTheme, setShowTheme] = useState(false);
   // 選択ページはリロードしても保持（ツリービューの「現在地が消えない」ため）。共有/ライブの?tab=指定が最優先。
   const [tab, setTab] = useState(() => { try { return localStorage.getItem("mg:tab") || "overview"; } catch (_) { return "overview"; } }); // overview | plan | script | kouban | assets | review | deliver | concept
@@ -5047,7 +5050,7 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     const talk = project.format === "talk";
-    const valid = ["overview", "regulations", "plan", ...(talk ? [] : ["hearing"]), "script", ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
+    const valid = ["overview", "regulations", "plan", ...(talk ? [] : ["hearing"]), "script", "editflow", ...(talk ? [] : ["kouban"]), "assets", "review", "deliver", "concept"]
       .filter((k) => !LIVE_ONLY_TABS || LIVE_ONLY_TABS.includes(k));
     if (!valid.includes(tab)) setTab(valid[0] || "overview");
   }, [project && project.format, project && project.id, tab]);
@@ -5389,7 +5392,7 @@ export default function App() {
             // 不正値は下の「保存した選択ページの正規化」useEffectがoverviewへ補正するので、
             // ここでは軽くホワイトリスト検証するのみ
             const wantTab = new URLSearchParams(location.search).get("tab");
-            if (wantTab && ["overview", "plan", "hearing", "script", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
+            if (wantTab && ["overview", "plan", "hearing", "script", "editflow", "kouban", "assets", "review", "deliver", "concept"].includes(wantTab)) {
               setTab(wantTab);
             }
             setLoaded(true); return;
@@ -5584,6 +5587,7 @@ export default function App() {
       return () => clearTimeout(liveSendTimer.current);
     }
     clearTimeout(saveTimer.current);
+    if (JSON.stringify(cleanProj(project)) !== lastSaveSigRef.current && saveState !== "error" && saveState !== "quota") setSaveState("pending");
     // 0.7秒→3秒。打鍵が0.7秒止まるたびに1書込していたのがKV枠枯渇の主因のひとつ。
     // 案件切替/タブ閉じ/共有発行の直前には別途フラッシュ保存が走るので、遅くしても取りこぼさない。
     saveTimer.current = setTimeout(async () => {
@@ -5591,10 +5595,14 @@ export default function App() {
       const sig = JSON.stringify(cleanProj(project));
       if (sig === lastSaveSigRef.current && !pendingSaveRef.current) return;   // 中身が変わってなければ書かない
       if (Date.now() < quotaUntilRef.current) { pendingSaveRef.current = project; setSaveState("quota"); return; }
+      setSaveState("saving");
       const ok = await saveProjectData(project);
       if (ok === false) { pendingSaveRef.current = project; setSaveState(Date.now() < quotaUntilRef.current ? "quota" : "error"); }
       else {
-        pendingSaveRef.current = null; lastSaveSigRef.current = sig; setSaveState("ok"); recordHistory(project);
+        lastSaveSigRef.current = sig;
+        if (JSON.stringify(cleanProj(projectLiveRef.current)) === sig) { pendingSaveRef.current = null; setSaveState("ok"); }
+        else setSaveState("pending");
+        recordHistory(project);
         // 発行済みの同時編集リンク（DO）にも同じ内容を押し込む（2026-08-18・置き去りDO対策）。
         // 本体だけ直してDOが古いままだと、編集リンクを開いた人が昔の版を見る。失敗しても本体保存は成立済みなので握りつぶす。
         if (project.liveId && project.liveToken && !project.live) {
@@ -5727,7 +5735,7 @@ export default function App() {
       if (typeof navigator !== "undefined" && navigator.onLine === false) return schedule(8000);
       if (Date.now() < quotaUntilRef.current) { setSaveState("quota"); return schedule(60000); } // 上限中は一切叩かない
       const ok = await saveProjectData(p);
-      if (ok !== false) { pendingSaveRef.current = null; setSaveState("ok"); retryDelayRef.current = 8000; return schedule(8000); }
+      if (ok !== false) { pendingSaveRef.current = null; lastSaveSigRef.current = JSON.stringify(cleanProj(p)); setSaveState(JSON.stringify(cleanProj(projectLiveRef.current)) === lastSaveSigRef.current ? "ok" : "pending"); retryDelayRef.current = 8000; return schedule(8000); }
       retryDelayRef.current = Math.min(retryDelayRef.current * 2, 600000);
       schedule(retryDelayRef.current);
     };
@@ -8055,7 +8063,7 @@ export default function App() {
     setShareModal({ id, url, updated: !!project.shareId, handoff: h, text });
     try { await navigator.clipboard.writeText(text); showToast(h.label + "用のリンク＋文面をコピーしたよ。あとは貼るだけ📋"); } catch (e) {}
   };
-  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", wizard: "取材メモ", script: "構成台本", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル", manual: "適用レギュレーション" };
+  const TAB_LABEL = { overview: "概要", plan: "企画・サムネ", hearing: "取材メモ", wizard: "取材メモ", script: "構成台本", editflow: "編集ワークフロー", kouban: "香盤表", assets: "素材管理", review: "動画確認", deliver: "納品完了", concept: "チャンネル", manual: "適用レギュレーション" };
   const HANDOFF_TAB_CHOICES = ["review", "manual", "script", "kouban", "assets", "plan", "hearing", "concept", "deliver"]; // 受け渡しで選べるタブ
   /* AI（Claude/GPT）に読ませる用リンク。share.html ではなくサーバー読み取り可能な JSON エンドポイントを渡す。
      #フラグメントは外部fetchで読めないので live URL は不可。/api/snap/{id} はトークン不要の読み取り専用JSON。 */
@@ -10192,7 +10200,7 @@ export default function App() {
   );
 
   // 工程タブ：モバイル横バーとPC縦レールで共有（重複防止）
-  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
+  const tabItemsAll = [["overview", "note", "概要", "概要"], ["plan", "image", "企画・サムネ", "企画"], ...(project.format === "talk" ? [] : [["hearing", "chat", "取材メモ", "取材"]]), ["script", "file", "構成台本", "台本"], ["editflow", "map", "編集ワークフロー", "編集"], ...(project.format === "talk" ? [] : [["kouban", "map", "香盤表", "香盤"]]), ["assets", "folder", "素材管理", "素材"], ["review", "video", "動画確認", "動画"], ["deliver", "checkCircle", "納品完了", "納品"]];
   // 「このタブだけ編集」リンク（?live=..&tab=..）で開かれた時は、そのタブ以外を出さない
   const tabItemsLimited = LIVE_ONLY_TABS ? tabItemsAll.filter((t) => LIVE_ONLY_TABS.includes(t[0])) : null;
   const tabItems = (tabItemsLimited && tabItemsLimited.length) ? tabItemsLimited : tabItemsAll;
@@ -10555,12 +10563,12 @@ export default function App() {
         </div>
         {/* 保存できていない事実を正直に出す。旧実装はKV書込上限で落ちていても「電波待ち」と表示していて、
             回線のせいだと誤認したまま編集を続け、その日の作業が丸ごと消えた（2026-07-27 矢内さん案件）。 */}
-        <div className={"px-3 py-2 border-t border-white/10 text-[11px] " + (saveState === "quota" ? "text-rose-400 font-bold" : saveState === "error" ? "text-amber-400" : "text-white/30")}>
+        <div className={"px-3 py-2 border-t border-white/10 text-[11px] " + (saveState === "quota" ? "text-rose-400 font-bold" : saveState === "error" ? "text-amber-400" : "text-white/60")}>
           {saveState === "quota"
             ? "保存できません（本日の書き込み上限）。朝9時まで回復しません。編集を続けても消えます — 台本コピーで退避を"
             : saveState === "error"
               ? index.length + "件の案件・未保存（再送中）。この状態でリロードすると消えます"
-              : index.length + "件の案件・自動保存"}
+              : index.length + "件の案件・" + (project.live ? "共同編集中" : saveState === "pending" ? "保存待ち" : saveState === "saving" ? "保存中" : user ? "クラウドに保存済み" : "この端末に保存済み")}
         </div>
         {/* 幅を変える取っ手（220〜420px・記憶する）。案件名が長いクライアントで広げられるように */}
         <div
@@ -10609,6 +10617,9 @@ export default function App() {
           </div>
           {/* カテゴリ（チャンネル）チップはヘッダーから撤去（2026-07-23 AK指示）。変更は左の案件ツリー側で行う */}
           <div className="mg-plan-toolbar-actions flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0">
+          <span role="status" aria-live="polite" className={"shrink-0 rounded-lg border px-2 py-1 text-[11px] font-bold " + (saveState === "quota" || saveState === "error" ? "border-rose-300 bg-rose-50 text-rose-700" : "border-white/25")} title={saveState === "quota" ? "書き込み上限に達しました。台本をコピーして退避してください" : saveState === "error" ? "保存できていません。自動再送中です" : undefined} style={saveState === "quota" || saveState === "error" ? undefined : { color: mainText }}>
+            {saveState === "quota" ? "保存不可" : saveState === "error" ? "未保存・再送中" : project.live ? "共同編集中" : saveState === "pending" ? "保存待ち" : saveState === "saving" ? "保存中" : user ? "クラウド保存済み" : "端末に保存済み"}
+          </span>
           {/* Googleアカウント（チャンネル名の右横） */}
           <button onClick={() => setShowAccount(true)} title={user ? user.name + "（クラウド同期中）" : "ログイン / アカウント"}
             className="w-8 h-8 rounded-full grid place-items-center border border-white/20 hover:bg-white/10 overflow-hidden shrink-0" style={{ color: mainText }}>
@@ -12440,6 +12451,8 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {tab === "editflow" && <EditWorkflow project={project} setProject={setProject} setTab={setTab} readOnly={!!project.live && project.liveRole === "viewer"} />}
 
         {/* ================= 素材管理タブ（assets単一正本） ================= */}
         {tab === "assets" && (

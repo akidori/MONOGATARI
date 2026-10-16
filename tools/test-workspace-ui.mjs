@@ -36,7 +36,7 @@ try {
     [project,doc].forEach(p=>localStorage.setItem('mg:monogataritch-proj-'+p.id,JSON.stringify(p)));
     localStorage.setItem('mg:monogataritch-index-v1',JSON.stringify([project,doc].map(({id,name,channel,createdAt})=>({id,name,channel,createdAt}))));localStorage.setItem('ui-seeded','1');
   },{project});
-  for(const tab of ['overview','script','hearing','kouban','assets','review','deliver']) {
+  for(const tab of ['overview','script','editflow','hearing','kouban','assets','review','deliver']) {
     const id=['hearing','kouban'].includes(tab)?'ui-doc':'ui-synthetic';
     await page.goto(origin+'/?case='+id+'&tab='+tab);
     const main=page.locator('main[data-workspace-tab="'+tab+'"]');await main.waitFor();
@@ -54,6 +54,16 @@ try {
       const data=await page.evaluate(()=>JSON.parse(localStorage.getItem('mg:monogataritch-proj-ui-synthetic')));
       assert.equal(data.plans[0].title,'編集保存の確認');assert.equal(data.meta.note,'保持するメモ');assert.equal(data.plans[0].unknown,'keep-plan');
       await page.goto(origin+'/?case=ui-synthetic&tab=script');await main.waitFor();
+    }
+    if(tab==='editflow') {
+      await main.getByLabel('全体の編集方針').fill('自然な間を残す');
+      await main.getByText('ハイライト',{exact:true}).first().click();
+      await main.getByText('粗編集の指示',{exact:true}).locator('..').locator('textarea').fill('0.2秒だけ切る');
+      await page.waitForTimeout(3500);
+      await page.reload();await page.locator('main[data-workspace-tab="editflow"]').waitFor();
+      const data=await page.evaluate(()=>JSON.parse(localStorage.getItem('mg:monogataritch-proj-ui-synthetic')));
+      assert.equal(data.editWorkflow.overall,'自然な間を残す');
+      assert.equal(data.editWorkflow.sections['talk-highlight'].roughCut,'0.2秒だけ切る');
     }
     await page.screenshot({path:path.join(output,`${tab}-${width}.png`),fullPage:true});
     console.log(`${tab}: ${width}px passed`);
