@@ -3,7 +3,8 @@
 //   node tools/seed-workspace.mjs --id ws_birdflip --name "Bird Flip" --owner-sub <Google sub> --owner-email <メール> > /tmp/seed.sql
 //   cd worker && npx wrangler d1 execute birdflip_ledger --remote --file /tmp/seed.sql
 // 何度流しても同じ結果（INSERT OR IGNORE・workspace_id が空の行だけ埋める）。
-// 入れるのはオーナー本人の行（案件・設定）だけ。他の人の行は招待して入った時に移す。
+// 入れるのはオーナー本人の案件の行（monogataritch-proj-*）だけ。個人設定の行は個人のまま。
+// 共同編集（KV col:）の案件と他の人の案件は2本目で移す。
 import { pathToFileURL } from "node:url";
 
 const ID_RE = /^ws_[a-z0-9_]{2,40}$/;
@@ -20,7 +21,7 @@ export function buildSeedSql({ id, name, ownerSub, ownerEmail, now = Date.now() 
   return [
     `INSERT OR IGNORE INTO mg_workspaces (id, name, plan, status, limits, created_at) VALUES (${q(id)}, ${q(name)}, 'invite', 'active', '{}', ${Number(now)});`,
     `INSERT OR IGNORE INTO mg_members (workspace_id, sub, email, role, created_at) VALUES (${q(id)}, ${q(ownerSub)}, ${q(ownerEmail.toLowerCase())}, 'owner', ${Number(now)});`,
-    `UPDATE mg_kv SET workspace_id = ${q(id)} WHERE workspace_id IS NULL AND sub = ${q(ownerSub)};`,
+    `UPDATE mg_kv SET workspace_id = ${q(id)} WHERE workspace_id IS NULL AND sub = ${q(ownerSub)} AND key LIKE 'monogataritch-proj-%';`,
   ].join("\n") + "\n";
 }
 

@@ -52,5 +52,6 @@ CREATE TABLE IF NOT EXISTS mg_usage (
   PRIMARY KEY (workspace_id, day, metric)
 );
 
+-- 入れるのは案件の行（key が monogataritch-proj-*）だけ。個人設定の行は NULL のまま
 ALTER TABLE mg_kv ADD COLUMN workspace_id TEXT;
 CREATE INDEX IF NOT EXISTS mg_kv_workspace ON mg_kv(workspace_id);

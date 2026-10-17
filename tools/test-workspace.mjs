@@ -40,7 +40,7 @@ assert.ok(isWriteBlocked(null));
 const sql = buildSeedSql({ id: "ws_birdflip", name: "Bird Flip", ownerSub: "1234567890", ownerEmail: "AK@Example.com", now: 1 });
 assert.ok(sql.includes("INSERT OR IGNORE INTO mg_workspaces"));
 assert.ok(sql.includes("'ak@example.com', 'owner'"), "メールは小文字で入れる");
-assert.ok(sql.includes("WHERE workspace_id IS NULL AND sub = '1234567890'"), "埋めるのは空の行・オーナー本人の行だけ");
+assert.ok(sql.includes("WHERE workspace_id IS NULL AND sub = '1234567890' AND key LIKE 'monogataritch-proj-%'"), "埋めるのは空の行・オーナー本人の案件の行だけ");
 assert.throws(() => buildSeedSql({ id: "birdflip", name: "x", ownerSub: "12345", ownerEmail: "a@b.c" }), /ws_/);
 assert.throws(() => buildSeedSql({ id: "ws_xy", name: "x", ownerSub: "1 OR 1=1", ownerEmail: "a@b.c" }), /sub/);
 assert.throws(() => buildSeedSql({ id: "ws_xy", name: "x", ownerSub: "12345", ownerEmail: "a'@b.c" }), /メール/);
