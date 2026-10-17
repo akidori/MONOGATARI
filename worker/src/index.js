@@ -11,6 +11,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { handleMcp, studioDoneProjIds } from "./mcp.js";
+import { loadCollab, saveCollab, deleteCollab, collabIdsFor } from "./collab-store.js";
 import { runDeadlineReminders, workForCase, jstDate, sectionsOf } from "./reminders.js";
 // 工程リマインドに添えるマニュアル（正本は knowledge/ と tools/。wrangler.toml の Text ルールで同梱）
 import MANUAL_MD from "../../knowledge/SCRIPT_PRODUCTION_MANUAL_V1.md";
@@ -2194,7 +2195,7 @@ ${qList}
 
       // POST /api/my-work { ids: [caseId...] } → { today, cases: [workForCase] }（編集者のダッシュボード・2026-09-26）
       // Studio OS の工程から「今やること・自分の工程の締切・早い/遅れ・納期」を返す。
-      // 編集者には自分が共同編集メンバーの案件だけ（colmember 索引で確認）、管理者は送られた案件すべて。お金などの情報は返さない
+      // 編集者には自分が共同編集メンバーの案件だけ（collabIdsFor で確認）、管理者は送られた案件すべて。お金などの情報は返さない
       if (request.method === "POST" && parts[0] === "api" && parts[1] === "my-work" && !parts[2]) {
         const u = await requireUser(request, env);
         if (!u) return json({ error: "unauthorized" }, 401);
@@ -2205,7 +2206,7 @@ ${qList}
         const staffUser = isStaff(u, env);
         let mine = new Set();
         if (!staffUser) {
-          mine = new Set((await env.SNAPS.get("colmember:" + lc(u.email), "json")) || []);
+          mine = new Set(await collabIdsFor(env, u.email));
           allowed = new Set(asked.filter((id) => mine.has(id)));
         }
         // 2026-09-29 AK「担当になったら自動で開ける」：Studio OSで担当に入っている案件は、ものがたりっちに
@@ -2268,7 +2269,7 @@ ${qList}
         const chCache = {};
         for (const c of cases) {
           try {
-            const doc = await env.SNAPS.get("col:" + c.caseId, "json");
+            const doc = await loadCollab(env, c.caseId);
             // 今日やることの手順分け用（2026-09-29）：構成台本のロケ＝セクション名。「00 〇〇の粗カット」のように使う
             c.sections = sectionsOf(doc && doc.project);
             if (!doc || !doc.ownerSub) continue;
@@ -2747,11 +2748,9 @@ async function del(fileKey, btn) {
         const myEmail = lc(u.email);
         const op = parts[2];
         const b = await request.json();
-        const docKey = (id) => "col:" + id;
-        const loadDoc = async (id) => (id ? await env.SNAPS.get(docKey(id), "json") : null);
+        // 保存先は D1（collab-store.js・2026-10-17）。KV にしか無い古い共同編集は読んだ時に D1 へ写る
+        const loadDoc = (id) => loadCollab(env, id);
         const canEdit = (doc) => doc && (doc.ownerSub === u.sub || (doc.members || []).includes(myEmail));
-        const addIdx = async (email, id) => { const k = "colmember:" + lc(email); const a = (await env.SNAPS.get(k, "json")) || []; if (!a.includes(id)) { a.push(id); await env.SNAPS.put(k, JSON.stringify(a)); } };
-        const delIdx = async (email, id) => { const k = "colmember:" + lc(email); const a = (await env.SNAPS.get(k, "json")) || []; const n = a.filter((x) => x !== id); await env.SNAPS.put(k, JSON.stringify(n)); };
 
         if (op === "upsert") {
           const project = b.project; const id = (b.id || (project && project.id) || "").toString();
@@ -2759,7 +2758,6 @@ async function del(fileKey, btn) {
           let doc = await loadDoc(id);
           if (!doc) {
             doc = { id, ownerSub: u.sub, ownerEmail: myEmail, members: [myEmail], project, name: project.name || "", channel: project.channel || "", updatedAt: now() };
-            await addIdx(myEmail, id);
           } else {
             if (!canEdit(doc)) return json({ error: "forbidden" }, 403);
             // 競合検知（2026-08-18）：クライアントが最後に見た版(baseUpdatedAt)より新しい保存が既にあれば
@@ -2777,16 +2775,10 @@ async function del(fileKey, btn) {
             }
             doc.project = project; doc.name = project.name || doc.name; doc.channel = project.channel || doc.channel; doc.updatedAt = now();
           }
-          await env.SNAPS.put(docKey(id), JSON.stringify(doc));
-          // D1 mg_kv も同期（2026-08-25）：共同編集昇格後も Studio OS 等の mg_kv 直読み
-          // （links-batch/summary/editor-link/タイトル同期スクリプト）が生き続けるようにする。
-          // 行の所有subはオーナー固定（メンバー保存でもオーナー行を更新）。失敗しても保存自体は成立済み。
-          try {
-            const js = JSON.stringify(doc.project);
-            await env.DB.prepare(
-              "INSERT OR REPLACE INTO mg_kv (sub,key,value,proj_id,name,channel,bytes,updated_at) VALUES (?,?,?,?,?,?,?,datetime('now','+9 hours'))"
-            ).bind(doc.ownerSub, "monogataritch-proj-" + id, js, id, doc.name || null, doc.channel || null, js.length).run();
-          } catch (e) {}
+          // 案件の中身はオーナーの mg_kv 行に書く（2026-08-25 から Studio OS 等が直読みしている行。メンバー保存でもオーナー行）。
+          // D1 移行後はここが唯一の保存先なので、失敗したら握りつぶさず 500 で返す（画面側が再送する）
+          const prevMembers = doc.members.slice();
+          await saveCollab(env, doc, { project: true, prevMembers });
           return json({ id, updatedAt: doc.updatedAt, ownerEmail: doc.ownerEmail, members: doc.members, role: doc.ownerSub === u.sub ? "owner" : "member" });
         }
         if (op === "invite") {
@@ -2794,9 +2786,9 @@ async function del(fileKey, btn) {
           if (doc.ownerSub !== u.sub) return json({ error: "オーナーのみ招待できます" }, 403);
           const em = lc(b.email); if (!em || !em.includes("@")) return json({ error: "メールアドレスが不正です" }, 400);
           const isNew = !doc.members.includes(em);
+          const prevMembers = doc.members.slice();
           if (isNew) doc.members.push(em);
-          await env.SNAPS.put(docKey(doc.id), JSON.stringify(doc));
-          await addIdx(em, doc.id);
+          await saveCollab(env, doc, { project: false, prevMembers });
           // 招待メール送信（2026-08-24）：メンバー追加だけだと相手が気づく手段が無かった穴を埋める。
           // ZHC bot(BOT_API_URL) 中継のGmail送信。失敗しても招待自体は成立済みなので握りつぶす。
           if (isNew && env.BOT_API_URL && env.BOT_API_KEY) {
@@ -2824,28 +2816,27 @@ Bird Flip / ものがたりっち！`;
           const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
           if (doc.ownerSub !== u.sub) return json({ error: "オーナーのみ操作できます" }, 403);
           const em = lc(b.email);
+          const prevMembers = doc.members.slice();
           doc.members = doc.members.filter((x) => x !== em || x === lc(doc.ownerEmail));
-          await env.SNAPS.put(docKey(doc.id), JSON.stringify(doc));
-          await delIdx(em, doc.id);
+          await saveCollab(env, doc, { project: false, prevMembers });
           return json({ members: doc.members });
         }
         if (op === "leave") {
           const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
           if (doc.ownerSub === u.sub) return json({ error: "オーナーは退出できません（削除してください）" }, 400);
+          const prevMembers = doc.members.slice();
           doc.members = doc.members.filter((x) => x !== myEmail);
-          await env.SNAPS.put(docKey(doc.id), JSON.stringify(doc));
-          await delIdx(myEmail, doc.id);
+          await saveCollab(env, doc, { project: false, prevMembers });
           return json({ ok: true });
         }
         if (op === "delete") {
           const doc = await loadDoc(b.id); if (!doc) return json({ error: "not found" }, 404);
           if (doc.ownerSub !== u.sub) return json({ error: "オーナーのみ削除できます" }, 403);
-          for (const em of doc.members) await delIdx(em, doc.id);
-          await env.SNAPS.delete(docKey(doc.id));
+          await deleteCollab(env, doc);
           return json({ ok: true });
         }
         if (op === "list") {
-          const ids = (await env.SNAPS.get("colmember:" + myEmail, "json")) || [];
+          const ids = await collabIdsFor(env, myEmail);
           const out = [];
           for (const id of ids) {
             const doc = await loadDoc(id);
